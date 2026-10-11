@@ -55,7 +55,7 @@ A handler's job is HTTP: extract the input, call the logic, map the result to a 
 
 Load balancers and orchestrators (Kubernetes, ECS, Fly.io) call a health endpoint to decide whether to send traffic to an instance. A useful check proves the service can do its job, so `/health` runs `SELECT 1` and answers 503 when the database is gone.
 
-When an instance is replaced, `docker stop` or Kubernetes sends **SIGTERM**, waits a grace period (10 seconds for Docker, 30 for Kubernetes), then kills it. A graceful shutdown stops accepting connections, lets requests in progress finish, closes the database, and exits with code 0. In axum that's `axum::serve(listener, app).with_graceful_shutdown(signal)`, where `signal` is a future that completes on Ctrl+C or SIGTERM. Without it, every deploy cuts off users mid-request.
+When an instance is replaced, `docker stop` or Kubernetes sends **SIGTERM**, waits a grace period (10 seconds for Docker, 30 for Kubernetes), then kills it. A graceful shutdown stops accepting connections, lets requests in progress finish, closes the database, and exits with code 0. In axum that's `axum::serve(listener, app).with_graceful_shutdown(signal)`, where `signal` is a future that completes on Ctrl+C or SIGTERM. Without it, every deploy cuts off users mid-request. In a container it matters even more: your program is process 1 there, and Linux doesn't apply the default "terminate" action to process 1, so a service that doesn't handle SIGTERM ignores it, and `docker stop` hangs for the whole grace period before killing it.
 
 ### Logging requests
 
