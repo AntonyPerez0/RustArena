@@ -7,7 +7,8 @@
 //
 // Usage:
 //   node scripts/build-content.mjs                 build everything and write src/generated/
-//   node scripts/build-content.mjs --only 07-      check only content files whose path contains "07-" (writes nothing)
+//   node scripts/build-content.mjs --only 07-      check only content files whose path contains "07-" (writes nothing);
+//                                                  several parts can be given, separated by commas: --only ownership,borrowing
 //   node scripts/build-content.mjs --no-cache      ignore cached compiler results
 import fs from "node:fs";
 import os from "node:os";
@@ -45,6 +46,7 @@ const args = process.argv.slice(2);
 const useCache = !args.includes("--no-cache");
 const onlyAt = args.indexOf("--only");
 const ONLY = onlyAt >= 0 ? args[onlyAt + 1] : null;
+const ONLY_PARTS = ONLY ? ONLY.split(",").map((x) => x.trim()).filter(Boolean) : [];
 const errors = [];
 const warnings = [];
 fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -127,7 +129,7 @@ function readYamlDir(dir) {
     .readdirSync(full)
     .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"))
     .sort()
-    .filter((f) => !ONLY || path.join(dir, f).includes(ONLY))
+    .filter((f) => !ONLY || ONLY_PARTS.some((part) => path.join(dir, f).includes(part)))
     .map((f) => {
       try {
         return { file: path.join(dir, f), data: YAML.parse(fs.readFileSync(path.join(full, f), "utf8")) };
@@ -289,7 +291,8 @@ async function buildExercise(where, raw, prevSolution) {
  */
 async function checkExamples(where, text) {
   if (!text || !/```rust (run|panics|compile_fail)/.test(text)) return text;
-  const blocks = [...text.matchAll(/^```([^\n]*)\n([\s\S]*?)^```[ \t]*$/gm)];
+  // Fenced blocks may be indented (inside a list item); the indent is removed from their contents.
+  const blocks = [...text.matchAll(/^([ \t]*)```([^\n]*)\n([\s\S]*?)^\1```[ \t]*$/gm)].map((b) => [b[0], b[2], b[3].replace(new RegExp("^" + b[1], "gm"), "")]);
   for (let i = 0; i < blocks.length; i++) {
     const m = blocks[i][1].trim().match(/^rust (run|panics|compile_fail)$/);
     if (!m) continue;
@@ -324,10 +327,10 @@ async function checkExamples(where, text) {
     }
   }
   return text
-    .replace(/^```rust (run|panics)[ \t]*$/gm, "```rust")
-    .replace(/^```rust compile_fail[ \t]*$/gm, "```rust-error")
-    .replace(/^```(output|input)[ \t]*$/gm, "```text")
-    .replace(/^```error[ \t]*$/gm, "```compiler");
+    .replace(/^([ \t]*)```rust (run|panics)[ \t]*$/gm, "$1```rust")
+    .replace(/^([ \t]*)```rust compile_fail[ \t]*$/gm, "$1```rust-error")
+    .replace(/^([ \t]*)```(output|input)[ \t]*$/gm, "$1```text")
+    .replace(/^([ \t]*)```error[ \t]*$/gm, "$1```compiler");
 }
 
 // ---------------------------------------------------------------- lessons

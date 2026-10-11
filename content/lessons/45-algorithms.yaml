@@ -1,0 +1,1826 @@
+id: algorithms
+title: Searching, Sorting and Classic Techniques
+phase: "Algorithms and data structures"
+summary: How fast is your code? Big-O, linear and binary search, sorting (and writing your own merge sort), custom orderings, and the interview workhorses two pointers, sliding window and prefix sums.
+roadmap: [Algorithms, Big O Notation, Searching, Sorting]
+steps:
+  - title: "Big-O: counting the work"
+    id: algorithms-1
+    text: |
+      At work, correct isn't enough: code has to be fast enough for the real amount of data. A function that's instant on your 10-row test file can take hours on the production table with 10 million rows. **Time complexity** describes how the work a piece of code does grows as the input size **n** grows. We write it in **Big-O notation**, which keeps only the part that dominates for large n and ignores constant factors.
+
+      | Big-O | Name | Typical code |
+      |---|---|---|
+      | O(1) | constant | `v[i]`, `v.push(x)`, `map.get(&k)` on a HashMap |
+      | O(log n) | logarithmic | binary search, `BTreeMap::get`, `BinaryHeap::push` |
+      | O(n) | linear | one loop over the data, `v.contains(&x)`, `.sum()` |
+      | O(n log n) | linearithmic | sorting |
+      | O(n²) | quadratic | a loop inside a loop over the same data |
+      | O(2ⁿ) | exponential | trying every subset |
+
+      The difference is enormous once n is big:
+
+      ```rust run
+      fn main() {
+          println!("{:>7} {:>8} {:>10} {:>12}", "n", "log2 n", "n log2 n", "n * n");
+          for n in [10u64, 100, 1_000, 100_000] {
+              let log = n.ilog2() as u64; // integer base-2 logarithm
+              println!("{n:>7} {log:>8} {:>10} {:>12}", n * log, n * n);
+          }
+      }
+      ```
+
+      ```output
+            n   log2 n   n log2 n        n * n
+           10        3         30          100
+          100        6        600        10000
+         1000        9       9000      1000000
+       100000       16    1600000  10000000000
+      ```
+
+      A useful rule of thumb: a debug build (like the one this site uses) does roughly **100 million simple steps per second**; a release build is often 10 to 50 times faster. The time limit here is 2 seconds. So for n = 100,000, an O(n log n) solution takes a couple of million steps (instant) while an O(n²) one takes ten billion (minutes). Many exercises in this phase include a big test for exactly that reason.
+
+      ### Counting the work in real code
+
+      Here are two ways to check a list of ids for duplicates:
+
+      ```rust run
+      fn has_duplicate_slow(ids: &[u64]) -> bool {
+          // compares every pair: n * (n - 1) / 2 comparisons, O(n²)
+          for i in 0..ids.len() {
+              for j in i + 1..ids.len() {
+                  if ids[i] == ids[j] {
+                      return true;
+                  }
+              }
+          }
+          false
+      }
+
+      fn has_duplicate_sorted(ids: &[u64]) -> bool {
+          // sort a copy, O(n log n); then equal ids sit next to each other, O(n)
+          let mut sorted = ids.to_vec();
+          sorted.sort_unstable();
+          sorted.windows(2).any(|pair| pair[0] == pair[1])
+      }
+
+      fn main() {
+          let ids = [42, 7, 19, 7, 3];
+          println!("{} {}", has_duplicate_slow(&ids), has_duplicate_sorted(&ids));
+      }
+      ```
+
+      ```output
+      true true
+      ```
+
+      The second one does O(n log n) + O(n) work, and Big-O keeps only the biggest term: O(n log n). Constants are dropped too: two passes over the data are O(2n), which is just O(n).
+
+      A few more words you'll hear:
+
+      - **Worst case** vs **average case**: a HashMap lookup is O(1) on average, but O(n) in a pathological worst case. Big-O usually means the worst case unless someone says otherwise.
+      - **Amortized**: `Vec::push` is O(1) *amortized*. Now and then the Vec is full and copies everything into a block twice as big (O(n)), but that happens so rarely that the average per push stays constant.
+      - **Space complexity**: extra memory used. `has_duplicate_sorted` needs O(n) extra memory for the copy; `has_duplicate_slow` needs O(1).
+
+      ### Common mistakes
+
+      - **Hidden loops.** `v.contains(&x)`, `v.iter().position(...)`, `s.chars().nth(i)`, `v.remove(0)` and `v.insert(0, x)` are all O(n). Inside a loop over `v`, they make the whole thing O(n²).
+      - **"O(1) means fast."** It means "doesn't grow with n". A HashMap lookup hashes the key every time; for five items a plain Vec scan is often quicker.
+      - **Testing only with tiny inputs.** Everything is fast with 10 items. Test with the size you'll really get.
+
+      **Your turn:** write `fn has_duplicate(ids: &[u64]) -> bool` in O(n) on average, using a `HashSet`. Remember that `HashSet::insert` returns `false` when the value was already there. The tests include 200,000 ids.
+    seed: |
+      use std::collections::HashSet;
+
+      fn has_duplicate(ids: &[u64]) -> bool {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashSet;
+
+      fn has_duplicate(ids: &[u64]) -> bool {
+          let mut seen = HashSet::with_capacity(ids.len());
+          !ids.iter().all(|&id| seen.insert(id))
+      }
+    require:
+      - pattern: 'HashSet'
+        message: Use a `HashSet` to remember the ids you've seen.
+    hints:
+      - Walk the ids once. For each id, ask the set whether you've seen it before.
+      - "`seen.insert(id)` returns `true` for a new id and `false` for one that was already there: that `false` means a duplicate."
+      - "A loop with `if !seen.insert(id) { return true; }` works, or the one-liner `!ids.iter().all(|&id| seen.insert(id))`."
+    harness: |
+      #[test]
+      fn finds_a_duplicate() {
+          assert_eq!(has_duplicate(&[42, 7, 19, 7, 3]), true, "has_duplicate(&[42, 7, 19, 7, 3])");
+      }
+
+      #[test]
+      fn all_different_means_no_duplicate() {
+          assert_eq!(has_duplicate(&[1, 2, 3, 4]), false, "has_duplicate(&[1, 2, 3, 4])");
+      }
+
+      #[test]
+      fn empty_and_single_lists_have_no_duplicates() {
+          assert_eq!(has_duplicate(&[]), false, "has_duplicate(&[])");
+          assert_eq!(has_duplicate(&[9]), false, "has_duplicate(&[9])");
+      }
+
+      #[test]
+      fn finds_a_duplicate_at_the_very_end() {
+          assert_eq!(has_duplicate(&[5, 6, 7, 8, 5]), true, "has_duplicate(&[5, 6, 7, 8, 5])");
+      }
+
+      #[test]
+      fn checks_200000_ids_quickly() {
+          let mut ids: Vec<u64> = (0..200_000).map(|i| i * 7).collect();
+          assert_eq!(has_duplicate(&ids), false, "has_duplicate(200,000 different ids)");
+          ids.push(7 * 123_456);
+          assert_eq!(has_duplicate(&ids), true, "has_duplicate(200,000 ids plus one repeat)");
+      }
+    more:
+      - task: |
+          The log analyzer wants the first word that **repeats**: the word whose second appearance comes earliest. In `["ok", "error", "warn", "error", "ok"]` that's `"error"` (it repeats at position 3, before `"ok"` repeats at position 4).
+
+          Write `fn first_repeat<'a>(words: &[&'a str]) -> Option<&'a str>` in O(n) with a `HashSet`. (The `'a` says the returned word lives as long as the words in the slice; the lifetimes module explained why the compiler needs it here.) The tests include 200,000 words.
+        seed: |
+          use std::collections::HashSet;
+
+          fn first_repeat<'a>(words: &[&'a str]) -> Option<&'a str> {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashSet;
+
+          fn first_repeat<'a>(words: &[&'a str]) -> Option<&'a str> {
+              let mut seen = HashSet::new();
+              words.iter().copied().find(|&w| !seen.insert(w))
+          }
+        require:
+          - pattern: 'HashSet'
+            message: Use a `HashSet` of the words seen so far.
+        harness: |
+          #[test]
+          fn finds_the_earliest_repeat() {
+              assert_eq!(first_repeat(&["ok", "error", "warn", "error", "ok"]), Some("error"), "first_repeat([ok, error, warn, error, ok])");
+          }
+
+          #[test]
+          fn no_repeats_gives_none() {
+              assert_eq!(first_repeat(&["a", "b", "c"]), None, "first_repeat([a, b, c])");
+              assert_eq!(first_repeat(&[]), None, "first_repeat([])");
+          }
+
+          #[test]
+          fn is_case_sensitive() {
+              assert_eq!(first_repeat(&["Rust", "rust", "RUST", "rust"]), Some("rust"), "first_repeat([Rust, rust, RUST, rust])");
+          }
+
+          #[test]
+          fn handles_200000_words_quickly() {
+              let owned: Vec<String> = (0..200_000).map(|i| format!("w{i}")).collect();
+              let mut words: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+              assert_eq!(first_repeat(&words), None, "first_repeat(200,000 different words)");
+              words.push("w199999");
+              assert_eq!(first_repeat(&words), Some("w199999"), "first_repeat(200,000 words + a repeat of the last)");
+          }
+        hints:
+          - "Walk the words in order and insert each into a `HashSet<&str>`."
+          - "The first word whose `insert` returns `false` is the answer."
+          - "`words.iter().copied().find(|&w| !seen.insert(w))` does it in one line."
+      - task: |
+          A gift shop shows two items whose prices add up **exactly** to the customer's budget. Write `fn two_sum(prices: &[i64], budget: i64) -> Option<(usize, usize)>` that returns the indices `(i, j)` with `i < j` of two different items whose prices sum to `budget`.
+
+          If several pairs work, return the one that is completed first: the smallest `j`, and for that `j` the smallest `i`. Return `None` if no pair works.
+
+          Checking every pair is O(n²), and the tests have 200,000 prices. Instead, walk the list once and keep a `HashMap` from price to the index where you first saw it: for each price `p` at index `j`, look up `budget - p`.
+        seed: |
+          use std::collections::HashMap;
+
+          fn two_sum(prices: &[i64], budget: i64) -> Option<(usize, usize)> {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn two_sum(prices: &[i64], budget: i64) -> Option<(usize, usize)> {
+              let mut first_index: HashMap<i64, usize> = HashMap::new();
+              for (j, &p) in prices.iter().enumerate() {
+                  if let Some(&i) = first_index.get(&(budget - p)) {
+                      return Some((i, j));
+                  }
+                  first_index.entry(p).or_insert(j);
+              }
+              None
+          }
+        require:
+          - pattern: 'HashMap'
+            message: Use a `HashMap` from price to index.
+        harness: |
+          #[test]
+          fn finds_a_pair() {
+              assert_eq!(two_sum(&[15, 40, 25, 60], 85), Some((2, 3)), "two_sum(&[15, 40, 25, 60], 85)");
+          }
+
+          #[test]
+          fn returns_the_pair_completed_first() {
+              assert_eq!(two_sum(&[1, 9, 5, 5, 2, 8], 10), Some((0, 1)), "two_sum(&[1, 9, 5, 5, 2, 8], 10)");
+              assert_eq!(two_sum(&[5, 3, 5, 5], 10), Some((0, 2)), "two_sum(&[5, 3, 5, 5], 10)");
+          }
+
+          #[test]
+          fn does_not_use_one_item_twice() {
+              assert_eq!(two_sum(&[5, 1], 10), None, "two_sum(&[5, 1], 10)");
+          }
+
+          #[test]
+          fn handles_negative_prices_and_no_answer() {
+              assert_eq!(two_sum(&[-3, 8, 4], 1), Some((0, 2)), "two_sum(&[-3, 8, 4], 1)");
+              assert_eq!(two_sum(&[1, 2, 3], 100), None, "two_sum(&[1, 2, 3], 100)");
+              assert_eq!(two_sum(&[], 0), None, "two_sum(&[], 0)");
+          }
+
+          #[test]
+          fn handles_200000_prices_quickly() {
+              let mut prices: Vec<i64> = (0..199_999).map(|i| i * 2).collect();
+              prices.push(1_000_001);
+              assert_eq!(two_sum(&prices, 1_200_001), Some((100_000, 199_999)), "two_sum(200,000 prices, 1200001)");
+          }
+        hints:
+          - "For each `(j, &p)` in `prices.iter().enumerate()`, the partner you need is `budget - p`."
+          - "If `first_index.get(&(budget - p))` finds an index `i`, return `Some((i, j))`."
+          - "Otherwise record this price with `first_index.entry(p).or_insert(j)` (keeps the first index for repeated prices). Check before inserting, so an item never pairs with itself."
+
+  - title: Linear and binary search
+    id: algorithms-2
+    text: |
+      **Linear search** looks at the items one by one: `v.contains(&x)`, `v.iter().position(|&y| y == x)`. It's O(n) and works on any data.
+
+      **Binary search** needs **sorted** data and is O(log n): look at the middle item; if it's too small, the answer can only be in the right half, otherwise in the left half. Each step halves what's left, so a million items take at most 20 steps.
+
+      Slices have it built in:
+
+      - `v.binary_search(&x)` returns `Ok(index)` if `x` is there, or `Err(index)` with the position where `x` would have to be **inserted** to keep `v` sorted.
+      - `v.partition_point(|&y| y < x)` returns the first index where the condition becomes false. The condition must be true for a first part of the slice and false for the rest, which is exactly what a sorted slice gives you. It's the tool for "how many items are below x?" and "where does the run of x start?".
+      - `binary_search_by_key` and `binary_search_by` search on a field or with your own comparison.
+
+      ```rust run
+      fn main() {
+          let scores = [12, 25, 25, 25, 40, 58, 71];
+          println!("{:?}", scores.binary_search(&40));
+          println!("{:?}", scores.binary_search(&30));
+
+          let first_25 = scores.partition_point(|&s| s < 25);
+          let after_25 = scores.partition_point(|&s| s <= 25);
+          println!("25 is at {first_25}..{after_25}, {} times", after_25 - first_25);
+
+          let passed = scores.len() - scores.partition_point(|&s| s < 50);
+          println!("{passed} scores are 50 or more");
+
+          let mut sorted = vec![10, 20, 30];
+          let pos = sorted.binary_search(&25).unwrap_or_else(|insert_at| insert_at);
+          sorted.insert(pos, 25);
+          println!("{sorted:?}");
+      }
+      ```
+
+      ```output
+      Ok(4)
+      Err(4)
+      25 is at 1..4, 3 times
+      2 scores are 50 or more
+      [10, 20, 25, 30]
+      ```
+
+      With duplicates, `binary_search` may return *any* of the matching positions; use `partition_point` when you need the first or last one.
+
+      ### Writing it yourself
+
+      Interviewers love asking for binary search by hand because it's easy to get subtly wrong. The safest shape is a **half-open range** `lo..hi`: the answer, if it exists, is at an index with `lo <= index < hi`. Start with `lo = 0`, `hi = len`, and loop while `lo < hi`:
+
+      - `let mid = lo + (hi - lo) / 2;` (never past `hi - 1`, and it can't overflow)
+      - middle too small: the answer is right of it, `lo = mid + 1`
+      - middle too big: the answer is left of it, `hi = mid`
+
+      ### Common mistakes
+
+      - **Binary search on unsorted data.** No error, just wrong answers. Sort first, or keep the data sorted.
+      - **Mixing inclusive and half-open bounds.** `hi = len - 1` with `while lo < hi` misses the last item; `hi = mid - 1` with `usize` panics with `attempt to subtract with overflow` when `mid` is 0. Pick half-open and use `hi = mid`.
+      - **`(lo + hi) / 2`** can overflow for huge indices; `lo + (hi - lo) / 2` can't.
+      - **A `partition_point` condition that isn't "true then false".** For a sorted slice, `|&y| y < x` is fine; `|&y| y == x` is not.
+
+      **Your turn:** write `fn find(sorted: &[i32], target: i32) -> Option<usize>` by hand with a half-open range (no `binary_search` or `partition_point`). The values are sorted and all different; return the index of `target`, or `None`. The tests look up 200,000 values in a slice of 200,000, so a linear scan is too slow.
+    seed: |
+      fn find(sorted: &[i32], target: i32) -> Option<usize> {
+          todo!()
+      }
+    solution: |
+      use std::cmp::Ordering;
+
+      fn find(sorted: &[i32], target: i32) -> Option<usize> {
+          let mut lo = 0;
+          let mut hi = sorted.len();
+          while lo < hi {
+              let mid = lo + (hi - lo) / 2;
+              match sorted[mid].cmp(&target) {
+                  Ordering::Equal => return Some(mid),
+                  Ordering::Less => lo = mid + 1,
+                  Ordering::Greater => hi = mid,
+              }
+          }
+          None
+      }
+    forbid:
+      - pattern: 'binary_search|partition_point'
+        message: Write the search yourself this time, without `binary_search` or `partition_point`.
+    hints:
+      - "Start with `let mut lo = 0; let mut hi = sorted.len();` and loop `while lo < hi`."
+      - "`let mid = lo + (hi - lo) / 2;` then compare `sorted[mid]` with `target` (a `match` on `sorted[mid].cmp(&target)` reads well)."
+      - "Equal: `return Some(mid)`. Less: `lo = mid + 1`. Greater: `hi = mid`. After the loop, `None`."
+    harness: |
+      #[test]
+      fn finds_items_anywhere() {
+          let v = [3, 8, 15, 21, 40, 57];
+          assert_eq!(find(&v, 3), Some(0), "find(&[3, 8, 15, 21, 40, 57], 3)");
+          assert_eq!(find(&v, 21), Some(3), "find(&[3, 8, 15, 21, 40, 57], 21)");
+          assert_eq!(find(&v, 57), Some(5), "find(&[3, 8, 15, 21, 40, 57], 57)");
+      }
+
+      #[test]
+      fn missing_items_give_none() {
+          let v = [3, 8, 15, 21, 40, 57];
+          assert_eq!(find(&v, 1), None, "find(&[3, 8, 15, 21, 40, 57], 1)");
+          assert_eq!(find(&v, 16), None, "find(&[3, 8, 15, 21, 40, 57], 16)");
+          assert_eq!(find(&v, 99), None, "find(&[3, 8, 15, 21, 40, 57], 99)");
+      }
+
+      #[test]
+      fn handles_empty_and_single_slices() {
+          assert_eq!(find(&[], 4), None, "find(&[], 4)");
+          assert_eq!(find(&[4], 4), Some(0), "find(&[4], 4)");
+          assert_eq!(find(&[4], 5), None, "find(&[4], 5)");
+      }
+
+      #[test]
+      fn handles_negative_numbers() {
+          assert_eq!(find(&[-9, -4, 0, 2], -4), Some(1), "find(&[-9, -4, 0, 2], -4)");
+      }
+
+      #[test]
+      fn answers_200000_lookups_quickly() {
+          let v: Vec<i32> = (0..200_000).map(|i| i * 2).collect();
+          let mut found = 0u64;
+          let mut index_sum = 0u64;
+          for q in 0..200_000 {
+              if let Some(i) = find(&v, q) {
+                  found += 1;
+                  index_sum += i as u64;
+              }
+          }
+          assert_eq!(found, 100_000, "number of values found");
+          assert_eq!(index_sum, 4_999_950_000, "sum of the found indices");
+      }
+    more:
+      - task: |
+          Reaction times (in milliseconds) from a game are kept sorted. The analytics page asks many questions like "how many players reacted between 180 and 250 ms (inclusive)?".
+
+          Write `fn count_in_range(sorted: &[u32], low: u32, high: u32) -> usize` with two calls to `partition_point`: one finds where values `>= low` start, the other where values `> high` start. Return 0 when `low > high`. The tests ask 100,000 questions about 200,000 values.
+        seed: |
+          fn count_in_range(sorted: &[u32], low: u32, high: u32) -> usize {
+              todo!()
+          }
+        solution: |
+          fn count_in_range(sorted: &[u32], low: u32, high: u32) -> usize {
+              let start = sorted.partition_point(|&x| x < low);
+              let end = sorted.partition_point(|&x| x <= high);
+              end.saturating_sub(start)
+          }
+        require:
+          - pattern: 'partition_point'
+            message: Use `partition_point` to find both ends of the range.
+        harness: |
+          #[test]
+          fn counts_values_in_an_inclusive_range() {
+              let v = [120, 180, 180, 205, 250, 251, 300];
+              assert_eq!(count_in_range(&v, 180, 250), 4, "count_in_range(v, 180, 250)");
+          }
+
+          #[test]
+          fn counts_ranges_beyond_the_ends() {
+              let v = [120, 180, 180, 205, 250, 251, 300];
+              assert_eq!(count_in_range(&v, 0, 1000), 7, "count_in_range(v, 0, 1000)");
+              assert_eq!(count_in_range(&v, 301, 400), 0, "count_in_range(v, 301, 400)");
+              assert_eq!(count_in_range(&v, 0, 100), 0, "count_in_range(v, 0, 100)");
+          }
+
+          #[test]
+          fn a_single_value_range_counts_duplicates() {
+              let v = [120, 180, 180, 205];
+              assert_eq!(count_in_range(&v, 180, 180), 2, "count_in_range(v, 180, 180)");
+          }
+
+          #[test]
+          fn a_backwards_range_counts_nothing() {
+              let v = [120, 180, 180, 205];
+              assert_eq!(count_in_range(&v, 200, 150), 0, "count_in_range(v, 200, 150)");
+              assert_eq!(count_in_range(&[], 1, 5), 0, "count_in_range(&[], 1, 5)");
+          }
+
+          #[test]
+          fn answers_100000_questions_quickly() {
+              let v: Vec<u32> = (0..200_000).map(|i| i / 2).collect();
+              let mut total = 0;
+              for q in 0..100_000 {
+                  total += count_in_range(&v, q, q + 9);
+              }
+              assert_eq!(total, 1_999_910, "sum of 100,000 counts");
+          }
+        hints:
+          - "`sorted.partition_point(|&x| x < low)` is the index of the first value `>= low`."
+          - "`sorted.partition_point(|&x| x <= high)` is the index of the first value `> high`."
+          - "The count is `end - start`; use `end.saturating_sub(start)` so a backwards range gives 0 instead of panicking."
+      - task: |
+          **Binary search on the answer.** A warehouse ships packages along a conveyor in a fixed order. Each day the truck is loaded with packages in order until the next one wouldn't fit under its capacity; packages are never split. Write `fn min_capacity(packages: &[u32], days: u32) -> u32`: the smallest truck capacity that ships everything within `days` days (`days` is at least 1). Return 0 for no packages.
+
+          The trick: if capacity `c` is enough, every bigger capacity is too. So "is `c` enough?" is false, false, ..., true, true over the capacities, and you can binary search for the first true between `max(package)` (the smallest that can carry everything) and `sum(packages)` (one day). Write a helper that counts the days a capacity needs. The tests have 100,000 packages, so trying capacities one by one is too slow.
+        seed: |
+          fn min_capacity(packages: &[u32], days: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn days_needed(packages: &[u32], capacity: u32) -> u32 {
+              let mut days = 1;
+              let mut load = 0;
+              for &p in packages {
+                  if load + p > capacity {
+                      days += 1;
+                      load = 0;
+                  }
+                  load += p;
+              }
+              days
+          }
+
+          fn min_capacity(packages: &[u32], days: u32) -> u32 {
+              let Some(&heaviest) = packages.iter().max() else {
+                  return 0;
+              };
+              let mut lo = heaviest;
+              let mut hi: u32 = packages.iter().sum();
+              while lo < hi {
+                  let mid = lo + (hi - lo) / 2;
+                  if days_needed(packages, mid) <= days {
+                      hi = mid;
+                  } else {
+                      lo = mid + 1;
+                  }
+              }
+              lo
+          }
+        harness: |
+          #[test]
+          fn ships_ten_packages_in_five_days() {
+              assert_eq!(min_capacity(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 5), 15, "min_capacity(&[1..=10], 5)");
+          }
+
+          #[test]
+          fn ships_within_three_days() {
+              assert_eq!(min_capacity(&[3, 2, 2, 4, 1, 4], 3), 6, "min_capacity(&[3, 2, 2, 4, 1, 4], 3)");
+          }
+
+          #[test]
+          fn needs_at_least_the_heaviest_package() {
+              assert_eq!(min_capacity(&[5, 9, 2], 3), 9, "min_capacity(&[5, 9, 2], 3)");
+              assert_eq!(min_capacity(&[7], 10), 7, "min_capacity(&[7], 10)");
+          }
+
+          #[test]
+          fn one_day_needs_the_total() {
+              assert_eq!(min_capacity(&[4, 4, 4], 1), 12, "min_capacity(&[4, 4, 4], 1)");
+          }
+
+          #[test]
+          fn no_packages_need_no_capacity() {
+              assert_eq!(min_capacity(&[], 3), 0, "min_capacity(&[], 3)");
+          }
+
+          #[test]
+          fn plans_100000_packages_quickly() {
+              let packages: Vec<u32> = (0..100_000u32).map(|i| i * 37 % 500 + 1).collect();
+              assert_eq!(min_capacity(&packages, 50), 501_000, "min_capacity(100,000 packages, 50)");
+          }
+        hints:
+          - "Write `fn days_needed(packages: &[u32], capacity: u32) -> u32`: start at day 1 with load 0; when `load + p > capacity`, start a new day with load 0; then add `p`."
+          - "Binary search `lo = max package`, `hi = sum of packages` with `while lo < hi { let mid = lo + (hi - lo) / 2; ... }`."
+          - "If `days_needed(packages, mid) <= days`, `mid` works, so the answer is `mid` or smaller: `hi = mid`. Otherwise `lo = mid + 1`. Return `lo`."
+
+  - title: Sorting and custom orderings
+    id: algorithms-3
+    text: |
+      You've used `sort` since the vectors module. Here's what's behind it, and how to sort by anything.
+
+      - `v.sort()` is **stable**: items that compare equal keep their original order. It's O(n log n) and uses some extra memory.
+      - `v.sort_unstable()` may reorder equal items, but it's usually faster and needs no extra memory. For plain numbers, where equal items are indistinguishable, it's the idiomatic choice (clippy suggests it).
+      - Both need `T: Ord`. For anything else, say how to compare:
+
+      | Method | Use it when |
+      |---|---|
+      | `sort_by_key(\|x\| key)` | one key, cheap to compute (a number, a `Copy` field) |
+      | `sort_by_key(\|x\| Reverse(key))` | the same, high to low |
+      | `sort_by(\|a, b\| a.f.cmp(&b.f))` | keys you'd have to clone, or several keys |
+      | `sort_by_cached_key(\|x\| key)` | an expensive key (computed once per item) |
+
+      ### Several keys
+
+      `cmp` returns an `Ordering` (`Less`, `Equal` or `Greater`). `ordering.then(other)` uses `other` only when the first comparison was `Equal`, which is exactly how "sort by department, then by salary" works. `then_with(|| ...)` does the same but only computes the second comparison when needed. To flip one key, swap `a` and `b` (or call `.reverse()` on that `Ordering`).
+
+      ```rust run
+      use std::cmp::Reverse;
+
+      struct Employee {
+          name: &'static str,
+          dept: &'static str,
+          salary: u32,
+      }
+
+      fn main() {
+          let mut staff = vec![
+              Employee { name: "Mo", dept: "ops", salary: 61_000 },
+              Employee { name: "Ana", dept: "dev", salary: 82_000 },
+              Employee { name: "Bo", dept: "dev", salary: 95_000 },
+              Employee { name: "Cy", dept: "ops", salary: 61_000 },
+              Employee { name: "Di", dept: "dev", salary: 82_000 },
+          ];
+          // department A-Z, then salary high to low, then name A-Z
+          staff.sort_by(|a, b| {
+              a.dept
+                  .cmp(&b.dept)
+                  .then(b.salary.cmp(&a.salary))
+                  .then(a.name.cmp(&b.name))
+          });
+          for e in &staff {
+              println!("{:<4} {:<4} {}", e.dept, e.name, e.salary);
+          }
+
+          staff.sort_by_key(|e| Reverse(e.salary));
+          println!("top earner: {}", staff[0].name);
+
+          let mut temps = vec![21.5, -3.0, 18.25, 0.0];
+          temps.sort_by(|a, b| a.total_cmp(b));
+          println!("{temps:?}");
+      }
+      ```
+
+      ```output
+      dev  Bo   95000
+      dev  Ana  82000
+      dev  Di   82000
+      ops  Cy   61000
+      ops  Mo   61000
+      top earner: Bo
+      [-3.0, 0.0, 18.25, 21.5]
+      ```
+
+      - Floats don't implement `Ord` (NaN isn't comparable), so `sort` won't compile on a `Vec<f64>`. `f64::total_cmp` is a full ordering for floats, made for exactly this.
+      - When a type has one obvious order (a version number, a date), implement `Ord` for it (module 23) and plain `sort()` works. When the order depends on the screen or report, use `sort_by`.
+      - Related tools: `v.is_sorted()`, `iter.max_by_key(...)`, `iter.min_by(|a, b| a.total_cmp(b))`.
+
+      ### Common mistakes
+
+      - **Sorting floats with `sort()`:**
+
+      ```rust compile_fail
+      fn main() {
+          let mut v = vec![3.2, 1.5, 2.0];
+          v.sort();
+          println!("{:?}", v);
+      }
+      ```
+
+      ```error
+      error[E0277]: the trait bound `{float}: Ord` is not satisfied
+      ```
+
+      - **`sort_by_key` with a `String` field.** The key closure must return the key by value, and it can't move the String out of the borrowed item:
+
+      ```rust compile_fail
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn main() {
+          let mut players = vec![Player { name: String::from("Zed"), score: 3 }];
+          players.sort_by_key(|p| p.name);
+          println!("{}", players[0].score);
+      }
+      ```
+
+      ```error
+      error[E0507]: cannot move out of `p.name` which is behind a shared reference
+      ```
+
+      Use `sort_by(|a, b| a.name.cmp(&b.name))` (no copy) rather than `sort_by_key(|p| p.name.clone())` (a new String for every comparison).
+      - **Descending with a minus sign.** `sort_by_key(|x| -x)` doesn't work for unsigned types and overflows for `i32::MIN`. Use `Reverse(x)`.
+      - **No tie-breaker.** If two items can compare equal, decide what happens; otherwise the output order depends on the input order, and tests break when the input changes.
+
+      **Your turn:** write `fn rank_players(players: &mut [Player])` that sorts a leaderboard: highest `score` first; on equal scores, **fewer** `games` first; on equal games too, `name` A to Z.
+    seed: |
+      struct Player {
+          name: String,
+          score: u32,
+          games: u32,
+      }
+
+      fn rank_players(players: &mut [Player]) {
+          todo!()
+      }
+    solution: |
+      struct Player {
+          name: String,
+          score: u32,
+          games: u32,
+      }
+
+      fn rank_players(players: &mut [Player]) {
+          players.sort_by(|a, b| {
+              b.score
+                  .cmp(&a.score)
+                  .then(a.games.cmp(&b.games))
+                  .then_with(|| a.name.cmp(&b.name))
+          });
+      }
+    hints:
+      - "Use `players.sort_by(|a, b| ...)` and chain the three comparisons with `.then(...)`."
+      - "High to low means comparing `b` with `a`: `b.score.cmp(&a.score)`. Low to high is `a.games.cmp(&b.games)`."
+      - "`b.score.cmp(&a.score).then(a.games.cmp(&b.games)).then_with(|| a.name.cmp(&b.name))`"
+    harness: |
+      fn p(name: &str, score: u32, games: u32) -> Player {
+          Player { name: name.to_string(), score, games }
+      }
+
+      fn order(players: &[Player]) -> Vec<&str> {
+          players.iter().map(|x| x.name.as_str()).collect()
+      }
+
+      #[test]
+      fn highest_score_comes_first() {
+          let mut v = vec![p("ana", 10, 5), p("ben", 30, 5), p("cy", 20, 5)];
+          rank_players(&mut v);
+          assert_eq!(order(&v), vec!["ben", "cy", "ana"], "ranking by score");
+      }
+
+      #[test]
+      fn fewer_games_break_a_tie() {
+          let mut v = vec![p("ana", 50, 9), p("ben", 50, 4), p("cy", 50, 6)];
+          rank_players(&mut v);
+          assert_eq!(order(&v), vec!["ben", "cy", "ana"], "equal scores, different games");
+      }
+
+      #[test]
+      fn names_break_a_full_tie() {
+          let mut v = vec![p("zoe", 7, 2), p("max", 7, 2), p("ivy", 9, 3)];
+          rank_players(&mut v);
+          assert_eq!(order(&v), vec!["ivy", "max", "zoe"], "equal score and games");
+      }
+
+      #[test]
+      fn handles_an_empty_leaderboard() {
+          let mut v: Vec<Player> = Vec::new();
+          rank_players(&mut v);
+          assert_eq!(v.len(), 0, "empty leaderboard");
+      }
+    more:
+      - task: |
+          A sensor dashboard shows the **median** temperature: the middle value once the readings are sorted, or the average of the two middle values when there's an even number of them. The median is popular in monitoring because a single crazy reading can't drag it around the way it drags the average.
+
+          Write `fn median(readings: &[f64]) -> Option<f64>` (`None` for no readings). Sort a copy with `total_cmp`; don't change the caller's slice.
+        seed: |
+          fn median(readings: &[f64]) -> Option<f64> {
+              todo!()
+          }
+        solution: |
+          fn median(readings: &[f64]) -> Option<f64> {
+              if readings.is_empty() {
+                  return None;
+              }
+              let mut sorted = readings.to_vec();
+              sorted.sort_by(|a, b| a.total_cmp(b));
+              let mid = sorted.len() / 2;
+              if sorted.len() % 2 == 1 {
+                  Some(sorted[mid])
+              } else {
+                  Some((sorted[mid - 1] + sorted[mid]) / 2.0)
+              }
+          }
+        require:
+          - pattern: 'total_cmp'
+            message: Compare the floats with `total_cmp`.
+        harness: |
+          #[test]
+          fn takes_the_middle_of_an_odd_count() {
+              assert_eq!(median(&[3.5, -1.0, 2.0]), Some(2.0), "median(&[3.5, -1.0, 2.0])");
+          }
+
+          #[test]
+          fn averages_the_two_middles_of_an_even_count() {
+              assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5), "median(&[4.0, 1.0, 3.0, 2.0])");
+          }
+
+          #[test]
+          fn ignores_one_crazy_reading() {
+              assert_eq!(median(&[20.5, 21.0, 9999.0, 20.0, 21.5]), Some(21.0), "median(&[20.5, 21.0, 9999.0, 20.0, 21.5])");
+          }
+
+          #[test]
+          fn handles_one_and_zero_readings() {
+              assert_eq!(median(&[7.25]), Some(7.25), "median(&[7.25])");
+              assert_eq!(median(&[]), None, "median(&[])");
+          }
+        hints:
+          - "Return `None` early for an empty slice. Then `let mut sorted = readings.to_vec();` and `sorted.sort_by(|a, b| a.total_cmp(b));`"
+          - "`let mid = sorted.len() / 2;` For an odd length the median is `sorted[mid]`."
+          - "For an even length it's `(sorted[mid - 1] + sorted[mid]) / 2.0`."
+      - task: |
+          HR exports the staff list as CSV and wants it grouped for the salary review. Standard input starts with a header line `name,dept,salary`, followed by one employee per line, like `Ana,dev,82000`. Skip the header and blank lines.
+
+          Print each department (A to Z) on its own line, followed by its employees from the highest salary to the lowest (equal salaries: name A to Z), each printed with `println!("  {:<8}{:>6}", name, salary)`:
+
+          ```
+          dev
+            Bo       95000
+            Ana      82000
+          ops
+            Cy       61000
+          ```
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut staff: Vec<(String, String, u32)> = Vec::new(); // (dept, name, salary)
+              for line in io::stdin().lock().lines().skip(1) {
+                  let line = line.expect("read error");
+              }
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut staff: Vec<(String, String, u32)> = Vec::new(); // (dept, name, salary)
+              for line in io::stdin().lock().lines().skip(1) {
+                  let line = line.expect("read error");
+                  let fields: Vec<&str> = line.trim().split(',').collect();
+                  if let [name, dept, salary] = fields[..] {
+                      let salary: u32 = salary.parse().expect("salary must be a number");
+                      staff.push((dept.to_string(), name.to_string(), salary));
+                  }
+              }
+              staff.sort_by(|a, b| a.0.cmp(&b.0).then(b.2.cmp(&a.2)).then_with(|| a.1.cmp(&b.1)));
+              let mut current_dept = "";
+              for (dept, name, salary) in &staff {
+                  if dept != current_dept {
+                      println!("{dept}");
+                      current_dept = dept;
+                  }
+                  println!("  {:<8}{:>6}", name, salary);
+              }
+          }
+        hints:
+          - "Split each line with `split(',')` and match the three fields, for example `if let [name, dept, salary] = fields[..]` on a `Vec<&str>`."
+          - "Sort the `(dept, name, salary)` tuples with `sort_by`: dept ascending, then salary descending (`b.2.cmp(&a.2)`), then name."
+          - "Print the department name whenever it differs from the previous one you printed, then the employee line."
+        tests:
+          - stdin: "name,dept,salary\nMo,ops,61000\nAna,dev,82000\nBo,dev,95000\nCy,ops,61000\nDi,dev,82000\n"
+            expect: "dev\n  Bo       95000\n  Ana      82000\n  Di       82000\nops\n  Cy       61000\n  Mo       61000"
+          - stdin: "name,dept,salary\nZed,sales,40000\n\nAmy,hr,52000\nLiu,sales,73000\nKim,hr,52000\n"
+            hidden: true
+          - stdin: "name,dept,salary\nSolo,ops,1\n"
+            hidden: true
+
+  - title: "Implementing sorts: insertion sort and merge sort"
+    id: algorithms-4
+    text: |
+      You'll almost never write a sort at work, since `sort` and `sort_unstable` are excellent. You'll write one in interviews, though, and the ideas behind these two show up everywhere: growing a sorted region, and **divide and conquer**.
+
+      ### Insertion sort
+
+      Keep the front of the slice sorted. Take the next item and swap it left until the item before it is not bigger. Like sorting a hand of cards.
+
+      ```rust run
+      fn insertion_sort(v: &mut [i32]) {
+          for i in 1..v.len() {
+              let mut j = i;
+              while j > 0 && v[j - 1] > v[j] {
+                  v.swap(j - 1, j);
+                  j -= 1;
+              }
+              println!("after pass {i}: {v:?}");
+          }
+      }
+
+      fn main() {
+          let mut v = [5, 2, 4, 6, 1, 3];
+          insertion_sort(&mut v);
+      }
+      ```
+
+      ```output
+      after pass 1: [2, 5, 4, 6, 1, 3]
+      after pass 2: [2, 4, 5, 6, 1, 3]
+      after pass 3: [2, 4, 5, 6, 1, 3]
+      after pass 4: [1, 2, 4, 5, 6, 3]
+      after pass 5: [1, 2, 3, 4, 5, 6]
+      ```
+
+      Worst case O(n²) (reverse-sorted input: every item travels all the way left), but only O(n) on data that's already nearly sorted, and very fast for tiny slices. It's **stable** (equal items never swap past each other) and **in place** (no extra memory). The standard library's sorts switch to insertion sort for small pieces.
+
+      ### Merge sort
+
+      **Divide and conquer**: split the problem in half, solve each half (recursively), combine the results.
+
+      1. A slice of 0 or 1 items is already sorted (the **base case**).
+      2. Otherwise split it in the middle with `split_at`, merge sort each half.
+      3. **Merge** the two sorted halves: repeatedly take the smaller front item.
+
+      The merge is the heart of it, and it's useful on its own. Here it combines two log files that are each sorted by timestamp:
+
+      ```rust run
+      fn merge(a: &[u32], b: &[u32]) -> Vec<u32> {
+          let mut out = Vec::with_capacity(a.len() + b.len());
+          let (mut i, mut j) = (0, 0);
+          while i < a.len() && j < b.len() {
+              if a[i] <= b[j] {
+                  out.push(a[i]);
+                  i += 1;
+              } else {
+                  out.push(b[j]);
+                  j += 1;
+              }
+          }
+          out.extend_from_slice(&a[i..]); // whatever is left over
+          out.extend_from_slice(&b[j..]);
+          out
+      }
+
+      fn main() {
+          let web = [3, 8, 15, 21];
+          let db = [1, 8, 9, 30, 31];
+          println!("{:?}", merge(&web, &db));
+      }
+      ```
+
+      ```output
+      [1, 3, 8, 8, 9, 15, 21, 30, 31]
+      ```
+
+      Why O(n log n)? Halving n items until pieces have size 1 takes log₂ n levels, and each level merges all n items once. Merge sort is stable and always O(n log n), but needs O(n) extra memory for the merged output.
+
+      **Quicksort** is the other famous one: pick a **pivot**, move smaller items left of it and bigger ones right, then sort both sides. It works in place and is very fast on average, but O(n²) if the pivots are chosen badly. Rust's `sort_unstable` is a modern quicksort variant that guards against the bad cases.
+
+      ### Common mistakes
+
+      - **A missing or unreachable base case.** If a 1-item slice still gets split, `split_at(0)` gives an empty half and the same 1-item half again, forever, until `thread 'main' has overflowed its stack`.
+      - **Forgetting the leftovers** after the merge loop: one of the two slices still has items.
+      - **`<` instead of `<=`** in the merge. Taking from the right half on ties still sorts, but it's no longer stable.
+
+      **Your turn:** write `fn merge_sort(v: &[i32]) -> Vec<i32>` that returns a sorted copy, using recursion, `split_at` and a `merge` function you write (adapt the one above to `i32`). No `sort` methods. The tests sort 200,000 numbers, which insertion sort would take minutes for.
+    seed: |
+      fn merge(a: &[i32], b: &[i32]) -> Vec<i32> {
+          todo!()
+      }
+
+      fn merge_sort(v: &[i32]) -> Vec<i32> {
+          todo!()
+      }
+    solution: |
+      fn merge(a: &[i32], b: &[i32]) -> Vec<i32> {
+          let mut out = Vec::with_capacity(a.len() + b.len());
+          let (mut i, mut j) = (0, 0);
+          while i < a.len() && j < b.len() {
+              if a[i] <= b[j] {
+                  out.push(a[i]);
+                  i += 1;
+              } else {
+                  out.push(b[j]);
+                  j += 1;
+              }
+          }
+          out.extend_from_slice(&a[i..]);
+          out.extend_from_slice(&b[j..]);
+          out
+      }
+
+      fn merge_sort(v: &[i32]) -> Vec<i32> {
+          if v.len() <= 1 {
+              return v.to_vec();
+          }
+          let (left, right) = v.split_at(v.len() / 2);
+          merge(&merge_sort(left), &merge_sort(right))
+      }
+    forbid:
+      - pattern: '\.sort|BinaryHeap|BTree'
+        message: Write the sorting yourself, without the standard library's sorts.
+    hints:
+      - "Base case: `if v.len() <= 1 { return v.to_vec(); }`"
+      - "`let (left, right) = v.split_at(v.len() / 2);` then sort both halves with `merge_sort`."
+      - "Return `merge(&merge_sort(left), &merge_sort(right))`, with `merge` written like the example but for `i32`."
+    harness: |
+      #[test]
+      fn sorts_a_small_list() {
+          assert_eq!(merge_sort(&[5, 2, 4, 6, 1, 3]), vec![1, 2, 3, 4, 5, 6], "merge_sort(&[5, 2, 4, 6, 1, 3])");
+      }
+
+      #[test]
+      fn keeps_duplicates_and_negatives() {
+          assert_eq!(merge_sort(&[3, -1, 3, 0, -1]), vec![-1, -1, 0, 3, 3], "merge_sort(&[3, -1, 3, 0, -1])");
+      }
+
+      #[test]
+      fn handles_empty_and_single_lists() {
+          assert_eq!(merge_sort(&[]), Vec::<i32>::new(), "merge_sort(&[])");
+          assert_eq!(merge_sort(&[42]), vec![42], "merge_sort(&[42])");
+      }
+
+      #[test]
+      fn merge_takes_the_smaller_front_item() {
+          assert_eq!(merge(&[1, 4, 9], &[2, 3, 10, 11]), vec![1, 2, 3, 4, 9, 10, 11], "merge(&[1, 4, 9], &[2, 3, 10, 11])");
+      }
+
+      #[test]
+      fn sorts_200000_numbers_quickly() {
+          let v: Vec<i32> = (0..200_000i64).map(|i| ((i * 2_654_435_761) % 1_000_003) as i32 - 500_000).collect();
+          let mut expected = v.clone();
+          expected.sort_unstable();
+          assert_eq!(merge_sort(&v) == expected, true, "merge_sort(200,000 numbers) is sorted");
+      }
+    more:
+      - task: |
+          Make insertion sort **generic**: `fn insertion_sort<T: PartialOrd>(v: &mut [T])` sorts any slice whose items can be compared, in place, using `swap`. It should work on numbers, floats and strings alike. No `sort` methods.
+        seed: |
+          fn insertion_sort<T: PartialOrd>(v: &mut [T]) {
+              todo!()
+          }
+        solution: |
+          fn insertion_sort<T: PartialOrd>(v: &mut [T]) {
+              for i in 1..v.len() {
+                  let mut j = i;
+                  while j > 0 && v[j - 1] > v[j] {
+                      v.swap(j - 1, j);
+                      j -= 1;
+                  }
+              }
+          }
+        forbid:
+          - pattern: '\.sort'
+            message: Write the insertion sort yourself.
+        harness: |
+          #[test]
+          fn sorts_integers() {
+              let mut v = [5, 2, 4, 6, 1, 3];
+              insertion_sort(&mut v);
+              assert_eq!(v, [1, 2, 3, 4, 5, 6], "insertion_sort([5, 2, 4, 6, 1, 3])");
+          }
+
+          #[test]
+          fn sorts_words() {
+              let mut v = ["pear", "apple", "fig"];
+              insertion_sort(&mut v);
+              assert_eq!(v, ["apple", "fig", "pear"], "insertion_sort([pear, apple, fig])");
+          }
+
+          #[test]
+          fn sorts_floats() {
+              let mut v = [2.5, -1.0, 0.25];
+              insertion_sort(&mut v);
+              assert_eq!(v, [-1.0, 0.25, 2.5], "insertion_sort([2.5, -1.0, 0.25])");
+          }
+
+          #[test]
+          fn leaves_sorted_and_empty_slices_alone() {
+              let mut v = [1, 2, 3];
+              insertion_sort(&mut v);
+              assert_eq!(v, [1, 2, 3], "insertion_sort([1, 2, 3])");
+              let mut e: [i32; 0] = [];
+              insertion_sort(&mut e);
+              assert_eq!(e.len(), 0, "insertion_sort([])");
+          }
+
+          #[test]
+          fn sorts_a_reversed_list() {
+              let mut v: Vec<u32> = (0..500).rev().collect();
+              insertion_sort(&mut v);
+              assert_eq!(v, (0..500).collect::<Vec<u32>>(), "insertion_sort(499 down to 0)");
+          }
+        hints:
+          - "The body is the example's insertion sort with `i32` replaced by `T`. `PartialOrd` gives you `>`."
+          - "For each `i` from 1, set `j = i` and swap `v[j - 1]` and `v[j]` while `j > 0 && v[j - 1] > v[j]`."
+      - task: |
+          A music app compares your ranking of songs with a friend's by counting **inversions**: pairs `i < j` where `v[i] > v[j]`. A sorted list has 0; a reversed list of n items has n(n-1)/2.
+
+          Write `fn count_inversions(v: &[i32]) -> u64`. Checking every pair is O(n²), and the tests use 100,000 numbers. Modify merge sort: while merging, every time you take an item from the **right** half, it's smaller than everything still waiting in the left half, so it forms one inversion with each of them (`left.len() - i` inversions at once). Have a recursive helper return both the sorted Vec and the count.
+        seed: |
+          fn count_inversions(v: &[i32]) -> u64 {
+              todo!()
+          }
+        solution: |
+          fn sort_and_count(v: &[i32]) -> (Vec<i32>, u64) {
+              if v.len() <= 1 {
+                  return (v.to_vec(), 0);
+              }
+              let (l, r) = v.split_at(v.len() / 2);
+              let (left, a) = sort_and_count(l);
+              let (right, b) = sort_and_count(r);
+              let mut count = a + b;
+              let mut out = Vec::with_capacity(v.len());
+              let (mut i, mut j) = (0, 0);
+              while i < left.len() && j < right.len() {
+                  if left[i] <= right[j] {
+                      out.push(left[i]);
+                      i += 1;
+                  } else {
+                      out.push(right[j]);
+                      j += 1;
+                      count += (left.len() - i) as u64;
+                  }
+              }
+              out.extend_from_slice(&left[i..]);
+              out.extend_from_slice(&right[j..]);
+              (out, count)
+          }
+
+          fn count_inversions(v: &[i32]) -> u64 {
+              sort_and_count(v).1
+          }
+        harness: |
+          #[test]
+          fn counts_a_small_example() {
+              assert_eq!(count_inversions(&[2, 4, 1, 3, 5]), 3, "count_inversions(&[2, 4, 1, 3, 5])");
+          }
+
+          #[test]
+          fn sorted_lists_have_none() {
+              assert_eq!(count_inversions(&[1, 2, 3, 4]), 0, "count_inversions(&[1, 2, 3, 4])");
+              assert_eq!(count_inversions(&[]), 0, "count_inversions(&[])");
+          }
+
+          #[test]
+          fn equal_items_are_not_inversions() {
+              assert_eq!(count_inversions(&[3, 3, 3]), 0, "count_inversions(&[3, 3, 3])");
+              assert_eq!(count_inversions(&[3, 1, 3, 1]), 3, "count_inversions(&[3, 1, 3, 1])");
+          }
+
+          #[test]
+          fn counts_a_scrambled_list() {
+              let v: Vec<i32> = (0..3000i64).map(|i| ((i * 2_654_435_761) % 1_000_003) as i32 - 500_000).collect();
+              assert_eq!(count_inversions(&v), 2_261_164, "count_inversions(3,000 scrambled numbers)");
+          }
+
+          #[test]
+          fn counts_100000_reversed_numbers_quickly() {
+              let v: Vec<i32> = (0..100_000).rev().collect();
+              assert_eq!(count_inversions(&v), 4_999_950_000, "count_inversions(99,999 down to 0)");
+          }
+        hints:
+          - "Write `fn sort_and_count(v: &[i32]) -> (Vec<i32>, u64)`; the base case returns `(v.to_vec(), 0)`."
+          - "Sort and count both halves, add their counts, then merge. Taking from the left on ties (`<=`) keeps equal items from counting."
+          - "When you take `right[j]`, add `(left.len() - i) as u64` to the count: every item still left in `left` is bigger."
+
+  - title: Two pointers
+    id: algorithms-5
+    text: |
+      Many problems that look like "check every pair" (O(n²)) can be solved with **two indices** that move through the data in a smart way, touching each item once: O(n) time and O(1) extra memory. Three common patterns:
+
+      1. **From both ends** (on sorted data or symmetric questions): `i` starts at the front, `j` at the back, and each step moves one of them inward.
+      2. **Read and write** (same direction): `read` visits every item, `write` marks where the next kept item goes. That's how you filter in place.
+      3. **Two sequences**: one index per sequence, like the merge in merge sort.
+
+      Checking a palindrome from both ends, ignoring case and punctuation:
+
+      ```rust run
+      fn is_palindrome(text: &str) -> bool {
+          let letters: Vec<char> = text
+              .chars()
+              .filter(|c| c.is_alphanumeric())
+              .map(|c| c.to_ascii_lowercase())
+              .collect();
+          if letters.is_empty() {
+              return true;
+          }
+          let (mut i, mut j) = (0, letters.len() - 1);
+          while i < j {
+              if letters[i] != letters[j] {
+                  return false;
+              }
+              i += 1;
+              j -= 1;
+          }
+          true
+      }
+
+      fn main() {
+          for s in ["Never odd or even", "Rust", "A man, a plan, a canal: Panama"] {
+              println!("{s:?}: {}", is_palindrome(s));
+          }
+      }
+      ```
+
+      ```output
+      "Never odd or even": true
+      "Rust": false
+      "A man, a plan, a canal: Panama": true
+      ```
+
+      The chars are collected into a `Vec<char>` first because a `&str` can't be indexed by position (UTF-8, remember).
+
+      Read and write pointers, removing the zero readings from a Vec in place:
+
+      ```rust run
+      fn remove_zeros(v: &mut Vec<i32>) {
+          let mut write = 0;
+          for read in 0..v.len() {
+              if v[read] != 0 {
+                  v[write] = v[read];
+                  write += 1;
+              }
+          }
+          v.truncate(write);
+      }
+
+      fn main() {
+          let mut readings = vec![0, 4, 0, 0, 7, 2, 0];
+          remove_zeros(&mut readings);
+          println!("{readings:?}");
+      }
+      ```
+
+      ```output
+      [4, 7, 2]
+      ```
+
+      That's what `v.retain(|&x| x != 0)` does inside; in real code, call `retain`. Calling `v.remove(i)` for each zero instead would shift the rest of the Vec every time: O(n²).
+
+      ### Why "from both ends" works on sorted data
+
+      Looking for two numbers in a sorted slice that add up to a target: start with the smallest (`i`) and the largest (`j`). If their sum is too small, the smallest can't be part of any answer (even the largest partner isn't enough), so move `i` right. If the sum is too big, the largest can't be part of any answer, so move `j` left. Each step rules out one item for good.
+
+      ### Common mistakes
+
+      - **`j -= 1` below zero.** With `usize`, `0 - 1` panics with `attempt to subtract with overflow`. Loop `while i < j` so `j` is at least 1 when you decrement it, and handle the empty case before computing `len() - 1`.
+      - **Two pointers on unsorted data** for a sum question: the "rule out one item" argument needs the order.
+      - **Moving the wrong pointer.** Write down what each move rules out; if you can't say, the loop is probably wrong.
+
+      **Your turn:** write `fn pair_with_sum(sorted: &[i32], target: i32) -> Option<(usize, usize)>` that returns the indices `(i, j)`, `i < j`, of two items of the sorted slice that add up to `target`, or `None`. Use two pointers from both ends, with no HashMap (O(1) extra memory). In every test at most one pair works. The tests include a slice of 200,000 numbers.
+    seed: |
+      fn pair_with_sum(sorted: &[i32], target: i32) -> Option<(usize, usize)> {
+          todo!()
+      }
+    solution: |
+      use std::cmp::Ordering;
+
+      fn pair_with_sum(sorted: &[i32], target: i32) -> Option<(usize, usize)> {
+          if sorted.len() < 2 {
+              return None;
+          }
+          let (mut i, mut j) = (0, sorted.len() - 1);
+          while i < j {
+              match (sorted[i] + sorted[j]).cmp(&target) {
+                  Ordering::Equal => return Some((i, j)),
+                  Ordering::Less => i += 1,
+                  Ordering::Greater => j -= 1,
+              }
+          }
+          None
+      }
+    forbid:
+      - pattern: 'HashMap|HashSet|BTree|binary_search'
+        message: Use two pointers only, without extra collections or binary search.
+    hints:
+      - "Return `None` for fewer than two items, then start with `i = 0` and `j = sorted.len() - 1`."
+      - "While `i < j`, compare `sorted[i] + sorted[j]` with `target`: too small means `i += 1`, too big means `j -= 1`."
+      - "Equal: `return Some((i, j))`. If the pointers meet, there's no pair."
+    harness: |
+      #[test]
+      fn finds_the_pair() {
+          assert_eq!(pair_with_sum(&[1, 3, 4, 6, 9, 11], 13), Some((2, 4)), "pair_with_sum(&[1, 3, 4, 6, 9, 11], 13)");
+      }
+
+      #[test]
+      fn finds_pairs_at_the_ends() {
+          assert_eq!(pair_with_sum(&[2, 5, 8, 12], 14), Some((0, 3)), "pair_with_sum(&[2, 5, 8, 12], 14)");
+      }
+
+      #[test]
+      fn handles_negative_numbers() {
+          assert_eq!(pair_with_sum(&[-8, -3, 0, 5, 7], -1), Some((0, 4)), "pair_with_sum(&[-8, -3, 0, 5, 7], -1)");
+      }
+
+      #[test]
+      fn returns_none_when_nothing_adds_up() {
+          assert_eq!(pair_with_sum(&[1, 2, 4], 10), None, "pair_with_sum(&[1, 2, 4], 10)");
+          assert_eq!(pair_with_sum(&[5], 10), None, "pair_with_sum(&[5], 10)");
+          assert_eq!(pair_with_sum(&[], 0), None, "pair_with_sum(&[], 0)");
+      }
+
+      #[test]
+      fn searches_200000_numbers_quickly() {
+          let mut v: Vec<i32> = (0..199_999).map(|i| i * 2).collect();
+          v.push(1_000_001);
+          assert_eq!(pair_with_sum(&v, 1_200_001), Some((100_000, 199_999)), "pair_with_sum(200,000 numbers, 1200001)");
+      }
+    more:
+      - task: |
+          Write `fn dedup_sorted(v: &mut Vec<i32>)` that removes repeated values from a **sorted** Vec in place, keeping one of each, with read and write pointers. No `dedup`, `retain`, `remove` or sets. The tests include 200,000 copies of the same value, where calling `remove` for each repeat would be O(n²).
+        seed: |
+          fn dedup_sorted(v: &mut Vec<i32>) {
+              todo!()
+          }
+        solution: |
+          fn dedup_sorted(v: &mut Vec<i32>) {
+              if v.is_empty() {
+                  return;
+              }
+              let mut write = 1;
+              for read in 1..v.len() {
+                  if v[read] != v[write - 1] {
+                      v[write] = v[read];
+                      write += 1;
+                  }
+              }
+              v.truncate(write);
+          }
+        forbid:
+          - pattern: 'dedup\(|retain|\.remove\(|HashSet|BTreeSet'
+            message: Use read and write indices, without `dedup`, `retain`, `remove` or a set.
+        harness: |
+          #[test]
+          fn removes_repeats() {
+              let mut v = vec![1, 1, 2, 3, 3, 3, 7];
+              dedup_sorted(&mut v);
+              assert_eq!(v, vec![1, 2, 3, 7], "dedup_sorted([1, 1, 2, 3, 3, 3, 7])");
+          }
+
+          #[test]
+          fn leaves_unique_values_alone() {
+              let mut v = vec![-2, 0, 5];
+              dedup_sorted(&mut v);
+              assert_eq!(v, vec![-2, 0, 5], "dedup_sorted([-2, 0, 5])");
+          }
+
+          #[test]
+          fn handles_empty_and_single_vecs() {
+              let mut v: Vec<i32> = vec![];
+              dedup_sorted(&mut v);
+              assert_eq!(v, Vec::<i32>::new(), "dedup_sorted([])");
+              let mut w = vec![4];
+              dedup_sorted(&mut w);
+              assert_eq!(w, vec![4], "dedup_sorted([4])");
+          }
+
+          #[test]
+          fn handles_200000_copies_quickly() {
+              let mut v = vec![9; 200_000];
+              v.push(10);
+              dedup_sorted(&mut v);
+              assert_eq!(v, vec![9, 10], "dedup_sorted(200,000 nines and a ten)");
+          }
+        hints:
+          - "The first item is always kept, so start with `write = 1` (after handling an empty Vec)."
+          - "For each `read` from 1: if `v[read]` differs from the last kept value `v[write - 1]`, copy it to `v[write]` and increase `write`."
+          - "Finish with `v.truncate(write);`"
+      - task: |
+          A city builds a reservoir between two of the walls along a valley. `walls[i]` is the height of wall `i`, and walls are one unit apart. Water between walls `i < j` fills up to the lower wall: the amount is `min(walls[i], walls[j]) * (j - i)`. Write `fn max_water(walls: &[u32]) -> u64`: the most water any pair of walls can hold (0 with fewer than two walls).
+
+          Start with the two outermost walls. Then move the pointer at the **lower** wall inward: keeping the lower wall can never do better, because any pair using it is narrower and still limited by its height. The tests have 100,000 walls.
+        seed: |
+          fn max_water(walls: &[u32]) -> u64 {
+              todo!()
+          }
+        solution: |
+          fn max_water(walls: &[u32]) -> u64 {
+              if walls.len() < 2 {
+                  return 0;
+              }
+              let (mut i, mut j) = (0, walls.len() - 1);
+              let mut best = 0;
+              while i < j {
+                  let height = walls[i].min(walls[j]) as u64;
+                  best = best.max(height * (j - i) as u64);
+                  if walls[i] < walls[j] {
+                      i += 1;
+                  } else {
+                      j -= 1;
+                  }
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn finds_the_best_pair() {
+              assert_eq!(max_water(&[1, 8, 6, 2, 5, 4, 8, 3, 7]), 49, "max_water(&[1, 8, 6, 2, 5, 4, 8, 3, 7])");
+          }
+
+          #[test]
+          fn two_walls_hold_the_lower_height() {
+              assert_eq!(max_water(&[3, 9]), 3, "max_water(&[3, 9])");
+          }
+
+          #[test]
+          fn wide_low_walls_can_beat_narrow_tall_ones() {
+              assert_eq!(max_water(&[4, 1, 1, 1, 1, 20, 20, 4]), 28, "max_water(&[4, 1, 1, 1, 1, 20, 20, 4])");
+          }
+
+          #[test]
+          fn fewer_than_two_walls_hold_nothing() {
+              assert_eq!(max_water(&[7]), 0, "max_water(&[7])");
+              assert_eq!(max_water(&[]), 0, "max_water(&[])");
+          }
+
+          #[test]
+          fn checks_100000_walls_quickly() {
+              let walls: Vec<u32> = (0..100_000u32).map(|i| i * 7919 % 10_000).collect();
+              assert_eq!(max_water(&walls), 992_441_032, "max_water(100,000 walls)");
+          }
+        hints:
+          - "Start with `i = 0`, `j = walls.len() - 1` and `best = 0`."
+          - "Each step: the water is `walls[i].min(walls[j]) as u64 * (j - i) as u64`; keep the maximum."
+          - "Then move the lower side: `if walls[i] < walls[j] { i += 1 } else { j -= 1 }`."
+
+  - title: Sliding window
+    id: algorithms-6
+    text: |
+      A **window** is a run of consecutive items, `v[left..=right]`. Many questions are about windows: the best 7-day sales streak, the busiest hour of logs, the longest stretch under budget. Recomputing every window from scratch costs O(n·k) for windows of size k. **Sliding** the window instead costs O(n): when it moves one step, add the item that enters and remove the item that leaves.
+
+      ### Fixed size
+
+      ```rust run
+      fn main() {
+          let visits = [3, 8, 2, 9, 4, 1, 7];
+          let k = 3;
+
+          // Simple but recomputes each window: O(n * k)
+          let sums: Vec<i32> = visits.windows(k).map(|w| w.iter().sum()).collect();
+          println!("{sums:?}");
+
+          // Sliding: add the new item, subtract the one leaving: O(n)
+          let mut sum: i32 = visits[..k].iter().sum();
+          let mut sliding = vec![sum];
+          for right in k..visits.len() {
+              sum += visits[right] - visits[right - k];
+              sliding.push(sum);
+          }
+          println!("{sliding:?}");
+      }
+      ```
+
+      ```output
+      [13, 19, 15, 14, 12]
+      [13, 19, 15, 14, 12]
+      ```
+
+      `windows(k)` is great for small k (comparing neighbors with `windows(2)`, for example). For k in the thousands, slide.
+
+      ### Variable size
+
+      For "the longest (or shortest) window where some rule holds", grow the window by moving `right` one step at a time, and **shrink it from the left while the rule is broken**:
+
+      ```rust run
+      fn longest_within_budget(costs: &[u32], budget: u32) -> usize {
+          let mut best = 0;
+          let mut left = 0;
+          let mut sum = 0;
+          for right in 0..costs.len() {
+              sum += costs[right];
+              while sum > budget {
+                  sum -= costs[left];
+                  left += 1;
+              }
+              best = best.max(right + 1 - left);
+          }
+          best
+      }
+
+      fn main() {
+          let costs = [4, 2, 1, 7, 1, 1, 3, 2];
+          println!("{}", longest_within_budget(&costs, 7));
+      }
+      ```
+
+      ```output
+      4
+      ```
+
+      There's a loop inside a loop, yet it's O(n): `left` only ever moves forward, so across the whole run the inner `while` executes at most n times in total. Each item enters the window once and leaves once.
+
+      ### Common mistakes
+
+      - **`if` instead of `while`** when shrinking: one step may not be enough to fix the window.
+      - **Negative numbers.** Shrinking a window with negative numbers can *increase* its sum, so the "shrink while too big" logic breaks. Use prefix sums (next step) for those.
+      - **Off by one in the length.** With an inclusive `right`, the window `left..=right` has `right + 1 - left` items. (Write it in that order: `right - left + 1` is the same number, but `+ 1 - left` reads naturally as "count of indices".)
+
+      **Your turn:** write `fn max_window_sum(values: &[i64], k: usize) -> Option<i64>`: the largest total of `k` consecutive values, or `None` if `k` is 0 or larger than the slice. Slide the window. The tests use 200,000 values with `k` = 100,000, so summing each window from scratch is too slow.
+    seed: |
+      fn max_window_sum(values: &[i64], k: usize) -> Option<i64> {
+          todo!()
+      }
+    solution: |
+      fn max_window_sum(values: &[i64], k: usize) -> Option<i64> {
+          if k == 0 || k > values.len() {
+              return None;
+          }
+          let mut sum: i64 = values[..k].iter().sum();
+          let mut best = sum;
+          for right in k..values.len() {
+              sum += values[right] - values[right - k];
+              best = best.max(sum);
+          }
+          Some(best)
+      }
+    hints:
+      - "Return `None` when `k == 0 || k > values.len()`."
+      - "The first window's sum is `values[..k].iter().sum()`. Keep it as the best so far."
+      - "For each `right` in `k..values.len()`: `sum += values[right] - values[right - k];` and update the best."
+    harness: |
+      #[test]
+      fn finds_the_best_window() {
+          assert_eq!(max_window_sum(&[3, 8, 2, 9, 4, 1, 7], 3), Some(19), "max_window_sum(&[3, 8, 2, 9, 4, 1, 7], 3)");
+      }
+
+      #[test]
+      fn handles_negative_values() {
+          assert_eq!(max_window_sum(&[-5, -2, -9, -1], 2), Some(-7), "max_window_sum(&[-5, -2, -9, -1], 2)");
+      }
+
+      #[test]
+      fn a_window_of_everything_is_the_total() {
+          assert_eq!(max_window_sum(&[4, -1, 6], 3), Some(9), "max_window_sum(&[4, -1, 6], 3)");
+      }
+
+      #[test]
+      fn impossible_windows_give_none() {
+          assert_eq!(max_window_sum(&[1, 2], 3), None, "max_window_sum(&[1, 2], 3)");
+          assert_eq!(max_window_sum(&[1, 2], 0), None, "max_window_sum(&[1, 2], 0)");
+          assert_eq!(max_window_sum(&[], 1), None, "max_window_sum(&[], 1)");
+      }
+
+      #[test]
+      fn slides_a_100000_wide_window_quickly() {
+          let v: Vec<i64> = (0..200_000i64).map(|i| (i * 7919) % 2001 - 1000).collect();
+          assert_eq!(max_window_sum(&v, 100_000), Some(3605), "max_window_sum(200,000 values, 100000)");
+          assert_eq!(max_window_sum(&v, 1), Some(1000), "max_window_sum(200,000 values, 1)");
+      }
+    more:
+      - task: |
+          A fundraiser wants the **shortest** run of consecutive days whose donations reach a target. Write `fn shortest_at_least(values: &[u32], target: u64) -> Option<usize>`: the length of the shortest window with a sum of at least `target`, or `None` if no window gets there. All values are non-negative, so a variable-size window works: grow it to the right, and while the sum is at least the target, record the length and shrink from the left. The tests have 200,000 values.
+        seed: |
+          fn shortest_at_least(values: &[u32], target: u64) -> Option<usize> {
+              todo!()
+          }
+        solution: |
+          fn shortest_at_least(values: &[u32], target: u64) -> Option<usize> {
+              let mut best: Option<usize> = None;
+              let mut left = 0;
+              let mut sum: u64 = 0;
+              for right in 0..values.len() {
+                  sum += values[right] as u64;
+                  while sum >= target && left <= right {
+                      let len = right + 1 - left;
+                      best = Some(best.map_or(len, |b| b.min(len)));
+                      sum -= values[left] as u64;
+                      left += 1;
+                  }
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn finds_the_shortest_window() {
+              assert_eq!(shortest_at_least(&[2, 3, 1, 2, 4, 3], 7), Some(2), "shortest_at_least(&[2, 3, 1, 2, 4, 3], 7)");
+          }
+
+          #[test]
+          fn one_big_value_is_enough() {
+              assert_eq!(shortest_at_least(&[1, 1, 50, 1], 10), Some(1), "shortest_at_least(&[1, 1, 50, 1], 10)");
+          }
+
+          #[test]
+          fn may_need_everything() {
+              assert_eq!(shortest_at_least(&[1, 2, 3], 6), Some(3), "shortest_at_least(&[1, 2, 3], 6)");
+          }
+
+          #[test]
+          fn returns_none_when_the_target_is_out_of_reach() {
+              assert_eq!(shortest_at_least(&[1, 2, 3], 7), None, "shortest_at_least(&[1, 2, 3], 7)");
+              assert_eq!(shortest_at_least(&[], 1), None, "shortest_at_least(&[], 1)");
+          }
+
+          #[test]
+          fn checks_200000_days_quickly() {
+              let v: Vec<u32> = (0..200_000u32).map(|i| i % 100).collect();
+              assert_eq!(shortest_at_least(&v, 1_000_000), Some(20_202), "shortest_at_least(200,000 days, 1000000)");
+          }
+        hints:
+          - "Keep `left`, a running `sum: u64`, and `best: Option<usize>`."
+          - "After adding `values[right]`, loop `while sum >= target && left <= right`: the window `left..=right` qualifies, so record `right + 1 - left`, then remove `values[left]` and move `left` on."
+          - "`best = Some(best.map_or(len, |b| b.min(len)));` keeps the smallest length seen."
+      - task: |
+          The password checker wants the **longest run of characters without a repeat**. Write `fn longest_unique_run(text: &str) -> usize`, counting characters (not bytes). For `"abcabcbb"` it's 3 (`"abc"`); for `"pwwkew"` it's 3 (`"wke"`).
+
+          Slide a window over the characters and keep a `HashMap<char, usize>` of the position where each character was last seen. When the new character was last seen inside the window, move `left` just past that position. The tests include a 200,000-character text whose longest unique run is 20,000 characters, so restarting from every position is too slow.
+        seed: |
+          use std::collections::HashMap;
+
+          fn longest_unique_run(text: &str) -> usize {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn longest_unique_run(text: &str) -> usize {
+              let mut last_seen: HashMap<char, usize> = HashMap::new();
+              let mut best = 0;
+              let mut left = 0;
+              for (right, c) in text.chars().enumerate() {
+                  if let Some(&prev) = last_seen.get(&c) {
+                      if prev >= left {
+                          left = prev + 1;
+                      }
+                  }
+                  last_seen.insert(c, right);
+                  best = best.max(right + 1 - left);
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn finds_abc() {
+              assert_eq!(longest_unique_run("abcabcbb"), 3, "longest_unique_run(\"abcabcbb\")");
+          }
+
+          #[test]
+          fn the_run_can_be_in_the_middle() {
+              assert_eq!(longest_unique_run("pwwkew"), 3, "longest_unique_run(\"pwwkew\")");
+          }
+
+          #[test]
+          fn ignores_repeats_from_before_the_window() {
+              assert_eq!(longest_unique_run("abba"), 2, "longest_unique_run(\"abba\")");
+              assert_eq!(longest_unique_run("tmmzuxt"), 5, "longest_unique_run(\"tmmzuxt\")");
+          }
+
+          #[test]
+          fn counts_characters_not_bytes() {
+              assert_eq!(longest_unique_run("héllo wörld"), 7, "longest_unique_run(\"héllo wörld\")");
+          }
+
+          #[test]
+          fn handles_empty_and_repeated_text() {
+              assert_eq!(longest_unique_run(""), 0, "longest_unique_run(\"\")");
+              assert_eq!(longest_unique_run("zzzz"), 1, "longest_unique_run(\"zzzz\")");
+          }
+
+          #[test]
+          fn handles_200000_characters_quickly() {
+              let text: String = (0..200_000u32).map(|i| char::from_u32(0x4E00 + i % 20_000).unwrap()).collect();
+              assert_eq!(longest_unique_run(&text), 20_000, "longest_unique_run(200,000 characters)");
+          }
+        hints:
+          - "Loop over `text.chars().enumerate()`, so `right` counts characters."
+          - "If `last_seen.get(&c)` finds a position `prev` with `prev >= left`, the window already holds `c`: set `left = prev + 1`. (An older `prev` before `left` doesn't matter.)"
+          - "Then `last_seen.insert(c, right);` and `best = best.max(right + 1 - left);`"
+
+  - title: Prefix sums
+    id: algorithms-7
+    text: |
+      When you have to answer many "what's the total from day a to day b?" questions about data that doesn't change, precompute **prefix sums**: `prefix[i]` is the sum of the first `i` values, so `prefix[0] = 0` and `prefix` has one more entry than the data. Then the sum of `v[a..b]` is just `prefix[b] - prefix[a]`: O(1) per question after O(n) setup.
+
+      ```rust run
+      fn main() {
+          let sales = [120, 80, 45, 200, 15, 90, 60]; // one number per day
+          let mut prefix = vec![0; sales.len() + 1];
+          for i in 0..sales.len() {
+              prefix[i + 1] = prefix[i] + sales[i];
+          }
+          println!("{prefix:?}");
+          println!("days 2..5: {}", prefix[5] - prefix[2]);
+          println!("whole week: {}", prefix[7] - prefix[0]);
+
+          // The same running totals with an iterator
+          let running: Vec<i32> = sales
+              .iter()
+              .scan(0, |total, &x| {
+                  *total += x;
+                  Some(*total)
+              })
+              .collect();
+          println!("{running:?}");
+      }
+      ```
+
+      ```output
+      [0, 120, 200, 245, 445, 460, 550, 610]
+      days 2..5: 260
+      whole week: 610
+      [120, 200, 245, 445, 460, 550, 610]
+      ```
+
+      `scan` is an iterator adapter you haven't used yet: it carries a piece of state (`total`, starting at 0) from item to item and yields whatever the closure returns. It's handy for running totals.
+
+      The extra 0 at the front is what makes the formula work for ranges starting at day 0, with no special case.
+
+      ### Counting with prefix sums
+
+      Prefix sums also turn "a range with sum k" into "two prefixes that differ by k". While walking the data with a running total, the number of ranges ending here with sum `k` equals the number of earlier prefixes equal to `total - k`. Keep those counts in a HashMap and the whole count is O(n). Unlike the sliding window, this works with negative numbers.
+
+      The same idea works in two dimensions (sums over rectangles of an image or spreadsheet) with a 2D prefix table.
+
+      ### Common mistakes
+
+      - **A prefix array of length n.** Without the leading 0, ranges starting at 0 need a special case and off-by-one bugs follow.
+      - **Overflow.** Totals grow; use `i64`/`u64` for big inputs (debug builds panic on overflow, release builds silently wrap).
+      - **Rebuilding the prefix array for every question,** which makes each question O(n) again.
+      - **Data that changes often.** Every update shifts all later prefixes (O(n)). For many updates *and* many range questions, a **Fenwick tree** or **segment tree** does both in O(log n).
+
+      **Your turn:** write a `RangeSum` type with `fn new(values: &[i64]) -> Self` (builds the prefix sums) and `fn sum(&self, from: usize, to: usize) -> i64` (the sum of `values[from..to]`, half-open, with `from <= to <= len`). The tests ask 200,000 questions about 200,000 values.
+    seed: |
+      struct RangeSum {
+          prefix: Vec<i64>,
+      }
+
+      impl RangeSum {
+          fn new(values: &[i64]) -> Self {
+              todo!()
+          }
+
+          fn sum(&self, from: usize, to: usize) -> i64 {
+              todo!()
+          }
+      }
+    solution: |
+      struct RangeSum {
+          prefix: Vec<i64>,
+      }
+
+      impl RangeSum {
+          fn new(values: &[i64]) -> Self {
+              let mut prefix = Vec::with_capacity(values.len() + 1);
+              prefix.push(0);
+              for (i, &v) in values.iter().enumerate() {
+                  prefix.push(prefix[i] + v);
+              }
+              RangeSum { prefix }
+          }
+
+          fn sum(&self, from: usize, to: usize) -> i64 {
+              self.prefix[to] - self.prefix[from]
+          }
+      }
+    hints:
+      - "In `new`, start the prefix Vec with a single 0, then push the running total after each value."
+      - "`prefix[i + 1] = prefix[i] + values[i]`, so `prefix` ends up one longer than `values`."
+      - "`sum(from, to)` is `self.prefix[to] - self.prefix[from]`."
+    harness: |
+      #[test]
+      fn sums_a_range() {
+          let r = RangeSum::new(&[120, 80, 45, 200, 15, 90, 60]);
+          assert_eq!(r.sum(2, 5), 260, "sum(2, 5)");
+      }
+
+      #[test]
+      fn sums_ranges_touching_the_ends() {
+          let r = RangeSum::new(&[120, 80, 45, 200, 15, 90, 60]);
+          assert_eq!(r.sum(0, 7), 610, "sum(0, 7)");
+          assert_eq!(r.sum(0, 1), 120, "sum(0, 1)");
+          assert_eq!(r.sum(6, 7), 60, "sum(6, 7)");
+      }
+
+      #[test]
+      fn an_empty_range_sums_to_zero() {
+          let r = RangeSum::new(&[5, 6]);
+          assert_eq!(r.sum(1, 1), 0, "sum(1, 1)");
+          let e = RangeSum::new(&[]);
+          assert_eq!(e.sum(0, 0), 0, "sum(0, 0) on no values");
+      }
+
+      #[test]
+      fn handles_negative_values() {
+          let r = RangeSum::new(&[-4, 10, -3]);
+          assert_eq!(r.sum(0, 3), 3, "sum(0, 3) of [-4, 10, -3]");
+      }
+
+      #[test]
+      fn answers_200000_questions_quickly() {
+          let values: Vec<i64> = (0..200_000i64).map(|i| (i * 7919) % 201 - 100).collect();
+          let r = RangeSum::new(&values);
+          let mut total = 0;
+          for q in 0..200_000usize {
+              let from = (q * 7) % 100_000;
+              total += r.sum(from, from + 50_000 + q % 13);
+          }
+          assert_eq!(total, 6485, "sum of 200,000 answers");
+      }
+    more:
+      - task: |
+          Find the **balance point** of a list of weights: the first index `i` where the total of everything to the left of `i` equals the total of everything to the right of `i` (the item at `i` itself counts for neither side). Write `fn balance_point(values: &[i64]) -> Option<usize>`. For `[1, 7, 3, 6, 5, 6]` it's 3 (1 + 7 + 3 = 11 = 5 + 6).
+
+          Compute the total once. Then walk the list with a running `left` sum: the right side is `total - left - values[i]`. That's O(n); recomputing both sides at every index is O(n²), and the tests have 200,001 values.
+        seed: |
+          fn balance_point(values: &[i64]) -> Option<usize> {
+              todo!()
+          }
+        solution: |
+          fn balance_point(values: &[i64]) -> Option<usize> {
+              let total: i64 = values.iter().sum();
+              let mut left = 0;
+              for (i, &v) in values.iter().enumerate() {
+                  if left == total - left - v {
+                      return Some(i);
+                  }
+                  left += v;
+              }
+              None
+          }
+        harness: |
+          #[test]
+          fn finds_the_balance_point() {
+              assert_eq!(balance_point(&[1, 7, 3, 6, 5, 6]), Some(3), "balance_point(&[1, 7, 3, 6, 5, 6])");
+          }
+
+          #[test]
+          fn the_first_index_can_balance() {
+              assert_eq!(balance_point(&[2, 1, -1]), Some(0), "balance_point(&[2, 1, -1])");
+          }
+
+          #[test]
+          fn returns_the_first_of_several() {
+              assert_eq!(balance_point(&[0, 0, 0]), Some(0), "balance_point(&[0, 0, 0])");
+          }
+
+          #[test]
+          fn returns_none_without_a_balance_point() {
+              assert_eq!(balance_point(&[1, 2, 3]), None, "balance_point(&[1, 2, 3])");
+              assert_eq!(balance_point(&[]), None, "balance_point(&[])");
+          }
+
+          #[test]
+          fn balances_200001_weights_quickly() {
+              let v = vec![1i64; 200_001];
+              assert_eq!(balance_point(&v), Some(100_000), "balance_point(200,001 ones)");
+          }
+        hints:
+          - "`let total: i64 = values.iter().sum();` and `let mut left = 0;`"
+          - "At index `i` the right side is `total - left - values[i]`. If it equals `left`, return `Some(i)`."
+          - "Otherwise add `values[i]` to `left` and move on. After the loop, `None`."
+      - task: |
+          Finance wants to know how many runs of consecutive transactions net out to exactly `k` (for example, how many periods ended with no net change). Write `fn count_subarrays_with_sum(values: &[i64], k: i64) -> u64`. Values can be negative, so a sliding window won't do.
+
+          Walk the values with a running total and a `HashMap<i64, u64>` counting how often each prefix total has appeared, starting with the empty prefix (total 0, seen once). At each step, add the number of earlier prefixes equal to `total - k`, then record the current total. The tests include 100,000 values, where checking every range would be O(n²).
+        seed: |
+          use std::collections::HashMap;
+
+          fn count_subarrays_with_sum(values: &[i64], k: i64) -> u64 {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn count_subarrays_with_sum(values: &[i64], k: i64) -> u64 {
+              let mut seen: HashMap<i64, u64> = HashMap::new();
+              seen.insert(0, 1);
+              let mut total = 0;
+              let mut count = 0;
+              for &v in values {
+                  total += v;
+                  if let Some(&n) = seen.get(&(total - k)) {
+                      count += n;
+                  }
+                  *seen.entry(total).or_insert(0) += 1;
+              }
+              count
+          }
+        harness: |
+          #[test]
+          fn counts_ranges_with_the_sum() {
+              assert_eq!(count_subarrays_with_sum(&[1, 1, 1], 2), 2, "count_subarrays_with_sum(&[1, 1, 1], 2)");
+              assert_eq!(count_subarrays_with_sum(&[1, 2, 3], 3), 2, "count_subarrays_with_sum(&[1, 2, 3], 3)");
+          }
+
+          #[test]
+          fn handles_negative_values() {
+              assert_eq!(count_subarrays_with_sum(&[3, -3, 3, -3], 0), 4, "count_subarrays_with_sum(&[3, -3, 3, -3], 0)");
+          }
+
+          #[test]
+          fn counts_nothing_when_no_range_matches() {
+              assert_eq!(count_subarrays_with_sum(&[5, 5], 3), 0, "count_subarrays_with_sum(&[5, 5], 3)");
+              assert_eq!(count_subarrays_with_sum(&[], 0), 0, "count_subarrays_with_sum(&[], 0)");
+          }
+
+          #[test]
+          fn counts_100000_zeros_quickly() {
+              let v = vec![0i64; 100_000];
+              assert_eq!(count_subarrays_with_sum(&v, 0), 5_000_050_000, "count_subarrays_with_sum(100,000 zeros, 0)");
+          }
+        hints:
+          - "Start the map with `seen.insert(0, 1);`: the empty prefix before any value."
+          - "For each value: `total += v;` then add `seen.get(&(total - k))` (if any) to the count."
+          - "Only then record the current prefix: `*seen.entry(total).or_insert(0) += 1;`"

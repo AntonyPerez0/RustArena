@@ -1,0 +1,1323 @@
+# Reference pages at /topics/<slug>: the Ownership phase (ownership, borrowing, slices) and the borrow checker's error codes.
+topics:
+  - slug: ownership-and-moves
+    title: "Ownership and moves in Rust"
+    description: "Rust's ownership rules explained: one owner per value, moves on assignment and function calls, drop at end of scope, and how to fix use after move."
+    modules: [ownership]
+    body: |
+      **Ownership** is how Rust manages memory without a garbage collector and without you calling `free`. The compiler checks three rules:
+
+      1. Every value has exactly one **owner**, the variable (or struct field, or collection) responsible for it.
+      2. There is only one owner at a time.
+      3. When the owner goes out of scope, the value is **dropped**: its memory (and any file, socket or lock it holds) is released.
+
+      Rule 3 means cleanup always happens, exactly once, at a place you can see in the code. Rules 1 and 2 are what make "exactly once" possible.
+
+      ## Moves
+
+      A `String` is a small handle on the stack (pointer, length, capacity) pointing at text on the heap. If assigning one `String` to another simply copied the handle, two variables would point at the same text and both would try to free it: a **double free**. Rust prevents that by **moving** instead:
+
+      ```rust compile_fail
+      fn main() {
+          let s1 = String::from("crab");
+          let s2 = s1;
+          println!("{s1} {s2}");
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `s1`
+      ```
+
+      After `let s2 = s1;`, `s2` owns the text and `s1` is no longer usable. Nothing on the heap was copied; the move is as cheap as copying three numbers. The compiler simply stops you from using the old name.
+
+      The same happens when you pass a value to a function: the parameter becomes the owner, and the value is dropped when the function ends, unless the function gives it back by returning it.
+
+      ```rust run
+      fn shout(mut msg: String) -> String {
+          msg.push('!');
+          msg
+      }
+
+      fn main() {
+          let msg = String::from("hello");
+          let msg = shout(msg);
+          println!("{msg}");
+      }
+      ```
+
+      ```output
+      hello!
+      ```
+
+      ## What moves and what copies
+
+      Simple values that live entirely on the stack (`i32`, `f64`, `bool`, `char`, and tuples or arrays of them) are **`Copy`**: assigning them duplicates the bits, and both variables stay usable. Types that own heap memory or other resources (`String`, `Vec<T>`, `Box<T>`, `HashMap`, files) **move**.
+
+      ## Dropping
+
+      When a value's owner goes out of scope, Rust calls its **drop** code automatically. Values are dropped in the reverse order they were created. You can run it early with `drop(value)`. This pattern (resource tied to an owner's scope) is called **RAII**, and it's why Rust code doesn't need `finally` blocks or manual `close()` calls.
+
+      ## How to fix "use after move"
+
+      - **Borrow instead of moving.** If a function only reads the value, make it take `&String` (better, `&str`) or `&Vec<T>` (better, `&[T]`), and call it with `&value`. This is the usual answer.
+      - **Clone** when you really need two independent copies: `let backup = report.clone();`. It copies the heap data, so it costs time and memory.
+      - **Return the value** from the function (as `shout` does above), or restructure so the last use is the move.
+
+      ## Best practices at work
+
+      - Take ownership (`String`, `Vec<T>`) in a function or constructor when you're going to **store** the value; borrow when you only need to look at it.
+      - Don't sprinkle `.clone()` until it compiles. Each clone is an allocation, and code reviewers will ask why. Borrowing is usually the right fix.
+      - Moving is cheap. Returning a big `Vec` from a function doesn't copy its elements.
+    example: |
+      struct Ticket {
+          id: u32,
+          title: String,
+      }
+
+      impl Drop for Ticket {
+          fn drop(&mut self) {
+              println!("closing ticket {}", self.id);
+          }
+      }
+
+      fn summarize(title: &str) -> usize {
+          title.split_whitespace().count()
+      }
+
+      fn archive(t: Ticket) {
+          println!("archiving #{}: {}", t.id, t.title);
+      } // t is dropped here
+
+      fn main() {
+          let first = Ticket { id: 1, title: String::from("Login page is slow") };
+          let second = Ticket { id: 2, title: String::from("Typo in footer") };
+
+          println!("{} words", summarize(&first.title)); // borrowed: first is still ours
+          archive(first); // moved: archive owns it now and drops it
+
+          let moved = second; // ownership moves to `moved`
+          println!("still open: #{}", moved.id);
+
+          let a = 5;
+          let b = a; // i32 is Copy: both stay usable
+          println!("{a} {b}");
+          println!("end of main");
+      } // `moved` is dropped here
+
+  - slug: copy-vs-clone
+    title: "Copy vs Clone in Rust"
+    description: "The difference between Copy and Clone in Rust: implicit bitwise copies vs explicit .clone(), which types are Copy, and when to derive each."
+    modules: [ownership, traits]
+    body: |
+      Both `Copy` and `Clone` produce a duplicate of a value, but they work very differently.
+
+      | | `Copy` | `Clone` |
+      |---|---|---|
+      | How it happens | implicitly, on every assignment or call | explicitly, when you write `.clone()` |
+      | What it does | copies the bits on the stack | whatever the type's `clone` method does (often a deep copy) |
+      | Cost | always cheap | can be expensive (allocates, copies heap data) |
+      | Old value afterwards | still usable | still usable |
+      | Examples | `i32`, `f64`, `bool`, `char`, `&T`, `(i32, i32)`, `[u8; 4]` | `String`, `Vec<T>`, `HashMap`, `Box<T>`, plus every `Copy` type |
+
+      ## Copy: values that are just bits
+
+      A type can be **`Copy`** only if duplicating its bytes produces a correct, independent value. An `i32` qualifies: two copies of the number 5 never interfere. A `String` doesn't: its bytes are a pointer to heap memory, so a bitwise copy would give two owners of the same text, and a double free when both are dropped. That's why `String` **moves** instead.
+
+      Shared references `&T` are `Copy` (many readers are allowed), but `&mut T` is not (only one writer at a time).
+
+      ## Clone: an explicit, possibly expensive duplicate
+
+      `.clone()` asks a type to make a full, independent copy. For a `String` it allocates new heap memory and copies the text. Because it's explicit, you can see every place your code pays for a copy.
+
+      ## Deriving them for your own types
+
+      ```rust
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+      ```
+
+      `Copy` requires `Clone` (it's a **supertrait**), so you always derive both. You can only derive `Copy` if every field is `Copy`:
+
+      ```rust compile_fail
+      #[derive(Clone, Copy)]
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0204]: the trait `Copy` cannot be implemented for this type
+       --> src/main.rs:2:8
+        |
+      1 | #[derive(Clone, Copy)]
+        |                 ---- in this derive macro expansion
+      2 | struct Player {
+        |        ^^^^^^
+      3 |     name: String,
+        |     ------------ this field does not implement `Copy`
+      ```
+
+      Derive only `Clone` for such types. A type that implements `Drop` can't be `Copy` either.
+
+      ## When to derive Copy
+
+      Derive `Copy` for small **value types**: coordinates, colors, ids, money amounts, small enums like `Direction`. Code using them reads naturally (`let p2 = p1;`) and there's no performance cost.
+
+      Think twice before making a type `Copy` if it might later gain a `String` or `Vec` field: removing `Copy` then is a breaking change for every user of the type. For large structs, `Copy` can also hide expensive memcpys.
+
+      ## Common mistakes
+
+      - **Cloning to silence the borrow checker.** It compiles, but each clone of a `Vec<String>` copies every string. First ask whether a reference (`&`) would do.
+      - **Calling `.clone()` on a `Copy` value.** It works but is noise; clippy says `clone_on_copy` ("using `clone` on type `Point` which implements the `Copy` trait").
+      - **Expecting a clone to stay in sync.** A clone is independent: changing it doesn't change the original. For shared data, use a reference or `Rc`/`Arc`.
+      - **`Rc::clone` is cheap.** Cloning an `Rc` or `Arc` copies a pointer and bumps a counter; it does not copy the data. Writing `Rc::clone(&x)` instead of `x.clone()` makes that obvious to readers.
+    example: |
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      #[derive(Debug, Clone)]
+      struct Player {
+          name: String,
+          pos: Point,
+      }
+
+      fn main() {
+          let a = Point { x: 1, y: 2 };
+          let mut b = a; // Copy: a is still usable
+          b.x = 10;
+          println!("{a:?} {b:?}");
+
+          let p1 = Player { name: String::from("Ferris"), pos: a };
+          let mut p2 = p1.clone(); // Clone: the String's text is copied too
+          p2.name.push_str(" II");
+          p2.pos.y += 5;
+          println!("{} at {:?}", p1.name, p1.pos);
+          println!("{} at {:?}", p2.name, p2.pos);
+          println!("same position: {}", p1.pos == p2.pos);
+
+          let nums = vec![1, 2, 3];
+          let total: i32 = nums.iter().copied().sum(); // copied(): &i32 -> i32
+          println!("{nums:?} total {total}");
+      }
+
+  - slug: borrowing-and-references
+    title: "Borrowing and references in Rust (&T and &mut T)"
+    description: "How borrowing works in Rust: shared references &T, mutable references &mut T, the one writer or many readers rule, and dereferencing with *."
+    modules: [borrowing]
+    body: |
+      Moving a value into every function that needs to look at it would be painful. **Borrowing** lets code use a value without taking ownership: you hand out a **reference**, and the owner keeps the value.
+
+      - `&value` creates a **shared reference** (`&T`): read-only access.
+      - `&mut value` creates a **mutable reference** (`&mut T`): read and write access. The variable itself must be declared `mut`.
+
+      ```rust run
+      fn count_words(text: &str) -> usize {
+          text.split_whitespace().count()
+      }
+
+      fn add_signature(text: &mut String) {
+          text.push_str(" -- Ferris");
+      }
+
+      fn main() {
+          let mut note = String::from("ship it on friday");
+          println!("{} words", count_words(&note));
+          add_signature(&mut note);
+          println!("{note}");
+      }
+      ```
+
+      ```output
+      4 words
+      ship it on friday -- Ferris
+      ```
+
+      `note` is never moved, so `main` can keep using it.
+
+      ## The borrowing rules
+
+      At any moment, a value can have **either**:
+
+      - any number of shared references `&T`, **or**
+      - exactly one mutable reference `&mut T`,
+
+      but not both. And a reference can never outlive the value it points to.
+
+      This "many readers or one writer" rule is checked at compile time by the **borrow checker**. It's what prevents a whole family of bugs:
+
+      - **Iterator invalidation:** pushing to a `Vec` can move its elements to a new heap block. Any reference into the old block would dangle. The rule stops you from pushing while a reference into the `Vec` is alive.
+      - **Data races:** two threads writing the same memory at once can't happen if only one `&mut` exists.
+      - **Dangling pointers:** references to freed memory are rejected.
+
+      ## Borrows end at their last use
+
+      A borrow lasts from where it's created to the **last place it's used**, not to the end of the block (this is called **non-lexical lifetimes**). This compiles, because `first` isn't used after the `push`:
+
+      ```rust run
+      fn main() {
+          let mut scores = vec![10, 20];
+          let first = &scores[0];
+          println!("first {first}");
+          scores.push(30);
+          println!("{scores:?}");
+      }
+      ```
+
+      ```output
+      first 10
+      [10, 20, 30]
+      ```
+
+      Move the `println!` of `first` below the `push` and you get error E0502.
+
+      ## Dereferencing with `*`
+
+      To read or change the value behind a reference, use `*`: `*count += 1`. Method calls and field access dereference automatically (`text.len()`, `player.score`), and so does `println!`, so you mostly need `*` for assignment and arithmetic on numbers.
+
+      ## The errors you'll meet
+
+      | Error | Meaning |
+      |---|---|
+      | E0502 | mutable borrow while a shared borrow is still in use (or the reverse) |
+      | E0499 | two mutable borrows alive at once |
+      | E0596 | `&mut` of something not declared `mut`, or behind a `&` |
+      | E0597 | the value is dropped while a reference to it is still used |
+      | E0506 | assigning to a value while it's borrowed |
+      | E0515 | returning a reference to a local variable |
+
+      Each one is the compiler finding a real bug pattern, not being pedantic.
+
+      ## Best practices
+
+      - Accept `&str` and `&[T]` in functions that only read; accept `&mut T` when you modify the caller's value; take ownership only to store or consume.
+      - Keep borrows short: copy small values out (`let first = v[0];`) instead of holding a reference across a mutation.
+      - When the borrow checker fights you, the usual fixes are reordering statements, splitting a function in two, or using indices instead of references, not `.clone()` everywhere.
+    example: |
+      fn total(prices: &[u32]) -> u32 {
+          let mut sum = 0;
+          for p in prices {
+              sum += p;
+          }
+          sum
+      }
+
+      fn apply_discount(prices: &mut [u32], percent: u32) {
+          for p in prices.iter_mut() {
+              *p -= *p * percent / 100;
+          }
+      }
+
+      fn bump(counter: &mut u32) {
+          *counter += 1;
+      }
+
+      fn main() {
+          let mut cart = vec![100, 250, 40];
+          let before = total(&cart);
+          apply_discount(&mut cart, 10);
+          let after = total(&cart);
+          println!("{cart:?}");
+          println!("before {before}, after {after}");
+
+          let mut visits = 0;
+          bump(&mut visits);
+          bump(&mut visits);
+          println!("visits {visits}");
+
+          let r1 = &cart;
+          let r2 = &cart;
+          println!("two readers: {} {}", r1.len(), r2[0]);
+      }
+
+  - slug: slices
+    title: "Slices in Rust: &str, &[T] and ranges"
+    description: "What slices are in Rust, how to take &s[a..b] and &v[a..b], why &str and &[T] make better parameters, and the panics to avoid."
+    modules: [slices]
+    body: |
+      A **slice** is a reference to a contiguous part of a collection: a view into some elements, without owning them. It's stored as a pointer plus a length (a **fat pointer**), so taking a slice never copies data.
+
+      - `&str` is a slice of UTF-8 text, from a `String` or a literal.
+      - `&[T]` is a slice of elements, from an array, a `Vec<T>`, or another slice.
+      - `&mut [T]` is a mutable slice: you can change elements, but not add or remove them.
+
+      ## Range syntax
+
+      | Range | Means |
+      |---|---|
+      | `&v[1..4]` | indexes 1, 2, 3 (end is excluded) |
+      | `&v[1..=4]` | indexes 1 to 4 inclusive |
+      | `&v[..3]` | from the start to index 2 |
+      | `&v[2..]` | from index 2 to the end |
+      | `&v[..]` | everything |
+
+      ```rust run
+      fn main() {
+          let temps = [18, 21, 25, 23, 19];
+          let weekend = &temps[3..];
+          println!("{weekend:?} has {} days", weekend.len());
+
+          let line = String::from("WARN low disk");
+          let level = &line[..4];
+          println!("level={level}");
+      }
+      ```
+
+      ```output
+      [23, 19] has 2 days
+      level=WARN
+      ```
+
+      ## Slices make better parameters
+
+      A function taking `&[T]` accepts arrays, vectors and parts of either; one taking `&str` accepts literals, `String`s and substrings. `&Vec<T>` or `&String` would accept only the owned type, so prefer slices for anything you only read. (Clippy warns about `&Vec<T>` and `&String` parameters with `ptr_arg`.) A `&Vec<T>` or `&String` converts to a slice automatically when you pass it.
+
+      ```rust
+      fn average(values: &[f64]) -> f64 { ... }
+
+      average(&readings);        // a whole Vec
+      average(&readings[..7]);   // the first week
+      average(&[1.0, 2.0]);      // an array
+      ```
+
+      Because slices borrow, the borrowing rules apply: while a slice of a `Vec` is in use, you can't push to the `Vec` (error E0502). That's exactly what keeps the slice from dangling when the `Vec` reallocates.
+
+      ## Useful slice methods
+
+      `len`, `is_empty`, `first`, `last`, `get(i)` (returns an `Option`), `contains`, `iter`, `split_at(mid)`, `chunks(n)`, `windows(n)`, `sort` and `reverse` (on `&mut [T]`), `binary_search`, `starts_with`. For strings: `find`, `split`, `trim`, `starts_with`, `lines`.
+
+      ## Common mistakes
+
+      - **Out-of-range slices panic.** `&v[2..10]` on a 3-element array panics with `range end index 10 out of range for slice of length 3`. Use `v.get(2..10)`, which returns `None` instead.
+      - **Slicing text in the middle of a character.** String ranges are in **bytes**, and many characters take more than one byte in UTF-8. `&"héllo"[0..2]` panics: `end byte index 2 is not a char boundary; it is inside 'é' (bytes 1..3 of string)`. Use `char_indices()`, `find`, or `chars()` to get safe positions.
+      - **Returning a slice of a local `String`.** The `String` is freed at the end of the function, so the compiler refuses (E0515 or E0106). Return a `String`, or return a slice of the *input* parameter, like `first_word` below.
+    example: |
+      fn first_word(text: &str) -> &str {
+          match text.find(' ') {
+              Some(i) => &text[..i],
+              None => text,
+          }
+      }
+
+      fn average(values: &[f64]) -> f64 {
+          let mut sum = 0.0;
+          for v in values {
+              sum += v;
+          }
+          sum / values.len() as f64
+      }
+
+      fn main() {
+          let line = String::from("ERROR disk full on /dev/sda1");
+          println!("level: {}", first_word(&line));
+          println!("literal: {}", first_word("hello"));
+
+          let temps = vec![21.5, 23.0, 19.5, 22.0, 24.5];
+          println!("all: {:.2}", average(&temps));
+          println!("last three: {:.2}", average(&temps[2..]));
+
+          let mut scores = [40, 10, 30, 20];
+          scores[1..].sort();
+          println!("{scores:?}");
+          let (left, right) = scores.split_at(2);
+          println!("{left:?} {right:?}");
+
+          for pair in temps.windows(2) {
+              print!("{:+.1} ", pair[1] - pair[0]);
+          }
+          println!();
+          println!("{:?} {:?}", temps.get(1..3), temps.get(3..10));
+      }
+
+  - slug: stack-vs-heap
+    title: "Stack vs heap in Rust"
+    description: "Where Rust stores your data: the stack for fixed-size values, the heap for String, Vec and Box, how ownership frees heap memory, and the costs."
+    modules: [ownership, smart-pointers]
+    body: |
+      A running program keeps data in two regions of memory, and knowing which one a value uses explains most of Rust's ownership rules.
+
+      ## The stack
+
+      Each function call gets a **stack frame** holding its local variables. When the function returns, the frame is discarded in one step. Allocation is just moving a pointer, so it's extremely fast, and the memory is right next to other recently used data (good for the CPU cache).
+
+      The rule: every value on the stack must have a **size known at compile time**. `i32` (4 bytes), `f64` (8), `[u8; 100]` (100), a struct of those, a tuple of those.
+
+      ## The heap
+
+      Data whose size is only known at run time, or that grows, goes on the **heap**: a large pool where the program **allocates** blocks of any size while it runs. Allocating means asking the allocator for space (slower than the stack), and every block must later be **freed** exactly once.
+
+      In Rust, heap data always has an owner on the stack:
+
+      | Type | On the stack | On the heap |
+      |---|---|---|
+      | `i32`, `f64`, `bool`, `char` | the value | nothing |
+      | `[i32; 4]`, tuples, plain structs | all of it | nothing |
+      | `String` | pointer, length, capacity (24 bytes) | the text |
+      | `Vec<T>` | pointer, length, capacity (24 bytes) | the elements |
+      | `Box<T>` | a pointer (8 bytes) | the `T` |
+      | `&str`, `&[T]` | pointer and length (16 bytes) | nothing of its own: it borrows |
+
+      (Sizes are for a 64-bit machine.) When the owner goes out of scope, Rust's generated **drop** code frees the heap block. That's ownership: the compiler knows statically where each heap block is freed, so there's no garbage collector and no manual `free`.
+
+      ## Why moves exist
+
+      Copying a `String` handle would leave two handles pointing at the same heap text, and both would free it. So assigning a `String` **moves** it (the old variable becomes unusable) instead of copying. Stack-only types like `i32` have nothing to double-free, so they are simply **copied**.
+
+      ## Box: putting a value on the heap on purpose
+
+      `Box::new(value)` moves a value to the heap and keeps a pointer to it. You need it for **recursive types**, whose size would otherwise be infinite:
+
+      ```rust compile_fail
+      enum List {
+          Node(i32, List),
+          Empty,
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0072]: recursive type `List` has infinite size
+      ```
+
+      `Node(i32, Box<List>)` fixes it: a `Box` is always one pointer wide. `Box` is also used for trait objects (`Box<dyn Trait>`) and to move very large values off the stack.
+
+      ## Performance notes
+
+      - Allocation isn't free. In hot loops, reuse buffers (`buf.clear()` keeps the capacity) and pre-size collections with `Vec::with_capacity(n)` or `String::with_capacity(n)`.
+      - The default stack of the main thread is typically 8 MB (spawned threads get 2 MB by default). Huge local arrays or very deep recursion end with `thread 'main' has overflowed its stack`. Use a `Vec` for big buffers.
+      - Moving a `String` or `Vec` copies only the 24-byte handle, never the heap data.
+
+      ## Common misconceptions
+
+      - **"Structs live on the heap."** No: a struct lives wherever you put it. A local struct is on the stack; its `String` fields point to the heap.
+      - **"String literals are on the heap."** `"hello"` is stored in the program binary. `String::from("hello")` copies it into a new heap block.
+    example: |
+      use std::mem::size_of;
+
+      fn main() {
+          println!("i64: {} bytes", size_of::<i64>());
+          println!("[u8; 100]: {} bytes", size_of::<[u8; 100]>());
+          println!("String: {} bytes", size_of::<String>());
+          println!("Vec<u64>: {} bytes", size_of::<Vec<u64>>());
+          println!("Box<[u8; 100]>: {} bytes", size_of::<Box<[u8; 100]>>());
+          println!("&str: {} bytes", size_of::<&str>());
+
+          let small = String::from("hi");
+          let large = "x".repeat(10_000);
+          println!("handles: {} and {} bytes", size_of_val(&small), size_of_val(&large));
+          println!("heap text: {} and {} bytes", small.len(), large.len());
+
+          let mut readings = Vec::with_capacity(4);
+          for r in [3, 1, 4, 1] {
+              readings.push(r);
+          }
+          println!("{} readings, capacity {}", readings.len(), readings.capacity());
+
+          let boxed: Box<i32> = Box::new(41);
+          println!("boxed value + 1 = {}", *boxed + 1);
+      }
+
+  - slug: e0382-borrow-of-moved-value
+    title: "Rust error E0382: borrow of moved value (use of moved value)"
+    description: "Fix Rust's E0382 borrow of moved value and use of moved value errors: why values move, the common causes, and the right fix for each."
+    modules: [ownership]
+    body: |
+      **E0382** means you used a variable after its value was **moved** somewhere else. A move transfers ownership, and the old variable can't be used afterwards. The two wordings are the same error:
+
+      - "**borrow** of moved value" when the later use only reads it (`println!`, `.len()`),
+      - "**use** of moved value" when the later use tries to move it again.
+
+      ## Cause 1: assignment moves
+
+      ```rust compile_fail
+      fn main() {
+          let name = String::from("Ferris");
+          let player = name;
+          println!("{name} joined as {player}");
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `name`
+       --> src/main.rs:4:16
+        |
+      2 |     let name = String::from("Ferris");
+        |         ---- move occurs because `name` has type `String`, which does not implement the `Copy` trait
+      3 |     let player = name;
+        |                  ---- value moved here
+      4 |     println!("{name} joined as {player}");
+        |                ^^^^ value borrowed here after move
+      ```
+
+      The message tells the whole story: the type isn't `Copy`, where it moved, and where you used it afterwards. Fix: borrow (`let player = &name;`) or clone (`let player = name.clone();`) if you truly need two owned copies.
+
+      ## Cause 2: a `for` loop over a collection
+
+      ```rust compile_fail
+      fn main() {
+          let tags = vec![String::from("rust"), String::from("arena")];
+          for t in tags {
+              println!("{t}");
+          }
+          println!("{} tags", tags.len());
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `tags`
+      ```
+
+      `for t in tags` calls `into_iter()`, which consumes the vector. Loop over a reference instead: `for t in &tags` (each `t` is a `&String`).
+
+      ## Cause 3: moving inside a loop
+
+      ```rust compile_fail
+      fn archive(log: String) {
+          println!("archived {} bytes", log.len());
+      }
+
+      fn main() {
+          let log = String::from("boot ok");
+          for _ in 0..2 {
+              archive(log);
+          }
+      }
+      ```
+
+      ```error
+      error[E0382]: use of moved value: `log`
+      ```
+
+      rustc adds "value moved here, in previous iteration of loop". The first call took ownership, so there's nothing left to give the second time. Change the parameter to `log: &str` and call `archive(&log)`. rustc even points at the parameter: "consider changing this parameter type in function `archive` to borrow instead if owning the value isn't necessary".
+
+      ## Cause 4: methods that take `self`
+
+      Some methods consume their receiver: `into_iter()`, `into_bytes()`, `unwrap()` on an `Option<String>`, a builder's `build(self)`. After calling one, the variable is gone. Look for an `as_ref()`, `iter()` or `&`-taking alternative, or call it last.
+
+      ## Cause 5: closures with `move`
+
+      A `move` closure (common with `thread::spawn`) takes ownership of every variable it uses. Clone the value before the closure if you still need it afterwards: `let name2 = name.clone();` then use `name2` inside.
+
+      ## Choosing the fix
+
+      1. **Does the receiver only read the value?** Borrow: `&value`, and change the parameter to `&str` / `&[T]` / `&T`. Best in most cases.
+      2. **Does it need to change it?** Pass `&mut value`.
+      3. **Does it need to keep it** (store in a struct, send to a thread)? Then it must own it. Clone if you also need it, or restructure so the move is the last use.
+      4. **Is the type small and plain?** Derive `Clone, Copy` for it, and it will be copied instead of moved.
+    example: |
+      fn archive(log: &str) {
+          println!("archived {} bytes", log.len());
+      }
+
+      fn main() {
+          let name = String::from("Ferris");
+          let player = &name; // borrow instead of move
+          println!("{name} joined as {player}");
+
+          let tags = vec![String::from("rust"), String::from("arena")];
+          for t in &tags {
+              println!("tag {t}");
+          }
+          println!("{} tags", tags.len());
+
+          let log = String::from("boot ok");
+          for _ in 0..2 {
+              archive(&log);
+          }
+
+          let backup = log.clone(); // two owners need two copies
+          let moved_log = log; // `log` is moved here, and not used afterwards
+          println!("{moved_log} / {backup}");
+      }
+
+  - slug: e0502-mutable-and-immutable-borrow
+    title: "Rust error E0502: cannot borrow as mutable because it is also borrowed as immutable"
+    description: "Why Rust reports E0502 when you modify a Vec or String while a reference to it is alive, and five ways to fix it."
+    modules: [borrowing, vectors]
+    body: |
+      **E0502** is the borrow checker enforcing "many readers or one writer": you tried to take a mutable borrow (`&mut`, often implicitly through a method like `push`) while a shared borrow (`&`) of the same value is still going to be used. Or the reverse: a shared borrow while a mutable one is alive.
+
+      ## The classic: a reference into a Vec, then push
+
+      ```rust compile_fail
+      fn main() {
+          let mut scores = vec![10, 20, 30];
+          let first = &scores[0];
+          scores.push(40);
+          println!("first is {first}");
+      }
+      ```
+
+      ```error
+      error[E0502]: cannot borrow `scores` as mutable because it is also borrowed as immutable
+       --> src/main.rs:4:5
+        |
+      3 |     let first = &scores[0];
+        |                  ------ immutable borrow occurs here
+      4 |     scores.push(40);
+        |     ^^^^^^^^^^^^^^^ mutable borrow occurs here
+      5 |     println!("first is {first}");
+        |                         ----- immutable borrow later used here
+      ```
+
+      This isn't the compiler being fussy. If `push` finds the vector full, it allocates a bigger heap block, moves the elements there, and frees the old block. `first` would then point at freed memory. In C++ this is the infamous **iterator invalidation** bug; in Rust it doesn't compile.
+
+      Read the three labels: where the shared borrow starts, where the conflicting mutable borrow happens, and where the shared borrow is **later used**. The fix is always to make those ranges stop overlapping.
+
+      ## Modifying a collection while looping over it
+
+      ```rust compile_fail
+      fn main() {
+          let mut queue = vec![1, 2, 3];
+          for job in &queue {
+              if *job == 2 {
+                  queue.push(4);
+              }
+          }
+      }
+      ```
+
+      ```error
+      error[E0502]: cannot borrow `queue` as mutable because it is also borrowed as immutable
+      ```
+
+      The loop holds a borrow of `queue` for its whole duration.
+
+      ## The fixes
+
+      1. **Copy the value out** instead of holding a reference: `let first = scores[0];` (works for `Copy` types like numbers), or `.clone()` a small `String`.
+      2. **Reorder:** finish using the reference before mutating. Borrows end at their last use, so moving the `println!` above the `push` is enough.
+      3. **Collect first, then modify:** loop to gather what to add (`let extra: Vec<_> = ...`), then `queue.extend(extra)` after the loop.
+      4. **Use indices** when you must modify during a loop: `for i in 0..queue.len() { ... queue[i] ... }`. Indexing borrows only for that one expression.
+      5. **Use the method made for it:** `retain` to remove while scanning, `iter_mut` to change elements in place, `entry` for maps, `sort_by_key` instead of reading and writing by hand.
+
+      ## In methods: borrowing `self` twice
+
+      A common variant at work: inside a `&mut self` method, you loop over `self.items` and call another `&mut self` method in the loop body. The call borrows *all* of `self` mutably while `self.items` is borrowed. Fixes: access the other field directly (Rust tracks borrows of separate fields separately), make the helper a free function that takes only the fields it needs, or collect results first and apply them after the loop.
+
+      ## The reverse wording
+
+      `s.push_str(&s)` gives "cannot borrow `s` as **immutable** because it is also borrowed as **mutable**": `push_str` needs `&mut s` while its argument borrows `s`. Clone first: `let copy = s.clone(); s.push_str(&copy);`.
+    example: |
+      fn main() {
+          // Fix 1: copy the value out instead of holding a reference.
+          let mut scores = vec![10, 20, 30];
+          let first = scores[0];
+          scores.push(40);
+          println!("first is {first}, all {scores:?}");
+
+          // Fix 3: collect the changes, then apply them after the loop.
+          let mut queue = vec![1, 2, 3];
+          let mut extra = Vec::new();
+          for job in &queue {
+              if *job % 2 == 0 {
+                  extra.push(job * 100);
+              }
+          }
+          queue.extend(extra);
+          println!("queue {queue:?}");
+
+          // Fix 4: indices borrow only for one expression.
+          let mut stock = vec![5, 0, 2];
+          for i in 0..stock.len() {
+              if stock[i] == 0 {
+                  stock[i] = 10;
+              }
+          }
+          println!("stock {stock:?}");
+
+          // Fix 5: retain removes while scanning.
+          let mut names = vec!["ok", "spam", "fine", "spam"];
+          names.retain(|n| *n != "spam");
+          println!("{names:?}");
+
+          // The reverse case: clone before pushing a string onto itself.
+          let mut chant = String::from("go ");
+          let copy = chant.clone();
+          chant.push_str(&copy);
+          println!("{chant}");
+      }
+
+  - slug: e0499-two-mutable-borrows
+    title: "Rust error E0499: cannot borrow as mutable more than once at a time"
+    description: "What E0499 means in Rust, why two &mut references to the same value are forbidden, and fixes like split_at_mut, swap and field borrows."
+    modules: [borrowing, slices]
+    body: |
+      **E0499** means two mutable borrows (`&mut`) of the same value are alive at the same time. Rust allows only one, because a `&mut` promises **exclusive** access: while you hold it, nothing else can read or write that value. That promise is what rules out data races and lets the compiler optimize aggressively.
+
+      ## Two elements of the same Vec
+
+      ```rust compile_fail
+      fn main() {
+          let mut hp = vec![100, 80];
+          let a = &mut hp[0];
+          let b = &mut hp[1];
+          *a -= 10;
+          *b -= 10;
+          println!("{hp:?}");
+      }
+      ```
+
+      ```error
+      error[E0499]: cannot borrow `hp` as mutable more than once at a time
+       --> src/main.rs:4:18
+        |
+      3 |     let a = &mut hp[0];
+        |                  -- first mutable borrow occurs here
+      4 |     let b = &mut hp[1];
+        |                  ^^ second mutable borrow occurs here
+      5 |     *a -= 10;
+        |     -------- first borrow later used here
+        |
+        = help: use `.split_at_mut(position)` to obtain two mutable non-overlapping sub-slices
+      ```
+
+      You know `hp[0]` and `hp[1]` are different elements, but indexing goes through `IndexMut::index_mut(&mut hp, i)`, which borrows the whole vector. The compiler doesn't reason about index values. Fixes:
+
+      - **`split_at_mut(mid)`** splits a slice into two non-overlapping mutable halves.
+      - **`swap(i, j)`** if you just want to exchange two elements.
+      - **`get_disjoint_mut([i, j])`** (Rust 1.86+) returns mutable references to several distinct indexes, or an error if they overlap or are out of bounds.
+      - **Do one at a time:** `hp[0] -= 10; hp[1] -= 10;` Each borrow ends immediately.
+
+      ## Getter methods that return `&mut`
+
+      ```rust compile_fail
+      struct Player {
+          health: i32,
+          mana: i32,
+      }
+
+      impl Player {
+          fn health_mut(&mut self) -> &mut i32 {
+              &mut self.health
+          }
+          fn mana_mut(&mut self) -> &mut i32 {
+              &mut self.mana
+          }
+      }
+
+      fn main() {
+          let mut p = Player { health: 100, mana: 50 };
+          let h = p.health_mut();
+          let m = p.mana_mut();
+          *h -= 10;
+          *m -= 5;
+      }
+      ```
+
+      ```error
+      error[E0499]: cannot borrow `p` as mutable more than once at a time
+      ```
+
+      A method signature `&mut self` borrows the **whole** struct, and the returned reference keeps that borrow alive. Borrowing the fields directly works, because the compiler tracks fields separately: `let h = &mut p.health; let m = &mut p.mana;`. Inside the struct's own methods, prefer working on fields directly, or write one method that does the combined update.
+
+      ## Storing `&mut` in a loop
+
+      Pushing `&mut x` into a vector inside a loop, or keeping a `&mut` from one iteration to the next, triggers E0499 because each iteration creates another live mutable borrow. Store indices or owned values instead.
+
+      ## Closures that mutate
+
+      A closure that changes a captured variable holds a mutable borrow for as long as the closure exists. Using the variable directly while the closure is still going to be called is E0499 (or E0502 when you only read it). Call the closure for the last time first, or pass the value as a parameter instead of capturing it.
+
+      ## Why not just allow it?
+
+      With two `&mut` to the same `Vec`, one could `push` (reallocating) while the other still points into the old buffer. In threads, two writers at once is a data race. Exclusive `&mut` makes these bugs impossible to compile.
+    example: |
+      struct Player {
+          health: i32,
+          mana: i32,
+      }
+
+      fn main() {
+          let mut hp = vec![100, 80, 60];
+
+          let (left, right) = hp.split_at_mut(1);
+          left[0] -= 10; // left is [100]
+          right[1] -= 20; // right is [80, 60]
+          println!("after split_at_mut: {hp:?}");
+
+          hp.swap(0, 2);
+          println!("after swap: {hp:?}");
+
+          if let Ok([a, b]) = hp.get_disjoint_mut([0, 1]) {
+              std::mem::swap(a, b);
+          }
+          println!("after get_disjoint_mut: {hp:?}");
+
+          let mut p = Player { health: 100, mana: 50 };
+          let h = &mut p.health; // borrowing two different fields is fine
+          let m = &mut p.mana;
+          *h -= 10;
+          *m -= 5;
+          println!("health {} mana {}", p.health, p.mana);
+      }
+
+  - slug: e0596-cannot-borrow-as-mutable
+    title: "Rust error E0596: cannot borrow as mutable, as it is not declared as mutable"
+    description: "Fix Rust's E0596 error: add mut to the variable, take &mut in the function signature, or make a mutating closure mut."
+    modules: [borrowing, variables]
+    body: |
+      **E0596** means you tried to change something through a path that doesn't allow changes. In Rust, mutability is opt-in at every level: the variable must be `let mut`, and a reference must be `&mut` to be written through. The fix is to add `mut` in the right place, and rustc's `help:` line usually shows exactly where.
+
+      ## Case 1: the variable isn't `mut`
+
+      ```rust compile_fail
+      fn main() {
+          let names = Vec::new();
+          names.push("Ferris");
+          println!("{names:?}");
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `names` as mutable, as it is not declared as mutable
+       --> src/main.rs:3:5
+        |
+      3 |     names.push("Ferris");
+        |     ^^^^^ cannot borrow as mutable
+        |
+      help: consider changing this to be mutable
+        |
+      2 |     let mut names = Vec::new();
+        |         +++
+      ```
+
+      `push` takes `&mut self`, so calling it borrows `names` mutably. Write `let mut names`. The same applies to `read_line(&mut line)`, `sort()`, `insert`, `clear` and every other method that changes its receiver.
+
+      ## Case 2: the parameter is `&` but the function modifies it
+
+      ```rust compile_fail
+      fn add_guest(list: &Vec<String>, name: &str) {
+          list.push(name.to_string());
+      }
+
+      fn main() {
+          let mut guests = Vec::new();
+          add_guest(&guests, "Ferris");
+          println!("{guests:?}");
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `*list` as mutable, as it is behind a `&` reference
+      ```
+
+      A shared reference is read-only, no matter whether the original variable is `mut`. Change the signature to `list: &mut Vec<String>` and the call to `add_guest(&mut guests, "Ferris")`. Both sides must say `mut`: that's how readers of the call site know the function can change `guests`.
+
+      ## Case 3: a method takes `&self` but changes a field
+
+      Inside `fn record(&self)`, `self.hits += 1` fails with the closely related **E0594**, "cannot assign to `self.hits`, which is behind a `&` reference". Change the method to `&mut self`, and make the variable you call it on `let mut`. (If the method genuinely must stay `&self`, for example a cache inside a shared object, that's what `Cell`, `RefCell` and `Mutex` are for: **interior mutability**.)
+
+      ## Case 4: a closure that mutates a capture
+
+      ```rust compile_fail
+      fn main() {
+          let mut count = 0;
+          let bump = || count += 1;
+          bump();
+          println!("{count}");
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `bump` as mutable, as it is not declared as mutable
+      ```
+
+      A closure that changes a captured variable is an `FnMut`, and calling it needs a mutable borrow of the closure itself: write `let mut bump = || count += 1;`.
+
+      ## Case 5: data inside `Rc` or behind an iterator
+
+      - `Rc<T>` only gives shared access: `shared.push(3)` on an `Rc<Vec<i32>>` is "cannot borrow data in an `Rc` as mutable". Use `Rc<RefCell<T>>` for shared mutable data (or `Arc<Mutex<T>>` across threads).
+      - `for x in &v { *x += 1; }` is E0594. Iterate with `&mut v` (or `v.iter_mut()`) to get `&mut` elements.
+
+      ## Don't over-correct
+
+      Adding `mut` where nothing changes produces the warning `variable does not need to be mutable`. The goal is that every `mut` in your code marks a place where something really changes.
+    example: |
+      struct Counter {
+          hits: u32,
+      }
+
+      impl Counter {
+          fn record(&mut self) {
+              self.hits += 1;
+          }
+      }
+
+      fn add_guest(list: &mut Vec<String>, name: &str) {
+          list.push(name.to_string());
+      }
+
+      fn main() {
+          let mut names = Vec::new();
+          names.push("Ferris");
+          println!("{names:?}");
+
+          let mut guests = Vec::new();
+          add_guest(&mut guests, "Ferris");
+          add_guest(&mut guests, "Corro");
+          println!("{guests:?}");
+
+          let mut counter = Counter { hits: 0 };
+          counter.record();
+          counter.record();
+          println!("hits {}", counter.hits);
+
+          let mut count = 0;
+          let mut bump = || count += 1;
+          bump();
+          bump();
+          println!("count {count}");
+
+          let mut levels = vec![1, 2, 3];
+          for lvl in &mut levels {
+              *lvl *= 10;
+          }
+          println!("{levels:?}");
+      }
+
+  - slug: e0597-does-not-live-long-enough
+    title: "Rust error E0597: borrowed value does not live long enough"
+    description: "Why Rust says a borrowed value does not live long enough (E0597), with fixes for inner scopes, loops that store references, and returning references."
+    modules: [borrowing, lifetimes]
+    body: |
+      **E0597** means a reference would still be used after the value it points to has been **dropped**. If the program were allowed to run, the reference would point at freed memory (a **dangling reference**). The fix is always one of: make the value live longer, make the reference live shorter, or store an owned value instead of a reference.
+
+      ## The basic case: an inner scope
+
+      ```rust compile_fail
+      fn main() {
+          let longest: &str;
+          {
+              let name = String::from("Ferris");
+              longest = &name;
+          }
+          println!("{longest}");
+      }
+      ```
+
+      ```error
+      error[E0597]: `name` does not live long enough
+       --> src/main.rs:5:19
+        |
+      4 |         let name = String::from("Ferris");
+        |             ---- binding `name` declared here
+      5 |         longest = &name;
+        |                   ^^^^^ borrowed value does not live long enough
+      6 |     }
+        |     - `name` dropped here while still borrowed
+      7 |     println!("{longest}");
+        |                ------- borrow later used here
+      ```
+
+      The labels show the timeline: where the value is declared, where it's borrowed, where it's dropped (the closing brace), and where the borrow is used after that. Fixes: declare `name` in the outer scope, or make `longest` an owned `String` (`longest = name;` moves it out).
+
+      ## Storing references to temporaries in a loop
+
+      ```rust compile_fail
+      fn main() {
+          let mut labels: Vec<&str> = Vec::new();
+          for i in 0..3 {
+              let label = format!("item-{i}");
+              labels.push(&label);
+          }
+          println!("{labels:?}");
+      }
+      ```
+
+      ```error
+      error[E0597]: `label` does not live long enough
+      ```
+
+      Each `label` is dropped at the end of its loop iteration, but the vector keeps a reference to it. rustc notes "`labels` is a collection that stores borrowed references, but `label` does not live long enough to be stored in it". The fix is to let the vector **own** the strings: `Vec<String>` and `labels.push(label)`.
+
+      This is the most common E0597 at work: a struct or collection typed with references (`&str`, `&T`) that is filled with values created on the fly. When the data is created inside the loop or function, the container must own it.
+
+      ## Returning a reference to a local
+
+      Returning `&s` where `s` is a local `String` gets its own error code, **E0515** ("cannot return reference to local variable `s`"), and a signature like `fn make() -> &str` with no reference parameters gets **E0106**. Same idea, same fix: return the owned `String`.
+
+      ## Threads and `'static`
+
+      Passing a reference to a local into something that needs `'static` data, like `thread::spawn` or `tokio::spawn`, reports E0597 with "argument requires that `x` is borrowed for `'static`" (or E0373 for closures). Move owned data into the thread with `move`, share it with `Arc`, or use `thread::scope` so the threads end before the data does.
+
+      ## How to think about it
+
+      Ask: **who owns this data, and is that owner still alive when I use the reference?** References are for temporary access to data someone else owns for longer. If nobody owns it for long enough, own it yourself.
+    example: |
+      use std::thread;
+
+      fn make_greeting(name: &str) -> String {
+          format!("Hello, {name}")
+      }
+
+      fn main() {
+          // Fix 1: the owner lives in the outer scope.
+          let name = String::from("Ferris");
+          let longest: &str;
+          {
+              longest = &name;
+          }
+          println!("{longest}");
+
+          // Fix 2: the collection owns its strings.
+          let mut labels: Vec<String> = Vec::new();
+          for i in 0..3 {
+              let label = format!("item-{i}");
+              labels.push(label);
+          }
+          println!("{labels:?}");
+
+          // Fix 3: return owned data from functions.
+          println!("{}", make_greeting("Corro"));
+
+          // Fix 4: scoped threads may borrow, because they end before the data does.
+          let totals = vec![3, 4, 5];
+          let sum = thread::scope(|s| s.spawn(|| totals.iter().sum::<i32>()).join().unwrap());
+          println!("sum {sum} of {totals:?}");
+      }
+
+  - slug: e0106-missing-lifetime-specifier
+    title: "Rust error E0106: missing lifetime specifier"
+    description: "How to fix Rust's E0106 missing lifetime specifier: adding <'a> to functions and structs, the elision rules, and when to return owned data."
+    modules: [lifetimes]
+    body: |
+      **E0106** appears when a function returns a reference, or a struct holds one, and the compiler can't tell **which data the reference borrows from**. It needs that to check that the reference never outlives the data. You answer with a **lifetime parameter** (a name like `'a`), or by not returning a reference at all.
+
+      ## Case 1: two reference parameters, one returned reference
+
+      ```rust compile_fail
+      fn longest(a: &str, b: &str) -> &str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn main() {
+          println!("{}", longest("arena", "crab"));
+      }
+      ```
+
+      ```error
+      error[E0106]: missing lifetime specifier
+       --> src/main.rs:1:33
+        |
+      1 | fn longest(a: &str, b: &str) -> &str {
+        |               ----     ----     ^ expected named lifetime parameter
+        |
+        = help: this function's return type contains a borrowed value, but the signature does not say whether it is borrowed from `a` or `b`
+      help: consider introducing a named lifetime parameter
+        |
+      1 | fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+        |           ++++     ++          ++          ++
+      ```
+
+      The suggested fix is right: `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str` says "the result borrows from `a` or `b`, so it's only valid while both are". Annotations don't change how long anything lives; they describe the relationship so the compiler can check every caller.
+
+      ## Case 2: a struct that holds a reference
+
+      ```rust compile_fail
+      struct Excerpt {
+          text: &str,
+      }
+
+      fn main() {
+          let e = Excerpt { text: "call me Ferris" };
+          println!("{}", e.text);
+      }
+      ```
+
+      ```error
+      error[E0106]: missing lifetime specifier
+      ```
+
+      Write `struct Excerpt<'a> { text: &'a str }`: an `Excerpt` can't outlive the text it points into. But first ask whether the struct should just own its data (`text: String`). For most structs (config, records, API types) owning is simpler. Reference-holding structs make sense for short-lived views: parsers, iterators, borrowed wrappers.
+
+      ## Case 3: returning a reference with nothing to borrow from
+
+      `fn default_name() -> &str` fails because there's no input to borrow from. rustc offers two fixes: `&'static str` if you return a string literal (literals live for the whole program), or, as it says, "instead, you are more likely to want to return an owned value": `-> String`.
+
+      ## When you don't need annotations: elision
+
+      Most functions with references need no lifetimes because of three **elision rules**:
+
+      1. Each reference parameter gets its own lifetime.
+      2. If there's exactly one reference parameter, the output gets its lifetime. So `fn first_word(s: &str) -> &str` is fine.
+      3. In methods with `&self` or `&mut self`, the output gets `self`'s lifetime. So `fn name(&self) -> &str` is fine.
+
+      E0106 means none of the rules applied, and you must say which input the output comes from.
+
+      ## Choosing the fix
+
+      - The result really points into one of the inputs: add `<'a>` and tie the output to that input only (`fn pick<'a>(a: &'a str, _b: &str) -> &'a str`).
+      - The function creates new data: return `String`, `Vec<T>` or another owned type.
+      - Adding `'static` everywhere to silence the error is almost always wrong: it forces callers to pass literals or leaked data.
+    example: |
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn first_word(s: &str) -> &str {
+          s.split_whitespace().next().unwrap_or("")
+      }
+
+      fn default_name() -> &'static str {
+          "guest"
+      }
+
+      fn shout(s: &str) -> String {
+          s.to_uppercase()
+      }
+
+      struct Excerpt<'a> {
+          text: &'a str,
+      }
+
+      impl<'a> Excerpt<'a> {
+          fn first_sentence(&self) -> &'a str {
+              self.text.split('.').next().unwrap_or(self.text)
+          }
+      }
+
+      fn main() {
+          println!("{}", longest("arena", "crab"));
+          println!("{}", first_word("ownership rules everything"));
+          println!("{}", default_name());
+          println!("{}", shout("borrow checker"));
+
+          let book = String::from("Call me Ferris. Some years ago I learned Rust.");
+          let e = Excerpt { text: &book };
+          println!("{}", e.first_sentence());
+      }
+
+  - slug: e0507-cannot-move-out-of-borrow
+    title: "Rust error E0507: cannot move out of borrowed content (behind a reference)"
+    description: "Fix Rust's E0507 cannot move out of index, behind a shared reference: borrow, clone, as_ref, take or mem::replace."
+    modules: [borrowing, enums]
+    body: |
+      **E0507** means you tried to **move** a value out of something you only **borrowed**. Older compilers said "cannot move out of borrowed content"; today's messages are more specific: "cannot move out of index of `Vec<String>`" or "cannot move out of `self.name` which is behind a shared reference".
+
+      Moving out would leave a hole: the owner (the vector, the struct) would still think it holds a valid `String`, and would drop it again later. So you can only **look** through a borrow, or replace what you take.
+
+      ## Case 1: taking an element out of a Vec by index
+
+      ```rust compile_fail
+      fn main() {
+          let names = vec![String::from("Ferris"), String::from("Corro")];
+          let first = names[0];
+          println!("{first}");
+      }
+      ```
+
+      ```error
+      error[E0507]: cannot move out of index of `Vec<String>`
+       --> src/main.rs:3:17
+        |
+      3 |     let first = names[0];
+        |                 ^^^^^^^^ move occurs because value has type `String`, which does not implement the `Copy` trait
+        |
+      help: consider borrowing here
+        |
+      3 |     let first = &names[0];
+        |                 +
+      ```
+
+      Fixes, depending on what you want:
+
+      - Just read it: `let first = &names[0];`
+      - Your own copy: `let first = names[0].clone();`
+      - Really take it out of the vector: `names.remove(0)` (shifts the rest), `names.swap_remove(0)` (fast, changes order), `names.pop()`, or `std::mem::take(&mut names[0])` (leaves an empty `String` behind).
+
+      (With `Vec<i32>`, `let x = v[0];` works fine: `i32` is `Copy`, so it's copied rather than moved.)
+
+      ## Case 2: returning a field from a `&self` method
+
+      ```rust compile_fail
+      struct User {
+          name: String,
+      }
+
+      impl User {
+          fn name(&self) -> String {
+              self.name
+          }
+      }
+
+      fn main() {
+          let u = User { name: String::from("Ferris") };
+          println!("{}", u.name());
+      }
+      ```
+
+      ```error
+      error[E0507]: cannot move out of `self.name` which is behind a shared reference
+      ```
+
+      Usually the right getter returns a reference: `fn name(&self) -> &str { &self.name }`. Return `self.name.clone()` if the caller needs ownership, or write `fn into_name(self) -> String` to consume the whole struct.
+
+      ## Case 3: `unwrap()` on an `Option` field
+
+      `self.result.unwrap()` inside a `&self` method fails the same way, because `unwrap` takes the `Option` by value. rustc suggests the fixes:
+
+      - `self.result.as_ref().unwrap()` or `self.result.as_deref()`: borrow the contents (`Option<&String>` / `Option<&str>`).
+      - `self.result.take()` in a `&mut self` method: move the value out and leave `None` behind.
+      - `self.result.clone().unwrap()` when you need an owned copy.
+
+      ## Case 4: dereferencing a reference into an owned value
+
+      `let owned: String = *r;` where `r: &String` tries to move the `String` out from behind `r`. Use `r.clone()`, or keep it as a reference.
+
+      ## The general toolbox
+
+      | You want to... | Use |
+      |---|---|
+      | look at it | `&x`, `as_ref()`, `as_deref()`, `iter()` |
+      | a copy | `.clone()` |
+      | take it, leave a default | `std::mem::take(&mut x)` |
+      | take it, leave something specific | `std::mem::replace(&mut x, new)` |
+      | take it out of an `Option` | `opt.take()` |
+      | take it out of a `Vec` | `remove`, `swap_remove`, `pop`, `drain` |
+      | consume the whole container | iterate with `into_iter()`, or a method taking `self` |
+    example: |
+      struct Job {
+          name: String,
+          result: Option<String>,
+      }
+
+      impl Job {
+          fn name(&self) -> &str {
+              &self.name
+          }
+
+          fn peek(&self) -> Option<&str> {
+              self.result.as_deref()
+          }
+
+          fn take_result(&mut self) -> Option<String> {
+              self.result.take()
+          }
+      }
+
+      fn main() {
+          let mut names = vec![String::from("Ferris"), String::from("Corro"), String::from("Gopher")];
+          let first = &names[0];
+          println!("borrowed {first}");
+          let copy = names[1].clone();
+          let taken = std::mem::take(&mut names[2]);
+          println!("copy {copy}, taken {taken}, left behind {:?}", names[2]);
+          let removed = names.remove(0);
+          println!("removed {removed}, now {names:?}");
+
+          let mut job = Job { name: String::from("backup"), result: Some(String::from("ok: 42 files")) };
+          println!("{} peek {:?}", job.name(), job.peek());
+          let out = job.take_result();
+          println!("took {:?}, now {:?}", out, job.peek());
+      }

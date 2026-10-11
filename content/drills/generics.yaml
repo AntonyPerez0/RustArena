@@ -1,0 +1,267 @@
+topic: generics
+drills:
+  - type: predict
+    pre: |
+      fn largest<T: PartialOrd + Copy>(items: &[T]) -> T {
+          let mut best = items[0];
+          for &item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+    body: |
+      println!("{} {}", largest(&[3, 9, 2]), largest(&['c', 'a', 'z']));
+    why: The same generic function runs once with T = i32 and once with T = char; both types can be compared and copied.
+  - type: predict
+    pre: |
+      fn swap<A, B>(pair: (A, B)) -> (B, A) {
+          (pair.1, pair.0)
+      }
+    body: |
+      println!("{:?}", swap((1, "one")));
+    why: With two type parameters the halves can have different types; here A is i32 and B is &str, and the result is a (&str, i32).
+  - type: predict
+    pre: |
+      struct Point<T> {
+          x: T,
+          y: T,
+      }
+
+      impl Point<f64> {
+          fn distance_from_origin(&self) -> f64 {
+              (self.x * self.x + self.y * self.y).sqrt()
+          }
+      }
+    body: |
+      let p = Point { x: 3.0, y: 4.0 };
+      println!("{}", p.distance_from_origin());
+    why: "p is a Point<f64>, so the method from impl Point<f64> exists. The square root of 9 + 16 is 5, and an f64 of 5.0 prints as 5."
+  - type: predict
+    pre: |
+      fn count<T, const N: usize>(_items: [T; N]) -> usize {
+          N
+      }
+    body: |
+      println!("{} {}", count([1, 2, 3]), count(['a'; 5]));
+    why: N is inferred from each array's length (3, then 5), and the function can use it like a constant.
+  - type: predict
+    pre: |
+      struct Stack<T> {
+          items: Vec<T>,
+      }
+
+      impl<T> Stack<T> {
+          fn push(&mut self, item: T) {
+              self.items.push(item);
+          }
+
+          fn pop(&mut self) -> Option<T> {
+              self.items.pop()
+          }
+      }
+    body: |
+      let mut s = Stack { items: Vec::new() };
+      s.push("a");
+      s.push("b");
+      s.push("c");
+      s.pop();
+      println!("{:?}", s.pop());
+    why: A stack is last in, first out. The first pop removes "c", the second returns Some("b").
+  - type: predict
+    pre: |
+      fn name_of<T>(_value: T) -> String {
+          std::any::type_name::<T>().to_string()
+      }
+    body: |
+      println!("{} {}", name_of(1.5), name_of::<u8>(7));
+    why: Each call uses a different copy of name_of. A float literal defaults to f64, and the turbofish makes the second call use u8.
+  - type: fill
+    prompt: Add the bound that allows comparing with >.
+    pre: |
+      fn largest<T: [[PartialOrd]] + Copy>(items: &[T]) -> T {
+          let mut best = items[0];
+          for &item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+    body: |
+      println!("{}", largest(&[2.5, 9.75, 1.0]));
+    why: PartialOrd is the trait behind <, >, <= and >=. Without it, the compiler can't know that any T can be compared.
+  - type: fill
+    prompt: Declare the type parameter for the impl block.
+    pre: |
+      struct Wrapper<T> {
+          value: T,
+      }
+
+      impl[[<T>]] Wrapper<T> {
+          fn get(&self) -> &T {
+              &self.value
+          }
+      }
+    body: |
+      let w = Wrapper { value: "boxed" };
+      println!("{}", w.get());
+    why: "impl<T> declares T so that Wrapper<T> can use it; without it, T would have to be an existing type."
+  - type: fill
+    prompt: Make the function work for arrays of any length.
+    pre: |
+      fn sum<[[const N: usize]]>(values: [i32; N]) -> i32 {
+          let mut total = 0;
+          for v in values {
+              total += v;
+          }
+          total
+      }
+    body: |
+      println!("{} {}", sum([1, 2, 3]), sum([10, 20]));
+    why: "A const generic parameter (const N: usize) stands for the array length, which is inferred at each call."
+  - type: bug
+    pre: |
+      fn smallest<T: PartialOrd + Copy>(items: &[T]) -> T {
+          let mut best = items[0];
+          for &item in items {
+              if item > best { // BUG
+                  best = item;
+              }
+          }
+          best
+      }
+    body: |
+      println!("{}", smallest(&[4, 1, 7]));
+    fix: "if item < best {"
+    prompt: This should print the smallest number, 1. Click the line with the bug.
+    why: To keep the smallest value, replace best only when the new item is smaller.
+  - type: bug
+    pre: |
+      struct Point<T> {
+          x: T,
+          y: T,
+      }
+
+      impl Point<f64> {
+          fn distance_from_origin(&self) -> f64 {
+              (self.x * self.x + self.y * self.y).sqrt()
+          }
+      }
+    body: |
+      let p = Point { x: 6, y: 8 }; // BUG
+      println!("{}", p.distance_from_origin());
+    fix: "let p = Point { x: 6.0, y: 8.0 };"
+    prompt: This should print 10. Click the line with the bug.
+    why: distance_from_origin is only defined for Point<f64>. Integer literals make a Point of integers, which doesn't have that method.
+  - type: compiles
+    answer: no
+    pre: |
+      fn largest<T>(items: &[T]) -> &T {
+          let mut best = &items[0];
+          for item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+    body: |
+      println!("{}", largest(&[1, 5, 2]));
+    why: Without a PartialOrd bound, > can't be used on T, because not every type can be ordered.
+  - type: compiles
+    answer: no
+    pre: |
+      struct Point<T> {
+          x: T,
+          y: T,
+      }
+    body: |
+      let p = Point { x: 1, y: 2.0 };
+      println!("{} {}", p.x, p.y);
+    why: Both fields have the same type T, so they can't be an integer and a float at once. Use two parameters if they may differ.
+  - type: compiles
+    answer: yes
+    pre: |
+      struct Pair<A, B> {
+          left: A,
+          right: B,
+      }
+    body: |
+      let p = Pair { left: 1, right: "one" };
+      println!("{} {}", p.left, p.right);
+    why: With two type parameters, A and B can be different types (here i32 and &str).
+  - type: compiles
+    answer: no
+    pre: |
+      fn dot<const N: usize>(a: [i32; N], b: [i32; N]) -> i32 {
+          let mut total = 0;
+          for i in 0..N {
+              total += a[i] * b[i];
+          }
+          total
+      }
+    body: |
+      println!("{}", dot([1, 2, 3], [4, 5]));
+    why: Both parameters use the same N, so the arrays must have the same length. The compiler rejects a length 3 and a length 2 array.
+  - type: choice
+    prompt: A program calls a generic function with an i32 and with an f64. What does the compiler do?
+    choices: ["Checks the type at run time on every call", "Generates a separate copy of the function for each type", "Converts both arguments to f64", "Stores the arguments on the heap in a Box"]
+    answer: 2
+    why: This is monomorphization. Each copy is specialized for its type, so generic code is as fast as hand-written code.
+  - type: choice
+    prompt: A function adds up daily sales, and the number of days is only known when the program runs. Which parameter type fits best?
+    choices: ["sales: &[u32]", "sales: [u32; 7]", "a const generic array: sales: [u32; N]", "sales: (u32, u32, u32)"]
+    answer: 1
+    why: A slice accepts any length decided at run time. Fixed arrays and const generics need the length at compile time.
+  - type: boss
+    prompt: |
+      Write `fn min_max<T: PartialOrd + Copy>(items: &[T]) -> Option<(T, T)>` that returns the smallest and the largest element as a tuple, or `None` for an empty slice. Walk the slice once.
+    seed: |
+      fn min_max<T: PartialOrd + Copy>(items: &[T]) -> Option<(T, T)> {
+          todo!()
+      }
+    solution: |
+      fn min_max<T: PartialOrd + Copy>(items: &[T]) -> Option<(T, T)> {
+          if items.is_empty() {
+              return None;
+          }
+          let mut low = items[0];
+          let mut high = items[0];
+          for &item in items {
+              if item < low {
+                  low = item;
+              }
+              if item > high {
+                  high = item;
+              }
+          }
+          Some((low, high))
+      }
+    harness: |
+      #[test]
+      fn finds_min_and_max_of_numbers() {
+          assert_eq!(min_max(&[3, 9, -2, 7]), Some((-2, 9)), "min_max(&[3, 9, -2, 7])");
+      }
+
+      #[test]
+      fn works_with_floats_and_chars() {
+          assert_eq!(min_max(&[1.5, 0.25, 8.0]), Some((0.25, 8.0)), "min_max(&[1.5, 0.25, 8.0])");
+          assert_eq!(min_max(&['r', 'u', 's', 't']), Some(('r', 'u')), "min_max(&['r', 'u', 's', 't'])");
+      }
+
+      #[test]
+      fn a_single_item_is_both() {
+          assert_eq!(min_max(&[42]), Some((42, 42)), "min_max(&[42])");
+      }
+
+      #[test]
+      fn empty_slice_gives_none() {
+          let empty: [u8; 0] = [];
+          assert_eq!(min_max(&empty), None, "min_max(&[])");
+      }
+    hints:
+      - "Return `None` early for an empty slice."
+      - "Start both `low` and `high` at `items[0]`, then update them in one loop."
+    why: The bounds say exactly what the function needs, compare and copy, so it works for every type that has both.

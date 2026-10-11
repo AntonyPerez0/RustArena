@@ -38,15 +38,16 @@ export function features(code) {
       // The type in a path (HashMap in HashMap::new) is a feature on its own too.
       for (const p of parts) if (/^[A-Z]/.test(p) && !own.has(p)) out.add(p);
     } else if (KEYWORDS.has(t)) out.add(t);
-    else if (before === "." && after === "(" && !own.has(t)) out.add("." + t);
+    else if (before === "." && after === "(") out.add("." + t);
     else if (/^[A-Z][A-Za-z0-9]+$/.test(t) && !own.has(t)) out.add(t);
     else if (after === "(" && !own.has(t) && /^[a-z_]\w*$/.test(t)) out.add(t + "()");
   }
   // A few ideas that are syntax rather than names.
   if (/\)\s*\?|\w\?[;.)]/.test(src)) out.add("? operator");
   if (/&\s*mut\b/.test(src)) out.add("&mut");
-  if (/&\s*[a-z_(\[]/.test(src)) out.add("&");
-  if (/'[a-z_]\w*\b(?!')/.test(src)) out.add("lifetime");
+  // A lifetime sits in a type (&'a, <'a>, 'a: 'b, 'static); a loop label precedes `loop`/`while`/`for` or follows break/continue.
+  if (/&'[a-z_]\w*|[<,]\s*'[a-z_]\w*\s*[,>:]|'static\b/.test(src)) out.add("lifetime");
+  if (/'[a-z_]\w*\s*:\s*(?:loop|while|for)\b|\b(?:break|continue)\s+'[a-z_]/.test(src)) out.add("loop label");
   if (/\|[^|\n]*\|\s*[^|=]/.test(src) && /(?:\(|,|=|move)\s*\|/.test(src)) out.add("closure");
   if (/\bif\s+let\b/.test(src)) out.add("if let");
   if (/\bwhile\s+let\b/.test(src)) out.add("while let");
@@ -56,7 +57,7 @@ export function features(code) {
   if (/:\s*\[\s*[\w<>&']+\s*;\s*\d+\s*\]/.test(src)) out.add("array type");
   if (/[A-Za-z_)\]]\.\d+\b/.test(src)) out.add("tuple index");
   if (/\blet\s*(?:mut\s+)?\(/.test(src)) out.add("tuple destructuring");
-  if (/\.\.=?/.test(src)) out.add("range");
+  if (/(?<!\.)\.\.=?(?!\.)/.test(src)) out.add("range");
   if (/#\[derive\(/.test(src)) out.add("derive");
   for (const m of src.matchAll(/#\[derive\(([^)]*)\)\]/g)) for (const d of m[1].split(",")) out.add("derive " + d.trim());
   for (const t of COMMON) out.delete(t), out.delete(t + "()");
@@ -66,7 +67,8 @@ export function features(code) {
 /** Code blocks and `inline code` of a Markdown text, joined. */
 function codeOf(md) {
   const parts = [];
-  for (const m of md.matchAll(/```[^\n]*\n([\s\S]*?)```/g)) parts.push(m[1]);
+  // Only code: program output, input and compiler messages aren't features the learner wrote.
+  for (const m of md.matchAll(/```([^\n]*)\n([\s\S]*?)```/g)) if (/^\s*(rust|rs)\b/.test(m[1]) || !m[1].trim()) parts.push(m[2]);
   for (const m of md.replace(/```[\s\S]*?```/g, "").matchAll(/`([^`\n]+)`/g)) parts.push(m[1]);
   return parts.join("\n");
 }

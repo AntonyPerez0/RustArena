@@ -1,0 +1,164 @@
+topic: strings
+drills:
+  - type: predict
+    body: |
+      let s = "héllo";
+      println!("{} {}", s.len(), s.chars().count());
+    why: len counts bytes and é takes two bytes in UTF-8, so there are 6 bytes but only 5 chars.
+  - type: predict
+    body: |
+      println!("[{:>5}]", "ab");
+    why: "{:>5} right-aligns the text in a field 5 characters wide, padding with spaces on the left."
+  - type: predict
+    body: |
+      let s = String::from("rust");
+      let t = s + "acean";
+      println!("{t}");
+    why: "+ takes the String on the left by value and appends the &str on the right."
+  - type: predict
+    body: |
+      println!("{:.2} {:+} {:#b}", 2.0 / 3.0, 5, 6);
+    why: ".2 rounds to two decimals, + always shows the sign, and #b prints binary with a 0b prefix."
+  - type: predict
+    after: strings-3
+    body: |
+      println!("{:?}", "key=a=b".split_once('='));
+    why: split_once splits at the first separator only, so the rest keeps its other = sign.
+  - type: predict
+    body: |
+      println!("{:?}", "café au lait".find("au"));
+    why: "find returns a byte position. café takes 5 bytes (é is two), plus the space, so \"au\" starts at byte 6."
+  - type: fill
+    prompt: Get the first character (as an Option).
+    body: |
+      let name = "Émile";
+      let first = name.chars().[[next]]();
+      println!("{:?}", first);
+    why: chars() walks the characters; next() takes the first one, or None for an empty string.
+  - type: fill
+    prompt: Center the text in 9 columns, filling with stars.
+    body: |
+      println!("{:[[*^9]]}", "mid");
+    why: In a format spec, the fill character comes first, then the alignment (^ centers), then the width.
+  - type: fill
+    prompt: Glue the words together with a comma and a space.
+    body: |
+      let words = vec!["red", "green", "blue"];
+      let joined = words.[[join]](", ");
+      println!("{joined}");
+    why: join builds one String from a list of strings, putting the separator between them.
+  - type: bug
+    after: strings-2
+    body: |
+      let name = "Émile";
+      let first = &name[0..1]; // BUG
+      println!("{:?}", first);
+    fix: let first = name.chars().next();
+    prompt: "This should print the first character of the name. Click the line with the bug."
+    why: É takes two bytes, so byte 1 isn't a char boundary and the slice panics. Work with chars instead of byte positions.
+  - type: bug
+    body: |
+      let line = "ana  bo cy";
+      let names: Vec<&str> = line.split(' ').collect(); // BUG
+      println!("{}", names.len());
+    fix: 'let names: Vec<&str> = line.split_whitespace().collect();'
+    prompt: "This should count the 3 names. Click the line with the bug."
+    why: split(' ') produces an empty piece for the double space. split_whitespace treats any run of whitespace as one separator.
+  - type: bug
+    body: |
+      let input = "  42\n";
+      let n: Result<i32, _> = input.parse(); // BUG
+      println!("{:?}", n);
+    fix: 'let n: Result<i32, _> = input.trim().parse();'
+    prompt: "This should parse the number and print `Ok(42)`. Click the line with the bug."
+    why: parse doesn't skip whitespace, so the spaces and newline make it fail. Trim first.
+  - type: compiles
+    answer: no
+    body: |
+      let s = String::from("hello");
+      let c = s[0];
+      println!("{c}");
+    why: Strings can't be indexed by a number, because a byte position isn't necessarily a character. Use s.chars().next() or s.chars().nth(i).
+  - type: compiles
+    after: strings-5
+    answer: no
+    body: |
+      let s1 = String::from("tic");
+      let s2 = String::from("tac");
+      let s3 = s1 + s2;
+      println!("{s3}");
+    why: "The right side of + must be a &str: write s1 + &s2."
+  - type: compiles
+    answer: yes
+    body: |
+      let s1 = String::from("tic");
+      let s2 = String::from("tac");
+      let s3 = s1 + &s2;
+      println!("{s2} {s3}");
+    why: "+ moves s1 but only borrows s2, so s2 can still be printed. (Printing s1 here would not compile.)"
+  - type: choice
+    prompt: What does this print?
+    body: |
+      println!("{}", "🦀".len());
+    choices: ["1", "2", "4", "8"]
+    answer: 3
+    verify: output
+    why: len counts bytes, and the crab emoji takes 4 bytes in UTF-8. Its chars().count() is 1.
+  - type: choice
+    prompt: "Which is true about `{}` and `{:?}`?"
+    choices: ["`{}` uses Display, the text for users; `{:?}` uses Debug, which shows quotes, escapes and structure for programmers", "They always print exactly the same thing", "`{:?}` only works on numbers", "`{}` works on every type, including Vec and Option"]
+    answer: 1
+    why: Display is written by the type's author for end users; Debug is derivable and unambiguous. Vec and Option implement Debug but not Display.
+  - type: boss
+    prompt: |
+      Write `fn wrap(text: &str, width: usize) -> Vec<String>` that word-wraps text: split it into words, and fill each line with as many words as fit in `width` characters (counting chars, not bytes, with one space between words). A word longer than `width` goes on a line of its own.
+    seed: |
+      fn wrap(text: &str, width: usize) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      fn wrap(text: &str, width: usize) -> Vec<String> {
+          let mut lines = Vec::new();
+          let mut current = String::new();
+          for word in text.split_whitespace() {
+              if current.is_empty() {
+                  current.push_str(word);
+              } else if current.chars().count() + 1 + word.chars().count() <= width {
+                  current.push(' ');
+                  current.push_str(word);
+              } else {
+                  lines.push(current);
+                  current = word.to_string();
+              }
+          }
+          if !current.is_empty() {
+              lines.push(current);
+          }
+          lines
+      }
+    harness: |
+      #[test]
+      fn fills_lines_greedily() {
+          assert_eq!(wrap("the quick brown fox", 10), vec!["the quick", "brown fox"], "wrap(\"the quick brown fox\", 10)");
+      }
+
+      #[test]
+      fn long_word_gets_its_own_line() {
+          assert_eq!(wrap("a supercalifragilistic b", 5), vec!["a", "supercalifragilistic", "b"], "wrap(\"a supercalifragilistic b\", 5)");
+      }
+
+      #[test]
+      fn counts_chars_not_bytes() {
+          assert_eq!(wrap("café crème brûlée", 10), vec!["café crème", "brûlée"], "wrap(\"café crème brûlée\", 10)");
+      }
+
+      #[test]
+      fn extra_whitespace_and_empty_text() {
+          assert_eq!(wrap("  one   two  ", 20), vec!["one two"], "wrap(\"  one   two  \", 20)");
+          assert_eq!(wrap("", 5), Vec::<String>::new(), "wrap(\"\", 5)");
+      }
+    hints:
+      - "Keep a `current` String for the line being built and loop over `text.split_whitespace()`."
+      - "A word fits if `current.chars().count() + 1 + word.chars().count() <= width`; otherwise push `current` into `lines` and start a new line with the word."
+      - "Don't forget to push the last line after the loop (if it isn't empty)."
+    why: Greedy word wrap builds each line with push_str and measures with chars().count(), so accented text wraps at the right place.

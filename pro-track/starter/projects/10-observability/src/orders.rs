@@ -71,7 +71,11 @@ pub fn sample_orders() -> Vec<Order> {
         lines,
     };
     vec![
-        order(1, "ada", vec![line("KB-01", 1, 4999), line("MS-02", 2, 1999)]),
+        order(
+            1,
+            "ada",
+            vec![line("KB-01", 1, 4999), line("MS-02", 2, 1999)],
+        ),
         order(2, "bob", vec![]),
         order(3, "carol", vec![line("SC-07", 5, 49_999)]),
         order(4, "flaky-co", vec![line("MS-02", 1, 1999)]),
@@ -82,7 +86,11 @@ pub fn sample_orders() -> Vec<Order> {
 
 /// Processes every order and logs a summary at the end.
 pub fn process_batch(orders: &[Order], config: &Config) -> Summary {
-    println!("[{}] processing {} orders", config.service_name, orders.len());
+    println!(
+        "[{}] processing {} orders",
+        config.service_name,
+        orders.len()
+    );
     let mut summary = Summary::default();
     for order in orders {
         match process_order(order, config) {
@@ -168,7 +176,9 @@ fn charge_with_retries(
         match result {
             Ok(()) => return Ok(()),
             Err(err) if err.is_transient() && attempt < payment.max_attempts => {
-                thread::sleep(Duration::from_millis(payment.backoff_ms * u64::from(attempt)));
+                thread::sleep(Duration::from_millis(
+                    payment.backoff_ms * u64::from(attempt),
+                ));
                 attempt += 1;
             }
             Err(err) => return Err(err),

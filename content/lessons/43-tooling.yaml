@@ -1,0 +1,2011 @@
+id: tooling
+title: Debugging, Docs and Tooling
+phase: "Rust at work"
+summary: The tools around the code. Debug with dbg! and eprintln!, read panics and backtraces, use a debugger and logging, document with rustdoc, satisfy clippy and rustfmt, and wire it all into CI.
+roadmap: [Debugging, rust-gdb, rust-lldb, "Documenting with rustdoc"]
+steps:
+  - title: "dbg! and eprintln!: print debugging done right"
+    id: tooling-1
+    text: |
+      When code does something unexpected, the quickest tool is still printing values. Rust has two macros made for it.
+
+      ### dbg!
+
+      `dbg!(expression)` prints the file, line and column, the expression's source text, and its value (pretty-printed with `{:#?}`), then **returns the value**. So you can wrap any expression in place without restructuring your code:
+
+      ```rust run
+      fn average(scores: &[u32]) -> u32 {
+          let total: u32 = dbg!(scores.iter().sum());
+          dbg!(total / scores.len() as u32)
+      }
+
+      fn main() {
+          let avg = average(&[70, 85, 90]);
+          eprintln!("debug: average is {avg}");
+          println!("average: {avg}");
+      }
+      ```
+
+      ```output
+      average: 81
+      ```
+
+      The program's normal output is that one line. The debug lines went somewhere else, to the terminal's error stream:
+
+      ```text
+      [src/main.rs:2:22] scores.iter().sum() = 245
+      [src/main.rs:3:5] total / scores.len() as u32 = 81
+      debug: average is 81
+      ```
+
+      - `dbg!(scores.iter().sum())` printed the sum and handed it to `let total`. Wrapping the last line of `average` didn't change what the function returns.
+      - `dbg!` **takes ownership** of its argument, like passing it to a function. For a `String` or `Vec` you still need afterwards, write `dbg!(&name)`.
+      - `dbg!(a, b)` prints both.
+
+      ### stdout and stderr
+
+      Every program has two output streams. **stdout** (standard output) is for the program's real output: what `println!` writes. **stderr** (standard error) is for errors, warnings and diagnostics: what `eprintln!` (and `eprint!`) and `dbg!` write. In a terminal both appear on screen, but they're separate:
+
+      ```text
+      $ cargo run > report.txt
+      [src/main.rs:2:22] scores.iter().sum() = 245
+      [src/main.rs:3:5] total / scores.len() as u32 = 81
+      debug: average is 81
+      $ cat report.txt
+      average: 81
+      ```
+
+      `>` redirects only stdout to the file, so the debug lines didn't corrupt the report. The same goes when another program reads your output through a pipe. The tests on this site also compare only stdout, so debug lines on stderr never make a test fail.
+
+      ### A debugging routine
+
+      1. Find where the output first goes wrong, and form a guess about why ("the cents are parsed wrong").
+      2. Wrap the values that would confirm or rule out the guess in `dbg!`.
+      3. Fix, rerun, then **remove the `dbg!` calls**. They print in release builds too. Teams often turn on clippy's `dbg_macro` lint in CI so a forgotten one can't be merged.
+
+      ### Common mistakes
+
+      - **Debug output on stdout**: a stray `println!("here")` changes the program's output and breaks anything reading it. Use `eprintln!` or `dbg!`.
+      - **`dbg!(s)` and then using `s`**: `error[E0382]: borrow of moved value`. Use `dbg!(&s)`.
+      - **Printing everything at once.** Print the few values that test your current guess; a wall of output hides the clue.
+
+      **Your turn:** fill the blanks. `line_total` should log its result with the macro that prints an expression and its value (and still returns it), and the warning about the empty line belongs on stderr. The program's stdout must stay exactly `total: 1097`.
+    fill: |
+      fn line_total(price_cents: u32, qty: u32) -> u32 {
+          [[dbg!]](price_cents * qty)
+      }
+
+      fn main() {
+          let lines = [(250, 2), (199, 3), (1000, 0)];
+          let mut total = 0;
+          for (price, qty) in lines {
+              if qty == 0 {
+                  [[eprintln!]]("warning: skipping a line with quantity 0");
+                  continue;
+              }
+              total += line_total(price, qty);
+          }
+          println!("total: {total}");
+      }
+    hints:
+      - "The macro that prints an expression with its file and line, then returns the value, is `dbg!`."
+      - "`println!` writes to stdout; its twin that writes to stderr is `eprintln!`."
+    tests:
+      - expect: "total: 1097"
+    more:
+      - task: |
+          This program should print `total: $23.00` (12.50 + 3.50 + 7.00) but prints `total: $22.55`. Use `dbg!` inside `parse_price` to see which price is parsed wrong and why, then fix `parse_price`. You can leave `dbg!` calls in while you work: they print to stderr.
+        seed: |
+          fn parse_price(s: &str) -> u32 {
+              // "$12.50" is 1250 cents
+              let s = s.trim_start_matches('$');
+              let (dollars, cents) = s.split_once('.').unwrap_or((s, "0"));
+              let dollars: u32 = dollars.parse().unwrap();
+              let cents: u32 = cents.parse().unwrap();
+              dollars * 100 + cents
+          }
+
+          fn main() {
+              let prices = ["$12.50", "$3.5", "$7"];
+              let mut total = 0;
+              for p in prices {
+                  total += parse_price(p);
+              }
+              println!("total: ${}.{:02}", total / 100, total % 100);
+          }
+        solution: |
+          fn parse_price(s: &str) -> u32 {
+              // "$12.50" is 1250 cents
+              let s = s.trim_start_matches('$');
+              let (dollars, cents_text) = s.split_once('.').unwrap_or((s, "0"));
+              let dollars: u32 = dollars.parse().unwrap();
+              let mut cents: u32 = cents_text.parse().unwrap();
+              if cents_text.len() == 1 {
+                  cents *= 10; // "3.5" means 50 cents, not 5
+              }
+              dollars * 100 + cents
+          }
+
+          fn main() {
+              let prices = ["$12.50", "$3.5", "$7"];
+              let mut total = 0;
+              for p in prices {
+                  total += parse_price(p);
+              }
+              println!("total: ${}.{:02}", total / 100, total % 100);
+          }
+        forbid:
+          - pattern: '23\.00|2300'
+            strings: true
+            message: "Don't hard-code the answer: fix `parse_price`."
+        hints:
+          - "Add `dbg!(dollars, cents);` before the return and compare the three prices."
+          - "`$3.5` gives `cents = 5`, but half a dollar is 50 cents. A single digit after the dot means tens of cents."
+          - "Keep the text of the cents: if it's one character long, multiply the parsed number by 10."
+        tests:
+          - expect: "total: $23.00"
+      - task: |
+          Read lines of `name,score` from stdin. Lines that don't have a comma followed by a whole number are skipped, with a warning on **stderr** like `warning: line 2: cannot read "bo,x"`. On stdout, print only:
+
+          ```
+          valid: 2
+          average: 80.0
+          ```
+
+          (the number of valid lines, then their average with one decimal, or `average: none` when there are no valid lines).
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut scores: Vec<u32> = Vec::new();
+              for (i, line) in io::stdin().lock().lines().enumerate() {
+                  let line = line.expect("could not read input");
+                  // parse the score after the comma, warn on stderr if you can't
+              }
+              println!("valid: {}", scores.len());
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut scores: Vec<u32> = Vec::new();
+              for (i, line) in io::stdin().lock().lines().enumerate() {
+                  let line = line.expect("could not read input");
+                  // parse the score after the comma, warn on stderr if you can't
+                  let parsed = line.split_once(',').and_then(|(_, s)| s.trim().parse::<u32>().ok());
+                  match parsed {
+                      Some(score) => scores.push(score),
+                      None => eprintln!("warning: line {}: cannot read {line:?}", i + 1),
+                  }
+              }
+              println!("valid: {}", scores.len());
+              if scores.is_empty() {
+                  println!("average: none");
+              } else {
+                  let avg = scores.iter().sum::<u32>() as f64 / scores.len() as f64;
+                  println!("average: {avg:.1}");
+              }
+          }
+        require:
+          - pattern: 'eprintln!'
+            message: "Print the warnings for bad lines with `eprintln!`, so they go to stderr."
+        hints:
+          - "`line.split_once(',')` gives `Option<(&str, &str)>`; parse the second part with `.trim().parse::<u32>().ok()`."
+          - "Chain them with `and_then`, then `match`: push the score, or `eprintln!(\"warning: line {}: cannot read {line:?}\", i + 1)`."
+          - "For the average, convert to `f64` and print with `{:.1}`; print `average: none` when `scores` is empty."
+        tests:
+          - stdin: "ana,90\nbo,x\ncy,70\n"
+            expect: "valid: 2\naverage: 80.0"
+          - stdin: "just text\n"
+            hidden: true
+          - stdin: "a,1\nb,2\nc,4\nd\n"
+            hidden: true
+
+  - title: Reading panics and backtraces
+    id: tooling-2
+    text: |
+      When a Rust program hits a bug it can't recover from, it **panics**: it stops, prints a message to stderr, and exits with code 101. The message is precise, so read it slowly.
+
+      ```rust panics
+      fn main() {
+          let lines = ["12", "7", "x3"];
+          let mut total = 0;
+          for line in lines {
+              let n: i32 = line.parse().expect("each line should be a whole number");
+              total += n;
+              println!("running total: {total}");
+          }
+      }
+      ```
+
+      ```output
+      running total: 12
+      running total: 19
+      ```
+
+      Then, on stderr:
+
+      ```text
+      thread 'main' (31337) panicked at src/main.rs:5:35:
+      each line should be a whole number: ParseIntError { kind: InvalidDigit }
+      note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+      ```
+
+      - `thread 'main'`: which thread panicked (in tests, it's the test's name). The number in parentheses is the thread's id and changes on every run; older Rust versions don't print it.
+      - `src/main.rs:5:35`: file, line and column. Line 5, column 35 is the `.expect(...)` call.
+      - The message: your `expect` text, then the error's `Debug` form. A good `expect` message says what you *expected* to be true, which is why it reads well here.
+      - The lines printed before the panic tell you how far the program got: it failed on the third line, `"x3"`.
+
+      The fix is to handle bad lines instead of crashing:
+
+      ```rust run
+      fn main() {
+          let lines = ["12", "7", "x3"];
+          let mut total = 0;
+          for line in lines {
+              match line.parse::<i32>() {
+                  Ok(n) => total += n,
+                  Err(e) => eprintln!("skipping {line:?}: {e}"),
+              }
+          }
+          println!("total: {total}");
+      }
+      ```
+
+      ```output
+      total: 19
+      ```
+
+      ### Messages you'll meet
+
+      | Message | Usual cause |
+      |---|---|
+      | `index out of bounds: the len is 3 but the index is 3` | a loop or index one past the end |
+      | ``called `Option::unwrap()` on a `None` value`` | a lookup or search found nothing |
+      | ``called `Result::unwrap()` on an `Err` value: ...`` | parsing or I/O failed; the error follows |
+      | `attempt to subtract with overflow` | an unsigned number would go below 0 (debug builds check this) |
+      | `attempt to divide by zero` | dividing by an empty collection's length, often |
+      | `RefCell already borrowed` | a RefCell borrowed mutably while another borrow was alive |
+      | `not yet implemented` | a `todo!()` was reached |
+
+      ### Backtraces
+
+      The panic location says *where* it broke, but often the real mistake is in the caller. Set the `RUST_BACKTRACE` environment variable to see the whole chain of calls, the **backtrace**:
+
+      ```rust
+      fn average(scores: &[u32]) -> u32 {
+          let total: u32 = scores.iter().sum();
+          total / scores.len() as u32
+      }
+
+      fn main() {
+          let rounds: Vec<Vec<u32>> = vec![vec![70, 80], vec![]];
+          for r in &rounds {
+              println!("{}", average(r));
+          }
+      }
+      ```
+
+      ```text
+      $ RUST_BACKTRACE=1 cargo run
+      75
+
+      thread 'main' (8226) panicked at src/main.rs:3:5:
+      attempt to divide by zero
+      stack backtrace:
+         0: __rustc::rust_begin_unwind
+                   at /rustc/2d8144b7.../library/std/src/panicking.rs:689:5
+         1: core::panicking::panic_fmt
+                   at /rustc/2d8144b7.../library/core/src/panicking.rs:80:14
+         2: core::panicking::panic_const::panic_const_div_by_zero
+                   at /rustc/2d8144b7.../library/core/src/panicking.rs:175:17
+         3: scores::average
+                   at ./src/main.rs:3:5
+         4: scores::main
+                   at ./src/main.rs:9:24
+         5: <fn() as core::ops::function::FnOnce<()>>::call_once
+                   at /rustc/2d8144b7.../library/core/src/ops/function.rs:250:5
+      note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+      ```
+
+      Read it from the top and skip the frames from `std` and `core` (the panic machinery). Frame 3 is the first one in *your* crate: `scores::average` at line 3. Frame 4 is who called it: `main`, line 9. So `main` passed an empty round, and `average` didn't expect one. On Windows PowerShell, set the variable with `$env:RUST_BACKTRACE=1` first. `RUST_BACKTRACE=full` shows every frame.
+
+      ### Common mistakes
+
+      - **Reading only the last line.** The first line (location) and the message carry the information; the `note:` line is just a tip.
+      - **Fixing the line that panicked instead of the cause.** If `average` receives an empty slice, decide whether `average` should handle it (return `Option`) or the caller should never pass one.
+      - **`.unwrap()` everywhere.** When something truly can't fail, `.expect("why it can't")` makes the panic message explain itself.
+
+      **Your turn:** this program panics before finishing. Run it, read the panic message, and fix the loop so it prints the change between each pair of neighboring readings:
+
+      ```
+      18 -> 21: +3
+      21 -> 19: -2
+      19 -> 25: +6
+      ```
+    seed: |
+      fn main() {
+          let readings = [18, 21, 19, 25];
+          // Print the change from each reading to the next.
+          for i in 0..readings.len() {
+              let change = readings[i + 1] - readings[i];
+              println!("{} -> {}: {:+}", readings[i], readings[i + 1], change);
+          }
+      }
+    solution: |
+      fn main() {
+          let readings = [18, 21, 19, 25];
+          // Print the change from each reading to the next.
+          for i in 0..readings.len() - 1 {
+              let change = readings[i + 1] - readings[i];
+              println!("{} -> {}: {:+}", readings[i], readings[i + 1], change);
+          }
+      }
+    hints:
+      - "The message says `index out of bounds: the len is 4 but the index is 4`. Which expression uses index 4?"
+      - "When `i` is the last index, `readings[i + 1]` is past the end. There are only 3 pairs for 4 readings."
+      - "Loop over `0..readings.len() - 1`, or use `readings.windows(2)`."
+    tests:
+      - expect: "18 -> 21: +3\n21 -> 19: -2\n19 -> 25: +6"
+    more:
+      - task: |
+          This order summary panics with ``called `Option::unwrap()` on a `None` value``. Find out which item causes it, and handle the missing price instead of panicking: print `kiwi: unknown item` and leave it out of the total. Expected output:
+
+          ```
+          apple: 120
+          kiwi: unknown item
+          pear: 95
+          total: 215
+          ```
+        seed: |
+          use std::collections::BTreeMap;
+
+          fn main() {
+              let prices = BTreeMap::from([("apple", 120), ("pear", 95)]);
+              let order = ["apple", "kiwi", "pear"];
+              let mut total = 0;
+              for item in order {
+                  let price = prices.get(item).unwrap();
+                  total += price;
+                  println!("{item}: {price}");
+              }
+              println!("total: {total}");
+          }
+        solution: |
+          use std::collections::BTreeMap;
+
+          fn main() {
+              let prices = BTreeMap::from([("apple", 120), ("pear", 95)]);
+              let order = ["apple", "kiwi", "pear"];
+              let mut total = 0;
+              for item in order {
+                  match prices.get(item) {
+                      Some(price) => {
+                          total += price;
+                          println!("{item}: {price}");
+                      }
+                      None => println!("{item}: unknown item"),
+                  }
+              }
+              println!("total: {total}");
+          }
+        forbid:
+          - pattern: '\.unwrap\(\)'
+            message: "Handle the `None` case instead of calling `.unwrap()`."
+        hints:
+          - "The panic happens on the second item: `prices.get(\"kiwi\")` is `None`."
+          - "Replace the `unwrap` with a `match` (or `let ... else`) that prints `{item}: unknown item` for `None`."
+        tests:
+          - expect: "apple: 120\nkiwi: unknown item\npear: 95\ntotal: 215"
+      - task: |
+          The warehouse program panics with `attempt to subtract with overflow`. Stock is a `u32`, which can't go below 0. Use `checked_sub` (it returns `None` instead of overflowing) so an order larger than the stock is refused and the program keeps going:
+
+          ```
+          shipped 2, 3 left
+          cannot ship 4, only 3 left
+          shipped 1, 2 left
+          ```
+        seed: |
+          fn main() {
+              let mut stock: u32 = 5;
+              let orders = [2, 4, 1];
+              for qty in orders {
+                  stock -= qty;
+                  println!("shipped {qty}, {stock} left");
+              }
+          }
+        solution: |
+          fn main() {
+              let mut stock: u32 = 5;
+              let orders = [2, 4, 1];
+              for qty in orders {
+                  match stock.checked_sub(qty) {
+                      Some(left) => {
+                          stock = left;
+                          println!("shipped {qty}, {stock} left");
+                      }
+                      None => println!("cannot ship {qty}, only {stock} left"),
+                  }
+              }
+          }
+        require:
+          - pattern: '\.checked_sub\('
+            message: "Use `stock.checked_sub(qty)` to detect an order that's too big."
+        hints:
+          - "`stock.checked_sub(qty)` is `Some(new_stock)` when there's enough, `None` when the result would be negative."
+          - "`match stock.checked_sub(qty) { Some(left) => { stock = left; println!(...) } None => println!(\"cannot ship {qty}, only {stock} left\") }`"
+        tests:
+          - expect: "shipped 2, 3 left\ncannot ship 4, only 3 left\nshipped 1, 2 left"
+
+  - title: Debuggers and logging
+    id: tooling-3
+    text: |
+      Print debugging is quick, but each new question means editing and rebuilding. Two other tools cover what it can't: a **debugger** for exploring a running program, and **logging** for knowing what a program did when you weren't watching.
+
+      ### Debuggers
+
+      A debugger runs your program under its control. You set a **breakpoint** on a line, the program stops there, and you can inspect every variable, see the call stack, and step forward one line at a time. Rust ships wrappers around the two common debuggers, `rust-gdb` (Linux) and `rust-lldb` (macOS), that teach them to display Rust types like `Vec` and `String` nicely. Here is a session on the dividing-by-zero program from the previous step:
+
+      ```text
+      $ cargo build
+      $ rust-gdb -q target/debug/scores
+      (gdb) break src/main.rs:3
+      Breakpoint 1 at 0x1547e: file src/main.rs, line 3.
+      (gdb) run
+      Breakpoint 1, scores::average (scores=&[u32](size=2) = {70, 80}) at src/main.rs:3
+      3	    total / scores.len() as u32
+      (gdb) print total
+      $1 = 150
+      (gdb) continue
+      75
+      Breakpoint 1, scores::average (scores=&[u32](size=0)) at src/main.rs:3
+      (gdb) backtrace
+      #0  scores::average (scores=&[u32](size=0)) at src/main.rs:3
+      #1  0x00005555555693c5 in scores::main () at src/main.rs:9
+      ```
+
+      The second stop shows `size=0`: the empty round, caught before it crashes. Useful commands: `break file:line`, `run`, `next` (run the next line), `step` (go into a function call), `print expr`, `backtrace`, `continue`.
+
+      Most people use a debugger through their editor. In **VS Code**, install the `rust-analyzer` and `CodeLLDB` extensions: a **Debug** button appears above `fn main` and above each test, you click in the margin to set breakpoints, and variables show up in a side panel. RustRover and other IDEs work the same way. Debug in a normal (debug) build; in `--release` builds the optimizer removes many variables.
+
+      ### Logging
+
+      **Logging** is permanent, structured printing: each message has a **level** (`error`, `warn`, `info`, `debug`, `trace`, from most to least important), and you choose at run time which levels to show, without recompiling. Servers and CLIs at work log instead of using `println!`.
+
+      Here's the idea in plain Rust: an ordered level enum and a minimum level that filters messages.
+
+      ```rust run
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Level {
+          Debug,
+          Info,
+          Warn,
+          Error,
+      }
+
+      struct Logger {
+          min: Level,
+      }
+
+      impl Logger {
+          fn log(&self, level: Level, msg: &str) {
+              if level >= self.min {
+                  println!("[{level:?}] {msg}");
+              }
+          }
+      }
+
+      fn main() {
+          let logger = Logger { min: Level::Info };
+          logger.log(Level::Debug, "cache lookup for order 42");
+          logger.log(Level::Info, "order 42 accepted");
+          logger.log(Level::Warn, "stock for item 7 is low");
+          logger.log(Level::Error, "payment service unreachable");
+      }
+      ```
+
+      ```output
+      [Info] order 42 accepted
+      [Warn] stock for item 7 is low
+      [Error] payment service unreachable
+      ```
+
+      Deriving `PartialOrd` and `Ord` on an enum orders the variants as they're declared, so `level >= self.min` compares importance. (This demo prints to stdout; real loggers write to stderr or a file.)
+
+      In real projects you use crates. The **`log`** crate gives you the macros, and a separate logger crate such as `env_logger` decides where they go:
+
+      ```toml
+      [dependencies]
+      log = "0.4"
+      env_logger = "0.11"
+      ```
+
+      ```rust
+      use log::{debug, info, warn};
+
+      fn main() {
+          env_logger::init(); // reads the RUST_LOG environment variable
+          info!("server starting on port {}", 8080);
+          debug!("config loaded: {:?}", config);
+          warn!("disk is {}% full", 91);
+      }
+      ```
+
+      ```text
+      $ RUST_LOG=info cargo run
+      [2026-10-11T09:14:03Z INFO  shop] server starting on port 8080
+      [2026-10-11T09:14:03Z WARN  shop] disk is 91% full
+      ```
+
+      Larger services, especially async ones, use **`tracing`**, which adds **spans** (a named region of work, like "handling request 17") and structured fields that log tools can search:
+
+      ```rust
+      use tracing::{info, instrument};
+
+      #[instrument] // every log line inside gets the order_id field
+      fn ship(order_id: u64, items: usize) {
+          info!(items, "packing order");
+      }
+
+      fn main() {
+          tracing_subscriber::fmt::init();
+          ship(17, 3);
+      }
+      ```
+
+      ### Common mistakes
+
+      - **Debugging a release build**: variables show as `<optimized out>`. Use the default dev profile.
+      - **Logging at the wrong level**: `info` for things an operator cares about, `debug` for developer detail, `error` only for real failures. If everything is `error`, nothing is.
+      - **Logging secrets** (passwords, tokens, personal data). Logs get copied to many places.
+
+      **Your turn:** write the two functions a logger needs. `parse_level` reads a level name like `RUST_LOG` does: case-insensitive, surrounding spaces ignored, `warning` accepted as another name for `warn`, anything else is `None`. `enabled(min, level)` says whether a message at `level` is shown when the minimum is `min`.
+    seed: |
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Level {
+          Trace,
+          Debug,
+          Info,
+          Warn,
+          Error,
+      }
+
+      fn parse_level(s: &str) -> Option<Level> {
+          todo!()
+      }
+
+      fn enabled(min: Level, level: Level) -> bool {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Level {
+          Trace,
+          Debug,
+          Info,
+          Warn,
+          Error,
+      }
+
+      fn parse_level(s: &str) -> Option<Level> {
+          match s.trim().to_lowercase().as_str() {
+              "trace" => Some(Level::Trace),
+              "debug" => Some(Level::Debug),
+              "info" => Some(Level::Info),
+              "warn" | "warning" => Some(Level::Warn),
+              "error" => Some(Level::Error),
+              _ => None,
+          }
+      }
+
+      fn enabled(min: Level, level: Level) -> bool {
+          level >= min
+      }
+    harness: |
+      #[test]
+      fn parses_every_level_name() {
+          assert_eq!(parse_level("trace"), Some(Level::Trace), "parse_level(\"trace\")");
+          assert_eq!(parse_level("debug"), Some(Level::Debug), "parse_level(\"debug\")");
+          assert_eq!(parse_level("info"), Some(Level::Info), "parse_level(\"info\")");
+          assert_eq!(parse_level("warn"), Some(Level::Warn), "parse_level(\"warn\")");
+          assert_eq!(parse_level("error"), Some(Level::Error), "parse_level(\"error\")");
+      }
+
+      #[test]
+      fn ignores_case_and_spaces() {
+          assert_eq!(parse_level(" INFO "), Some(Level::Info), "parse_level(\" INFO \")");
+          assert_eq!(parse_level("Warning"), Some(Level::Warn), "parse_level(\"Warning\")");
+      }
+
+      #[test]
+      fn unknown_names_are_none() {
+          assert_eq!(parse_level("loud"), None, "parse_level(\"loud\")");
+          assert_eq!(parse_level(""), None, "parse_level(\"\")");
+      }
+
+      #[test]
+      fn shows_messages_at_or_above_the_minimum() {
+          assert!(enabled(Level::Info, Level::Info), "info at min info");
+          assert!(enabled(Level::Info, Level::Error), "error at min info");
+          assert!(!enabled(Level::Info, Level::Debug), "debug at min info");
+          assert!(enabled(Level::Trace, Level::Trace), "trace at min trace");
+          assert!(!enabled(Level::Error, Level::Warn), "warn at min error");
+      }
+    hints:
+      - "Normalize first: `s.trim().to_lowercase()`, then `match` on `.as_str()`."
+      - "`\"warn\" | \"warning\" => Some(Level::Warn)` handles both names; `_ => None` catches the rest."
+      - "The enum derives `PartialOrd`, so `enabled` is just `level >= min`."
+    more:
+      - task: |
+          Write `format_record(level, target, msg)`, which formats a log line like `env_logger` does: the level name in capitals, padded to 5 characters, then the target (the module or component), in square brackets, followed by the message:
+
+          ```
+          [WARN  orders] stock low
+          [ERROR db] timeout after 30s
+          ```
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+          enum Level {
+              Debug,
+              Info,
+              Warn,
+              Error,
+          }
+
+          fn format_record(level: Level, target: &str, msg: &str) -> String {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+          enum Level {
+              Debug,
+              Info,
+              Warn,
+              Error,
+          }
+
+          fn format_record(level: Level, target: &str, msg: &str) -> String {
+              let name = match level {
+                  Level::Debug => "DEBUG",
+                  Level::Info => "INFO",
+                  Level::Warn => "WARN",
+                  Level::Error => "ERROR",
+              };
+              format!("[{name:<5} {target}] {msg}")
+          }
+        harness: |
+          #[test]
+          fn pads_short_level_names() {
+              assert_eq!(format_record(Level::Warn, "orders", "stock low"), "[WARN  orders] stock low", "warn record");
+              assert_eq!(format_record(Level::Info, "http", "listening"), "[INFO  http] listening", "info record");
+          }
+
+          #[test]
+          fn five_letter_names_need_no_padding() {
+              assert_eq!(format_record(Level::Error, "db", "timeout after 30s"), "[ERROR db] timeout after 30s", "error record");
+              assert_eq!(format_record(Level::Debug, "cache", "miss"), "[DEBUG cache] miss", "debug record");
+          }
+        hints:
+          - "Map each level to its capital name with a `match`."
+          - "`{name:<5}` left-aligns the name in a field 5 characters wide."
+          - "`format!(\"[{name:<5} {target}] {msg}\")`"
+      - task: |
+          Write a log filter. The first line of stdin is the minimum level (`trace`, `debug`, `info`, `warn` or `error`). Every following line is a record like `WARN disk almost full`: a level, a space, the message.
+
+          Print the records at or above the minimum, unchanged, then a summary `N shown, M hidden`. Records whose level isn't a known name are counted as hidden and reported on **stderr**. Example: with minimum `warn` and the records `INFO started`, `WARN disk almost full`, `ERROR disk full`, print:
+
+          ```
+          WARN disk almost full
+          ERROR disk full
+          2 shown, 1 hidden
+          ```
+        seed: |
+          use std::io::{self, BufRead};
+
+          #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+          enum Level {
+              Trace,
+              Debug,
+              Info,
+              Warn,
+              Error,
+          }
+
+          fn main() {
+              let stdin = io::stdin();
+              let mut lines = stdin.lock().lines().map(|l| l.expect("could not read input"));
+              let min_text = lines.next().unwrap_or_default();
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+          enum Level {
+              Trace,
+              Debug,
+              Info,
+              Warn,
+              Error,
+          }
+
+          fn parse_level(s: &str) -> Option<Level> {
+              match s.trim().to_lowercase().as_str() {
+                  "trace" => Some(Level::Trace),
+                  "debug" => Some(Level::Debug),
+                  "info" => Some(Level::Info),
+                  "warn" | "warning" => Some(Level::Warn),
+                  "error" => Some(Level::Error),
+                  _ => None,
+              }
+          }
+
+          fn main() {
+              let stdin = io::stdin();
+              let mut lines = stdin.lock().lines().map(|l| l.expect("could not read input"));
+              let min_text = lines.next().unwrap_or_default();
+              let min = parse_level(&min_text).unwrap_or(Level::Info);
+              let (mut shown, mut hidden) = (0, 0);
+              for line in lines {
+                  let level_text = line.split_whitespace().next().unwrap_or("");
+                  match parse_level(level_text) {
+                      Some(level) if level >= min => {
+                          println!("{line}");
+                          shown += 1;
+                      }
+                      Some(_) => hidden += 1,
+                      None => {
+                          eprintln!("unknown level in {line:?}");
+                          hidden += 1;
+                      }
+                  }
+              }
+              println!("{shown} shown, {hidden} hidden");
+          }
+        require:
+          - pattern: 'eprintln!'
+            message: "Report records with an unknown level on stderr with `eprintln!`."
+        hints:
+          - "Write a `parse_level` function like the one in this step and use it for the first line and for each record's first word."
+          - "The first word of a record is `line.split_whitespace().next().unwrap_or(\"\")`."
+          - "`match parse_level(word) { Some(level) if level >= min => { print and count } Some(_) => hidden += 1, None => { eprintln!(...); hidden += 1; } }`"
+        tests:
+          - stdin: "warn\nINFO started\nWARN disk almost full\nERROR disk full\n"
+            expect: "WARN disk almost full\nERROR disk full\n2 shown, 1 hidden"
+          - stdin: "debug\nTRACE entering loop\nDEBUG x = 3\nLOUD what\nINFO done\n"
+            hidden: true
+          - stdin: "error\nINFO a\nWARN b\n"
+            hidden: true
+
+  - title: Documenting code with rustdoc
+    id: tooling-4
+    text: |
+      Rust has documentation built into the language and the toolchain. Every crate on crates.io gets its docs published automatically on **docs.rs**, and they all look the same because they're all made by **rustdoc** from comments in the code.
+
+      ### Doc comments
+
+      - `///` documents the item that follows it (a function, struct, field, enum variant, method...). It's an **outer doc comment**.
+      - `//!` documents the item it's *inside*: written at the top of `lib.rs` or `main.rs` it documents the whole crate; at the top of a module file or `mod` block, that module. It's an **inner doc comment**.
+      - Doc comments are **Markdown**: `` `code` ``, **bold**, lists, links, and fenced code blocks.
+      - The first line (or paragraph) is the **summary**, shown in lists and search results. Keep it to one sentence.
+
+      ```rust run
+      //! Shipping cost calculations for the arena shop.
+
+      /// A parcel waiting to be shipped.
+      struct Parcel {
+          /// Weight in grams.
+          weight_g: u32,
+      }
+
+      /// Returns the shipping cost of `parcel` in cents.
+      ///
+      /// Parcels up to 1 kg cost a flat 499; every started kilogram after that adds 150.
+      ///
+      /// # Examples
+      ///
+      /// ```
+      /// let cost = shipping_cost(&Parcel { weight_g: 2500 });
+      /// assert_eq!(cost, 799);
+      /// ```
+      fn shipping_cost(parcel: &Parcel) -> u32 {
+          let extra_kg = parcel.weight_g.saturating_sub(1000).div_ceil(1000);
+          499 + extra_kg * 150
+      }
+
+      fn main() {
+          for weight_g in [800, 1000, 2500] {
+              println!("{weight_g} g: {} cents", shipping_cost(&Parcel { weight_g }));
+          }
+      }
+      ```
+
+      ```output
+      800 g: 499 cents
+      1000 g: 499 cents
+      2500 g: 799 cents
+      ```
+
+      The comments don't change what the program does; they're for readers, and for `cargo doc`.
+
+      ### Standard sections
+
+      Rust docs use a few headings that readers look for:
+
+      - `# Examples`: how to call it. The most-read section; include one for every public function.
+      - `# Errors`: for functions returning `Result`, which situations return which errors.
+      - `# Panics`: the inputs that make it panic, so callers can avoid them.
+      - `# Safety`: for `unsafe fn`, what the caller must guarantee.
+
+      Link to other items with square brackets and backticks, like ``[`Parcel`]`` or ``[`Vec::push`]``. rustdoc turns them into links (**intra-doc links**) and warns if the target doesn't exist.
+
+      ### Doc tests
+
+      Code blocks in doc comments are **doc tests**: `cargo test` compiles and runs each one as a small program that uses your crate from the outside. If the code panics (say, an `assert_eq!` fails) or no longer compiles, the test fails, so examples can't quietly go out of date. Mark a block ` ```no_run ` to compile it without running (it talks to a network, say), or ` ```ignore ` to skip it. Lines starting with `# ` are compiled but hidden from the rendered docs, handy for setup code. (Doc tests need a Cargo project; on this site the single-file compiler treats them as plain comments.)
+
+      ### Building the docs
+
+      ```text
+      $ cargo doc --open           # your crate and all its dependencies, opened in a browser
+      $ cargo doc --no-deps        # only your crate
+      $ cargo test --doc           # run only the doc tests
+      ```
+
+      ### Making docs required
+
+      Libraries usually add a crate-level attribute that turns the `missing_docs` lint on: every public item must have a doc comment. With `deny` it's an error, which is what this step's exercises use (the site compiles with `rustc`, so this is how it checks your docs):
+
+      ```rust compile_fail
+      #![deny(missing_docs)]
+      //! Inventory helpers.
+
+      pub fn restock(qty: u32, added: u32) -> u32 {
+          qty + added
+      }
+
+      fn main() {
+          println!("{}", restock(3, 4));
+      }
+      ```
+
+      ```error
+      error: missing documentation for a function
+      ```
+
+      Private items aren't checked: docs matter most where other code uses yours. Many teams use `#![warn(missing_docs)]` locally and turn warnings into errors in CI.
+
+      ### Common mistakes
+
+      - **`//!` in the wrong place**: inner doc comments must come before any items in the file or module, or you get `error[E0753]: expected outer doc comment`.
+      - **Docs that repeat the signature** ("Takes a u32 and returns a u32"). Say what it means, the units, and the edge cases.
+      - **An example that doesn't compile.** As a doc test it fails `cargo test`; that's the point.
+
+      **Your turn:** the `Shelf` API works, but `#![deny(missing_docs)]` refuses to compile it. Document every public item: the struct, both fields, `new`, and `take`. Give `take` an `# Errors` section (when does it return `Err`?) and an `# Examples` section with a short code example.
+    seed: |
+      #![deny(missing_docs)]
+      //! Stock tracking for the arena shop.
+
+      pub struct Shelf {
+          pub item: String,
+          pub qty: u32,
+      }
+
+      impl Shelf {
+          pub fn new(item: &str, qty: u32) -> Shelf {
+              Shelf { item: item.to_string(), qty }
+          }
+
+          pub fn take(&mut self, n: u32) -> Result<u32, String> {
+              if n > self.qty {
+                  return Err(format!("only {} {} left", self.qty, self.item));
+              }
+              self.qty -= n;
+              Ok(self.qty)
+          }
+      }
+    solution: |
+      #![deny(missing_docs)]
+      //! Stock tracking for the arena shop.
+
+      /// One kind of item on a shelf, with how many are left.
+      pub struct Shelf {
+          /// What's on the shelf, like `"health potion"`.
+          pub item: String,
+          /// How many are left.
+          pub qty: u32,
+      }
+
+      impl Shelf {
+          /// Creates a shelf holding `qty` of `item`.
+          pub fn new(item: &str, qty: u32) -> Shelf {
+              Shelf { item: item.to_string(), qty }
+          }
+
+          /// Takes `n` items off the shelf and returns how many are left.
+          ///
+          /// # Errors
+          ///
+          /// Returns an error, and leaves the shelf unchanged, if fewer than `n` items are left.
+          ///
+          /// # Examples
+          ///
+          /// ```
+          /// let mut potions = Shelf::new("potion", 5);
+          /// assert_eq!(potions.take(2), Ok(3));
+          /// assert!(potions.take(10).is_err());
+          /// ```
+          pub fn take(&mut self, n: u32) -> Result<u32, String> {
+              if n > self.qty {
+                  return Err(format!("only {} {} left", self.qty, self.item));
+              }
+              self.qty -= n;
+              Ok(self.qty)
+          }
+      }
+    require:
+      - pattern: '#!\[deny\(missing_docs\)\]'
+        message: "Keep `#![deny(missing_docs)]` at the top: it's what checks your docs."
+    harness: |
+      #[test]
+      fn take_removes_items() {
+          let mut s = Shelf::new("potion", 5);
+          assert_eq!(s.take(2), Ok(3), "take(2) from 5");
+          assert_eq!(s.qty, 3, "qty after take");
+      }
+
+      #[test]
+      fn take_refuses_more_than_is_left() {
+          let mut s = Shelf::new("shield", 1);
+          assert_eq!(s.take(2), Err("only 1 shield left".to_string()), "take(2) from 1");
+          assert_eq!(s.qty, 1, "qty unchanged");
+      }
+    hints:
+      - "Every `pub` item needs a `///` line right above it: `Shelf`, `item`, `qty`, `new` and `take`."
+      - "Sections are Markdown headings inside the doc comment: `/// # Errors`, a blank `///` line, then the text."
+      - "An example goes in a fenced block: `/// ```` on its own line, the code lines starting with `/// `, then `/// ```` again."
+    more:
+      - task: |
+          Write and document `split_bill(total_cents, people) -> Vec<u32>`: it splits a bill so the shares differ by at most one cent, and the first people in the list pay the extra cents (1000 between 3 people is `[334, 333, 333]`). It panics if `people` is 0.
+
+          The file has `#![deny(missing_docs)]`: write a crate-level `//!` line, and give `split_bill` a summary, an `# Examples` section and a `# Panics` section.
+        seed: |
+          #![deny(missing_docs)]
+
+          pub fn split_bill(total_cents: u32, people: u32) -> Vec<u32> {
+              todo!()
+          }
+        solution: |
+          #![deny(missing_docs)]
+          //! Splitting restaurant bills fairly.
+
+          /// Splits `total_cents` between `people` as evenly as possible.
+          ///
+          /// The shares differ by at most one cent; the first people pay the extra cents.
+          ///
+          /// # Examples
+          ///
+          /// ```
+          /// assert_eq!(split_bill(1000, 3), vec![334, 333, 333]);
+          /// ```
+          ///
+          /// # Panics
+          ///
+          /// Panics if `people` is 0.
+          pub fn split_bill(total_cents: u32, people: u32) -> Vec<u32> {
+              assert!(people > 0, "cannot split a bill between 0 people");
+              let base = total_cents / people;
+              let extra = total_cents % people;
+              (0..people).map(|i| if i < extra { base + 1 } else { base }).collect()
+          }
+        require:
+          - pattern: '#!\[deny\(missing_docs\)\]'
+            message: "Keep `#![deny(missing_docs)]` at the top."
+        harness: |
+          #[test]
+          fn splits_evenly_when_possible() {
+              assert_eq!(split_bill(900, 3), vec![300, 300, 300], "split_bill(900, 3)");
+          }
+
+          #[test]
+          fn the_first_people_pay_the_extra_cents() {
+              assert_eq!(split_bill(1000, 3), vec![334, 333, 333], "split_bill(1000, 3)");
+              assert_eq!(split_bill(1001, 4), vec![251, 250, 250, 250], "split_bill(1001, 4)");
+          }
+
+          #[test]
+          fn one_person_pays_everything() {
+              assert_eq!(split_bill(1234, 1), vec![1234], "split_bill(1234, 1)");
+          }
+
+          #[test]
+          fn a_free_meal_is_all_zeros() {
+              assert_eq!(split_bill(0, 2), vec![0, 0], "split_bill(0, 2)");
+          }
+        hints:
+          - "Each person pays `total_cents / people`, and the first `total_cents % people` people pay one cent more."
+          - "`(0..people).map(|i| if i < extra { base + 1 } else { base }).collect()`, after `assert!(people > 0, ...)`."
+          - "The crate doc is a `//! ...` line right after `#![deny(missing_docs)]`. The function's sections are `/// # Examples` and `/// # Panics`."
+      - task: |
+          Modules are documented with `//!` *inside* them. Document the `scoring` module (a `//!` line as the first thing in its block) and its items, and implement them:
+
+          - `WIN_POINTS`: a win is worth 3 points.
+          - `points(wins, draws)`: 3 points per win, 1 per draw.
+          - `rank(points)`: `"bronze"` below 10 points, `"silver"` from 10 to 19, `"gold"` from 20.
+        seed: |
+          #![deny(missing_docs)]
+          //! Arena league tools.
+
+          pub mod scoring {
+              pub const WIN_POINTS: u32 = 0;
+
+              pub fn points(wins: u32, draws: u32) -> u32 {
+                  todo!()
+              }
+
+              pub fn rank(points: u32) -> &'static str {
+                  todo!()
+              }
+          }
+        solution: |
+          #![deny(missing_docs)]
+          //! Arena league tools.
+
+          pub mod scoring {
+              //! Turning match results into league points and ranks.
+
+              /// Points for one win. A draw is worth 1 and a loss 0.
+              pub const WIN_POINTS: u32 = 3;
+
+              /// League points for a record of `wins` and `draws`.
+              pub fn points(wins: u32, draws: u32) -> u32 {
+                  wins * WIN_POINTS + draws
+              }
+
+              /// The rank for a points total: bronze below 10, silver below 20, gold from 20.
+              pub fn rank(points: u32) -> &'static str {
+                  match points {
+                      0..=9 => "bronze",
+                      10..=19 => "silver",
+                      _ => "gold",
+                  }
+              }
+          }
+        require:
+          - pattern: '#!\[deny\(missing_docs\)\]'
+            message: "Keep `#![deny(missing_docs)]` at the top."
+        harness: |
+          #[test]
+          fn a_win_is_worth_three() {
+              assert_eq!(scoring::WIN_POINTS, 3, "WIN_POINTS");
+          }
+
+          #[test]
+          fn counts_wins_and_draws() {
+              assert_eq!(scoring::points(4, 2), 14, "points(4, 2)");
+              assert_eq!(scoring::points(0, 0), 0, "points(0, 0)");
+          }
+
+          #[test]
+          fn ranks_by_points() {
+              assert_eq!(scoring::rank(9), "bronze", "rank(9)");
+              assert_eq!(scoring::rank(10), "silver", "rank(10)");
+              assert_eq!(scoring::rank(19), "silver", "rank(19)");
+              assert_eq!(scoring::rank(20), "gold", "rank(20)");
+          }
+        hints:
+          - "A `//!` line placed first inside `pub mod scoring {` documents the module itself."
+          - "Every `pub` item inside needs its own `///` line too."
+          - "`rank` is a `match` on ranges: `0..=9 => \"bronze\"`, `10..=19 => \"silver\"`, `_ => \"gold\"`."
+
+  - title: "Clippy: fixing common lints"
+    id: tooling-5
+    text: |
+      **Clippy** is Rust's official linter: hundreds of extra checks, on top of the compiler's, for code that is wrong, slow, or just not idiomatic. Every serious Rust team runs it, and most block pull requests that have clippy warnings. It comes with rustup (`rustup component add clippy` if it's missing):
+
+      ```text
+      $ cargo clippy
+      warning: the loop variable `i` is only used to index `prices`
+       --> src/main.rs:3:14
+        |
+      3 |     for i in 0..prices.len() {
+        |              ^^^^^^^^^^^^^^^
+        |
+        = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+        = note: `#[warn(clippy::needless_range_loop)]` on by default
+      help: consider using an iterator
+        |
+      3 -     for i in 0..prices.len() {
+      3 +     for <item> in &prices {
+        |
+      ```
+
+      Each warning names its **lint** (`needless_range_loop`), links to an explanation with examples, and usually suggests the fix. `cargo clippy --fix` applies the suggestions it's sure about.
+
+      ### Lint groups
+
+      | Group | Default | Catches |
+      |---|---|---|
+      | `clippy::correctness` | error | code that is almost certainly a bug |
+      | `clippy::suspicious` | warn | code that is probably a bug |
+      | `clippy::style` | warn | code that works but isn't idiomatic |
+      | `clippy::complexity` | warn | simple things done in a complicated way |
+      | `clippy::perf` | warn | code that could easily be faster |
+      | `clippy::pedantic` | off | stricter lints, with some false alarms |
+      | `clippy::nursery` | off | new lints still being polished |
+      | `clippy::restriction` | off | team rules, like banning `unwrap` or `dbg!` |
+
+      ### The lints you'll see most
+
+      | Lint | Instead of | Write |
+      |---|---|---|
+      | `needless_range_loop` | `for i in 0..v.len() { v[i] }` | `for x in &v`, or `.iter().enumerate()` if you need `i` |
+      | `len_zero` | `v.len() == 0` | `v.is_empty()` |
+      | `needless_return` | `return x;` as the last line | `x` |
+      | `ptr_arg` | `fn f(v: &Vec<T>)`, `fn g(s: &String)` | `fn f(v: &[T])`, `fn g(s: &str)` |
+      | `manual_map` | `match o { Some(x) => Some(f(x)), None => None }` | `o.map(f)` |
+      | `useless_format` | `format!("{}", s)` | `s.to_string()` |
+      | `bool_comparison` | `if done == true` | `if done` |
+      | `unwrap_or_default` | `.unwrap_or(String::new())` | `.unwrap_or_default()` |
+      | `single_match` | `match o { Some(x) => ..., _ => {} }` | `if let Some(x) = o { ... }` |
+      | `collapsible_if` | `if a { if b { ... } }` | `if a && b { ... }` |
+
+      Why `&[T]` over `&Vec<T>`? A slice parameter accepts a `Vec`, an array, or part of either; `&Vec<T>` only accepts a whole `Vec`, and adds an extra pointer hop. Same for `&str` over `&String`.
+
+      Here's a function with five of those warnings, and its clippy-clean version:
+
+      ```rust
+      fn total(prices: &Vec<u32>) -> u32 {
+          if prices.len() == 0 {
+              return 0;
+          }
+          let mut sum = 0;
+          for i in 0..prices.len() {
+              sum += prices[i];
+          }
+          return sum;
+      }
+      ```
+
+      ```rust run
+      fn total(prices: &[u32]) -> u32 {
+          prices.iter().sum()
+      }
+
+      fn main() {
+          let cart = vec![1999, 450, 300];
+          println!("{}", total(&cart));
+          println!("{}", total(&[]));
+          println!("{}", total(&cart[1..]));
+      }
+      ```
+
+      ```output
+      2749
+      0
+      750
+      ```
+
+      The empty check disappeared too: the sum of nothing is already 0. And `total(&cart[1..])` works only because the parameter is a slice.
+
+      (This site compiles with `rustc`, not clippy, so its clippy exercises use rules that reject the flagged patterns.)
+
+      ### Common mistakes
+
+      - **Silencing instead of fixing**: `#[allow(clippy::...)]` has its place (next step), but most warnings point at a genuinely better way.
+      - **Changing behavior while "just" fixing lints**: rewrites like these should keep the output identical. Run the tests after each fix.
+      - **Ignoring clippy until there are 300 warnings.** Run it often; it's much easier one warning at a time.
+
+      **Your turn:** rewrite `total_weight` so clippy has nothing to say: take a slice instead of `&Vec`, don't compare `len()` with 0, don't loop over indexes, and don't end with `return`. It must still return the same totals.
+    seed: |
+      fn total_weight(weights: &Vec<u32>) -> u32 {
+          if weights.len() == 0 {
+              return 0;
+          }
+          let mut total = 0;
+          for i in 0..weights.len() {
+              total += weights[i];
+          }
+          return total;
+      }
+    solution: |
+      fn total_weight(weights: &[u32]) -> u32 {
+          weights.iter().sum()
+      }
+    forbid:
+      - pattern: '&\s*Vec\s*<'
+        message: "ptr_arg: take a slice, `&[u32]`, instead of `&Vec<u32>`."
+      - pattern: 'len\(\)\s*==\s*0'
+        message: "len_zero: use `.is_empty()` instead of comparing `len()` with 0."
+      - pattern: '\[\s*i\s*\]'
+        message: "needless_range_loop: iterate over the items instead of indexing with `i`."
+      - pattern: 'return\s+total\s*;'
+        message: "needless_return: end the function with the value itself, without `return`."
+    harness: |
+      #[test]
+      fn adds_up_all_weights() {
+          assert_eq!(total_weight(&vec![120, 80, 300]), 500, "total_weight([120, 80, 300])");
+      }
+
+      #[test]
+      fn an_empty_list_weighs_nothing() {
+          assert_eq!(total_weight(&vec![]), 0, "total_weight([])");
+      }
+
+      #[test]
+      fn a_single_item() {
+          assert_eq!(total_weight(&vec![42]), 42, "total_weight([42])");
+      }
+    hints:
+      - "Change the parameter to `weights: &[u32]`. Callers passing `&vec` still work."
+      - "The whole loop is `weights.iter().sum()`, and an empty slice already sums to 0."
+      - "`fn total_weight(weights: &[u32]) -> u32 { weights.iter().sum() }`"
+    more:
+      - task: |
+          `display_name` gets four clippy warnings: `ptr_arg` (`&String` parameter), `unwrap_or_default`, `bool_comparison` (`== true`) and `useless_format` (`format!("{}", x)`), plus `needless_return`. Rewrite it without them. It shows `nick (full name)`, or just the full name when there's no nickname or the nickname is empty.
+        seed: |
+          fn display_name(nickname: Option<String>, full: &String) -> String {
+              let nick = nickname.unwrap_or(String::new());
+              if nick.is_empty() == true {
+                  return format!("{}", full);
+              }
+              format!("{} ({})", nick, full)
+          }
+        solution: |
+          fn display_name(nickname: Option<String>, full: &str) -> String {
+              let nick = nickname.unwrap_or_default();
+              if nick.is_empty() {
+                  full.to_string()
+              } else {
+                  format!("{nick} ({full})")
+              }
+          }
+        forbid:
+          - pattern: '&\s*String\b'
+            message: "ptr_arg: take `&str` instead of `&String`."
+          - pattern: 'unwrap_or\(\s*String::new\(\)\s*\)'
+            message: "unwrap_or_default: use `.unwrap_or_default()`."
+          - pattern: '==\s*true|==\s*false'
+            message: "bool_comparison: use the bool directly (`if x`, `if !x`)."
+          - pattern: 'format!\(\s*""\s*,\s*\w+\s*\)'
+            message: "useless_format: use `.to_string()` instead of `format!(\"{}\", x)`."
+          - pattern: '\breturn\b'
+            message: "needless_return: use an `if`/`else` expression instead of `return`."
+        harness: |
+          #[test]
+          fn shows_nickname_and_full_name() {
+              assert_eq!(display_name(Some("crab".to_string()), &String::from("Ferris Rustacean")), "crab (Ferris Rustacean)", "with a nickname");
+          }
+
+          #[test]
+          fn no_nickname_shows_the_full_name() {
+              assert_eq!(display_name(None, &String::from("Ferris Rustacean")), "Ferris Rustacean", "without a nickname");
+          }
+
+          #[test]
+          fn an_empty_nickname_counts_as_none() {
+              assert_eq!(display_name(Some(String::new()), &String::from("Corro")), "Corro", "with an empty nickname");
+          }
+        hints:
+          - "`full: &str`, `nickname.unwrap_or_default()`, `if nick.is_empty()`."
+          - "Make the body an `if`/`else` expression: `full.to_string()` in one branch, `format!(\"{nick} ({full})\")` in the other."
+      - task: |
+          Clippy flags this loop with `needless_range_loop`: `i` is only used for indexing. Rewrite it with iterators (`zip` to walk both arrays together and `enumerate` for the position) so it prints exactly the same:
+
+          ```
+          1. ana: 30
+          2. bo: 45
+          3. cy: 12
+          ```
+        seed: |
+          fn main() {
+              let names = ["ana", "bo", "cy"];
+              let scores = [30, 45, 12];
+              for i in 0..names.len() {
+                  println!("{}. {}: {}", i + 1, names[i], scores[i]);
+              }
+          }
+        solution: |
+          fn main() {
+              let names = ["ana", "bo", "cy"];
+              let scores = [30, 45, 12];
+              for (i, (name, score)) in names.iter().zip(scores.iter()).enumerate() {
+                  println!("{}. {}: {}", i + 1, name, score);
+              }
+          }
+        forbid:
+          - pattern: '\[\s*i\s*\]'
+            message: "Don't index with `i`: let the iterators hand you the items."
+        require:
+          - pattern: '\.zip\('
+            message: "Walk both arrays together with `.zip(...)`."
+          - pattern: '\.enumerate\(\)'
+            message: "Get the position with `.enumerate()`."
+        hints:
+          - "`names.iter().zip(scores.iter())` gives pairs `(name, score)`."
+          - "Adding `.enumerate()` wraps each pair with its index: `for (i, (name, score)) in names.iter().zip(scores.iter()).enumerate()`."
+        tests:
+          - expect: "1. ana: 30\n2. bo: 45\n3. cy: 12"
+
+  - title: Configuring clippy and rustfmt
+    id: tooling-6
+    text: |
+      Three more lints come up constantly in code review, then the settings that let a team agree on its rules, and finally the formatter.
+
+      ### manual_map, single_match, collapsible_if
+
+      ```rust
+      // Before: three clippy warnings
+      fn coupon(code: Option<&str>) -> Option<String> {
+          match code {
+              Some(c) => Some(c.to_uppercase()),   // manual_map
+              None => None,
+          }
+      }
+
+      fn note(express: bool, gift: bool, coupon: Option<&str>) {
+          if express {
+              if gift {                            // collapsible_if
+                  println!("wrap first");
+              }
+          }
+          match coupon {
+              Some(c) => println!("coupon {c}"),   // single_match
+              _ => {}
+          }
+      }
+      ```
+
+      ```rust run
+      fn coupon(code: Option<&str>) -> Option<String> {
+          code.map(|c| c.to_uppercase())
+      }
+
+      fn note(express: bool, gift: bool, coupon: Option<&str>) {
+          if express && gift {
+              println!("wrap first");
+          }
+          if let Some(c) = coupon {
+              println!("coupon {c}");
+          }
+      }
+
+      fn main() {
+          println!("{:?} {:?}", coupon(Some("save10")), coupon(None));
+          note(true, true, Some("SAVE10"));
+          note(true, false, None);
+      }
+      ```
+
+      ```output
+      Some("SAVE10") None
+      wrap first
+      coupon SAVE10
+      ```
+
+      ### Unnecessary clones
+
+      `.clone()` to satisfy the borrow checker is the most common habit in new Rust code. Often the real fix is a borrowing parameter (`&str`, `&[T]`) so nothing needs copying. Clippy catches some cases (`clone_on_copy` for cloning a `Copy` value, `redundant_clone` in the nursery group for a clone of a value that's never used again), but code review catches the rest.
+
+      ### Allowing a lint (on purpose)
+
+      Sometimes a lint is wrong for your situation. Silence it as narrowly as possible, and say why:
+
+      ```rust run
+      // The physics formula reads best with all its inputs listed.
+      #[allow(clippy::too_many_arguments)]
+      fn landing_x(x: f64, y: f64, vx: f64, vy: f64, g: f64, wind: f64, drag: f64, dt: f64) -> f64 {
+          let mut x = x;
+          let mut y = y;
+          let mut vx = vx;
+          let mut vy = vy;
+          while y > 0.0 {
+              vx += (wind - vx * drag) * dt;
+              vy -= g * dt;
+              x += vx * dt;
+              y += vy * dt;
+          }
+          x
+      }
+
+      #[rustfmt::skip]
+      const LEVEL: [[u8; 4]; 3] = [
+          [1, 0, 0, 1],
+          [0, 1, 1, 0],
+          [1, 0, 0, 1],
+      ];
+
+      fn main() {
+          let x = landing_x(0.0, 10.0, 5.0, 0.0, 9.81, 0.0, 0.0, 0.01);
+          println!("lands near x = {x:.1}");
+          println!("walls in row 0: {}", LEVEL[0].iter().filter(|&&c| c == 1).count());
+      }
+      ```
+
+      ```output
+      lands near x = 7.2
+      walls in row 0: 2
+      ```
+
+      - `#[allow(clippy::lint_name)]` on one item silences it there only. `#[expect(clippy::lint_name)]` does the same but warns if the lint stops firing, so stale exceptions get cleaned up.
+      - `#![allow(...)]` or `#![warn(clippy::pedantic)]` at the top of `lib.rs`/`main.rs` sets a rule for the whole crate.
+      - For a whole project, put the rules in `Cargo.toml`, where everyone (and CI) gets them:
+
+      ```toml
+      [lints.rust]
+      unsafe_code = "forbid"
+      missing_docs = "warn"
+
+      [lints.clippy]
+      pedantic = { level = "warn", priority = -1 }
+      module_name_repetitions = "allow"
+      dbg_macro = "deny"
+      unwrap_used = "warn"
+      ```
+
+      A `clippy.toml` file next to `Cargo.toml` tunes individual lints, like `too-many-arguments-threshold = 9`.
+
+      ### rustfmt
+
+      **rustfmt** formats code in the one standard Rust style: 4-space indents, spaces around operators and after commas, one statement per line, line width 100. `cargo fmt` formats the whole project; `cargo fmt --check` changes nothing and fails if anything *would* change, which is what CI runs. Teams almost never argue about formatting in Rust: whatever rustfmt does is the style. Settings go in `rustfmt.toml`, but most projects use few or none:
+
+      ```toml
+      max_width = 120
+      ```
+
+      `#[rustfmt::skip]` keeps hand-aligned code, like the `LEVEL` grid above, as you wrote it. Set your editor to format on save and you'll never think about it again.
+
+      ### Common mistakes
+
+      - **Crate-wide `#![allow(clippy::all)]`** to make warnings go away. That switches off the bug-catching lints too.
+      - **Turning on `clippy::pedantic` and following every suggestion blindly.** It's opinionated; teams usually enable it and then allow the few lints they disagree with.
+      - **Formatting by hand in a review comment** ("add a space here"). Let `cargo fmt --check` in CI do it.
+
+      **Your turn:** `coupon_code` and `notes` trigger `manual_map`, `collapsible_if` and `single_match`. Rewrite them clippy-clean with the same behavior: `.map` instead of the `match`, one `if` with `&&` instead of two nested ones, and `if let` instead of the one-armed `match`.
+    seed: |
+      struct Order {
+          id: u32,
+          coupon: Option<String>,
+          express: bool,
+          gift: bool,
+      }
+
+      fn coupon_code(order: &Order) -> Option<String> {
+          match &order.coupon {
+              Some(c) => Some(c.to_uppercase()),
+              None => None,
+          }
+      }
+
+      fn notes(order: &Order) -> Vec<String> {
+          let mut out = Vec::new();
+          if order.express {
+              if order.gift {
+                  out.push(format!("order {}: wrap first, ship express", order.id));
+              }
+          }
+          match &order.coupon {
+              Some(c) => out.push(format!("order {}: coupon {}", order.id, c)),
+              None => {}
+          }
+          out
+      }
+    solution: |
+      struct Order {
+          id: u32,
+          coupon: Option<String>,
+          express: bool,
+          gift: bool,
+      }
+
+      fn coupon_code(order: &Order) -> Option<String> {
+          order.coupon.as_ref().map(|c| c.to_uppercase())
+      }
+
+      fn notes(order: &Order) -> Vec<String> {
+          let mut out = Vec::new();
+          if order.express && order.gift {
+              out.push(format!("order {}: wrap first, ship express", order.id));
+          }
+          if let Some(c) = &order.coupon {
+              out.push(format!("order {}: coupon {}", order.id, c));
+          }
+          out
+      }
+    forbid:
+      - pattern: 'None\s*=>\s*None'
+        message: "manual_map: replace the `match` with `.map(...)`."
+      - pattern: '(None|_)\s*=>\s*\{\s*\}'
+        message: "single_match: use `if let` instead of a `match` with an empty arm."
+      - pattern: '\bif\s[^{]*\{\s*if\s'
+        message: "collapsible_if: combine the nested `if`s into one with `&&`."
+    harness: |
+      fn order(coupon: Option<&str>, express: bool, gift: bool) -> Order {
+          Order { id: 7, coupon: coupon.map(|c| c.to_string()), express, gift }
+      }
+
+      #[test]
+      fn coupon_codes_are_uppercased() {
+          assert_eq!(coupon_code(&order(Some("save10"), false, false)), Some("SAVE10".to_string()), "coupon_code(save10)");
+          assert_eq!(coupon_code(&order(None, false, false)), None, "coupon_code(None)");
+      }
+
+      #[test]
+      fn express_gifts_get_a_wrapping_note() {
+          assert_eq!(notes(&order(None, true, true)), vec!["order 7: wrap first, ship express".to_string()], "express gift");
+      }
+
+      #[test]
+      fn no_note_unless_both_express_and_gift() {
+          assert!(notes(&order(None, true, false)).is_empty(), "express only");
+          assert!(notes(&order(None, false, true)).is_empty(), "gift only");
+      }
+
+      #[test]
+      fn coupons_get_a_note() {
+          assert_eq!(notes(&order(Some("HALF"), false, false)), vec!["order 7: coupon HALF".to_string()], "coupon note");
+      }
+    hints:
+      - "`order.coupon` is an `Option<String>`; `.as_ref()` turns it into `Option<&String>` so `.map(|c| c.to_uppercase())` doesn't move it."
+      - "`if order.express && order.gift { ... }`"
+      - "`if let Some(c) = &order.coupon { out.push(...); }`"
+    more:
+      - task: |
+          This program clones `review` twice only because `count_words` and `shout` take a `String` by value. Change both functions to borrow a `&str`, and remove every `.clone()`. The output must stay:
+
+          ```
+          4 words
+          RUST MAKES REFACTORING FEARLESS
+          original: rust makes refactoring fearless
+          ```
+        seed: |
+          fn count_words(text: String) -> usize {
+              text.split_whitespace().count()
+          }
+
+          fn shout(text: String) -> String {
+              text.to_uppercase()
+          }
+
+          fn main() {
+              let review = String::from("rust makes refactoring fearless");
+              let words = count_words(review.clone());
+              let loud = shout(review.clone());
+              println!("{words} words");
+              println!("{loud}");
+              println!("original: {review}");
+          }
+        solution: |
+          fn count_words(text: &str) -> usize {
+              text.split_whitespace().count()
+          }
+
+          fn shout(text: &str) -> String {
+              text.to_uppercase()
+          }
+
+          fn main() {
+              let review = String::from("rust makes refactoring fearless");
+              let words = count_words(&review);
+              let loud = shout(&review);
+              println!("{words} words");
+              println!("{loud}");
+              println!("original: {review}");
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "Remove the clones: pass `&review` to functions that borrow."
+        require:
+          - pattern: 'fn\s+count_words\s*\(\s*\w+\s*:\s*&str'
+            message: "Make `count_words` take `text: &str`."
+          - pattern: 'fn\s+shout\s*\(\s*\w+\s*:\s*&str'
+            message: "Make `shout` take `text: &str`."
+        hints:
+          - "Neither function needs to own the text: `fn count_words(text: &str)` and `fn shout(text: &str) -> String`."
+          - "Then call them with `count_words(&review)` and `shout(&review)`."
+        tests:
+          - expect: "4 words\nRUST MAKES REFACTORING FEARLESS\noriginal: rust makes refactoring fearless"
+      - task: |
+          CI's `cargo fmt --check` failed on this file. Format it by hand the way rustfmt would: `fn main() {` with one space, 4-space indentation per level, one statement per line, every block's body on its own lines, spaces around `=`, `+=` and `>`, a space after each comma, and `} else {` on one line. It must still print `big order: 515`.
+        seed: |
+          fn  main(){
+          let prices=[120,95,300];
+          let mut total=0;for p in prices{total+=p;}
+              if total>500{println!("big order: {}",total);}else{println!("order: {}",total);}
+          }
+        solution: |
+          fn main() {
+              let prices = [120, 95, 300];
+              let mut total = 0;
+              for p in prices {
+                  total += p;
+              }
+              if total > 500 {
+                  println!("big order: {}", total);
+              } else {
+                  println!("order: {}", total);
+              }
+          }
+        forbid:
+          - pattern: '\t'
+            message: "Indent with spaces, not tabs."
+          - pattern: '\S {2,}\S'
+            message: "Use single spaces between words and symbols (only indentation has several)."
+          - pattern: '^( {1,3}| {5,7}| {9,11})\S'
+            flags: m
+            message: "Indent by 4 spaces per level: 4 inside `main`, 8 inside the `for` and `if` blocks."
+          - pattern: '^(?!fn |\}|$)\S'
+            flags: m
+            message: "Only `fn main() {` and its closing `}` start at the left edge; indent everything inside."
+          - pattern: '[\w)\]]\{'
+            message: "Put a space before every `{`."
+          - pattern: '\{[ \t]*[^\s}]'
+            message: "Start each block's body on a new line after `{`."
+          - pattern: '[^\s{][ \t]*\}'
+            message: "Put each closing `}` on its own line."
+          - pattern: '\}[ \t]*\n[ \t]*else|\}else'
+            message: "Write `} else {` on one line, with spaces."
+          - pattern: ';[ \t]*\S'
+            message: "One statement per line: nothing after a `;` on the same line."
+          - pattern: ',\S'
+            message: "Put a space after every comma."
+          - pattern: '[^\s=!<>+\-*/%]=|=[^\s=>]|\S\+='
+            message: "Put spaces around `=` and `+=`."
+          - pattern: '[\w)]>[\w(]|[\w)] >[\w(]|[\w)]> [\w(]'
+            message: "Put spaces around `>`."
+        hints:
+          - "Work line by line: each `let`, the `for`, `total += p;`, the `if` and each `println!` get their own line."
+          - "Bodies of `{ }` blocks go on their own lines, indented 4 more spaces than the line with the `{`."
+          - "The result has 12 lines; `rustfmt` (or format-on-save in your editor) would produce exactly that."
+        tests:
+          - expect: "big order: 515"
+
+  - title: "Continuous integration: keeping main green"
+    id: tooling-7
+    text: |
+      Tests, clippy and rustfmt only protect a codebase if they run *every time*. **Continuous integration (CI)** is a server that checks out every pushed commit and pull request, runs the checks, and reports a green tick or a red cross. With **branch protection** turned on, a pull request can't be merged until CI is green, so the main branch always builds, passes its tests and follows the team's rules.
+
+      ### A GitHub Actions workflow
+
+      On GitHub, CI is a YAML file in `.github/workflows/`. A typical Rust one:
+
+      ```yaml
+      # .github/workflows/ci.yml
+      name: CI
+
+      on:
+        push:
+          branches: [main]
+        pull_request:
+
+      env:
+        CARGO_TERM_COLOR: always
+
+      jobs:
+        check:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                components: rustfmt, clippy
+            - uses: Swatinem/rust-cache@v2
+            - name: Formatting
+              run: cargo fmt --all --check
+            - name: Lints
+              run: cargo clippy --all-targets --all-features -- -D warnings
+            - name: Tests
+              run: cargo test --all-features
+            - name: Docs
+              run: cargo doc --no-deps
+              env:
+                RUSTDOCFLAGS: -D warnings
+      ```
+
+      - `on`: when to run: pushes to `main`, and every pull request.
+      - `actions/checkout` gets the code; `dtolnay/rust-toolchain` installs Rust with clippy and rustfmt; `Swatinem/rust-cache` caches compiled dependencies between runs (builds go from minutes to seconds).
+      - Each `run` step is a shell command. A command that exits with a non-zero code fails the step, and the job stops there.
+      - `-- -D warnings` turns clippy's warnings into errors (`-D` is "deny"), so a warning fails CI instead of scrolling past. `--all-targets` lints tests and examples too.
+      - `RUSTDOCFLAGS: -D warnings` fails on broken intra-doc links in the docs.
+
+      Exit codes are how every tool tells CI "pass" or "fail". Here's a tiny custom check, the kind teams add for their own rules, that finds forgotten debugging code:
+
+      ```rust run
+      fn main() {
+          let source = "fn main() {\n    let x = dbg!(2 + 2);\n    println!(\"{x}\");\n}\n";
+          let mut problems = 0;
+          for (i, line) in source.lines().enumerate() {
+              if line.contains("dbg!(") || line.contains("todo!(") {
+                  println!("line {}: leftover debug code: {}", i + 1, line.trim());
+                  problems += 1;
+              }
+          }
+          println!("{problems} problem(s)");
+          // A real check would end with: std::process::exit(if problems > 0 { 1 } else { 0 });
+      }
+      ```
+
+      ```output
+      line 2: leftover debug code: let x = dbg!(2 + 2);
+      1 problem(s)
+      ```
+
+      ### Beyond the basics
+
+      - A **matrix** runs the same job on several operating systems or Rust versions (`stable`, `beta`, and your **MSRV**, the minimum supported Rust version declared as `rust-version` in `Cargo.toml`).
+      - `cargo audit` and `cargo deny` check dependencies for known security advisories and unwanted licenses.
+      - Run the same commands locally before pushing (`cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test`). Many teams put them in a script or a git pre-push hook, so CI is a formality.
+
+      ### Reading a red CI run
+
+      Open the failed step's log and read it like any compiler or test output: the first error is usually the real one. A failing `fmt --check` shows a diff of what rustfmt would change; a failing clippy step shows the lint; a failing test shows the panic message.
+
+      ### Common mistakes
+
+      - **"Works on my machine"**: CI starts from a clean checkout, so a file you forgot to commit, or a test that depends on your local setup, fails there. That's CI doing its job.
+      - **Disabling a failing check to merge faster.** Fix it, or mark the one test `#[ignore]` with an issue link if it's genuinely flaky.
+      - **Letting CI get slow.** Cache dependencies, and split long jobs so feedback arrives in minutes.
+
+      **Your turn:** this pull request's CI is red. The log says:
+
+      ```text
+      Run cargo clippy --all-targets -- -D warnings
+      error: unneeded `return` statement
+        --> src/lib.rs:22:5
+         |
+      22 |     return Some(format!("{}.{}.{}", bumped.0, bumped.1, bumped.2));
+         |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+      Run cargo test
+      test tests::bumps_minor_and_resets_patch ... FAILED
+      assertion `left == right` failed
+        left: Some("1.5.2")
+       right: Some("1.5.0")
+      ```
+
+      Make it green: fix the clippy error, fix the bug the test found (a minor bump must reset the patch number to 0), keep the existing test, and add tests until you have at least **3** and they catch every planted bug (in `major` and `patch` bumps, version parsing, and unknown parts).
+    mode: test
+    minTests: 3
+    seed: |
+      /// Splits "major.minor.patch" into numbers.
+      fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
+          let parts: Vec<&str> = v.split('.').collect();
+          if parts.len() != 3 {
+              return None;
+          }
+          let major = parts[0].parse().ok()?;
+          let minor = parts[1].parse().ok()?;
+          let patch = parts[2].parse().ok()?;
+          Some((major, minor, patch))
+      }
+
+      /// Bumps one part of a version ("major", "minor" or "patch") and resets the parts after it.
+      fn bump(v: &str, part: &str) -> Option<String> {
+          let (major, minor, patch) = parse_version(v)?;
+          let bumped = match part {
+              "major" => (major + 1, 0, 0),
+              "minor" => (major, minor + 1, patch),
+              "patch" => (major, minor, patch + 1),
+              _ => return None,
+          };
+          return Some(format!("{}.{}.{}", bumped.0, bumped.1, bumped.2));
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn bumps_minor_and_resets_patch() {
+              assert_eq!(bump("1.4.2", "minor"), Some("1.5.0".to_string()));
+          }
+      }
+    solution: |
+      /// Splits "major.minor.patch" into numbers.
+      fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
+          let parts: Vec<&str> = v.split('.').collect();
+          if parts.len() != 3 {
+              return None;
+          }
+          let major = parts[0].parse().ok()?;
+          let minor = parts[1].parse().ok()?;
+          let patch = parts[2].parse().ok()?;
+          Some((major, minor, patch))
+      }
+
+      /// Bumps one part of a version ("major", "minor" or "patch") and resets the parts after it.
+      fn bump(v: &str, part: &str) -> Option<String> {
+          let (major, minor, patch) = parse_version(v)?;
+          let bumped = match part {
+              "major" => (major + 1, 0, 0),
+              "minor" => (major, minor + 1, 0),
+              "patch" => (major, minor, patch + 1),
+              _ => return None,
+          };
+          Some(format!("{}.{}.{}", bumped.0, bumped.1, bumped.2))
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn bumps_minor_and_resets_patch() {
+              assert_eq!(bump("1.4.2", "minor"), Some("1.5.0".to_string()));
+          }
+
+          #[test]
+          fn bumps_major_and_resets_the_rest() {
+              assert_eq!(bump("1.4.2", "major"), Some("2.0.0".to_string()));
+          }
+
+          #[test]
+          fn bumps_patch_by_one() {
+              assert_eq!(bump("1.4.2", "patch"), Some("1.4.3".to_string()));
+          }
+
+          #[test]
+          fn rejects_bad_versions_and_parts() {
+              assert_eq!(bump("1.4", "patch"), None);
+              assert_eq!(bump("1.4.2.7", "patch"), None);
+              assert_eq!(bump("1.4.2", "build"), None);
+          }
+      }
+    forbid:
+      - pattern: 'return\s+Some'
+        message: "Clippy's needless_return: end `bump` with `Some(...)` instead of `return Some(...);`."
+    harness: |
+      #[test]
+      fn a_minor_bump_resets_the_patch() {
+          assert_eq!(bump("1.4.2", "minor"), Some("1.5.0".to_string()), "bump(\"1.4.2\", \"minor\")");
+          assert_eq!(bump("0.9.9", "minor"), Some("0.10.0".to_string()), "bump(\"0.9.9\", \"minor\")");
+      }
+    mutants:
+      - name: a major bump keeps the minor number
+        find: "(major + 1, 0, 0)"
+        replace: "(major + 1, minor, 0)"
+      - name: a patch bump adds 2
+        find: "(major, minor, patch + 1)"
+        replace: "(major, minor, patch + 2)"
+      - name: four-part versions are accepted
+        find: "parts.len() != 3"
+        replace: "parts.len() < 3"
+      - name: unknown parts are ignored instead of rejected
+        find: "_ => return None,"
+        replace: "_ => (major, minor, patch),"
+    hints:
+      - "Clippy: drop `return` and the `;` from the last line, so it ends with `Some(format!(...))`."
+      - "The bug: the `\"minor\"` arm must produce `(major, minor + 1, 0)`."
+      - "Add tests for `bump(\"1.4.2\", \"major\")` (2.0.0), `\"patch\"` (1.4.3), a 4-part version like `\"1.4.2.7\"` and an unknown part like `\"build\"` (both `None`)."
+    more:
+      - task: |
+          Get this library function ready for CI: the file has `#![deny(missing_docs)]`, so document `slugify` (a summary line and an `# Examples` section) and the crate (a `//!` line). Then write at least **3 tests** that catch every planted bug. `slugify` keeps ASCII letters and digits (lowercased) and turns every run of other characters into a single `-`, with no dash at the start or end: `"Hello, World!"` becomes `hello-world`.
+        mode: test
+        minTests: 3
+        seed: |
+          #![deny(missing_docs)]
+
+          pub fn slugify(title: &str) -> String {
+              let mut slug = String::new();
+              for c in title.chars() {
+                  if c.is_ascii_alphanumeric() {
+                      slug.push(c.to_ascii_lowercase());
+                  } else if !slug.is_empty() && !slug.ends_with('-') {
+                      slug.push('-');
+                  }
+              }
+              slug.trim_end_matches('-').to_string()
+          }
+        solution: |
+          #![deny(missing_docs)]
+          //! URL helpers for the arena blog.
+
+          /// Turns a title into a URL slug: lowercase ASCII letters and digits joined by single dashes.
+          ///
+          /// # Examples
+          ///
+          /// ```
+          /// assert_eq!(slugify("Hello, World!"), "hello-world");
+          /// ```
+          pub fn slugify(title: &str) -> String {
+              let mut slug = String::new();
+              for c in title.chars() {
+                  if c.is_ascii_alphanumeric() {
+                      slug.push(c.to_ascii_lowercase());
+                  } else if !slug.is_empty() && !slug.ends_with('-') {
+                      slug.push('-');
+                  }
+              }
+              slug.trim_end_matches('-').to_string()
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn lowercases_and_joins_words() {
+                  assert_eq!(slugify("Hello World"), "hello-world");
+              }
+
+              #[test]
+              fn runs_of_punctuation_become_one_dash() {
+                  assert_eq!(slugify("Rust -- 2024 edition!!"), "rust-2024-edition");
+              }
+
+              #[test]
+              fn no_dashes_at_the_ends() {
+                  assert_eq!(slugify("  ...Crabs!  "), "crabs");
+              }
+          }
+        require:
+          - pattern: '#!\[deny\(missing_docs\)\]'
+            message: "Keep `#![deny(missing_docs)]` at the top: CI uses it to require docs."
+        mutants:
+          - name: capitals are kept
+            find: "slug.push(c.to_ascii_lowercase());"
+            replace: "slug.push(c);"
+          - name: repeated separators make repeated dashes
+            find: " && !slug.ends_with('-')"
+            replace: ""
+          - name: a trailing dash is kept
+            find: "slug.trim_end_matches('-').to_string()"
+            replace: "slug"
+          - name: a leading separator makes a leading dash
+            find: "!slug.is_empty() && "
+            replace: ""
+        hints:
+          - "Add `//! ...` after the `#![deny(missing_docs)]` line, and `/// ...` lines above `pub fn slugify`, including `/// # Examples` and a fenced code block."
+          - "Write a `#[cfg(test)] mod tests` with titles that have capitals, several punctuation marks in a row, and punctuation or spaces at the start and end."
+      - task: |
+          CI jobs often skip work when a pull request only touches documentation. `should_run_ci` decides: it returns `true` if any changed file is a Rust file (`.rs`) or is `Cargo.toml` or `Cargo.lock`, and `false` otherwise (including when nothing changed). Write the tests module and at least **3 tests** that catch every planted bug.
+        mode: test
+        minTests: 3
+        seed: |
+          fn should_run_ci(changed: &[&str]) -> bool {
+              changed.iter().any(|path| {
+                  path.ends_with(".rs") || *path == "Cargo.toml" || *path == "Cargo.lock"
+              })
+          }
+        solution: |
+          fn should_run_ci(changed: &[&str]) -> bool {
+              changed.iter().any(|path| {
+                  path.ends_with(".rs") || *path == "Cargo.toml" || *path == "Cargo.lock"
+              })
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn docs_only_changes_skip_ci() {
+                  assert!(!should_run_ci(&["README.md", "docs/guide.md"]));
+                  assert!(!should_run_ci(&[]));
+              }
+
+              #[test]
+              fn any_rust_file_runs_ci() {
+                  assert!(should_run_ci(&["README.md", "src/main.rs"]));
+              }
+
+              #[test]
+              fn dependency_changes_run_ci() {
+                  assert!(should_run_ci(&["Cargo.toml"]));
+                  assert!(should_run_ci(&["Cargo.lock"]));
+              }
+          }
+        mutants:
+          - name: Rust files are ignored
+            find: "path.ends_with(\".rs\") || "
+            replace: ""
+          - name: Cargo.lock changes are ignored
+            find: " || *path == \"Cargo.lock\""
+            replace: ""
+          - name: every changed file must qualify
+            find: "changed.iter().any("
+            replace: "changed.iter().all("
+          - name: every change runs CI
+            find: "path.ends_with(\".rs\") || *path == \"Cargo.toml\" || *path == \"Cargo.lock\""
+            replace: "!path.is_empty()"
+        hints:
+          - "Test a docs-only change (should be `false`), a change that mixes a Markdown file with a `.rs` file (should be `true`), and `Cargo.toml` and `Cargo.lock` on their own."
+          - "An empty list of changes is a good edge case: it should be `false`."
