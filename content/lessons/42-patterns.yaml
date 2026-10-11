@@ -771,6 +771,13 @@ steps:
       now: shipped, tracking TRK9
       ```
 
+      Piece by piece:
+
+      - `apply(self, ...)` **consumes** the old state and returns the new one: you can't accidentally keep using a stale state.
+      - The guard `if items > 0` encodes a rule (no paying for an empty cart) right in the transition table.
+      - The final arm `(state, event)` catches every move not listed, with the state handed back inside the `Err`.
+      - Adding a state means the compiler points at every `match` that must handle it.
+
       Why does the error carry the state back, as `Err((state, msg))`? Because `apply` took ownership of it. If the error held only a message, a rejected event would leave the caller with nothing, and the borrow checker says so:
 
       ```rust compile_fail
@@ -810,13 +817,6 @@ steps:
       ```
 
       In the `Err` arm, `light` has been moved into `press` and nothing was put back. Returning the unchanged state inside the error (or taking `&mut self` and changing it in place) solves it.
-
-      Piece by piece:
-
-      - `apply(self, ...)` **consumes** the old state and returns the new one: you can't accidentally keep using a stale state.
-      - The guard `if items > 0` encodes a rule (no paying for an empty cart) right in the transition table.
-      - The final arm `(state, event)` catches every move not listed, with the state handed back inside the `Err`.
-      - Adding a state means the compiler points at every `match` that must handle it.
 
       ### Typestate: wrong order is a compile error
 
@@ -2096,7 +2096,7 @@ steps:
       |---|---|---|
       | `for i in 0..v.len() { v[i] ... }` | `for x in &v`, or an iterator chain | `needless_range_loop` |
       | `fn f(v: &Vec<T>)`, `fn g(s: &String)` | `&[T]`, `&str` | `ptr_arg` |
-      | `.clone()` to calm the borrow checker | borrow, or restructure | `redundant_clone` |
+      | `.clone()` to calm the borrow checker | borrow, or restructure | `redundant_clone` (opt-in) |
       | `v.len() == 0` | `v.is_empty()` | `len_zero` |
       | `if x == true` | `if x` | `bool_comparison` |
       | `return x;` as the last line | just `x` | `needless_return` |

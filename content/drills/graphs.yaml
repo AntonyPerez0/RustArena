@@ -1,0 +1,334 @@
+topic: graphs
+drills:
+  - type: predict
+    body: |
+      let edges = [(0, 1), (1, 2), (2, 0), (1, 3)];
+      let mut adj = vec![Vec::new(); 4];
+      for &(a, b) in &edges {
+          adj[a].push(b);
+          adj[b].push(a);
+      }
+      println!("{:?} {}", adj[1], adj[3].len());
+    why: Each undirected edge is added both ways, in input order, so node 1's list is [0, 2, 3] and node 3 has one neighbor.
+  - type: predict
+    pre: |
+      use std::collections::VecDeque;
+    body: |
+      let adj = vec![vec![1, 2], vec![3], vec![3], vec![4], vec![]];
+      let mut dist = vec![None; 5];
+      dist[0] = Some(0);
+      let mut q = VecDeque::from([0]);
+      while let Some(u) = q.pop_front() {
+          for &v in &adj[u] {
+              if dist[v].is_none() {
+                  dist[v] = Some(dist[u].unwrap() + 1);
+                  q.push_back(v);
+              }
+          }
+      }
+      println!("{:?}", dist);
+    why: BFS reaches nodes layer by layer, so each distance is the fewest edges from node 0. Node 3 is two hops away whichever way you go.
+  - type: predict
+    body: |
+      let adj = vec![vec![1, 2], vec![3], vec![], vec![]];
+      let mut seen = vec![false; 4];
+      let mut stack = vec![0];
+      let mut order = Vec::new();
+      while let Some(u) = stack.pop() {
+          if seen[u] { continue; }
+          seen[u] = true;
+          order.push(u);
+          for &v in &adj[u] {
+              stack.push(v);
+          }
+      }
+      println!("{:?}", order);
+    why: The stack pops the most recently pushed neighbor first, so without reversing, 2 is visited before 1 (and 1's child 3 comes last).
+  - type: predict
+    pre: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+    body: |
+      let next = vec![vec![], vec![0], vec![0], vec![]];
+      let mut indegree = vec![2, 0, 0, 0];
+      let mut ready: BinaryHeap<Reverse<usize>> = (0..4).filter(|&t| indegree[t] == 0).map(Reverse).collect();
+      let mut order = Vec::new();
+      while let Some(Reverse(t)) = ready.pop() {
+          order.push(t);
+          for &u in &next[t] {
+              indegree[u] -= 1;
+              if indegree[u] == 0 {
+                  ready.push(Reverse(u));
+              }
+          }
+      }
+      println!("{:?}", order);
+    why: Tasks 1, 2 and 3 are ready at the start, and the min-heap always takes the smallest. Task 0 becomes ready only after both 1 and 2, but 0 is smaller than 3, so it goes next.
+  - type: predict
+    pre: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+    body: |
+      let adj: Vec<Vec<(usize, u64)>> = vec![vec![(1, 7), (2, 2)], vec![], vec![(1, 3)]];
+      let mut dist = vec![u64::MAX; 3];
+      let mut heap = BinaryHeap::from([Reverse((0u64, 0usize))]);
+      dist[0] = 0;
+      while let Some(Reverse((d, u))) = heap.pop() {
+          if d > dist[u] { continue; }
+          for &(v, w) in &adj[u] {
+              if d + w < dist[v] {
+                  dist[v] = d + w;
+                  heap.push(Reverse((d + w, v)));
+              }
+          }
+      }
+      println!("{:?}", dist);
+    why: Node 1 costs 7 directly but 2 + 3 = 5 through node 2, and Dijkstra keeps the cheaper total.
+  - type: predict
+    pre: |
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn insert(slot: &mut Option<Box<Node>>, value: i32) {
+          match slot {
+              None => *slot = Some(Box::new(Node { value, left: None, right: None })),
+              Some(n) => if value < n.value { insert(&mut n.left, value) } else { insert(&mut n.right, value) },
+          }
+      }
+
+      fn height(slot: &Option<Box<Node>>) -> usize {
+          match slot {
+              None => 0,
+              Some(n) => 1 + height(&n.left).max(height(&n.right)),
+          }
+      }
+    body: |
+      let mut root = None;
+      for v in [4, 2, 6, 1, 3, 7] {
+          insert(&mut root, v);
+      }
+      println!("{}", height(&root));
+    why: 4 is the root, 2 and 6 are its children, and 1, 3 and 7 hang one level lower, so the longest root-to-leaf path has 3 nodes.
+  - type: fill
+    prompt: Add the neighbor to the BFS queue with its distance.
+    pre: |
+      use std::collections::VecDeque;
+    body: |
+      let adj = vec![vec![1], vec![2], vec![]];
+      let mut seen = vec![true, false, false];
+      let mut queue = VecDeque::from([(0, 0)]);
+      let mut last = 0;
+      while let Some((u, d)) = queue.pop_front() {
+          last = d;
+          for &v in &adj[u] {
+              if !seen[v] {
+                  seen[v] = true;
+                  queue.[[push_back]]((v, d + 1));
+              }
+          }
+      }
+      println!("{last}");
+    why: BFS takes from the front and adds to the back of the VecDeque, which keeps the nodes in order of distance.
+  - type: fill
+    prompt: Give the tree node a child type with a known size.
+    pre: |
+      struct Node {
+          value: i32,
+          left: Option<[[Box]]<Node>>,
+      }
+    body: |
+      let leaf = Node { value: 1, left: None };
+      let root = Node { value: 2, left: Some(Box::new(leaf)) };
+      println!("{} {}", root.value, root.left.unwrap().value);
+    why: Box puts the child on the heap behind a fixed-size pointer; without it the struct would contain itself and have infinite size.
+  - type: fill
+    prompt: Turn the root slot into an Option<&Node> to walk down the tree.
+    pre: |
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+      }
+    body: |
+      let root = Some(Box::new(Node { value: 3, left: Some(Box::new(Node { value: 1, left: None })) }));
+      let mut cur = root.[[as_deref]]();
+      let mut depth = 0;
+      while let Some(node) = cur {
+          depth += 1;
+          cur = node.left.as_deref();
+      }
+      println!("{depth}");
+    why: as_deref turns &Option<Box<Node>> into Option<&Node>, which a while let loop can follow from node to node.
+  - type: bug
+    body: |
+      let edges = [(0, 1), (1, 2)];
+      let mut adj = vec![Vec::new(); 3];
+      for &(a, b) in &edges {
+          adj[a].push(b); // BUG
+      }
+      println!("{:?}", adj[2]);
+    fix: "adj[a].push(b); adj[b].push(a);"
+    prompt: "The roads are two-way, so this should print `[1]`. Click the line with the bug."
+    why: In an undirected graph each edge must be stored in both nodes' lists; otherwise you can only travel it in one direction.
+  - type: bug
+    pre: |
+      fn find(parent: &[usize], mut x: usize) -> usize {
+          while parent[x] != x {
+              x = parent[x];
+          }
+          x
+      }
+    body: |
+      let mut parent: Vec<usize> = (0..4).collect();
+      for (a, b) in [(0, 1), (2, 3), (0, 2)] {
+          let (ra, rb) = (find(&parent, a), find(&parent, b));
+          if ra != rb {
+              parent[a] = b; // BUG
+          }
+      }
+      println!("{}", find(&parent, 1) == find(&parent, 3));
+    fix: "parent[ra] = rb;"
+    prompt: "All four end up connected (0-1, 2-3, then 0-2), so this should print `true`. Click the line with the bug."
+    why: Union must link the roots. Re-pointing the element a moves it away from its own group instead of merging the two groups.
+  - type: bug
+    body: |
+      let deps = [(0, 1), (1, 2)]; // (before, after)
+      let mut indegree = vec![0; 3];
+      let mut next = vec![Vec::new(); 3];
+      for &(before, after) in &deps {
+          next[before].push(after);
+          indegree[before] += 1; // BUG
+      }
+      let mut ready: Vec<usize> = (0..3).filter(|&t| indegree[t] == 0).collect();
+      let mut order = Vec::new();
+      while let Some(t) = ready.pop() {
+          order.push(t);
+          for &u in &next[t] {
+              indegree[u] -= 1;
+              if indegree[u] == 0 {
+                  ready.push(u);
+              }
+          }
+      }
+      println!("{:?}", order);
+    fix: "indegree[after] += 1;"
+    why: A task's in-degree counts the tasks it waits for, so each edge before -> after adds one to after, not to before.
+  - type: compiles
+    answer: no
+    body: |
+      struct Folder {
+          name: String,
+          parent: Option<Folder>,
+      }
+      let root = Folder { name: String::from("/"), parent: None };
+      println!("{}", root.name);
+    why: A struct can't contain itself directly (infinite size). Use Option<Box<Folder>>, or an index into a Vec.
+  - type: compiles
+    answer: yes
+    pre: |
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn total(slot: &Option<Box<Node>>) -> i32 {
+          match slot {
+              Some(n) => n.value + total(&n.left) + total(&n.right),
+              None => 0,
+          }
+      }
+    body: |
+      let t = Some(Box::new(Node { value: 5, left: None, right: None }));
+      println!("{}", total(&t));
+    why: Matching on a reference binds n as a reference too, so the tree is only borrowed, never moved.
+  - type: compiles
+    answer: no
+    body: |
+      let mut adj: Vec<Vec<usize>> = vec![Vec::new(); 3];
+      adj[0].push(1);
+      let first = &adj[0];
+      adj[1].push(0);
+      println!("{:?}", first);
+    why: first borrows adj, and that borrow is still used after adj[1].push mutates the Vec. Finish using the reference first, or copy what you need.
+  - type: choice
+    prompt: You need the fewest flights between two airports, and every flight counts the same. Which algorithm fits?
+    choices: ["Depth-first search", "Breadth-first search", "Topological sort", "Union-find"]
+    answer: 2
+    why: BFS explores in layers of hops, so the first time it reaches an airport it used the fewest flights. DFS finds some route, not the shortest.
+  - type: choice
+    prompt: When does Dijkstra's algorithm give wrong answers?
+    choices: ["When the graph has cycles", "When some edge weights are negative", "When the graph is undirected", "When two paths have the same cost"]
+    answer: 2
+    why: Dijkstra assumes a settled node can't be improved later, which a negative edge breaks. Cycles, undirected edges and ties are all fine.
+  - type: boss
+    prompt: |
+      A tournament organizer has `n` players (`0..n`) and a list of rivalries. Rivals must play on **different** teams, and there are exactly two teams. Write `fn can_split_rivals(n: usize, rivalries: &[(usize, usize)]) -> bool`.
+
+      This asks whether the graph is **bipartite**. Color the players with BFS: give an uncolored player team 0, then every rival of a team-0 player must be team 1, and so on. If you ever find two rivals with the same team, it's impossible. Start a BFS from every player who isn't colored yet (the graph can have several separate parts).
+    seed: |
+      use std::collections::VecDeque;
+
+      fn can_split_rivals(n: usize, rivalries: &[(usize, usize)]) -> bool {
+          todo!()
+      }
+    solution: |
+      use std::collections::VecDeque;
+
+      fn can_split_rivals(n: usize, rivalries: &[(usize, usize)]) -> bool {
+          let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+          for &(a, b) in rivalries {
+              adj[a].push(b);
+              adj[b].push(a);
+          }
+          let mut team: Vec<Option<u8>> = vec![None; n];
+          for start in 0..n {
+              if team[start].is_some() {
+                  continue;
+              }
+              team[start] = Some(0);
+              let mut queue = VecDeque::from([start]);
+              while let Some(u) = queue.pop_front() {
+                  let mine = team[u].unwrap_or(0);
+                  for &v in &adj[u] {
+                      match team[v] {
+                          None => {
+                              team[v] = Some(1 - mine);
+                              queue.push_back(v);
+                          }
+                          Some(t) if t == mine => return false,
+                          Some(_) => {}
+                      }
+                  }
+              }
+          }
+          true
+      }
+    harness: |
+      #[test]
+      fn splits_a_chain_of_rivals() {
+          assert_eq!(can_split_rivals(4, &[(0, 1), (1, 2), (2, 3)]), true, "can_split_rivals(4, chain)");
+      }
+
+      #[test]
+      fn a_triangle_cannot_be_split() {
+          assert_eq!(can_split_rivals(3, &[(0, 1), (1, 2), (2, 0)]), false, "can_split_rivals(3, triangle)");
+      }
+
+      #[test]
+      fn checks_every_separate_group() {
+          assert_eq!(can_split_rivals(6, &[(0, 1), (2, 3), (3, 4), (4, 2)]), false, "can_split_rivals(6, pair and triangle)");
+          assert_eq!(can_split_rivals(5, &[(0, 1), (3, 4)]), true, "can_split_rivals(5, two pairs)");
+      }
+
+      #[test]
+      fn no_rivalries_is_easy() {
+          assert_eq!(can_split_rivals(3, &[]), true, "can_split_rivals(3, [])");
+      }
+    hints:
+      - "Build undirected adjacency lists and a `Vec<Option<u8>>` of teams, all `None`."
+      - "For each uncolored player, set team 0 and BFS: every uncolored rival gets the other team (`1 - mine`) and joins the queue."
+      - "If a rival already has the same team as the current player, return `false`. If every BFS finishes, return `true`."
+    why: Two-coloring with BFS succeeds exactly when there's no cycle of odd length among the rivalries.

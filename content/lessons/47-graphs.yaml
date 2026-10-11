@@ -1,0 +1,2177 @@
+id: graphs
+title: Graphs and Trees
+phase: "Algorithms and data structures"
+summary: Model networks, dependencies and maps as graphs. Adjacency lists, BFS for shortest hops, DFS with recursion or a stack, topological sort, Dijkstra with a BinaryHeap, binary trees with Option<Box<Node>>, and union-find.
+roadmap: [Graphs, Trees, BFS, DFS, Shortest Path]
+steps:
+  - title: "Representing graphs: adjacency lists"
+    id: graphs-1
+    text: |
+      A **graph** is a set of **nodes** (also called vertices) connected by **edges**. Edges can be **directed** (one-way: "A depends on B", "A follows B", a link from page A to page B) or **undirected** (two-way: a friendship, a road, a network cable), and **weighted** (a distance, a cost, a latency) or not.
+
+      Graphs are everywhere at work even when nobody calls them that: build dependencies, microservice call chains, org charts, permission inheritance, routes between warehouses, the states of an order.
+
+      ### Storing a graph
+
+      Number the nodes `0..n` and keep, for every node, the list of its neighbors: an **adjacency list**, `Vec<Vec<usize>>`. `adj[u]` lists every `v` with an edge `u -> v`. Memory is O(V + E) (nodes plus edges), and walking a node's neighbors is as fast as it gets. It's the default choice.
+
+      Input usually arrives as an **edge list**, pairs of nodes. Turning it into adjacency lists:
+
+      ```rust run
+      fn main() {
+          // 5 stations, undirected tracks between them
+          let n = 5;
+          let tracks = [(0, 1), (0, 2), (1, 3), (2, 3), (3, 4)];
+          let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+          for &(a, b) in &tracks {
+              adj[a].push(b);
+              adj[b].push(a); // undirected: the edge goes both ways
+          }
+          for (station, neighbors) in adj.iter().enumerate() {
+              println!("{station}: {neighbors:?} (degree {})", neighbors.len());
+          }
+      }
+      ```
+
+      ```output
+      0: [1, 2] (degree 2)
+      1: [0, 3] (degree 2)
+      2: [0, 3] (degree 2)
+      3: [1, 2, 4] (degree 3)
+      4: [3] (degree 1)
+      ```
+
+      The **degree** of a node is its number of edges. In a directed graph you count **out-degree** (edges leaving) and **in-degree** (edges arriving) separately.
+
+      The alternatives:
+
+      - An **adjacency matrix** `Vec<Vec<bool>>` of size n by n answers "is there an edge u-v?" in O(1), but uses O(V²) memory: 100,000 nodes would need 10 billion cells. Only for small, dense graphs.
+      - **Named nodes**: give each name an index with a `HashMap<String, usize>` (and a `Vec<String>` to go back), then use adjacency lists of indices. For small graphs, a `BTreeMap<String, BTreeSet<String>>` directly is fine and prints in a stable order.
+
+      ### Why indices and not references?
+
+      In other languages a node might hold pointers to its neighbors. In Rust, nodes holding `&Node` references to each other fight the borrow checker (graphs have cycles, and who would own whom?). `Rc<RefCell<Node>>` works but is clumsy. Storing nodes in a `Vec` and referring to them by **index** is the idiomatic Rust approach, used by real crates like `petgraph`.
+
+      ### Common mistakes
+
+      - **Forgetting the reverse edge** in an undirected graph, so you can travel A to B but not back.
+      - **1-based ids from the input.** If nodes are numbered 1 to n, either subtract 1 or make the Vec `n + 1` long; otherwise `adj[n]` panics with `index out of bounds`.
+      - **Duplicate edges and self-loops** (`(2, 2)`). Decide what they mean; many algorithms assume there are none.
+
+      **Your turn:** write `fn build_graph(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<usize>>` for an **undirected** graph with nodes `0..n`. Clean the data while you're at it: each neighbor list must be sorted ascending with no duplicates (the same edge may appear twice, in either direction). A self-loop `(a, a)` makes `a` appear once in its own list.
+    seed: |
+      fn build_graph(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<usize>> {
+          todo!()
+      }
+    solution: |
+      fn build_graph(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<usize>> {
+          let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+          for &(a, b) in edges {
+              adj[a].push(b);
+              adj[b].push(a);
+          }
+          for neighbors in &mut adj {
+              neighbors.sort_unstable();
+              neighbors.dedup();
+          }
+          adj
+      }
+    hints:
+      - "Start with `vec![Vec::new(); n]` and push each edge both ways."
+      - "Afterwards, loop over `&mut adj` and clean every list."
+      - "`neighbors.sort_unstable();` puts equal values next to each other, so `neighbors.dedup();` can then remove the repeats."
+    harness: |
+      #[test]
+      fn builds_the_station_graph() {
+          let adj = build_graph(5, &[(0, 1), (0, 2), (1, 3), (2, 3), (3, 4)]);
+          assert_eq!(adj, vec![vec![1, 2], vec![0, 3], vec![0, 3], vec![1, 2, 4], vec![3]], "build_graph(5, stations)");
+      }
+
+      #[test]
+      fn sorts_each_neighbor_list() {
+          let adj = build_graph(4, &[(0, 3), (0, 1), (0, 2)]);
+          assert_eq!(adj[0], vec![1, 2, 3], "neighbors of 0");
+      }
+
+      #[test]
+      fn removes_duplicate_edges() {
+          let adj = build_graph(2, &[(0, 1), (1, 0), (0, 1)]);
+          assert_eq!(adj, vec![vec![1], vec![0]], "build_graph(2, [(0, 1), (1, 0), (0, 1)])");
+      }
+
+      #[test]
+      fn keeps_isolated_nodes_and_self_loops() {
+          let adj = build_graph(3, &[(1, 1)]);
+          assert_eq!(adj, vec![vec![], vec![1], vec![]], "build_graph(3, [(1, 1)])");
+      }
+
+      #[test]
+      fn an_empty_graph_has_no_lists() {
+          assert_eq!(build_graph(0, &[]), Vec::<Vec<usize>>::new(), "build_graph(0, [])");
+      }
+    more:
+      - task: |
+          A social app wants to find the **hub** of a group of `n` people (numbered `0..n`): the person whom **everyone else** follows, but who follows **nobody**. Each pair `(a, b)` in `follows` means `a` follows `b` (no pair appears twice, nobody follows themselves). Write `fn find_hub(n: usize, follows: &[(usize, usize)]) -> Option<usize>`. In a group of one, that person is the hub.
+
+          You don't need adjacency lists for this: count each person's **in-degree** and **out-degree** in two `Vec<usize>`s. The hub has in-degree `n - 1` and out-degree 0. The tests include 100,000 people.
+        seed: |
+          fn find_hub(n: usize, follows: &[(usize, usize)]) -> Option<usize> {
+              todo!()
+          }
+        solution: |
+          fn find_hub(n: usize, follows: &[(usize, usize)]) -> Option<usize> {
+              let mut followers = vec![0; n];
+              let mut following = vec![0; n];
+              for &(a, b) in follows {
+                  following[a] += 1;
+                  followers[b] += 1;
+              }
+              (0..n).find(|&p| followers[p] == n - 1 && following[p] == 0)
+          }
+        harness: |
+          #[test]
+          fn finds_the_hub() {
+              assert_eq!(find_hub(3, &[(0, 2), (1, 2)]), Some(2), "find_hub(3, [(0, 2), (1, 2)])");
+          }
+
+          #[test]
+          fn a_hub_follows_nobody() {
+              assert_eq!(find_hub(3, &[(0, 2), (1, 2), (2, 0)]), None, "find_hub(3, [(0, 2), (1, 2), (2, 0)])");
+          }
+
+          #[test]
+          fn everyone_must_follow_the_hub() {
+              assert_eq!(find_hub(4, &[(0, 3), (1, 3)]), None, "find_hub(4, [(0, 3), (1, 3)])");
+          }
+
+          #[test]
+          fn a_group_of_one_is_its_own_hub() {
+              assert_eq!(find_hub(1, &[]), Some(0), "find_hub(1, [])");
+              assert_eq!(find_hub(2, &[]), None, "find_hub(2, [])");
+          }
+
+          #[test]
+          fn finds_the_hub_of_100000_people_quickly() {
+              let follows: Vec<(usize, usize)> = (0..100_000).filter(|&p| p != 4242).map(|p| (p, 4242)).collect();
+              assert_eq!(find_hub(100_000, &follows), Some(4242), "find_hub(100000, everyone follows 4242)");
+          }
+        hints:
+          - "Make two counters, `vec![0; n]` each: how many follow each person, and how many each person follows."
+          - "For each `(a, b)`: `following[a] += 1; followers[b] += 1;`"
+          - "`(0..n).find(|&p| followers[p] == n - 1 && following[p] == 0)`"
+      - task: |
+          The friends page needs each person's friend list. Standard input has one friendship per line, two names separated by a space (`ana ben` means they're friends with each other). Print every person in alphabetical order with their friends, alphabetically, separated by `, `:
+
+          ```
+          ana: ben, cy
+          ben: ana
+          cy: ana
+          ```
+
+          Use a `BTreeMap<String, BTreeSet<String>>` as the adjacency list: the BTree types keep both levels sorted, and a set ignores repeated friendships. Skip blank lines.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+              }
+          }
+        solution: |
+          use std::collections::{BTreeMap, BTreeSet};
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut friends: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+                  let mut parts = line.split_whitespace();
+                  if let (Some(a), Some(b)) = (parts.next(), parts.next()) {
+                      friends.entry(a.to_string()).or_default().insert(b.to_string());
+                      friends.entry(b.to_string()).or_default().insert(a.to_string());
+                  }
+              }
+              for (person, list) in &friends {
+                  let names: Vec<&str> = list.iter().map(|s| s.as_str()).collect();
+                  println!("{person}: {}", names.join(", "));
+              }
+          }
+        require:
+          - pattern: 'BTreeMap'
+            message: Keep the people in a `BTreeMap` so they print in alphabetical order.
+        hints:
+          - "For each line, insert the friendship both ways: `friends.entry(a.to_string()).or_default().insert(b.to_string());` and the same with `a` and `b` swapped."
+          - "Loop over `&friends`; each value is a `BTreeSet<String>` that is already sorted."
+          - "Collect the friend names into a `Vec<&str>` and `join(\", \")`."
+        tests:
+          - stdin: "ana ben\ncy ana\n"
+            expect: "ana: ben, cy\nben: ana\ncy: ana"
+          - stdin: "zoe max\nmax ivy\n\nzoe ivy\nmax zoe\n"
+            hidden: true
+          - stdin: "solo duo\n"
+            hidden: true
+
+  - title: Breadth-first search with VecDeque
+    id: graphs-2
+    text: |
+      **Breadth-first search** (BFS) explores a graph in **layers**: first the start node, then every node one edge away, then every node two edges away, and so on, like ripples in a pond. To visit nodes in that order it uses a FIFO queue, a `VecDeque`.
+
+      Because it goes layer by layer, the first time BFS reaches a node it got there with the **fewest possible edges**. So in an unweighted graph BFS finds **shortest paths** (fewest hops): the fewest network hops between servers, the fewest moves in a puzzle, the "degrees of separation" between two people.
+
+      ```rust run
+      use std::collections::VecDeque;
+
+      fn bfs(adj: &[Vec<usize>], start: usize) -> Vec<Option<usize>> {
+          let mut dist = vec![None; adj.len()];
+          let mut queue = VecDeque::new();
+          dist[start] = Some(0);
+          queue.push_back((start, 0));
+          while let Some((u, d)) = queue.pop_front() {
+              for &v in &adj[u] {
+                  if dist[v].is_none() {
+                      dist[v] = Some(d + 1); // mark when you push, not when you pop
+                      queue.push_back((v, d + 1));
+                  }
+              }
+          }
+          dist
+      }
+
+      fn main() {
+          // the stations from the last step, plus station 5 with no tracks
+          let adj = vec![vec![1, 2], vec![0, 3], vec![0, 3], vec![1, 2, 4], vec![3], vec![]];
+          for (station, d) in bfs(&adj, 0).iter().enumerate() {
+              match d {
+                  Some(hops) => println!("station {station}: {hops} hops"),
+                  None => println!("station {station}: unreachable"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      station 0: 0 hops
+      station 1: 1 hops
+      station 2: 1 hops
+      station 3: 2 hops
+      station 4: 3 hops
+      station 5: unreachable
+      ```
+
+      - `dist` doubles as the "visited" marker: `None` means not reached yet.
+      - Each node enters the queue at most once and each edge is looked at once (twice when undirected): **O(V + E)**.
+
+      ### Grids are graphs too
+
+      In a maze or a map, every open cell is a node and its neighbors are the cells up, down, left and right. You don't build adjacency lists; you compute the neighbors on the fly. With `usize` coordinates, `r - 1` panics at row 0, so a common trick is `r.wrapping_sub(1)`: at 0 it wraps around to a huge number, which then fails the bounds check (`grid.get(r)` returns `None`) like any other off-grid cell.
+
+      ```rust
+      for (nr, nc) in [(r.wrapping_sub(1), c), (r + 1, c), (r, c.wrapping_sub(1)), (r, c + 1)] {
+          if matches!(grid.get(nr).and_then(|row| row.get(nc)), Some(&cell) if cell != b'#') {
+              // (nr, nc) is an open neighbor
+          }
+      }
+      ```
+
+      ### Common mistakes
+
+      - **Marking visited when popping instead of when pushing.** A node can then be pushed many times (once per neighbor that sees it) before it's popped. Results may still be right, but the queue can blow up on dense graphs.
+      - **A Vec with `remove(0)` as the queue.** O(n) per pop, O(V²) overall.
+      - **DFS for shortest paths.** Depth-first search finds *a* path, not the shortest one.
+      - **Weighted edges.** BFS counts edges. When edges have different costs, you need Dijkstra (later in this module).
+
+      **Your turn:** write `fn shortest_hops(adj: &[Vec<usize>], from: usize, to: usize) -> Option<usize>`: the fewest edges on a path from `from` to `to` in a directed graph given as adjacency lists, or `None` if `to` can't be reached (`Some(0)` when `from == to`). The tests include a graph of 200,000 nodes.
+    seed: |
+      use std::collections::VecDeque;
+
+      fn shortest_hops(adj: &[Vec<usize>], from: usize, to: usize) -> Option<usize> {
+          todo!()
+      }
+    solution: |
+      use std::collections::VecDeque;
+
+      fn shortest_hops(adj: &[Vec<usize>], from: usize, to: usize) -> Option<usize> {
+          let mut seen = vec![false; adj.len()];
+          let mut queue = VecDeque::new();
+          seen[from] = true;
+          queue.push_back((from, 0));
+          while let Some((u, d)) = queue.pop_front() {
+              if u == to {
+                  return Some(d);
+              }
+              for &v in &adj[u] {
+                  if !seen[v] {
+                      seen[v] = true;
+                      queue.push_back((v, d + 1));
+                  }
+              }
+          }
+          None
+      }
+    require:
+      - pattern: 'VecDeque'
+        message: Use a `VecDeque` as the BFS queue.
+    hints:
+      - "Keep `seen = vec![false; adj.len()]` and a `VecDeque` of `(node, distance)` pairs, starting with `(from, 0)`."
+      - "Pop from the front. If it's `to`, return its distance. Otherwise push every unseen neighbor with `d + 1`, marking it seen as you push."
+      - "If the queue runs empty, `to` is unreachable: `None`."
+    harness: |
+      fn stations() -> Vec<Vec<usize>> {
+          vec![vec![1, 2], vec![0, 3], vec![0, 3], vec![1, 2, 4], vec![3], vec![]]
+      }
+
+      #[test]
+      fn finds_the_fewest_hops() {
+          assert_eq!(shortest_hops(&stations(), 0, 4), Some(3), "shortest_hops(stations, 0, 4)");
+          assert_eq!(shortest_hops(&stations(), 2, 1), Some(2), "shortest_hops(stations, 2, 1)");
+      }
+
+      #[test]
+      fn the_start_is_zero_hops_away() {
+          assert_eq!(shortest_hops(&stations(), 3, 3), Some(0), "shortest_hops(stations, 3, 3)");
+      }
+
+      #[test]
+      fn unreachable_nodes_give_none() {
+          assert_eq!(shortest_hops(&stations(), 0, 5), None, "shortest_hops(stations, 0, 5)");
+      }
+
+      #[test]
+      fn follows_edge_directions() {
+          let adj = vec![vec![1], vec![2], vec![]];
+          assert_eq!(shortest_hops(&adj, 0, 2), Some(2), "shortest_hops(0->1->2, 0, 2)");
+          assert_eq!(shortest_hops(&adj, 2, 0), None, "shortest_hops(0->1->2, 2, 0)");
+      }
+
+      #[test]
+      fn searches_200000_nodes_quickly() {
+          let n = 200_000;
+          let mut adj = vec![Vec::new(); n];
+          for i in 0..n - 1 {
+              adj[i].push(i + 1);
+              adj[i + 1].push(i);
+          }
+          for i in 0..n - 1000 {
+              adj[i].push(i + 1000);
+              adj[i + 1000].push(i);
+          }
+          assert_eq!(shortest_hops(&adj, 0, n - 1), Some(201), "shortest_hops(200,000 nodes, 0, 199999)");
+          assert_eq!(shortest_hops(&adj, 0, 123_456), Some(579), "shortest_hops(200,000 nodes, 0, 123456)");
+      }
+    more:
+      - task: |
+          Write a maze solver. Standard input is a grid, one row per line: `S` is the start, `E` the exit, `#` a wall and `.` open floor. You can move up, down, left or right. Print `shortest path: N steps` with the fewest moves from `S` to `E`, or `no path`.
+
+          Use BFS over the cells with a `VecDeque<((usize, usize), usize)>` of positions and distances, and a `Vec<Vec<bool>>` of visited cells. The lesson's `wrapping_sub` trick handles the edges of the grid.
+        seed: |
+          use std::collections::VecDeque;
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let grid: Vec<Vec<u8>> = input.lines().filter(|l| !l.is_empty()).map(|l| l.bytes().collect()).collect();
+          }
+        solution: |
+          use std::collections::VecDeque;
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let grid: Vec<Vec<u8>> = input.lines().filter(|l| !l.is_empty()).map(|l| l.bytes().collect()).collect();
+              let mut start = None;
+              for (r, row) in grid.iter().enumerate() {
+                  for (c, &cell) in row.iter().enumerate() {
+                      if cell == b'S' {
+                          start = Some((r, c));
+                      }
+                  }
+              }
+              let Some(start) = start else {
+                  println!("no path");
+                  return;
+              };
+              let mut seen: Vec<Vec<bool>> = grid.iter().map(|row| vec![false; row.len()]).collect();
+              seen[start.0][start.1] = true;
+              let mut queue = VecDeque::from([(start, 0)]);
+              while let Some(((r, c), d)) = queue.pop_front() {
+                  if grid[r][c] == b'E' {
+                      println!("shortest path: {d} steps");
+                      return;
+                  }
+                  for (nr, nc) in [(r.wrapping_sub(1), c), (r + 1, c), (r, c.wrapping_sub(1)), (r, c + 1)] {
+                      if matches!(grid.get(nr).and_then(|row| row.get(nc)), Some(&cell) if cell != b'#') && !seen[nr][nc] {
+                          seen[nr][nc] = true;
+                          queue.push_back(((nr, nc), d + 1));
+                      }
+                  }
+              }
+              println!("no path");
+          }
+        require:
+          - pattern: 'VecDeque'
+            message: Use a `VecDeque` for the BFS queue.
+        hints:
+          - "Find `S` with two nested loops over `grid.iter().enumerate()`, then push `((r, c), 0)` onto the queue and mark it seen."
+          - "Pop a cell; if it's `E`, print its distance and return. Otherwise look at the four neighbors (use `wrapping_sub(1)` for up and left)."
+          - "A neighbor is usable if `grid.get(nr).and_then(|row| row.get(nc))` is `Some(&cell)` with `cell != b'#'` and it isn't seen yet. Print `no path` if the queue empties."
+        tests:
+          - stdin: "S.#.....\n.##.###.\n....#...\n.##...#E\n"
+            expect: "shortest path: 12 steps"
+          - stdin: "S.#\n###\n..E\n"
+            hidden: true
+          - stdin: "S...#.........#..........\n###.#.#######.#.########.\n#...#.#.....#.#.#......#.\n#.###.#.###.#.#.#.####.#.\n#.....#...#.#...#.#..#.#.\n#######.#.#.#####.#.##.#.\n#.......#.#.......#....#.\n#.#######.#########.####.\n#.#.......#.........#....\n#.#.#####.#.#########..##\n#...#.....#..........#..E\n#####.###############...#\n"
+            hidden: true
+          - stdin: "SE\n"
+            hidden: true
+      - task: |
+          Showing *how many* hops isn't enough for the network team; they want the route itself. Write `fn shortest_route(adj: &[Vec<usize>], from: usize, to: usize) -> Option<Vec<usize>>` that returns the nodes of a shortest path from `from` to `to`, both included (`[from]` when they're equal), or `None`. In every test the shortest path is unique.
+
+          During BFS, record each node's **parent**: the node you were at when you first discovered it (`parent: Vec<Option<usize>>`). When you reach `to`, follow the parents back to `from` and reverse the list.
+        seed: |
+          use std::collections::VecDeque;
+
+          fn shortest_route(adj: &[Vec<usize>], from: usize, to: usize) -> Option<Vec<usize>> {
+              todo!()
+          }
+        solution: |
+          use std::collections::VecDeque;
+
+          fn shortest_route(adj: &[Vec<usize>], from: usize, to: usize) -> Option<Vec<usize>> {
+              let mut parent: Vec<Option<usize>> = vec![None; adj.len()];
+              let mut seen = vec![false; adj.len()];
+              let mut queue = VecDeque::from([from]);
+              seen[from] = true;
+              while let Some(u) = queue.pop_front() {
+                  if u == to {
+                      let mut route = vec![to];
+                      let mut cur = to;
+                      while let Some(p) = parent[cur] {
+                          route.push(p);
+                          cur = p;
+                      }
+                      route.reverse();
+                      return Some(route);
+                  }
+                  for &v in &adj[u] {
+                      if !seen[v] {
+                          seen[v] = true;
+                          parent[v] = Some(u);
+                          queue.push_back(v);
+                      }
+                  }
+              }
+              None
+          }
+        harness: |
+          #[test]
+          fn returns_the_route() {
+              let adj = vec![vec![1, 2], vec![3], vec![4], vec![5], vec![], vec![]];
+              assert_eq!(shortest_route(&adj, 0, 5), Some(vec![0, 1, 3, 5]), "shortest_route(graph, 0, 5)");
+          }
+
+          #[test]
+          fn takes_the_shortcut() {
+              let adj = vec![vec![1, 4], vec![2], vec![3], vec![], vec![3]];
+              assert_eq!(shortest_route(&adj, 0, 3), Some(vec![0, 4, 3]), "shortest_route(graph, 0, 3)");
+          }
+
+          #[test]
+          fn the_route_to_yourself_is_just_you() {
+              let adj = vec![vec![1], vec![]];
+              assert_eq!(shortest_route(&adj, 1, 1), Some(vec![1]), "shortest_route(graph, 1, 1)");
+          }
+
+          #[test]
+          fn no_route_gives_none() {
+              let adj = vec![vec![1], vec![], vec![0]];
+              assert_eq!(shortest_route(&adj, 0, 2), None, "shortest_route(graph, 0, 2)");
+          }
+
+          #[test]
+          fn finds_a_long_route_quickly() {
+              let n = 100_000;
+              let adj: Vec<Vec<usize>> = (0..n).map(|i| if i + 1 < n { vec![i + 1] } else { vec![] }).collect();
+              let route = shortest_route(&adj, 0, n - 1).unwrap();
+              assert_eq!(route.len(), n, "length of the route along a 100,000-node chain");
+              assert_eq!(route[50_000], 50_000, "route[50000]");
+          }
+        hints:
+          - "Next to `seen`, keep `parent = vec![None; adj.len()]`. When you discover `v` from `u`, set `parent[v] = Some(u)`."
+          - "When you pop `to`, start a Vec with `to` and follow `while let Some(p) = parent[cur]`, pushing each parent."
+          - "The list is backwards (from `to` to `from`): call `.reverse()` before returning it."
+
+  - title: "Depth-first search: recursion and an explicit stack"
+    id: graphs-3
+    text: |
+      **Depth-first search** (DFS) goes as deep as it can along one path, and only when it gets stuck does it back up and try the next branch. It's the natural way to ask "what can I reach from here?", to count separate groups (**connected components**), to detect cycles, to flood-fill a region of a map, and it's the basis of topological sorting.
+
+      Recursion expresses it directly: visit a node, then recursively visit each unvisited neighbor.
+
+      ```rust run
+      fn explore(u: usize, adj: &[Vec<usize>], seen: &mut [bool], members: &mut Vec<usize>) {
+          seen[u] = true;
+          members.push(u);
+          for &v in &adj[u] {
+              if !seen[v] {
+                  explore(v, adj, seen, members);
+              }
+          }
+      }
+
+      fn main() {
+          // friendships: 0-1, 1-2, 3-4, and 5 knows nobody
+          let adj = vec![vec![1], vec![0, 2], vec![1], vec![4], vec![3], vec![]];
+          let mut seen = vec![false; adj.len()];
+          for start in 0..adj.len() {
+              if !seen[start] {
+                  let mut members = Vec::new();
+                  explore(start, &adj, &mut seen, &mut members);
+                  println!("group: {members:?}");
+              }
+          }
+      }
+      ```
+
+      ```output
+      group: [0, 1, 2]
+      group: [3, 4]
+      group: [5]
+      ```
+
+      The outer loop starts a new DFS from every node not seen yet; each DFS marks one whole component. Every node and edge is handled once: O(V + E).
+
+      ### The same thing with a stack
+
+      Recursion depth equals the length of the path DFS is following. On a long chain or a big grid that can be hundreds of thousands of calls deep, and the program dies with `thread 'main' has overflowed its stack`. The fix is to keep your own stack in a `Vec`, which lives on the heap and can grow as needed:
+
+      ```rust run
+      fn reachable(adj: &[Vec<usize>], start: usize) -> Vec<usize> {
+          let mut seen = vec![false; adj.len()];
+          let mut stack = vec![start];
+          let mut order = Vec::new();
+          while let Some(u) = stack.pop() {
+              if seen[u] {
+                  continue; // pushed twice before we got to it
+              }
+              seen[u] = true;
+              order.push(u);
+              for &v in adj[u].iter().rev() {
+                  if !seen[v] {
+                      stack.push(v);
+                  }
+              }
+          }
+          order
+      }
+
+      fn main() {
+          let adj = vec![vec![1, 3], vec![2], vec![], vec![4], vec![]];
+          println!("{:?}", reachable(&adj, 0));
+      }
+      ```
+
+      ```output
+      [0, 1, 2, 3, 4]
+      ```
+
+      Pushing the neighbors in reverse makes the stack pop them in their original order, so the visiting order matches the recursive version. Here a node can sit on the stack more than once, so it's checked when popped (`continue` if already seen).
+
+      ### Common mistakes
+
+      - **Forgetting the visited check** in a graph with cycles: the search goes around forever.
+      - **Recursive DFS on huge inputs.** Fine for trees and small graphs; for a 1,000 by 1,000 grid, use an explicit stack.
+      - **Expecting shortest paths from DFS.** DFS finds *a* path; BFS finds the shortest.
+
+      **Your turn:** count the islands on a map. Write `fn count_islands(map: &[&str]) -> usize` where each string is a row, `#` is land and `.` is water. Land cells that touch up, down, left or right belong to the same island. Use DFS with an **explicit stack** (`Vec<(usize, usize)>`): the tests include a 700 by 700 map that is all land, where recursion would overflow the stack.
+    seed: |
+      fn count_islands(map: &[&str]) -> usize {
+          todo!()
+      }
+    solution: |
+      fn count_islands(map: &[&str]) -> usize {
+          let grid: Vec<&[u8]> = map.iter().map(|row| row.as_bytes()).collect();
+          let mut seen: Vec<Vec<bool>> = grid.iter().map(|row| vec![false; row.len()]).collect();
+          let mut islands = 0;
+          for r in 0..grid.len() {
+              for c in 0..grid[r].len() {
+                  if grid[r][c] != b'#' || seen[r][c] {
+                      continue;
+                  }
+                  islands += 1;
+                  seen[r][c] = true;
+                  let mut stack = vec![(r, c)];
+                  while let Some((y, x)) = stack.pop() {
+                      for (ny, nx) in [(y.wrapping_sub(1), x), (y + 1, x), (y, x.wrapping_sub(1)), (y, x + 1)] {
+                          let land = matches!(grid.get(ny).and_then(|row| row.get(nx)), Some(&b'#'));
+                          if land && !seen[ny][nx] {
+                              seen[ny][nx] = true;
+                              stack.push((ny, nx));
+                          }
+                      }
+                  }
+              }
+          }
+          islands
+      }
+    hints:
+      - "Turn each row into bytes (`row.as_bytes()`) and keep a `Vec<Vec<bool>>` of visited cells."
+      - "Scan every cell. An unvisited `#` starts a new island: count it, mark it, and push it onto a `Vec` stack."
+      - "While the stack isn't empty, pop a cell and push each unvisited land neighbor (marking it as you push). The `wrapping_sub(1)` and `grid.get(...)` trick from the BFS step handles the edges."
+    harness: |
+      #[test]
+      fn counts_three_islands() {
+          let map = ["##..#", "#...#", "..#..", "....."];
+          assert_eq!(count_islands(&map), 3, "count_islands([\"##..#\", \"#...#\", \"..#..\", \".....\"])");
+      }
+
+      #[test]
+      fn diagonal_cells_are_separate_islands() {
+          assert_eq!(count_islands(&["#.", ".#"]), 2, "count_islands([\"#.\", \".#\"])");
+      }
+
+      #[test]
+      fn a_winding_island_is_one_island() {
+          let map = ["###.", "..#.", "###.", "#..."];
+          assert_eq!(count_islands(&map), 1, "count_islands(winding island)");
+      }
+
+      #[test]
+      fn water_only_and_empty_maps_have_none() {
+          assert_eq!(count_islands(&["...", "..."]), 0, "count_islands(all water)");
+          assert_eq!(count_islands(&[]), 0, "count_islands([])");
+      }
+
+      #[test]
+      fn handles_a_700_by_700_map() {
+          let land = "#".repeat(700);
+          let map: Vec<&str> = (0..700).map(|_| land.as_str()).collect();
+          assert_eq!(count_islands(&map), 1, "count_islands(700 by 700 land)");
+          let dotted: String = (0..700).map(|c| if c % 2 == 0 { '#' } else { '.' }).collect();
+          let water = ".".repeat(700);
+          let map: Vec<&str> = (0..700).map(|r| if r % 2 == 0 { dotted.as_str() } else { water.as_str() }).collect();
+          assert_eq!(count_islands(&map), 122_500, "count_islands(700 by 700 dots)");
+      }
+    more:
+      - task: |
+          The map team now wants the size of the **largest** island (the number of land cells in it), with the same map format: `#` land, `.` water, and only up, down, left and right connect. Write `fn largest_island(map: &[&str]) -> usize` (0 if there's no land). Recursion or an explicit stack are both fine here; the maps in these tests are small.
+        seed: |
+          fn largest_island(map: &[&str]) -> usize {
+              todo!()
+          }
+        solution: |
+          fn largest_island(map: &[&str]) -> usize {
+              let grid: Vec<&[u8]> = map.iter().map(|row| row.as_bytes()).collect();
+              let mut seen: Vec<Vec<bool>> = grid.iter().map(|row| vec![false; row.len()]).collect();
+              let mut best = 0;
+              for r in 0..grid.len() {
+                  for c in 0..grid[r].len() {
+                      if grid[r][c] != b'#' || seen[r][c] {
+                          continue;
+                      }
+                      seen[r][c] = true;
+                      let mut stack = vec![(r, c)];
+                      let mut size = 0;
+                      while let Some((y, x)) = stack.pop() {
+                          size += 1;
+                          for (ny, nx) in [(y.wrapping_sub(1), x), (y + 1, x), (y, x.wrapping_sub(1)), (y, x + 1)] {
+                              if matches!(grid.get(ny).and_then(|row| row.get(nx)), Some(&b'#')) && !seen[ny][nx] {
+                                  seen[ny][nx] = true;
+                                  stack.push((ny, nx));
+                              }
+                          }
+                      }
+                      best = best.max(size);
+                  }
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn finds_the_biggest_island() {
+              let map = ["##..#", "#...#", "..#..", "....#"];
+              assert_eq!(largest_island(&map), 3, "largest_island([\"##..#\", \"#...#\", \"..#..\", \"....#\"])");
+          }
+
+          #[test]
+          fn counts_a_winding_island() {
+              let map = ["###.", "..#.", "###.", "#..#"];
+              assert_eq!(largest_island(&map), 8, "largest_island(winding island)");
+          }
+
+          #[test]
+          fn no_land_gives_zero() {
+              assert_eq!(largest_island(&["...", "..."]), 0, "largest_island(all water)");
+              assert_eq!(largest_island(&[]), 0, "largest_island([])");
+          }
+
+          #[test]
+          fn a_single_cell_island() {
+              assert_eq!(largest_island(&["#"]), 1, "largest_island([\"#\"])");
+          }
+
+          #[test]
+          fn measures_a_50_by_50_island() {
+              let land = "#".repeat(50);
+              let map: Vec<&str> = (0..50).map(|_| land.as_str()).collect();
+              assert_eq!(largest_island(&map), 2500, "largest_island(50 by 50 land)");
+          }
+        hints:
+          - "Start from your island counter: instead of counting islands, count the cells each DFS visits."
+          - "Add 1 to a `size` counter every time you pop a cell from the stack (or every time a recursive call visits one)."
+          - "Keep the largest size seen: `best = best.max(size);`"
+      - task: |
+          Print a project's folder tree like the `tree` command. The first line of standard input is the name of the root folder. Every following line is `PARENT CHILD`: CHILD is directly inside PARENT. Print the tree from the root, one name per line, indented by two spaces per level, with each folder's children in alphabetical order:
+
+          ```
+          project
+            Cargo.toml
+            src
+              lib.rs
+              main.rs
+          ```
+
+          A recursive DFS is perfect here (folder trees are shallow). Store the children in a `BTreeMap<String, BTreeSet<String>>` so they come out sorted, and pass the depth down the recursion.
+        seed: |
+          use std::collections::{BTreeMap, BTreeSet};
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut lines = io::stdin().lock().lines().map(|l| l.expect("read error"));
+              let root = lines.next().unwrap_or_default();
+              let mut children: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+          }
+        solution: |
+          use std::collections::{BTreeMap, BTreeSet};
+          use std::io::{self, BufRead};
+
+          fn print_tree(name: &str, depth: usize, children: &BTreeMap<String, BTreeSet<String>>) {
+              println!("{}{name}", "  ".repeat(depth));
+              if let Some(kids) = children.get(name) {
+                  for kid in kids {
+                      print_tree(kid, depth + 1, children);
+                  }
+              }
+          }
+
+          fn main() {
+              let mut lines = io::stdin().lock().lines().map(|l| l.expect("read error"));
+              let root = lines.next().unwrap_or_default();
+              let mut children: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+              for line in lines {
+                  let mut parts = line.split_whitespace();
+                  if let (Some(parent), Some(child)) = (parts.next(), parts.next()) {
+                      children.entry(parent.to_string()).or_default().insert(child.to_string());
+                  }
+              }
+              print_tree(root.trim(), 0, &children);
+          }
+        hints:
+          - "Read the remaining lines and insert each child into `children.entry(parent.to_string()).or_default()`."
+          - "Write `fn print_tree(name: &str, depth: usize, children: &BTreeMap<String, BTreeSet<String>>)` that prints `\"  \".repeat(depth)` followed by the name."
+          - "Then, if `children.get(name)` has a set, call `print_tree` on each child with `depth + 1`. Start with `print_tree(&root, 0, &children)`."
+        tests:
+          - stdin: "project\nproject src\nproject tests\nsrc main.rs\nsrc lib.rs\ntests api.rs\nproject Cargo.toml\n"
+            expect: "project\n  Cargo.toml\n  src\n    lib.rs\n    main.rs\n  tests\n    api.rs"
+          - stdin: "web\nweb static\nstatic css\ncss site.css\nweb app.py\nstatic logo.png\n"
+            hidden: true
+          - stdin: "empty\n"
+            hidden: true
+
+  - title: "Topological sort: ordering tasks with dependencies"
+    id: graphs-4
+    text: |
+      A build system must compile a library before the code that uses it; a course plan must schedule prerequisites first; a deploy pipeline runs tests before packaging. Draw each task as a node and each "must happen before" rule as a directed edge, and you get a **DAG**: a **directed acyclic graph** (no cycles, since a task can't depend on itself, even indirectly).
+
+      A **topological order** lists the nodes so that every edge `u -> v` has `u` before `v`. **Kahn's algorithm** finds one:
+
+      1. Count each node's **in-degree**: how many tasks must happen before it.
+      2. Every node with in-degree 0 is ready. Put those in a queue.
+      3. Take a ready node, append it to the order, and for each node that depended on it, lower its in-degree by one. Anything that reaches 0 becomes ready.
+      4. When nothing is ready any more: if the order holds every node, you're done. If it doesn't, the remaining nodes are stuck in (or behind) a **cycle**.
+
+      ```rust run
+      use std::collections::VecDeque;
+
+      fn main() {
+          let tasks = ["fetch", "compile", "test", "lint", "package"];
+          // (before, after): fetch must happen before compile, ...
+          let deps = [(0, 1), (1, 2), (0, 3), (2, 4), (3, 4)];
+          let n = tasks.len();
+          let mut next: Vec<Vec<usize>> = vec![Vec::new(); n];
+          let mut indegree = vec![0; n];
+          for &(before, after) in &deps {
+              next[before].push(after);
+              indegree[after] += 1;
+          }
+          let mut ready: VecDeque<usize> = (0..n).filter(|&t| indegree[t] == 0).collect();
+          let mut order = Vec::new();
+          while let Some(t) = ready.pop_front() {
+              order.push(tasks[t]);
+              for &u in &next[t] {
+                  indegree[u] -= 1;
+                  if indegree[u] == 0 {
+                      ready.push_back(u);
+                  }
+              }
+          }
+          if order.len() == n {
+              println!("{}", order.join(" -> "));
+          } else {
+              println!("cycle!");
+          }
+      }
+      ```
+
+      ```output
+      fetch -> compile -> lint -> test -> package
+      ```
+
+      Every node and edge is handled once: O(V + E).
+
+      ### Which ready task first?
+
+      Often several tasks are ready at once (`compile` and `lint` above), and any choice gives a valid order. If you need **one specific, repeatable** order (for reproducible builds, or so tests can check the output), always take the smallest ready task: keep the ready set in a `BinaryHeap<Reverse<usize>>` (a min-heap) or a `BTreeSet`. That costs O(log V) per task.
+
+      A topological order can also be built with DFS: a node is finished after all its descendants, so the reverse of the finishing order is a topological order. Kahn's version is easier to make deterministic and detects cycles for free.
+
+      ### Common mistakes
+
+      - **Edge direction.** "A depends on B" means B must come first: the edge is `B -> A`. Getting it backwards produces the exact reverse order.
+      - **Ignoring cycles.** If you don't check `order.len() == n`, the tasks in a cycle silently vanish from the plan.
+      - **Iterating a HashMap of task names.** The order of the ready tasks then changes from run to run. Use a BTreeMap/BTreeSet or sort.
+
+      **Your turn:** write `fn build_order(n: usize, deps: &[(usize, usize)]) -> Option<Vec<usize>>` for tasks `0..n`, where each `(a, b)` means task `a` must run before task `b`. Return the order (always taking the **smallest-numbered** ready task next), or `None` if there's a cycle. The tests include a chain of 200,000 tasks, so rescanning all tasks for a ready one each time is too slow.
+    seed: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn build_order(n: usize, deps: &[(usize, usize)]) -> Option<Vec<usize>> {
+          todo!()
+      }
+    solution: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn build_order(n: usize, deps: &[(usize, usize)]) -> Option<Vec<usize>> {
+          let mut next: Vec<Vec<usize>> = vec![Vec::new(); n];
+          let mut indegree = vec![0; n];
+          for &(before, after) in deps {
+              next[before].push(after);
+              indegree[after] += 1;
+          }
+          let mut ready: BinaryHeap<Reverse<usize>> = (0..n).filter(|&t| indegree[t] == 0).map(Reverse).collect();
+          let mut order = Vec::with_capacity(n);
+          while let Some(Reverse(t)) = ready.pop() {
+              order.push(t);
+              for &u in &next[t] {
+                  indegree[u] -= 1;
+                  if indegree[u] == 0 {
+                      ready.push(Reverse(u));
+                  }
+              }
+          }
+          if order.len() == n { Some(order) } else { None }
+      }
+    hints:
+      - "Build `next` (who waits for each task) and `indegree` (how many tasks each one waits for) from the pairs."
+      - "Put every task with in-degree 0 into a `BinaryHeap` as `Reverse(t)`, so `pop` gives the smallest. Pop, append, and lower the in-degree of each task in `next[t]`; push it when it reaches 0."
+      - "At the end, return `Some(order)` only if it contains all `n` tasks."
+    harness: |
+      #[test]
+      fn orders_a_small_pipeline() {
+          assert_eq!(build_order(5, &[(0, 1), (1, 2), (0, 3), (2, 4), (3, 4)]), Some(vec![0, 1, 2, 3, 4]), "build_order(5, pipeline)");
+      }
+
+      #[test]
+      fn takes_the_smallest_ready_task_first() {
+          assert_eq!(build_order(3, &[(2, 0)]), Some(vec![1, 2, 0]), "build_order(3, [(2, 0)])");
+          assert_eq!(build_order(4, &[(3, 1), (2, 1)]), Some(vec![0, 2, 3, 1]), "build_order(4, [(3, 1), (2, 1)])");
+      }
+
+      #[test]
+      fn independent_tasks_run_in_number_order() {
+          assert_eq!(build_order(3, &[]), Some(vec![0, 1, 2]), "build_order(3, [])");
+      }
+
+      #[test]
+      fn detects_cycles() {
+          assert_eq!(build_order(3, &[(0, 1), (1, 2), (2, 0)]), None, "build_order(3, cycle)");
+          assert_eq!(build_order(2, &[(1, 1)]), None, "build_order(2, [(1, 1)])");
+      }
+
+      #[test]
+      fn orders_200000_tasks_quickly() {
+          let n = 200_000;
+          let deps: Vec<(usize, usize)> = (0..n - 1).rev().map(|i| (i, i + 1)).collect();
+          let order = build_order(n, &deps).unwrap();
+          assert_eq!(order.len(), n, "number of tasks in the order");
+          assert_eq!((order[0], order[n - 1]), (0, n - 1), "first and last task");
+      }
+    more:
+      - task: |
+          The CI system reads its pipeline from standard input. Each line is a job, a colon, and the jobs it depends on: `test: build lint` means `test` runs after `build` and `lint`. A job may have no dependencies (`fetch:`), and a job that only appears as a dependency is a job too. Skip blank lines.
+
+          Print the run order, one job per line numbered from 1 (`1. fetch`), always running the **alphabetically first** ready job next. If some jobs can never run because of a dependency cycle, print only `cycle: ` followed by those jobs in alphabetical order, separated by `, `, and exit with code 1 (`std::process::exit(1)`).
+
+          Work with names directly: a `BTreeMap<String, usize>` of in-degrees, a `BTreeMap<String, Vec<String>>` of who waits for each job, and a `BTreeSet<String>` of ready jobs (`pop_first` gives the alphabetically first).
+        seed: |
+          use std::collections::{BTreeMap, BTreeSet};
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut waiting_on: BTreeMap<String, usize> = BTreeMap::new();
+              let mut unblocks: BTreeMap<String, Vec<String>> = BTreeMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+              }
+          }
+        solution: |
+          use std::collections::{BTreeMap, BTreeSet};
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut waiting_on: BTreeMap<String, usize> = BTreeMap::new();
+              let mut unblocks: BTreeMap<String, Vec<String>> = BTreeMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+                  let Some((job, deps)) = line.split_once(':') else {
+                      continue;
+                  };
+                  let job = job.trim().to_string();
+                  waiting_on.entry(job.clone()).or_insert(0);
+                  for dep in deps.split_whitespace() {
+                      waiting_on.entry(dep.to_string()).or_insert(0);
+                      *waiting_on.entry(job.clone()).or_insert(0) += 1;
+                      unblocks.entry(dep.to_string()).or_default().push(job.clone());
+                  }
+              }
+              let mut ready: BTreeSet<String> = waiting_on.iter().filter(|(_, n)| **n == 0).map(|(j, _)| j.clone()).collect();
+              let mut order = Vec::new();
+              while let Some(job) = ready.pop_first() {
+                  if let Some(next) = unblocks.get(&job) {
+                      for waiter in next {
+                          if let Some(n) = waiting_on.get_mut(waiter) {
+                              *n -= 1;
+                              if *n == 0 {
+                                  ready.insert(waiter.clone());
+                              }
+                          }
+                      }
+                  }
+                  order.push(job);
+              }
+              if order.len() < waiting_on.len() {
+                  let stuck: Vec<&str> = waiting_on.iter().filter(|(_, n)| **n > 0).map(|(j, _)| j.as_str()).collect();
+                  println!("cycle: {}", stuck.join(", "));
+                  std::process::exit(1);
+              }
+              for (i, job) in order.iter().enumerate() {
+                  println!("{}. {job}", i + 1);
+              }
+          }
+        hints:
+          - "Split each line with `split_once(':')`. Make sure the job and every dependency exist in `waiting_on` (`entry(..).or_insert(0)`), add 1 to the job's count per dependency, and record `unblocks[dep].push(job)`."
+          - "Start `ready` with every job whose count is 0. `while let Some(job) = ready.pop_first()`: for each job it unblocks, lower the count and insert it into `ready` at 0."
+          - "If fewer jobs ran than exist, the ones with a count above 0 are stuck: print them after `cycle: ` and `std::process::exit(1)`. Otherwise print the numbered order."
+        tests:
+          - stdin: "test: build\nbuild: fetch\nlint: fetch\npackage: test lint\nfetch:\n"
+            expect: "1. fetch\n2. build\n3. lint\n4. test\n5. package"
+          - stdin: "a: b\nb: c\nc: a\nd:\n"
+            exit: 1
+            expect: "cycle: a, b, c"
+          - stdin: "deploy: package migrate\n\npackage: compile\nmigrate:\ndocs:\n"
+            hidden: true
+          - stdin: "z: y\ny: x\nw: x\n"
+            hidden: true
+          - stdin: "loop: loop\nok:\n"
+            exit: 1
+            hidden: true
+      - task: |
+          A university wants to know the **minimum number of semesters** to finish `n` courses (`0..n`) when each `(a, b)` means course `a` must be passed in an earlier semester than course `b`, and students can take any number of courses per semester. Write `fn min_semesters(n: usize, prereqs: &[(usize, usize)]) -> Option<usize>` (`None` if a cycle makes it impossible; 0 for no courses).
+
+          Run Kahn's algorithm in **layers**: all courses ready now form one semester; taking them makes the next layer ready. Count the layers. The tests include a chain of 100,000 courses.
+        seed: |
+          fn min_semesters(n: usize, prereqs: &[(usize, usize)]) -> Option<usize> {
+              todo!()
+          }
+        solution: |
+          fn min_semesters(n: usize, prereqs: &[(usize, usize)]) -> Option<usize> {
+              let mut next: Vec<Vec<usize>> = vec![Vec::new(); n];
+              let mut indegree = vec![0; n];
+              for &(a, b) in prereqs {
+                  next[a].push(b);
+                  indegree[b] += 1;
+              }
+              let mut layer: Vec<usize> = (0..n).filter(|&c| indegree[c] == 0).collect();
+              let mut taken = 0;
+              let mut semesters = 0;
+              while !layer.is_empty() {
+                  semesters += 1;
+                  taken += layer.len();
+                  let mut next_layer = Vec::new();
+                  for &c in &layer {
+                      for &d in &next[c] {
+                          indegree[d] -= 1;
+                          if indegree[d] == 0 {
+                              next_layer.push(d);
+                          }
+                      }
+                  }
+                  layer = next_layer;
+              }
+              if taken == n { Some(semesters) } else { None }
+          }
+        harness: |
+          #[test]
+          fn counts_layers_of_courses() {
+              assert_eq!(min_semesters(4, &[(0, 2), (1, 2), (2, 3)]), Some(3), "min_semesters(4, [(0, 2), (1, 2), (2, 3)])");
+          }
+
+          #[test]
+          fn the_longest_chain_decides() {
+              assert_eq!(min_semesters(5, &[(0, 1), (1, 2), (0, 3), (3, 4), (2, 4)]), Some(4), "min_semesters(5, ...)");
+          }
+
+          #[test]
+          fn independent_courses_fit_in_one_semester() {
+              assert_eq!(min_semesters(3, &[]), Some(1), "min_semesters(3, [])");
+              assert_eq!(min_semesters(0, &[]), Some(0), "min_semesters(0, [])");
+          }
+
+          #[test]
+          fn a_cycle_is_impossible() {
+              assert_eq!(min_semesters(3, &[(0, 1), (1, 0), (1, 2)]), None, "min_semesters(3, cycle)");
+          }
+
+          #[test]
+          fn handles_a_chain_of_100000_courses_quickly() {
+              let prereqs: Vec<(usize, usize)> = (0..99_999).map(|i| (i, i + 1)).collect();
+              assert_eq!(min_semesters(100_000, &prereqs), Some(100_000), "min_semesters(100000, chain)");
+          }
+        hints:
+          - "Build `next` and `indegree` as in Kahn's algorithm. The first layer is every course with in-degree 0."
+          - "While the current layer isn't empty: count a semester, add the layer's size to the courses taken, and build the next layer from the courses whose in-degree drops to 0."
+          - "If fewer than `n` courses were taken, a cycle blocked the rest: `None`."
+
+  - title: Dijkstra's shortest paths with BinaryHeap
+    id: graphs-5
+    text: |
+      When edges have **weights** (kilometers, minutes, milliseconds of latency, euros), the path with the fewest edges isn't necessarily the cheapest. **Dijkstra's algorithm** finds the cheapest path from one start node to every other node, as long as no weight is negative.
+
+      The idea: repeatedly take the not-yet-settled node with the **smallest known distance**. Its distance is final, because any other way to reach it would go through a node that is already at least as far away. Then try to improve its neighbors' distances through it (**relaxing** the edges).
+
+      "Take the node with the smallest distance" is exactly what a min-heap is for: a `BinaryHeap<Reverse<(u64, usize)>>` of (distance, node) pairs. Rust's heap can't lower an item's priority in place, so when a distance improves you simply push a new pair; when an outdated pair pops later (its distance is bigger than the best known one), you skip it. This is called **lazy deletion**.
+
+      ```rust run
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn dijkstra(adj: &[Vec<(usize, u64)>], start: usize) -> Vec<u64> {
+          let mut dist = vec![u64::MAX; adj.len()]; // u64::MAX = not reached
+          let mut heap = BinaryHeap::new();
+          dist[start] = 0;
+          heap.push(Reverse((0, start)));
+          while let Some(Reverse((d, u))) = heap.pop() {
+              if d > dist[u] {
+                  continue; // stale entry: a shorter way to u was found later
+              }
+              for &(v, weight) in &adj[u] {
+                  let through_u = d + weight;
+                  if through_u < dist[v] {
+                      dist[v] = through_u;
+                      heap.push(Reverse((through_u, v)));
+                  }
+              }
+          }
+          dist
+      }
+
+      fn main() {
+          // warehouse 0 and four shops; (to, minutes) one-way roads
+          let adj = vec![
+              vec![(1, 4), (2, 1)],
+              vec![(3, 1)],
+              vec![(1, 2), (3, 5)],
+              vec![],
+              vec![(0, 3)],
+          ];
+          for (shop, d) in dijkstra(&adj, 0).iter().enumerate() {
+              if *d == u64::MAX {
+                  println!("shop {shop}: unreachable");
+              } else {
+                  println!("shop {shop}: {d} min");
+              }
+          }
+      }
+      ```
+
+      ```output
+      shop 0: 0 min
+      shop 1: 3 min
+      shop 2: 1 min
+      shop 3: 4 min
+      shop 4: unreachable
+      ```
+
+      Shop 1 is 4 minutes away directly, but 3 minutes via shop 2: Dijkstra settles shop 2 first (distance 1), improves shop 1 to 3, and later skips the stale `(4, 1)` entry.
+
+      Each edge can push one heap entry, and each push or pop costs O(log V), so the whole thing is **O((V + E) log V)**. Navigation apps, network routing protocols (OSPF) and game pathfinding (A*, which adds a distance estimate) all build on it.
+
+      ### Common mistakes
+
+      - **Negative weights.** A settled distance could still be beaten later; Dijkstra gives wrong answers. (Bellman-Ford handles negative weights, more slowly.)
+      - **A max-heap.** Without `Reverse`, the heap hands you the *farthest* node first.
+      - **No stale check.** Without `if d > dist[u] { continue; }`, outdated entries re-relax edges with wrong distances (wasted work, and wrong answers in variants).
+      - **Overflow.** `u64::MAX + weight` panics in a debug build. Only add weights to distances you've actually reached (popped nodes always have one).
+      - **Putting the node first in the tuple.** The heap orders tuples by their first field, so it must be the distance.
+
+      **Your turn:** write `fn shortest_times(adj: &[Vec<(usize, u64)>], start: usize) -> Vec<Option<u64>>` that returns the cheapest total weight from `start` to every node (`None` for unreachable nodes). The graph is directed: `adj[u]` lists `(v, weight)` pairs. The tests include 100,000 nodes and 300,000 edges.
+    seed: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn shortest_times(adj: &[Vec<(usize, u64)>], start: usize) -> Vec<Option<u64>> {
+          todo!()
+      }
+    solution: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn shortest_times(adj: &[Vec<(usize, u64)>], start: usize) -> Vec<Option<u64>> {
+          let mut dist: Vec<Option<u64>> = vec![None; adj.len()];
+          let mut heap = BinaryHeap::new();
+          dist[start] = Some(0);
+          heap.push(Reverse((0, start)));
+          while let Some(Reverse((d, u))) = heap.pop() {
+              if dist[u].is_some_and(|best| d > best) {
+                  continue;
+              }
+              for &(v, weight) in &adj[u] {
+                  let through_u = d + weight;
+                  if dist[v].is_none_or(|best| through_u < best) {
+                      dist[v] = Some(through_u);
+                      heap.push(Reverse((through_u, v)));
+                  }
+              }
+          }
+          dist
+      }
+    require:
+      - pattern: 'BinaryHeap'
+        message: Use a `BinaryHeap` (with `Reverse`) to pick the closest node.
+    hints:
+      - "Keep `dist: Vec<Option<u64>>` (or `u64::MAX` for unreached, converted at the end) and a heap of `Reverse((distance, node))`, starting with `Reverse((0, start))`."
+      - "Pop the smallest; skip it if `d` is bigger than the best distance already known for `u`."
+      - "For each `(v, weight)` in `adj[u]`: if `d + weight` beats `v`'s known distance (or `v` has none), store it and push `Reverse((d + weight, v))`."
+    harness: |
+      fn shops() -> Vec<Vec<(usize, u64)>> {
+          vec![vec![(1, 4), (2, 1)], vec![(3, 1)], vec![(1, 2), (3, 5)], vec![], vec![(0, 3)]]
+      }
+
+      #[test]
+      fn finds_the_cheapest_times() {
+          assert_eq!(shortest_times(&shops(), 0), vec![Some(0), Some(3), Some(1), Some(4), None], "shortest_times(shops, 0)");
+      }
+
+      #[test]
+      fn starts_from_any_node() {
+          assert_eq!(shortest_times(&shops(), 4), vec![Some(3), Some(6), Some(4), Some(7), Some(0)], "shortest_times(shops, 4)");
+      }
+
+      #[test]
+      fn a_cheap_detour_beats_a_direct_road() {
+          let adj = vec![vec![(1, 100), (2, 1)], vec![], vec![(3, 1)], vec![(1, 1)]];
+          assert_eq!(shortest_times(&adj, 0)[1], Some(3), "shortest_times(detour graph, 0)[1]");
+      }
+
+      #[test]
+      fn zero_weight_edges_are_fine() {
+          let adj = vec![vec![(1, 0)], vec![(2, 0)], vec![]];
+          assert_eq!(shortest_times(&adj, 0), vec![Some(0), Some(0), Some(0)], "shortest_times(zero weights, 0)");
+      }
+
+      #[test]
+      fn handles_100000_nodes_quickly() {
+          let n = 100_000;
+          let mut adj = vec![Vec::new(); n];
+          for i in 0..n {
+              adj[i].push(((i + 1) % n, (i * 7 % 100 + 1) as u64));
+              adj[i].push(((i * 37 + 11) % n, (i * 13 % 1000 + 1) as u64));
+              adj[i].push(((i * 101 + 7) % n, (i * 29 % 500 + 1) as u64));
+          }
+          let dist = shortest_times(&adj, 0);
+          assert_eq!(dist[n - 1], Some(1111), "distance to node 99999");
+          assert_eq!(dist[12_345], Some(807), "distance to node 12345");
+          let total: u64 = dist.iter().map(|d| d.unwrap_or(0)).sum();
+          assert_eq!(total, 94_265_102, "sum of all distances");
+      }
+    more:
+      - task: |
+          A message is broadcast from server `source` across a network of `n` servers (`0..n`). Each link `(from, to, millis)` carries it one way in that many milliseconds. Write `fn time_to_reach_all(n: usize, links: &[(usize, usize, u64)], source: usize) -> Option<u64>`: how long until **every** server has the message (the largest shortest-path distance), or `None` if some server never gets it.
+
+          Build adjacency lists from the links, run Dijkstra from `source`, then take the maximum distance.
+        seed: |
+          use std::cmp::Reverse;
+          use std::collections::BinaryHeap;
+
+          fn time_to_reach_all(n: usize, links: &[(usize, usize, u64)], source: usize) -> Option<u64> {
+              todo!()
+          }
+        solution: |
+          use std::cmp::Reverse;
+          use std::collections::BinaryHeap;
+
+          fn time_to_reach_all(n: usize, links: &[(usize, usize, u64)], source: usize) -> Option<u64> {
+              let mut adj: Vec<Vec<(usize, u64)>> = vec![Vec::new(); n];
+              for &(from, to, millis) in links {
+                  adj[from].push((to, millis));
+              }
+              let mut dist = vec![u64::MAX; n];
+              let mut heap = BinaryHeap::new();
+              dist[source] = 0;
+              heap.push(Reverse((0, source)));
+              while let Some(Reverse((d, u))) = heap.pop() {
+                  if d > dist[u] {
+                      continue;
+                  }
+                  for &(v, w) in &adj[u] {
+                      if d + w < dist[v] {
+                          dist[v] = d + w;
+                          heap.push(Reverse((d + w, v)));
+                      }
+                  }
+              }
+              let slowest = dist.into_iter().max()?;
+              if slowest == u64::MAX { None } else { Some(slowest) }
+          }
+        harness: |
+          #[test]
+          fn reaches_everyone() {
+              assert_eq!(time_to_reach_all(4, &[(1, 0, 1), (1, 2, 1), (2, 3, 1)], 1), Some(2), "time_to_reach_all(4, links, 1)");
+          }
+
+          #[test]
+          fn takes_the_fastest_routes() {
+              let links = [(0, 1, 10), (0, 2, 2), (2, 1, 3), (1, 3, 1)];
+              assert_eq!(time_to_reach_all(4, &links, 0), Some(6), "time_to_reach_all(4, links, 0)");
+          }
+
+          #[test]
+          fn an_unreachable_server_gives_none() {
+              assert_eq!(time_to_reach_all(3, &[(0, 1, 5)], 0), None, "time_to_reach_all(3, [(0, 1, 5)], 0)");
+          }
+
+          #[test]
+          fn links_are_one_way() {
+              assert_eq!(time_to_reach_all(2, &[(1, 0, 4)], 0), None, "time_to_reach_all(2, [(1, 0, 4)], 0)");
+          }
+
+          #[test]
+          fn a_single_server_is_reached_at_once() {
+              assert_eq!(time_to_reach_all(1, &[], 0), Some(0), "time_to_reach_all(1, [], 0)");
+          }
+        hints:
+          - "Build `adj[from].push((to, millis))` for every link, then run the Dijkstra loop from the lesson."
+          - "With `u64::MAX` as \"not reached\", the answer is the maximum of `dist`."
+          - "If that maximum is still `u64::MAX`, some server was never reached: return `None`."
+      - task: |
+          Build the route planner for a delivery company. Standard input starts with a line `FROM TO`, followed by roads, one per line: `CITY CITY MINUTES` (roads go both ways). Print the cheapest route as the cities joined by ` -> ` with the total in parentheses, like `Aston -> Cobb -> Bree (8)`, or `no route`. If `FROM` and `TO` are the same city, print just that city with `(0)`. In every test the cheapest route is unique.
+
+          Give each city an index with a `HashMap<String, usize>` and keep the names in a `Vec<String>`. Run Dijkstra with a **parent** array, as you did for BFS routes, and walk it back from `TO`.
+        seed: |
+          use std::cmp::Reverse;
+          use std::collections::{BinaryHeap, HashMap};
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let mut lines = input.lines();
+              let first = lines.next().unwrap_or("");
+          }
+        solution: |
+          use std::cmp::Reverse;
+          use std::collections::{BinaryHeap, HashMap};
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let mut lines = input.lines();
+              let first = lines.next().unwrap_or("");
+              let mut ends = first.split_whitespace();
+              let (from, to) = (ends.next().unwrap_or(""), ends.next().unwrap_or(""));
+              if from == to {
+                  println!("{from} (0)");
+                  return;
+              }
+              let mut index: HashMap<String, usize> = HashMap::new();
+              let mut names: Vec<String> = Vec::new();
+              let mut adj: Vec<Vec<(usize, u64)>> = Vec::new();
+              for line in lines {
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  let [a, b, minutes] = parts[..] else {
+                      continue;
+                  };
+                  let minutes: u64 = minutes.parse().expect("minutes");
+                  let mut id = |name: &str| -> usize {
+                      if let Some(&i) = index.get(name) {
+                          return i;
+                      }
+                      index.insert(name.to_string(), names.len());
+                      names.push(name.to_string());
+                      adj.push(Vec::new());
+                      names.len() - 1
+                  };
+                  let (ia, ib) = (id(a), id(b));
+                  adj[ia].push((ib, minutes));
+                  adj[ib].push((ia, minutes));
+              }
+              let (Some(&start), Some(&goal)) = (index.get(from), index.get(to)) else {
+                  println!("no route");
+                  return;
+              };
+              let mut dist = vec![u64::MAX; names.len()];
+              let mut parent: Vec<Option<usize>> = vec![None; names.len()];
+              let mut heap = BinaryHeap::new();
+              dist[start] = 0;
+              heap.push(Reverse((0, start)));
+              while let Some(Reverse((d, u))) = heap.pop() {
+                  if d > dist[u] {
+                      continue;
+                  }
+                  for &(v, w) in &adj[u] {
+                      if d + w < dist[v] {
+                          dist[v] = d + w;
+                          parent[v] = Some(u);
+                          heap.push(Reverse((d + w, v)));
+                      }
+                  }
+              }
+              if dist[goal] == u64::MAX {
+                  println!("no route");
+                  return;
+              }
+              let mut route = vec![goal];
+              let mut cur = goal;
+              while let Some(p) = parent[cur] {
+                  route.push(p);
+                  cur = p;
+              }
+              route.reverse();
+              let cities: Vec<&str> = route.iter().map(|&i| names[i].as_str()).collect();
+              println!("{} ({})", cities.join(" -> "), dist[goal]);
+          }
+        hints:
+          - "Parse the first line into `from` and `to` and handle `from == to` right away. For each road, look up (or create) both cities' indices and push the edge both ways."
+          - "Run Dijkstra from `from`'s index, setting `parent[v] = Some(u)` whenever you improve `dist[v]`."
+          - "If `to`'s distance is still `u64::MAX` (or `to` never appeared), print `no route`. Otherwise follow the parents back from `to`, reverse, and print the names joined by `\" -> \"`."
+        tests:
+          - stdin: "Aston Dover\nAston Bree 4\nAston Cobb 2\nCobb Bree 1\nBree Dover 5\nCobb Dover 8\n"
+            expect: "Aston -> Cobb -> Bree -> Dover (8)"
+          - stdin: "Aston Zed\nAston Bree 3\nCobb Zed 1\n"
+            hidden: true
+          - stdin: "Bree Bree\nAston Bree 3\n"
+            hidden: true
+          - stdin: "Hull York\nHull Leeds 60\nLeeds York 30\nHull Selby 40\nSelby York 45\nHull York 120\nSelby Leeds 10\n"
+            hidden: true
+
+  - title: Binary trees with Option<Box<Node>>
+    id: graphs-6
+    text: |
+      A **tree** is a connected graph with no cycles. A **rooted tree** has one node at the top (the **root**); every other node has exactly one **parent**, and nodes without children are **leaves**. File systems, HTML documents, org charts and parsed source code are trees.
+
+      In a **binary tree** each node has at most two children, `left` and `right`. A **binary search tree** (BST) adds a rule: everything in a node's left subtree is smaller than the node, and everything in its right subtree is bigger. Searching walks down one path, so it takes O(height): O(log n) when the tree is balanced, but O(n) when it degenerates into a line (insert sorted data into a plain BST and that's exactly what you get). The standard library's `BTreeMap` is a balanced tree; at work you use it. Building a BST yourself is a classic interview exercise, and it teaches how Rust handles recursive data.
+
+      ### The node type
+
+      ```rust
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+      ```
+
+      - `Option`: a child may be missing (`None`). Rust has no null pointers.
+      - `Box`: a pointer to a value on the heap. Without it, a `Node` would contain two `Node`s, each containing two more... an infinite size:
+
+      ```rust compile_fail
+      struct Node {
+          value: i32,
+          next: Option<Node>,
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0072]: recursive type `Node` has infinite size
+      ```
+
+      A `Box` is always one pointer big, so `Option<Box<Node>>` has a fixed size (and thanks to a niche optimization, it's no bigger than the Box itself).
+
+      ### Inserting and walking
+
+      Recursion fits trees perfectly, since every subtree is a tree. Insertion works on the **slot** where a node might go, a `&mut Option<Box<Node>>`: an empty slot gets the new node; otherwise go left or right.
+
+      ```rust run
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn insert(slot: &mut Option<Box<Node>>, value: i32) {
+          match slot {
+              None => *slot = Some(Box::new(Node { value, left: None, right: None })),
+              Some(node) => {
+                  if value < node.value {
+                      insert(&mut node.left, value);
+                  } else if value > node.value {
+                      insert(&mut node.right, value);
+                  } // equal: already in the tree
+              }
+          }
+      }
+
+      fn in_order(slot: &Option<Box<Node>>, out: &mut Vec<i32>) {
+          if let Some(node) = slot {
+              in_order(&node.left, out);
+              out.push(node.value);
+              in_order(&node.right, out);
+          }
+      }
+
+      fn main() {
+          let mut root = None;
+          for v in [50, 30, 70, 20, 40, 60, 80, 30] {
+              insert(&mut root, v);
+          }
+          let mut values = Vec::new();
+          in_order(&root, &mut values);
+          println!("{values:?}");
+          if let Some(node) = &root {
+              println!("root {} has left child {:?}", node.value, node.left.as_ref().map(|n| n.value));
+          }
+      }
+      ```
+
+      ```output
+      [20, 30, 40, 50, 60, 70, 80]
+      root 50 has left child Some(30)
+      ```
+
+      The orders of visiting a tree have names. **In-order** (left, node, right) gives a BST's values sorted. **Pre-order** (node first) is how you'd copy or print a tree top-down; **post-order** (node last) is how you'd compute folder sizes or free memory bottom-up; **level-order** (row by row) is BFS with a VecDeque.
+
+      To walk down *without* recursion, `option.as_deref()` turns an `&Option<Box<Node>>` into an `Option<&Node>`, which is easy to loop with:
+
+      ```rust
+      let mut cur = root.as_deref();
+      while let Some(node) = cur {
+          cur = if target < node.value { node.left.as_deref() } else { node.right.as_deref() };
+      }
+      ```
+
+      ### Common mistakes
+
+      - **`Option<Node>` without the Box**: infinite size, as above.
+      - **Moving out of a borrowed tree.** `match &root { Some(node) => ... }` borrows; `match root { ... }` moves the whole tree into the match. Match on a reference when you only want to look.
+      - **Deep recursion on degenerate trees.** A BST built from 100,000 sorted values is a 100,000-deep line; recursive walks would overflow the stack. Balanced trees (like `BTreeMap`) don't have this problem.
+
+      **Your turn:** the seed has a `Bst` with a working `insert`. Add three methods:
+
+      - `fn contains(&self, value: i32) -> bool`, walking down iteratively with `as_deref()`
+      - `fn height(&self) -> usize`: the number of nodes on the longest path from the root down (0 for an empty tree, 1 for just a root)
+      - `fn sorted(&self) -> Vec<i32>`: all values in ascending order (an in-order walk)
+
+      Write recursive helper functions on `&Option<Box<Node>>` for `height` and `sorted`.
+    seed: |
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn insert_into(slot: &mut Option<Box<Node>>, value: i32) {
+          match slot {
+              None => *slot = Some(Box::new(Node { value, left: None, right: None })),
+              Some(node) => {
+                  if value < node.value {
+                      insert_into(&mut node.left, value);
+                  } else if value > node.value {
+                      insert_into(&mut node.right, value);
+                  }
+              }
+          }
+      }
+
+      struct Bst {
+          root: Option<Box<Node>>,
+      }
+
+      impl Bst {
+          fn new() -> Self {
+              Bst { root: None }
+          }
+
+          fn insert(&mut self, value: i32) {
+              insert_into(&mut self.root, value);
+          }
+
+          fn contains(&self, value: i32) -> bool {
+              todo!()
+          }
+
+          fn height(&self) -> usize {
+              todo!()
+          }
+
+          fn sorted(&self) -> Vec<i32> {
+              todo!()
+          }
+      }
+    solution: |
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn insert_into(slot: &mut Option<Box<Node>>, value: i32) {
+          match slot {
+              None => *slot = Some(Box::new(Node { value, left: None, right: None })),
+              Some(node) => {
+                  if value < node.value {
+                      insert_into(&mut node.left, value);
+                  } else if value > node.value {
+                      insert_into(&mut node.right, value);
+                  }
+              }
+          }
+      }
+
+      fn height_of(slot: &Option<Box<Node>>) -> usize {
+          match slot {
+              None => 0,
+              Some(node) => 1 + height_of(&node.left).max(height_of(&node.right)),
+          }
+      }
+
+      fn collect_in_order(slot: &Option<Box<Node>>, out: &mut Vec<i32>) {
+          if let Some(node) = slot {
+              collect_in_order(&node.left, out);
+              out.push(node.value);
+              collect_in_order(&node.right, out);
+          }
+      }
+
+      struct Bst {
+          root: Option<Box<Node>>,
+      }
+
+      impl Bst {
+          fn new() -> Self {
+              Bst { root: None }
+          }
+
+          fn insert(&mut self, value: i32) {
+              insert_into(&mut self.root, value);
+          }
+
+          fn contains(&self, value: i32) -> bool {
+              let mut cur = self.root.as_deref();
+              while let Some(node) = cur {
+                  if value == node.value {
+                      return true;
+                  }
+                  cur = if value < node.value { node.left.as_deref() } else { node.right.as_deref() };
+              }
+              false
+          }
+
+          fn height(&self) -> usize {
+              height_of(&self.root)
+          }
+
+          fn sorted(&self) -> Vec<i32> {
+              let mut out = Vec::new();
+              collect_in_order(&self.root, &mut out);
+              out
+          }
+      }
+    require:
+      - pattern: 'as_deref'
+        message: "Walk down in `contains` with `as_deref()` and a loop."
+    hints:
+      - "`contains`: `let mut cur = self.root.as_deref();` then `while let Some(node) = cur`: return `true` on a match, otherwise move to `node.left.as_deref()` or `node.right.as_deref()`."
+      - "`height_of(slot)`: `None` is 0; `Some(node)` is `1 + height_of(&node.left).max(height_of(&node.right))`."
+      - "`sorted`: an in-order helper that recurses left, pushes `node.value`, then recurses right, like `in_order` in the lesson."
+    harness: |
+      fn tree(values: &[i32]) -> Bst {
+          let mut t = Bst::new();
+          for &v in values {
+              t.insert(v);
+          }
+          t
+      }
+
+      #[test]
+      fn finds_values_in_the_tree() {
+          let t = tree(&[50, 30, 70, 20, 40]);
+          assert_eq!(t.contains(40), true, "contains(40)");
+          assert_eq!(t.contains(50), true, "contains(50)");
+          assert_eq!(t.contains(45), false, "contains(45)");
+      }
+
+      #[test]
+      fn an_empty_tree_contains_nothing() {
+          let t = Bst::new();
+          assert_eq!(t.contains(1), false, "contains(1) on an empty tree");
+          assert_eq!(t.height(), 0, "height() of an empty tree");
+          assert_eq!(t.sorted(), Vec::<i32>::new(), "sorted() of an empty tree");
+      }
+
+      #[test]
+      fn measures_the_height() {
+          assert_eq!(tree(&[5]).height(), 1, "height of a single node");
+          assert_eq!(tree(&[50, 30, 70, 20, 40, 60, 80]).height(), 3, "height of a full tree of 7");
+          assert_eq!(tree(&[50, 30, 20, 10]).height(), 4, "height of a left-leaning line");
+      }
+
+      #[test]
+      fn lists_values_in_order_without_duplicates() {
+          assert_eq!(tree(&[50, 30, 70, 20, 40, 60, 80, 30]).sorted(), vec![20, 30, 40, 50, 60, 70, 80], "sorted()");
+      }
+
+      #[test]
+      fn sorted_insertion_makes_a_tall_tree() {
+          let values: Vec<i32> = (0..1000).collect();
+          let t = tree(&values);
+          assert_eq!(t.height(), 1000, "height after inserting 0..1000 in order");
+          assert_eq!(t.contains(999), true, "contains(999)");
+          assert_eq!(t.sorted() == values, true, "sorted() gives 0..1000");
+      }
+    more:
+      - task: |
+          Write `fn levels(root: &Option<Box<Node>>) -> Vec<Vec<i32>>` that lists the values of a binary tree **level by level** (row by row from the top, left to right within a row). For the tree with root 50, children 30 and 70, and grandchildren 20, 40 and 80, that's `[[50], [30, 70], [20, 40, 80]]`.
+
+          It's BFS on a tree: a `VecDeque<&Node>` starting with the root. Process the queue one level at a time: note how many nodes it holds at the start of a level, pop exactly that many, and push their children.
+        seed: |
+          use std::collections::VecDeque;
+
+          struct Node {
+              value: i32,
+              left: Option<Box<Node>>,
+              right: Option<Box<Node>>,
+          }
+
+          fn levels(root: &Option<Box<Node>>) -> Vec<Vec<i32>> {
+              todo!()
+          }
+        solution: |
+          use std::collections::VecDeque;
+
+          struct Node {
+              value: i32,
+              left: Option<Box<Node>>,
+              right: Option<Box<Node>>,
+          }
+
+          fn levels(root: &Option<Box<Node>>) -> Vec<Vec<i32>> {
+              let mut out = Vec::new();
+              let mut queue: VecDeque<&Node> = root.as_deref().into_iter().collect();
+              while !queue.is_empty() {
+                  let mut row = Vec::new();
+                  for _ in 0..queue.len() {
+                      if let Some(node) = queue.pop_front() {
+                          row.push(node.value);
+                          queue.extend(node.left.as_deref());
+                          queue.extend(node.right.as_deref());
+                      }
+                  }
+                  out.push(row);
+              }
+              out
+          }
+        harness: |
+          fn insert(slot: &mut Option<Box<Node>>, value: i32) {
+              match slot {
+                  None => *slot = Some(Box::new(Node { value, left: None, right: None })),
+                  Some(node) => {
+                      if value < node.value {
+                          insert(&mut node.left, value)
+                      } else {
+                          insert(&mut node.right, value)
+                      }
+                  }
+              }
+          }
+
+          fn tree(values: &[i32]) -> Option<Box<Node>> {
+              let mut root = None;
+              for &v in values {
+                  insert(&mut root, v);
+              }
+              root
+          }
+
+          #[test]
+          fn lists_three_levels() {
+              assert_eq!(levels(&tree(&[50, 30, 70, 20, 40, 80])), vec![vec![50], vec![30, 70], vec![20, 40, 80]], "levels(50, 30, 70, 20, 40, 80)");
+          }
+
+          #[test]
+          fn a_line_has_one_value_per_level() {
+              assert_eq!(levels(&tree(&[1, 2, 3])), vec![vec![1], vec![2], vec![3]], "levels(1, 2, 3)");
+          }
+
+          #[test]
+          fn a_single_node_is_one_level() {
+              assert_eq!(levels(&tree(&[7])), vec![vec![7]], "levels(7)");
+          }
+
+          #[test]
+          fn an_empty_tree_has_no_levels() {
+              assert_eq!(levels(&None), Vec::<Vec<i32>>::new(), "levels(empty)");
+          }
+        hints:
+          - "`let mut queue: VecDeque<&Node> = root.as_deref().into_iter().collect();` starts with the root, or empty for an empty tree."
+          - "While the queue isn't empty: `let count = queue.len();` then pop exactly `count` nodes into this level's row."
+          - "For each popped node, push its children: `queue.extend(node.left.as_deref());` adds the child if there is one (an Option is an iterator of zero or one items)."
+      - task: |
+          Someone hand-edited a tree in a data file. Write `fn is_valid_bst(root: &Option<Box<Node>>) -> bool` that checks the BST rule: every value in a node's left subtree is **smaller** than the node and every value in its right subtree is **bigger** (no duplicates).
+
+          Checking only each node against its direct children isn't enough: in the tree with root 10, left child 5 and 5's right child 12, every parent-child pair looks fine, but 12 is in 10's left subtree. Instead, pass down the allowed range: a recursive helper takes `low: Option<i32>` and `high: Option<i32>`, the bounds every value in this subtree must stay strictly between.
+        seed: |
+          struct Node {
+              value: i32,
+              left: Option<Box<Node>>,
+              right: Option<Box<Node>>,
+          }
+
+          fn is_valid_bst(root: &Option<Box<Node>>) -> bool {
+              todo!()
+          }
+        solution: |
+          struct Node {
+              value: i32,
+              left: Option<Box<Node>>,
+              right: Option<Box<Node>>,
+          }
+
+          fn within(slot: &Option<Box<Node>>, low: Option<i32>, high: Option<i32>) -> bool {
+              let Some(node) = slot else {
+                  return true;
+              };
+              if low.is_some_and(|l| node.value <= l) || high.is_some_and(|h| node.value >= h) {
+                  return false;
+              }
+              within(&node.left, low, Some(node.value)) && within(&node.right, Some(node.value), high)
+          }
+
+          fn is_valid_bst(root: &Option<Box<Node>>) -> bool {
+              within(root, None, None)
+          }
+        harness: |
+          fn n(value: i32, left: Option<Box<Node>>, right: Option<Box<Node>>) -> Option<Box<Node>> {
+              Some(Box::new(Node { value, left, right }))
+          }
+
+          fn leaf(value: i32) -> Option<Box<Node>> {
+              n(value, None, None)
+          }
+
+          #[test]
+          fn accepts_a_valid_tree() {
+              let t = n(50, n(30, leaf(20), leaf(40)), n(70, leaf(60), leaf(80)));
+              assert_eq!(is_valid_bst(&t), true, "is_valid_bst(50 / 30 70 / 20 40 60 80)");
+          }
+
+          #[test]
+          fn rejects_a_child_on_the_wrong_side() {
+              let t = n(10, leaf(15), None);
+              assert_eq!(is_valid_bst(&t), false, "is_valid_bst(10 with left child 15)");
+          }
+
+          #[test]
+          fn rejects_a_grandchild_outside_the_range() {
+              let t = n(10, n(5, None, leaf(12)), None);
+              assert_eq!(is_valid_bst(&t), false, "is_valid_bst(10 / 5 / right 12)");
+          }
+
+          #[test]
+          fn rejects_duplicates() {
+              let t = n(10, leaf(10), None);
+              assert_eq!(is_valid_bst(&t), false, "is_valid_bst(10 with left child 10)");
+          }
+
+          #[test]
+          fn accepts_empty_and_single_trees() {
+              assert_eq!(is_valid_bst(&None), true, "is_valid_bst(empty)");
+              assert_eq!(is_valid_bst(&leaf(i32::MIN)), true, "is_valid_bst(single i32::MIN)");
+          }
+        hints:
+          - "Write `fn within(slot: &Option<Box<Node>>, low: Option<i32>, high: Option<i32>) -> bool`. An empty slot is valid."
+          - "The node fails if `low` is `Some(l)` with `node.value <= l`, or `high` is `Some(h)` with `node.value >= h`."
+          - "Recurse: the left subtree must stay below the node (`within(&node.left, low, Some(node.value))`), the right above it (`within(&node.right, Some(node.value), high)`)."
+
+  - title: Union-find (disjoint sets)
+    id: graphs-7
+    text: |
+      Some questions come up while edges are still arriving one at a time: "after these cables were plugged in, are servers 3 and 8 connected?", "does this new road create a loop?", "how many separate friend groups are there now?". Running a fresh BFS after every edge would be O(V + E) each time. **Union-find** (also called **disjoint set union**) answers them in nearly O(1) per operation.
+
+      Every element points to a **parent** in its group; the element that points to itself is the group's **root**, its representative. Two operations:
+
+      - `find(x)`: follow parents up to the root. Two elements are in the same group exactly when they have the same root.
+      - `union(a, b)`: find both roots; if they differ, make one root point to the other. The groups merge.
+
+      ```rust run
+      struct Groups {
+          parent: Vec<usize>,
+      }
+
+      impl Groups {
+          fn new(n: usize) -> Self {
+              Groups { parent: (0..n).collect() } // everyone starts alone
+          }
+
+          fn find(&self, mut x: usize) -> usize {
+              while self.parent[x] != x {
+                  x = self.parent[x];
+              }
+              x
+          }
+
+          fn union(&mut self, a: usize, b: usize) -> bool {
+              let (ra, rb) = (self.find(a), self.find(b));
+              if ra == rb {
+                  return false; // already in the same group
+              }
+              self.parent[ra] = rb;
+              true
+          }
+      }
+
+      fn main() {
+          // ana = 0, ben = 1, cy = 2, dee = 3, eve = 4
+          let mut g = Groups::new(5);
+          g.union(0, 1); // ana and ben become friends
+          g.union(3, 4);
+          g.union(1, 2);
+          println!("ana and cy: {}", g.find(0) == g.find(2));
+          println!("ana and eve: {}", g.find(0) == g.find(4));
+          println!("ben-cy again merged something: {}", g.union(1, 2));
+      }
+      ```
+
+      ```output
+      ana and cy: true
+      ana and eve: false
+      ben-cy again merged something: false
+      ```
+
+      ### Two tricks that make it fast
+
+      This simple version can build long chains of parents (each union hangs one root under another), and then `find` is O(n). Two small changes fix that:
+
+      - **Union by size**: keep a `size` for each root and always hang the **smaller** group under the bigger one. Trees then stay at most log₂ n deep.
+      - **Path compression**: after `find(x)` has found the root, go up the path a second time and point every node on it **directly** at the root. The next `find` on any of them is one step. Because it changes `parent`, `find` now takes `&mut self`.
+
+      With both, a sequence of operations costs O(α(n)) each on average, where α is the inverse Ackermann function: at most 4 for any input that fits in the universe. In practice, constant.
+
+      Union-find shows up in **Kruskal's algorithm** for minimum spanning trees (connect everything as cheaply as possible), detecting a cycle as edges arrive, merging duplicate customer accounts that share an email or phone number, and grouping pixels in image processing.
+
+      ### Common mistakes
+
+      - **Linking the elements instead of their roots.** `parent[a] = b` only moves `a`, and breaks the group `a` was in. Always link `find(a)` and `find(b)`.
+      - **Forgetting to check `ra == rb`.** Linking a root to itself is harmless, but then your "groups" counter and your "this edge made a cycle" logic are wrong.
+      - **Keeping sizes for non-roots.** Only a root's `size` entry is meaningful; update the new root's size when merging.
+
+      **Your turn:** write a `UnionFind` with union by size and path compression:
+
+      - `fn new(n: usize) -> Self`: elements `0..n`, each alone
+      - `fn find(&mut self, x: usize) -> usize`: the root, compressing the path
+      - `fn union(&mut self, a: usize, b: usize) -> bool`: merge; `false` if they were already together
+      - `fn group_count(&self) -> usize`: how many separate groups there are
+      - `fn group_size(&mut self, x: usize) -> usize`: the size of `x`'s group
+
+      The tests merge 200,000 elements in a pattern that builds a 200,000-long chain without the two tricks.
+    seed: |
+      struct UnionFind {
+          parent: Vec<usize>,
+          size: Vec<usize>,
+          groups: usize,
+      }
+
+      impl UnionFind {
+          fn new(n: usize) -> Self {
+              todo!()
+          }
+
+          fn find(&mut self, x: usize) -> usize {
+              todo!()
+          }
+
+          fn union(&mut self, a: usize, b: usize) -> bool {
+              todo!()
+          }
+
+          fn group_count(&self) -> usize {
+              todo!()
+          }
+
+          fn group_size(&mut self, x: usize) -> usize {
+              todo!()
+          }
+      }
+    solution: |
+      struct UnionFind {
+          parent: Vec<usize>,
+          size: Vec<usize>,
+          groups: usize,
+      }
+
+      impl UnionFind {
+          fn new(n: usize) -> Self {
+              UnionFind { parent: (0..n).collect(), size: vec![1; n], groups: n }
+          }
+
+          fn find(&mut self, x: usize) -> usize {
+              let mut root = x;
+              while self.parent[root] != root {
+                  root = self.parent[root];
+              }
+              let mut cur = x;
+              while self.parent[cur] != root {
+                  let next = self.parent[cur];
+                  self.parent[cur] = root;
+                  cur = next;
+              }
+              root
+          }
+
+          fn union(&mut self, a: usize, b: usize) -> bool {
+              let (mut ra, mut rb) = (self.find(a), self.find(b));
+              if ra == rb {
+                  return false;
+              }
+              if self.size[ra] < self.size[rb] {
+                  std::mem::swap(&mut ra, &mut rb);
+              }
+              self.parent[rb] = ra;
+              self.size[ra] += self.size[rb];
+              self.groups -= 1;
+              true
+          }
+
+          fn group_count(&self) -> usize {
+              self.groups
+          }
+
+          fn group_size(&mut self, x: usize) -> usize {
+              let root = self.find(x);
+              self.size[root]
+          }
+      }
+    hints:
+      - "`new`: `parent: (0..n).collect()`, `size: vec![1; n]`, `groups: n`."
+      - "`find`: first walk up to the root; then walk the path again, setting each node's parent to the root. `union`: find both roots, return `false` if equal, otherwise hang the smaller under the bigger, add the sizes, and decrease `groups`."
+      - "`group_size(x)` is `self.size[self.find(x)]` (compute the root first, into a variable)."
+    harness: |
+      #[test]
+      fn everyone_starts_alone() {
+          let mut uf = UnionFind::new(4);
+          assert_eq!(uf.group_count(), 4, "group_count() of 4 new elements");
+          assert_eq!(uf.group_size(2), 1, "group_size(2)");
+          assert_eq!(uf.find(3), 3, "find(3)");
+      }
+
+      #[test]
+      fn union_merges_groups() {
+          let mut uf = UnionFind::new(5);
+          assert_eq!(uf.union(0, 1), true, "union(0, 1)");
+          assert_eq!(uf.union(3, 4), true, "union(3, 4)");
+          assert_eq!(uf.union(1, 2), true, "union(1, 2)");
+          assert_eq!(uf.find(0) == uf.find(2), true, "0 and 2 are together");
+          assert_eq!(uf.find(0) == uf.find(4), false, "0 and 4 are apart");
+          assert_eq!(uf.group_count(), 2, "group_count()");
+          assert_eq!(uf.group_size(2), 3, "group_size(2)");
+      }
+
+      #[test]
+      fn union_within_a_group_returns_false() {
+          let mut uf = UnionFind::new(3);
+          uf.union(0, 1);
+          uf.union(1, 2);
+          assert_eq!(uf.union(0, 2), false, "union(0, 2) when already connected");
+          assert_eq!(uf.group_count(), 1, "group_count()");
+      }
+
+      #[test]
+      fn merges_200000_elements_quickly() {
+          let n = 200_000;
+          let mut uf = UnionFind::new(n);
+          for i in 1..n {
+              uf.union(0, i);
+          }
+          assert_eq!(uf.group_count(), 1, "group_count() after joining everything to 0");
+          let mut same = 0;
+          for i in 0..n {
+              if uf.find(i) == uf.find(0) {
+                  same += 1;
+              }
+          }
+          assert_eq!(same, n, "elements in 0's group");
+          assert_eq!(uf.group_size(123_456), n, "group_size(123456)");
+          let mut chain = UnionFind::new(n);
+          for i in 0..n - 1 {
+              chain.union(i + 1, i);
+          }
+          assert_eq!(chain.group_size(0), n, "group_size(0) of a chain");
+      }
+    more:
+      - task: |
+          A network engineer plugs in cables one by one between `n` offices (`0..n`). The design was supposed to be a tree (no loops), but someone added an extra cable. Write `fn first_redundant(n: usize, cables: &[(usize, usize)]) -> Option<(usize, usize)>` that returns the **first** cable (in the given order) that connects two offices that were already connected through earlier cables, or `None` if no cable is redundant.
+
+          Write a small union-find inside (a `parent` Vec and a `find` function are enough here, though union by size and path compression don't hurt): for each cable, if both ends already have the same root, that's the one.
+        seed: |
+          fn first_redundant(n: usize, cables: &[(usize, usize)]) -> Option<(usize, usize)> {
+              todo!()
+          }
+        solution: |
+          fn find(parent: &mut [usize], x: usize) -> usize {
+              let mut root = x;
+              while parent[root] != root {
+                  root = parent[root];
+              }
+              let mut cur = x;
+              while parent[cur] != root {
+                  let next = parent[cur];
+                  parent[cur] = root;
+                  cur = next;
+              }
+              root
+          }
+
+          fn first_redundant(n: usize, cables: &[(usize, usize)]) -> Option<(usize, usize)> {
+              let mut parent: Vec<usize> = (0..n).collect();
+              for &(a, b) in cables {
+                  let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                  if ra == rb {
+                      return Some((a, b));
+                  }
+                  parent[ra] = rb;
+              }
+              None
+          }
+        harness: |
+          #[test]
+          fn finds_the_cable_that_closes_a_loop() {
+              assert_eq!(first_redundant(3, &[(0, 1), (0, 2), (1, 2)]), Some((1, 2)), "first_redundant(3, [(0, 1), (0, 2), (1, 2)])");
+          }
+
+          #[test]
+          fn returns_the_first_redundant_cable() {
+              let cables = [(0, 1), (1, 2), (2, 3), (1, 3), (0, 4), (0, 3)];
+              assert_eq!(first_redundant(5, &cables), Some((1, 3)), "first_redundant(5, ...)");
+          }
+
+          #[test]
+          fn a_tree_has_no_redundant_cable() {
+              assert_eq!(first_redundant(4, &[(0, 1), (1, 2), (1, 3)]), None, "first_redundant(4, tree)");
+              assert_eq!(first_redundant(2, &[]), None, "first_redundant(2, [])");
+          }
+
+          #[test]
+          fn a_cable_to_itself_is_redundant() {
+              assert_eq!(first_redundant(2, &[(1, 1)]), Some((1, 1)), "first_redundant(2, [(1, 1)])");
+          }
+
+          #[test]
+          fn checks_200000_cables_quickly() {
+              let n = 200_000;
+              let mut cables: Vec<(usize, usize)> = (0..n - 1).map(|i| (i, i + 1)).collect();
+              cables.push((0, n - 1));
+              assert_eq!(first_redundant(n, &cables), Some((0, n - 1)), "first_redundant(chain plus a closing cable)");
+          }
+        hints:
+          - "Start with `let mut parent: Vec<usize> = (0..n).collect();` and write `fn find(parent: &mut [usize], x: usize) -> usize`."
+          - "For each cable `(a, b)`, compute both roots. Equal roots mean the offices were already connected: return `Some((a, b))`."
+          - "Otherwise link the roots (`parent[ra] = rb;`). Add path compression to `find` so the 200,000-cable test stays fast."
+      - task: |
+          **Kruskal's algorithm.** The company has `n` offices and a list of possible cable routes `(a, b, cost)`. Find the cheapest set of cables that connects **all** offices (a **minimum spanning tree**). Write `fn min_cable_cost(n: usize, options: &[(usize, usize, u64)]) -> Option<u64>`: the total cost, or `None` if the offices can't all be connected. With one office (or none), the cost is 0.
+
+          Kruskal is short with union-find: sort the options by cost, cheapest first, and take each cable whose ends are **not yet connected** (union returns true), skipping the rest. You're done when `n - 1` cables are taken. The tests include 100,000 offices and 200,000 options.
+        seed: |
+          fn min_cable_cost(n: usize, options: &[(usize, usize, u64)]) -> Option<u64> {
+              todo!()
+          }
+        solution: |
+          fn find(parent: &mut [usize], x: usize) -> usize {
+              let mut root = x;
+              while parent[root] != root {
+                  root = parent[root];
+              }
+              let mut cur = x;
+              while parent[cur] != root {
+                  let next = parent[cur];
+                  parent[cur] = root;
+                  cur = next;
+              }
+              root
+          }
+
+          fn min_cable_cost(n: usize, options: &[(usize, usize, u64)]) -> Option<u64> {
+              let mut sorted = options.to_vec();
+              sorted.sort_unstable_by_key(|&(_, _, cost)| cost);
+              let mut parent: Vec<usize> = (0..n).collect();
+              let mut total = 0;
+              let mut cables = 0;
+              for (a, b, cost) in sorted {
+                  let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                  if ra != rb {
+                      parent[ra] = rb;
+                      total += cost;
+                      cables += 1;
+                  }
+              }
+              if cables + 1 >= n { Some(total) } else { None }
+          }
+        harness: |
+          #[test]
+          fn connects_four_offices_cheaply() {
+              let options = [(0, 1, 10), (0, 2, 6), (0, 3, 5), (1, 3, 15), (2, 3, 4)];
+              assert_eq!(min_cable_cost(4, &options), Some(19), "min_cable_cost(4, options)");
+          }
+
+          #[test]
+          fn skips_cables_that_would_make_a_loop() {
+              let options = [(0, 1, 1), (1, 2, 1), (0, 2, 1), (2, 3, 7)];
+              assert_eq!(min_cable_cost(4, &options), Some(9), "min_cable_cost(4, triangle plus one)");
+          }
+
+          #[test]
+          fn disconnected_offices_give_none() {
+              assert_eq!(min_cable_cost(3, &[(0, 1, 5)]), None, "min_cable_cost(3, [(0, 1, 5)])");
+          }
+
+          #[test]
+          fn one_or_no_office_costs_nothing() {
+              assert_eq!(min_cable_cost(1, &[]), Some(0), "min_cable_cost(1, [])");
+              assert_eq!(min_cable_cost(0, &[]), Some(0), "min_cable_cost(0, [])");
+          }
+
+          #[test]
+          fn connects_100000_offices_quickly() {
+              let n = 100_000;
+              let mut options: Vec<(usize, usize, u64)> = (0..n - 1).map(|i| (i, i + 1, (i * 7919 % 1000 + 1) as u64)).collect();
+              options.extend((0..n).map(|i| (i, (i * 37 + 11) % n, (i * 13 % 1000 + 1) as u64)));
+              assert_eq!(min_cable_cost(n, &options), Some(27_388_537), "min_cable_cost(100000 offices)");
+          }
+        hints:
+          - "Copy the options into a Vec and sort it by cost: `sorted.sort_unstable_by_key(|&(_, _, cost)| cost);`"
+          - "Use a union-find over the offices. For each option, if the two ends have different roots, link them, add the cost and count the cable."
+          - "All offices are connected when you've taken `n - 1` cables; otherwise return `None`."

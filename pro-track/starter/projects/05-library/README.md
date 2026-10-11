@@ -83,7 +83,7 @@ crates.io needs a `description`, a `license` (an SPDX expression like `MIT OR Ap
 
 1. **Errors** (`semver-lite/src/error.rs`): derive `thiserror::Error`, write the messages listed in the comments, add `#[non_exhaustive]`.
 2. **Prerelease** (`prerelease.rs`): `new` (validation) and `Ord` (precedence).
-3. **Version and Parser** (`version.rs`, `parser.rs`): parsing, ordering, `Display`, bumps. Now `cargo test --workspace` should pass, CLI included.
+3. **Version and Parser** (`version.rs`, `parser.rs`): parsing, ordering, `Display`, bumps. Now `cargo test -p semver-lite --test api` and `cargo test -p semver-cli` pass.
 4. **Documentation:** add `#![deny(missing_docs)]` and crate docs to `lib.rs`, then document every public item, including `req.rs` (written by a colleague, undocumented). At least 6 examples in total; `cargo test --doc -p semver-lite` runs them.
 5. **The `serde` feature:** add it to `semver-lite/Cargo.toml` and implement `Serialize`/`Deserialize` for `Version` *as a string* in a `#[cfg(feature = "serde")]` module. Run `cargo test -p semver-lite --features serde`.
 6. **Metadata:** fill in `[workspace.package]` and `semver-lite/Cargo.toml`, write `semver-lite/README.md` (what crates.io shows), then run `cargo package -p semver-lite --list` and `cargo package -p semver-lite --allow-dirty`.

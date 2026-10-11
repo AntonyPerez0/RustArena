@@ -1,0 +1,39 @@
+# CI for the shortener once it lives in its own repository: copy this file to
+# .github/workflows/ci.yml there. (In the Pro Track repository, the Grade workflow
+# already runs your tests.)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Lints
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --locked
+
+  docker:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t shortener:${{ github.sha }} .
+      - name: Smoke test
+        run: |
+          docker run -d --name shortener -p 3000:3000 shortener:${{ github.sha }}
+          curl --silent --show-error --fail --retry 10 --retry-connrefused --retry-delay 1 http://localhost:3000/health
+          docker stop shortener
+          docker logs shortener

@@ -1,0 +1,1590 @@
+id: tokenizer-calculator
+title: A calculator with a real parser
+level: Intermediate
+after: lifetimes
+summary: Build the front end of a programming language in miniature. A tokenizer that borrows from the input, a recursive-descent parser with precedence and parentheses, variables, and error messages that point at the exact spot.
+seed: |
+  use std::fmt;
+  use std::io;
+  use std::io::BufRead;
+
+  #[derive(Debug, Clone, Copy, PartialEq)]
+  enum Kind {
+      Number,
+      Plus,
+      Minus,
+      Star,
+      Slash,
+      LParen,
+      RParen,
+  }
+
+  /// One token: its kind and the exact slice of the line it came from.
+  #[derive(Debug, Clone, Copy)]
+  struct Token<'a> {
+      kind: Kind,
+      text: &'a str,
+  }
+
+  #[derive(Debug)]
+  enum CalcError {
+      UnexpectedChar { ch: char, pos: usize },
+  }
+
+  impl CalcError {
+      /// The byte offset in the line where the problem is.
+      fn pos(&self) -> usize {
+          match self {
+              CalcError::UnexpectedChar { pos, .. } => *pos,
+          }
+      }
+  }
+
+  impl fmt::Display for CalcError {
+      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+          match self {
+              CalcError::UnexpectedChar { ch, .. } => write!(f, "unexpected character '{ch}'"),
+          }
+      }
+  }
+
+  impl std::error::Error for CalcError {}
+
+  /// Cuts a line into tokens. The tokens borrow their text from the line: nothing is copied.
+  struct Lexer<'a> {
+      src: &'a str,
+      pos: usize,
+  }
+
+  impl<'a> Lexer<'a> {
+      fn new(src: &'a str) -> Self {
+          Lexer { src, pos: 0 }
+      }
+
+      /// The next character, without moving past it.
+      fn peek(&self) -> Option<char> {
+          self.src[self.pos..].chars().next()
+      }
+
+      /// The next token, or None at the end of the line.
+      fn next_token(&mut self) -> Result<Option<Token<'a>>, CalcError> {
+          // 1. Skip whitespace.
+          // 2. At the end of the line, return Ok(None).
+          // 3. A number is a run of digits and dots; every other token is one character.
+          // 4. Anything else is an error.
+          todo!()
+      }
+  }
+
+  fn tokenize<'a>(src: &'a str) -> Result<Vec<Token<'a>>, CalcError> {
+      let mut lexer = Lexer::new(src);
+      let mut tokens = Vec::new();
+      while let Some(token) = lexer.next_token()? {
+          tokens.push(token);
+      }
+      Ok(tokens)
+  }
+
+  fn main() {
+      for line in io::stdin().lock().lines() {
+          let line = line.expect("failed to read input");
+          if line.trim().is_empty() {
+              continue;
+          }
+          match tokenize(&line) {
+              Ok(tokens) => {
+                  let mut out = String::new();
+                  for token in &tokens {
+                      if !out.is_empty() {
+                          out.push(' ');
+                      }
+                      if token.kind == Kind::Number {
+                          out.push_str(&format!("[number {}]", token.text));
+                      } else {
+                          out.push_str(&format!("[{}]", token.text));
+                      }
+                  }
+                  println!("{out}");
+              }
+              Err(e) => println!("error at column {}: {e}", line[..e.pos()].chars().count() + 1),
+          }
+      }
+  }
+milestones:
+  - title: A tokenizer that borrows
+    text: |
+      Compilers, interpreters, spreadsheets, SQL databases, JSON libraries and the calculator on your phone all start the same way: they cut raw text into **tokens**, the "words" of the language. `12+3.5*(2)` becomes `12`, `+`, `3.5`, `*`, `(`, `2`, `)`. This step is called **lexing** or **tokenizing**, and the code that does it is a **lexer**. Once text is a list of tokens, the next stage (the parser, from milestone 2) never has to think about spaces or digits again.
+
+      In this project you'll build a calculator in four stages: tokens, then precedence, then parentheses and variables, then error messages that point at the problem. Each input line is one expression.
+
+      For now, print each line's tokens: numbers as `[number 12]`, everything else as `[+]`, `[(]` and so on, separated by spaces:
+
+      ```
+      12+3.5*(2)
+      ```
+
+      prints:
+
+      ```
+      [number 12] [+] [number 3.5] [*] [(] [number 2] [)]
+      ```
+
+      The rules:
+
+      - Whitespace between tokens is skipped.
+      - A **number** is a run of digits and dots (`3.5`, `12`). Don't check that it's a *valid* number yet: `1.5.2` is one number token, and the parser will reject it later. Each stage checks what it understands.
+      - `+ - * / ( )` are one-character tokens.
+      - Anything else is an error, printed as `error at column 5: unexpected character '$'`. Columns count characters from 1. The starter code's `main` already prints this, using the byte position stored in the error.
+
+      Your job is `Lexer::next_token`. The types, `tokenize` and `main` are written for you.
+
+      ### Tokens that borrow
+
+      Look at the starter code's `Token`:
+
+      ```rust
+      struct Token<'a> {
+          kind: Kind,
+          text: &'a str,
+      }
+      ```
+
+      `text` isn't a `String`: it's a **slice of the input line**. `&src[start..end]` points into the line's own memory, so tokenizing copies nothing, even for a ten-megabyte file. The price is the lifetime parameter `'a`: a `Token<'a>` can't outlive the line it points into, and the compiler checks that for you. Real lexers (rustc's own included) work this way.
+
+      The `Lexer<'a>` struct holds the line (`src: &'a str`) and how far it has read (`pos`, a byte offset). `peek()` returns the next character without moving.
+
+      ### The lifetime that matters
+
+      `next_token` returns `Token<'a>`, with the **same `'a` as the source**. That one annotation is the difference between a lexer that works and one that doesn't. If you let elision choose, the returned slice is tied to `&mut self` instead, as if the token borrowed from the lexer:
+
+      ```rust compile_fail
+      struct Lexer<'a> {
+          src: &'a str,
+          pos: usize,
+      }
+
+      impl<'a> Lexer<'a> {
+          fn next_word(&mut self) -> &str {
+              let rest = &self.src[self.pos..];
+              let end = rest.find(' ').unwrap_or(rest.len());
+              self.pos = (self.pos + end + 1).min(self.src.len());
+              &rest[..end]
+          }
+      }
+
+      fn main() {
+          let mut lexer = Lexer { src: "let x", pos: 0 };
+          let first = lexer.next_word();
+          let second = lexer.next_word();
+          println!("{first} {second}");
+      }
+      ```
+
+      ```error
+      error[E0499]: cannot borrow `lexer` as mutable more than once at a time
+      ```
+
+      The elision rule says: with `&mut self`, the output borrows from `self`. So `first` keeps the lexer mutably borrowed, and you can't ask for a second word while holding the first. Writing `-> &'a str` tells the compiler the truth: the word points into the *source text*, which outlives any one call. With that fix the program prints `let x`.
+
+      ### Walking the characters
+
+      `pos` is a byte offset, but characters can be several bytes long (`é` is 2). When you skip a character, advance by `c.len_utf8()`, not 1, or the next slice would start in the middle of a character and panic. (Digits and the six operators are 1 byte each, so `+= 1` is fine for them.)
+    solution: |
+      use std::fmt;
+      use std::io;
+      use std::io::BufRead;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Kind {
+          Number,
+          Plus,
+          Minus,
+          Star,
+          Slash,
+          LParen,
+          RParen,
+      }
+
+      /// One token: its kind and the exact slice of the line it came from.
+      #[derive(Debug, Clone, Copy)]
+      struct Token<'a> {
+          kind: Kind,
+          text: &'a str,
+      }
+
+      #[derive(Debug)]
+      enum CalcError {
+          UnexpectedChar { ch: char, pos: usize },
+      }
+
+      impl CalcError {
+          /// The byte offset in the line where the problem is.
+          fn pos(&self) -> usize {
+              match self {
+                  CalcError::UnexpectedChar { pos, .. } => *pos,
+              }
+          }
+      }
+
+      impl fmt::Display for CalcError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  CalcError::UnexpectedChar { ch, .. } => write!(f, "unexpected character '{ch}'"),
+              }
+          }
+      }
+
+      impl std::error::Error for CalcError {}
+
+      /// Cuts a line into tokens. The tokens borrow their text from the line: nothing is copied.
+      struct Lexer<'a> {
+          src: &'a str,
+          pos: usize,
+      }
+
+      impl<'a> Lexer<'a> {
+          fn new(src: &'a str) -> Self {
+              Lexer { src, pos: 0 }
+          }
+
+          /// The next character, without moving past it.
+          fn peek(&self) -> Option<char> {
+              self.src[self.pos..].chars().next()
+          }
+
+          /// The next token, or None at the end of the line.
+          fn next_token(&mut self) -> Result<Option<Token<'a>>, CalcError> {
+              while let Some(c) = self.peek() {
+                  if !c.is_whitespace() {
+                      break;
+                  }
+                  self.pos += c.len_utf8();
+              }
+              let start = self.pos;
+              let Some(c) = self.peek() else {
+                  return Ok(None);
+              };
+              let kind = if c.is_ascii_digit() || c == '.' {
+                  while let Some(c) = self.peek() {
+                      if !(c.is_ascii_digit() || c == '.') {
+                          break;
+                      }
+                      self.pos += 1;
+                  }
+                  Kind::Number
+              } else {
+                  let kind = match c {
+                      '+' => Kind::Plus,
+                      '-' => Kind::Minus,
+                      '*' => Kind::Star,
+                      '/' => Kind::Slash,
+                      '(' => Kind::LParen,
+                      ')' => Kind::RParen,
+                      _ => return Err(CalcError::UnexpectedChar { ch: c, pos: start }),
+                  };
+                  self.pos += 1;
+                  kind
+              };
+              Ok(Some(Token { kind, text: &self.src[start..self.pos] }))
+          }
+      }
+
+      fn tokenize<'a>(src: &'a str) -> Result<Vec<Token<'a>>, CalcError> {
+          let mut lexer = Lexer::new(src);
+          let mut tokens = Vec::new();
+          while let Some(token) = lexer.next_token()? {
+              tokens.push(token);
+          }
+          Ok(tokens)
+      }
+
+      fn main() {
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match tokenize(&line) {
+                  Ok(tokens) => {
+                      let mut out = String::new();
+                      for token in &tokens {
+                          if !out.is_empty() {
+                              out.push(' ');
+                          }
+                          if token.kind == Kind::Number {
+                              out.push_str(&format!("[number {}]", token.text));
+                          } else {
+                              out.push_str(&format!("[{}]", token.text));
+                          }
+                      }
+                      println!("{out}");
+                  }
+                  Err(e) => println!("error at column {}: {e}", line[..e.pos()].chars().count() + 1),
+              }
+          }
+      }
+    tests:
+      - stdin: "12+3.5*(2)\n  7 -  1 / 4 \n"
+      - stdin: "2 + $\n(((\n"
+      - stdin: "1.5.2 ..3\n10)(-\n1 × 2\n"
+        hidden: true
+      - stdin: "x+1\n42\n"
+        hidden: true
+    hints:
+      - "First skip whitespace: `while let Some(c) = self.peek() { if !c.is_whitespace() { break; } self.pos += c.len_utf8(); }`. Then `let start = self.pos;` and `let Some(c) = self.peek() else { return Ok(None); };`."
+      - "For a number, keep moving `self.pos += 1` while the next character is an ASCII digit or `.`. For an operator, `match c` to pick the `Kind`, then move one character."
+      - "Build the token from the slice you walked over: `Ok(Some(Token { kind, text: &self.src[start..self.pos] }))`. An unknown character is `Err(CalcError::UnexpectedChar { ch: c, pos: start })`."
+
+  - title: Precedence with recursive descent
+    text: |
+      Now compute. Each line is an expression with `+ - * /` and numbers; print its value:
+
+      ```
+      1 + 2 * 3
+      10 - 4 - 3
+      ```
+
+      prints `7` and `3`. Multiplication and division bind tighter than addition and subtraction, and operators of the same level go left to right (`10 - 4 - 3` is `(10 - 4) - 3`).
+
+      ### A grammar, and one function per rule
+
+      The standard way to write this is a **grammar** where each level of precedence is one rule:
+
+      ```
+      expr   = term (("+" | "-") term)*
+      term   = factor (("*" | "/") factor)*
+      factor = NUMBER
+      ```
+
+      Read `*` as "zero or more times". An expression is terms separated by `+`/`-`; a term is factors separated by `*`/`/`. Because `expr` is built *out of* terms, every `*` is grouped before any `+` sees it. That's precedence, with no precedence table.
+
+      A **recursive-descent parser** turns each rule into a method, and this one computes the value as it goes:
+
+      ```rust
+      fn expr(&mut self) -> Result<f64, CalcError> {
+          let mut value = self.term()?;
+          loop {
+              match self.peek() {
+                  Some(Token { kind: Kind::Plus, .. }) => {
+                      self.pos += 1;
+                      value += self.term()?;
+                  }
+                  Some(Token { kind: Kind::Minus, .. }) => {
+                      self.pos += 1;
+                      value -= self.term()?;
+                  }
+                  _ => return Ok(value),
+              }
+          }
+      }
+      ```
+
+      `term` is the same with `*` and `/`, calling `factor`. `factor` reads one number token and parses its text with `token.text.parse::<f64>()`. The parser is a struct holding the tokens and an index into them: `struct Parser<'a> { tokens: Vec<Token<'a>>, pos: usize, end: usize }`.
+
+      Print values with `{}`: Rust prints `f64` as short as possible, so `7.0` shows as `7` and `1 / 4` as `0.25`. Yes, `0.1 + 0.2` prints `0.30000000000000004`: that's what floating point really computes, and every language gets the same answer (most just hide it).
+
+      ### Errors with a position
+
+      Tokens now need to remember where they start: add `pos: usize` to `Token` and fill it in the lexer. New errors, all printed with the same `error at column N: ...` as before:
+
+      | Problem | Message |
+      |---|---|
+      | a token that can't start a value, like `2 + * 3` | `expected a value, found '*'` |
+      | the line ends too early, like `4 +` | `expected a value, found the end` |
+      | something left over after a complete expression, like `2 3` | `expected an operator, found '3'` |
+      | a number token that doesn't parse, like `1.2.3` | `invalid number "1.2.3"` |
+
+      "The end" is the position just past the last character: store the line's length in the parser as `end`. One helper builds both "expected" messages: `fn expected(&self, what: &'static str) -> CalcError` looks at the next token (or the end) and fills in the `found` part. (`&'static str` because `what` is always a string literal written in your code, which lives for the whole program.)
+
+      After `expr()` returns, check that every token was used (a `finish` method): otherwise `2 3` would quietly print `2`. Parsers that ignore leftover input hide bugs.
+    solution: |
+      use std::fmt;
+      use std::io;
+      use std::io::BufRead;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Kind {
+          Number,
+          Plus,
+          Minus,
+          Star,
+          Slash,
+          LParen,
+          RParen,
+      }
+
+      /// One token: its kind, the exact slice of the line it came from, and where that slice starts.
+      #[derive(Debug, Clone, Copy)]
+      struct Token<'a> {
+          kind: Kind,
+          text: &'a str,
+          pos: usize,
+      }
+
+      #[derive(Debug)]
+      enum CalcError {
+          UnexpectedChar { ch: char, pos: usize },
+          BadNumber { text: String, pos: usize },
+          Expected { what: &'static str, found: String, pos: usize },
+      }
+
+      impl CalcError {
+          /// The byte offset in the line where the problem is.
+          fn pos(&self) -> usize {
+              match self {
+                  CalcError::UnexpectedChar { pos, .. }
+                  | CalcError::BadNumber { pos, .. }
+                  | CalcError::Expected { pos, .. } => *pos,
+              }
+          }
+      }
+
+      impl fmt::Display for CalcError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  CalcError::UnexpectedChar { ch, .. } => write!(f, "unexpected character '{ch}'"),
+                  CalcError::BadNumber { text, .. } => write!(f, "invalid number \"{text}\""),
+                  CalcError::Expected { what, found, .. } => write!(f, "expected {what}, found {found}"),
+              }
+          }
+      }
+
+      impl std::error::Error for CalcError {}
+
+      /// Cuts a line into tokens. The tokens borrow their text from the line: nothing is copied.
+      struct Lexer<'a> {
+          src: &'a str,
+          pos: usize,
+      }
+
+      impl<'a> Lexer<'a> {
+          fn new(src: &'a str) -> Self {
+              Lexer { src, pos: 0 }
+          }
+
+          fn peek(&self) -> Option<char> {
+              self.src[self.pos..].chars().next()
+          }
+
+          /// The next token, or None at the end of the line.
+          fn next_token(&mut self) -> Result<Option<Token<'a>>, CalcError> {
+              while let Some(c) = self.peek() {
+                  if !c.is_whitespace() {
+                      break;
+                  }
+                  self.pos += c.len_utf8();
+              }
+              let start = self.pos;
+              let Some(c) = self.peek() else {
+                  return Ok(None);
+              };
+              let kind = if c.is_ascii_digit() || c == '.' {
+                  while let Some(c) = self.peek() {
+                      if !(c.is_ascii_digit() || c == '.') {
+                          break;
+                      }
+                      self.pos += 1;
+                  }
+                  Kind::Number
+              } else {
+                  let kind = match c {
+                      '+' => Kind::Plus,
+                      '-' => Kind::Minus,
+                      '*' => Kind::Star,
+                      '/' => Kind::Slash,
+                      '(' => Kind::LParen,
+                      ')' => Kind::RParen,
+                      _ => return Err(CalcError::UnexpectedChar { ch: c, pos: start }),
+                  };
+                  self.pos += 1;
+                  kind
+              };
+              Ok(Some(Token { kind, text: &self.src[start..self.pos], pos: start }))
+          }
+      }
+
+      fn tokenize<'a>(src: &'a str) -> Result<Vec<Token<'a>>, CalcError> {
+          let mut lexer = Lexer::new(src);
+          let mut tokens = Vec::new();
+          while let Some(token) = lexer.next_token()? {
+              tokens.push(token);
+          }
+          Ok(tokens)
+      }
+
+      /// A recursive-descent parser that evaluates as it parses. One method per grammar rule:
+      ///
+      ///   expr   = term (("+" | "-") term)*
+      ///   term   = factor (("*" | "/") factor)*
+      ///   factor = NUMBER
+      struct Parser<'a> {
+          tokens: Vec<Token<'a>>,
+          pos: usize,
+          end: usize,
+      }
+
+      impl<'a> Parser<'a> {
+          fn peek(&self) -> Option<Token<'a>> {
+              if self.pos < self.tokens.len() { Some(self.tokens[self.pos]) } else { None }
+          }
+
+          /// An error saying what we wanted and what is actually next.
+          fn expected(&self, what: &'static str) -> CalcError {
+              match self.peek() {
+                  Some(token) => CalcError::Expected { what, found: format!("'{}'", token.text), pos: token.pos },
+                  None => CalcError::Expected { what, found: String::from("the end"), pos: self.end },
+              }
+          }
+
+          fn expr(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.term()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Plus, .. }) => {
+                          self.pos += 1;
+                          value += self.term()?;
+                      }
+                      Some(Token { kind: Kind::Minus, .. }) => {
+                          self.pos += 1;
+                          value -= self.term()?;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn term(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.factor()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Star, .. }) => {
+                          self.pos += 1;
+                          value *= self.factor()?;
+                      }
+                      Some(Token { kind: Kind::Slash, .. }) => {
+                          self.pos += 1;
+                          value /= self.factor()?;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn factor(&mut self) -> Result<f64, CalcError> {
+              let Some(token) = self.peek() else {
+                  return Err(self.expected("a value"));
+              };
+              match token.kind {
+                  Kind::Number => {
+                      self.pos += 1;
+                      token.text.parse().map_err(|_| CalcError::BadNumber { text: token.text.to_string(), pos: token.pos })
+                  }
+                  _ => Err(self.expected("a value")),
+              }
+          }
+
+          /// After a complete expression there must be nothing left.
+          fn finish(&self) -> Result<(), CalcError> {
+              match self.peek() {
+                  Some(_) => Err(self.expected("an operator")),
+                  None => Ok(()),
+              }
+          }
+      }
+
+      fn evaluate(line: &str) -> Result<f64, CalcError> {
+          let tokens = tokenize(line)?;
+          let mut parser = Parser { tokens, pos: 0, end: line.len() };
+          let value = parser.expr()?;
+          parser.finish()?;
+          Ok(value)
+      }
+
+      fn main() {
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match evaluate(&line) {
+                  Ok(value) => println!("{value}"),
+                  Err(e) => println!("error at column {}: {e}", line[..e.pos()].chars().count() + 1),
+              }
+          }
+      }
+    tests:
+      - stdin: "1 + 2 * 3\n10 - 4 - 3\n20 / 4 * 2\n7\n"
+      - stdin: "2 + * 3\n2 3\n1.2.3 + 1\n4 +\n"
+      - stdin: "0.1 + 0.2\n1 / 4\n100 - 99.5\n2 * 3 + 4 * 5 - 6 / 3\n"
+        hidden: true
+      - stdin: "8 / 2 / 2\n3 $ 3\n.5 + .5\n"
+        hidden: true
+    hints:
+      - "Add `pos: usize` to `Token` (the lexer sets it to `start`), then write `struct Parser<'a> { tokens: Vec<Token<'a>>, pos: usize, end: usize }` with a `peek()` that returns the token at `self.pos`, if any."
+      - "`term` mirrors `expr` with `Kind::Star` and `Kind::Slash`. `factor` matches the next token: a `Kind::Number` is parsed with `token.text.parse().map_err(...)`; anything else is `Err(self.expected(\"a value\"))`."
+      - "`fn evaluate(line: &str) -> Result<f64, CalcError>`: tokenize with `?`, build the parser, `let value = parser.expr()?;`, check for leftovers, `Ok(value)`."
+
+  - title: Parentheses and unary minus
+    text: |
+      Add the two features every calculator needs. Parentheses override precedence, and a minus sign in front of a value negates it:
+
+      ```
+      (1 + 2) * 3
+      -(4 - 10) / 4
+      2 * -3
+      --3
+      ```
+
+      prints `9`, `1.5`, `-6` and `3`. Only `factor` changes:
+
+      ```
+      factor = NUMBER | "-" factor | "(" expr ")"
+      ```
+
+      - `"-" factor`: consume the minus, parse a factor, negate it. `--3` is minus (minus 3).
+      - `"(" expr ")"`: consume the `(`, parse a **whole expression**, then require a `)`.
+
+      ### Recursion is the whole trick
+
+      `factor` calling `expr` is what makes nesting work: `((1 + 2) * 3)` is a factor containing an expression containing a term containing a factor containing an expression... Each level is just a method call, so the parser handles any depth without a stack of your own (the call stack *is* the stack).
+
+      Why doesn't it loop forever? Because every path through `factor` consumes at least one token before recursing, and there are only so many tokens. That's the rule to remember when writing recursive-descent parsers: never call yourself without making progress.
+
+      ### Requiring a token
+
+      Write a helper that consumes a token of a given kind or fails with a useful error:
+
+      ```rust
+      fn expect(&mut self, kind: Kind, what: &'static str) -> Result<Token<'a>, CalcError>
+      ```
+
+      `self.expect(Kind::RParen, "')'")?` then gives `expected ')', found the end` for `(1 + 2` and `expected ')', found '3'` for `(1 + 2 3`.
+    solution: |
+      use std::fmt;
+      use std::io;
+      use std::io::BufRead;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Kind {
+          Number,
+          Plus,
+          Minus,
+          Star,
+          Slash,
+          LParen,
+          RParen,
+      }
+
+      /// One token: its kind, the exact slice of the line it came from, and where that slice starts.
+      #[derive(Debug, Clone, Copy)]
+      struct Token<'a> {
+          kind: Kind,
+          text: &'a str,
+          pos: usize,
+      }
+
+      #[derive(Debug)]
+      enum CalcError {
+          UnexpectedChar { ch: char, pos: usize },
+          BadNumber { text: String, pos: usize },
+          Expected { what: &'static str, found: String, pos: usize },
+      }
+
+      impl CalcError {
+          /// The byte offset in the line where the problem is.
+          fn pos(&self) -> usize {
+              match self {
+                  CalcError::UnexpectedChar { pos, .. }
+                  | CalcError::BadNumber { pos, .. }
+                  | CalcError::Expected { pos, .. } => *pos,
+              }
+          }
+      }
+
+      impl fmt::Display for CalcError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  CalcError::UnexpectedChar { ch, .. } => write!(f, "unexpected character '{ch}'"),
+                  CalcError::BadNumber { text, .. } => write!(f, "invalid number \"{text}\""),
+                  CalcError::Expected { what, found, .. } => write!(f, "expected {what}, found {found}"),
+              }
+          }
+      }
+
+      impl std::error::Error for CalcError {}
+
+      /// Cuts a line into tokens. The tokens borrow their text from the line: nothing is copied.
+      struct Lexer<'a> {
+          src: &'a str,
+          pos: usize,
+      }
+
+      impl<'a> Lexer<'a> {
+          fn new(src: &'a str) -> Self {
+              Lexer { src, pos: 0 }
+          }
+
+          fn peek(&self) -> Option<char> {
+              self.src[self.pos..].chars().next()
+          }
+
+          /// The next token, or None at the end of the line.
+          fn next_token(&mut self) -> Result<Option<Token<'a>>, CalcError> {
+              while let Some(c) = self.peek() {
+                  if !c.is_whitespace() {
+                      break;
+                  }
+                  self.pos += c.len_utf8();
+              }
+              let start = self.pos;
+              let Some(c) = self.peek() else {
+                  return Ok(None);
+              };
+              let kind = if c.is_ascii_digit() || c == '.' {
+                  while let Some(c) = self.peek() {
+                      if !(c.is_ascii_digit() || c == '.') {
+                          break;
+                      }
+                      self.pos += 1;
+                  }
+                  Kind::Number
+              } else {
+                  let kind = match c {
+                      '+' => Kind::Plus,
+                      '-' => Kind::Minus,
+                      '*' => Kind::Star,
+                      '/' => Kind::Slash,
+                      '(' => Kind::LParen,
+                      ')' => Kind::RParen,
+                      _ => return Err(CalcError::UnexpectedChar { ch: c, pos: start }),
+                  };
+                  self.pos += 1;
+                  kind
+              };
+              Ok(Some(Token { kind, text: &self.src[start..self.pos], pos: start }))
+          }
+      }
+
+      fn tokenize<'a>(src: &'a str) -> Result<Vec<Token<'a>>, CalcError> {
+          let mut lexer = Lexer::new(src);
+          let mut tokens = Vec::new();
+          while let Some(token) = lexer.next_token()? {
+              tokens.push(token);
+          }
+          Ok(tokens)
+      }
+
+      /// A recursive-descent parser that evaluates as it parses. One method per grammar rule:
+      ///
+      ///   expr   = term (("+" | "-") term)*
+      ///   term   = factor (("*" | "/") factor)*
+      ///   factor = NUMBER | "-" factor | "(" expr ")"
+      struct Parser<'a> {
+          tokens: Vec<Token<'a>>,
+          pos: usize,
+          end: usize,
+      }
+
+      impl<'a> Parser<'a> {
+          fn peek(&self) -> Option<Token<'a>> {
+              if self.pos < self.tokens.len() { Some(self.tokens[self.pos]) } else { None }
+          }
+
+          /// An error saying what we wanted and what is actually next.
+          fn expected(&self, what: &'static str) -> CalcError {
+              match self.peek() {
+                  Some(token) => CalcError::Expected { what, found: format!("'{}'", token.text), pos: token.pos },
+                  None => CalcError::Expected { what, found: String::from("the end"), pos: self.end },
+              }
+          }
+
+          /// Consumes the next token if it has the given kind.
+          fn expect(&mut self, kind: Kind, what: &'static str) -> Result<Token<'a>, CalcError> {
+              match self.peek() {
+                  Some(token) if token.kind == kind => {
+                      self.pos += 1;
+                      Ok(token)
+                  }
+                  _ => Err(self.expected(what)),
+              }
+          }
+
+          fn expr(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.term()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Plus, .. }) => {
+                          self.pos += 1;
+                          value += self.term()?;
+                      }
+                      Some(Token { kind: Kind::Minus, .. }) => {
+                          self.pos += 1;
+                          value -= self.term()?;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn term(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.factor()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Star, .. }) => {
+                          self.pos += 1;
+                          value *= self.factor()?;
+                      }
+                      Some(Token { kind: Kind::Slash, .. }) => {
+                          self.pos += 1;
+                          value /= self.factor()?;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn factor(&mut self) -> Result<f64, CalcError> {
+              let Some(token) = self.peek() else {
+                  return Err(self.expected("a value"));
+              };
+              match token.kind {
+                  Kind::Number => {
+                      self.pos += 1;
+                      token.text.parse().map_err(|_| CalcError::BadNumber { text: token.text.to_string(), pos: token.pos })
+                  }
+                  Kind::Minus => {
+                      self.pos += 1;
+                      Ok(-self.factor()?)
+                  }
+                  Kind::LParen => {
+                      self.pos += 1;
+                      let value = self.expr()?;
+                      self.expect(Kind::RParen, "')'")?;
+                      Ok(value)
+                  }
+                  _ => Err(self.expected("a value")),
+              }
+          }
+
+          /// After a complete expression there must be nothing left.
+          fn finish(&self) -> Result<(), CalcError> {
+              match self.peek() {
+                  Some(_) => Err(self.expected("an operator")),
+                  None => Ok(()),
+              }
+          }
+      }
+
+      fn evaluate(line: &str) -> Result<f64, CalcError> {
+          let tokens = tokenize(line)?;
+          let mut parser = Parser { tokens, pos: 0, end: line.len() };
+          let value = parser.expr()?;
+          parser.finish()?;
+          Ok(value)
+      }
+
+      fn main() {
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match evaluate(&line) {
+                  Ok(value) => println!("{value}"),
+                  Err(e) => println!("error at column {}: {e}", line[..e.pos()].chars().count() + 1),
+              }
+          }
+      }
+    tests:
+      - stdin: "(1 + 2) * 3\n-(4 - 10) / 4\n2 * -3\n--3\n((1))\n"
+      - stdin: "(1 + 2\n)\n1 + (2 * )\n-\n(1 + 2 3)\n"
+      - stdin: "10 / (3 - 1) * -(2 + 0.5)\n(2)(3)\n-(-(-1))\n"
+        hidden: true
+    hints:
+      - "In `factor`, add a `Kind::Minus` arm (`self.pos += 1; Ok(-self.factor()?)`) and a `Kind::LParen` arm."
+      - "The `LParen` arm: move past `(`, `let value = self.expr()?;`, then `self.expect(Kind::RParen, \"')'\")?;` and `Ok(value)`."
+      - "`expect`: `match self.peek() { Some(token) if token.kind == kind => { self.pos += 1; Ok(token) } _ => Err(self.expected(what)) }`."
+
+  - title: Variables, and a second lifetime
+    text: |
+      A calculator that remembers is much more useful. Add `let`:
+
+      ```
+      let x = 6 * 7
+      x / 2
+      let y = x - 2
+      y * (x - y)
+      ```
+
+      prints:
+
+      ```
+      x = 42
+      21
+      y = 40
+      80
+      ```
+
+      - The lexer learns **names**: a letter or `_`, then letters, digits or `_` (`x`, `rate`, `max_hp2`), and the `=` token. `let` is lexed as a name; the line-level code recognizes it.
+      - A line starting with the name `let` is `let NAME = EXPR`: store the value and print `NAME = VALUE`. Errors: `expected a name, found '='` and `expected '=', found '5'`, through `expect`.
+      - In `factor`, a name is replaced by its value: `NAME` joins the grammar. An unknown name is `unknown variable "z"`, positioned at the name.
+      - Variables live in a `BTreeMap<String, f64>` created in `main`, so they survive from line to line.
+
+      ### Why the map stores String, not &str
+
+      Tokens borrow from the current line, and the line is dropped at the end of each loop iteration. The map lives for the whole program. If the map held `&str` keys pointing into old lines, those keys would dangle, and the compiler refuses to let that happen. So when a name moves from "a token in this line" to "a key that outlives the line", it becomes owned: `vars.insert(name.to_string(), value)`. Borrow while you can, own when the data has to outlive its source: that's the everyday lifetime rule.
+
+      ### Two lifetimes in one struct
+
+      The parser now needs the variables too, so it holds a reference to the map. The natural first try uses one lifetime for everything:
+
+      ```rust compile_fail
+      use std::collections::BTreeMap;
+
+      struct Parser<'a> {
+          line: &'a str,
+          vars: &'a BTreeMap<String, f64>,
+      }
+
+      impl<'a> Parser<'a> {
+          fn first_name(&self) -> &'a str {
+              match self.line.split_once(' ') {
+                  Some((name, _)) => name,
+                  None => self.line,
+              }
+          }
+      }
+
+      fn main() {
+          let line = String::from("x = 2");
+          let mut vars = BTreeMap::new();
+          let parser = Parser { line: &line, vars: &vars };
+          let name = parser.first_name();
+          vars.insert(name.to_string(), 2.0);
+          println!("stored {name}");
+      }
+      ```
+
+      ```error
+      error[E0502]: cannot borrow `vars` as mutable because it is also borrowed as immutable
+      ```
+
+      With one `'a`, the compiler has to pick a single lifetime that fits both references, so `name` (a `&'a str`) counts as keeping the *map* borrowed too, even though it points into `line`. Then inserting into the map while `name` is alive is a conflict. The fix is to tell the compiler that the two references are independent:
+
+      ```rust
+      struct Parser<'src, 'v> {
+          tokens: Vec<Token<'src>>,
+          pos: usize,
+          end: usize,
+          vars: &'v BTreeMap<String, f64>,
+      }
+      ```
+
+      Now a name from the tokens has lifetime `'src`, the map borrow `'v` ends as soon as the parser is done, and `vars.insert(name.to_string(), value)` compiles. Most structs need only one lifetime; reach for two exactly when, as here, values borrowed from different places have to be released at different times.
+
+      Put the line-level logic in `fn run_line(line: &str, vars: &mut BTreeMap<String, f64>) -> Result<String, CalcError>`, returning the text to print. Building the parser with `vars` (a `&mut`) coerces it to a shared `&` for the parser's lifetime.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::fmt;
+      use std::io;
+      use std::io::BufRead;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Kind {
+          Number,
+          Name,
+          Plus,
+          Minus,
+          Star,
+          Slash,
+          LParen,
+          RParen,
+          Equals,
+      }
+
+      /// One token: its kind, the exact slice of the line it came from, and where that slice starts.
+      #[derive(Debug, Clone, Copy)]
+      struct Token<'a> {
+          kind: Kind,
+          text: &'a str,
+          pos: usize,
+      }
+
+      #[derive(Debug)]
+      enum CalcError {
+          UnexpectedChar { ch: char, pos: usize },
+          BadNumber { text: String, pos: usize },
+          Expected { what: &'static str, found: String, pos: usize },
+          UnknownVariable { name: String, pos: usize },
+      }
+
+      impl CalcError {
+          /// The byte offset in the line where the problem is.
+          fn pos(&self) -> usize {
+              match self {
+                  CalcError::UnexpectedChar { pos, .. }
+                  | CalcError::BadNumber { pos, .. }
+                  | CalcError::Expected { pos, .. }
+                  | CalcError::UnknownVariable { pos, .. } => *pos,
+              }
+          }
+      }
+
+      impl fmt::Display for CalcError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  CalcError::UnexpectedChar { ch, .. } => write!(f, "unexpected character '{ch}'"),
+                  CalcError::BadNumber { text, .. } => write!(f, "invalid number \"{text}\""),
+                  CalcError::Expected { what, found, .. } => write!(f, "expected {what}, found {found}"),
+                  CalcError::UnknownVariable { name, .. } => write!(f, "unknown variable \"{name}\""),
+              }
+          }
+      }
+
+      impl std::error::Error for CalcError {}
+
+      /// Cuts a line into tokens. The tokens borrow their text from the line: nothing is copied.
+      struct Lexer<'a> {
+          src: &'a str,
+          pos: usize,
+      }
+
+      impl<'a> Lexer<'a> {
+          fn new(src: &'a str) -> Self {
+              Lexer { src, pos: 0 }
+          }
+
+          fn peek(&self) -> Option<char> {
+              self.src[self.pos..].chars().next()
+          }
+
+          /// The next token, or None at the end of the line.
+          fn next_token(&mut self) -> Result<Option<Token<'a>>, CalcError> {
+              while let Some(c) = self.peek() {
+                  if !c.is_whitespace() {
+                      break;
+                  }
+                  self.pos += c.len_utf8();
+              }
+              let start = self.pos;
+              let Some(c) = self.peek() else {
+                  return Ok(None);
+              };
+              let kind = if c.is_ascii_digit() || c == '.' {
+                  while let Some(c) = self.peek() {
+                      if !(c.is_ascii_digit() || c == '.') {
+                          break;
+                      }
+                      self.pos += 1;
+                  }
+                  Kind::Number
+              } else if c.is_ascii_alphabetic() || c == '_' {
+                  while let Some(c) = self.peek() {
+                      if !(c.is_ascii_alphanumeric() || c == '_') {
+                          break;
+                      }
+                      self.pos += 1;
+                  }
+                  Kind::Name
+              } else {
+                  let kind = match c {
+                      '+' => Kind::Plus,
+                      '-' => Kind::Minus,
+                      '*' => Kind::Star,
+                      '/' => Kind::Slash,
+                      '(' => Kind::LParen,
+                      ')' => Kind::RParen,
+                      '=' => Kind::Equals,
+                      _ => return Err(CalcError::UnexpectedChar { ch: c, pos: start }),
+                  };
+                  self.pos += 1;
+                  kind
+              };
+              Ok(Some(Token { kind, text: &self.src[start..self.pos], pos: start }))
+          }
+      }
+
+      fn tokenize<'a>(src: &'a str) -> Result<Vec<Token<'a>>, CalcError> {
+          let mut lexer = Lexer::new(src);
+          let mut tokens = Vec::new();
+          while let Some(token) = lexer.next_token()? {
+              tokens.push(token);
+          }
+          Ok(tokens)
+      }
+
+      /// A recursive-descent parser that evaluates as it parses. One method per grammar rule:
+      ///
+      ///   expr   = term (("+" | "-") term)*
+      ///   term   = factor (("*" | "/") factor)*
+      ///   factor = NUMBER | NAME | "-" factor | "(" expr ")"
+      struct Parser<'src, 'v> {
+          tokens: Vec<Token<'src>>,
+          pos: usize,
+          end: usize,
+          vars: &'v BTreeMap<String, f64>,
+      }
+
+      impl<'src, 'v> Parser<'src, 'v> {
+          fn peek(&self) -> Option<Token<'src>> {
+              if self.pos < self.tokens.len() { Some(self.tokens[self.pos]) } else { None }
+          }
+
+          /// An error saying what we wanted and what is actually next.
+          fn expected(&self, what: &'static str) -> CalcError {
+              match self.peek() {
+                  Some(token) => CalcError::Expected { what, found: format!("'{}'", token.text), pos: token.pos },
+                  None => CalcError::Expected { what, found: String::from("the end"), pos: self.end },
+              }
+          }
+
+          /// Consumes the next token if it has the given kind.
+          fn expect(&mut self, kind: Kind, what: &'static str) -> Result<Token<'src>, CalcError> {
+              match self.peek() {
+                  Some(token) if token.kind == kind => {
+                      self.pos += 1;
+                      Ok(token)
+                  }
+                  _ => Err(self.expected(what)),
+              }
+          }
+
+          fn expr(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.term()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Plus, .. }) => {
+                          self.pos += 1;
+                          value += self.term()?;
+                      }
+                      Some(Token { kind: Kind::Minus, .. }) => {
+                          self.pos += 1;
+                          value -= self.term()?;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn term(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.factor()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Star, .. }) => {
+                          self.pos += 1;
+                          value *= self.factor()?;
+                      }
+                      Some(Token { kind: Kind::Slash, .. }) => {
+                          self.pos += 1;
+                          value /= self.factor()?;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn factor(&mut self) -> Result<f64, CalcError> {
+              let Some(token) = self.peek() else {
+                  return Err(self.expected("a value"));
+              };
+              match token.kind {
+                  Kind::Number => {
+                      self.pos += 1;
+                      token.text.parse().map_err(|_| CalcError::BadNumber { text: token.text.to_string(), pos: token.pos })
+                  }
+                  Kind::Name => {
+                      self.pos += 1;
+                      match self.vars.get(token.text) {
+                          Some(value) => Ok(*value),
+                          None => Err(CalcError::UnknownVariable { name: token.text.to_string(), pos: token.pos }),
+                      }
+                  }
+                  Kind::Minus => {
+                      self.pos += 1;
+                      Ok(-self.factor()?)
+                  }
+                  Kind::LParen => {
+                      self.pos += 1;
+                      let value = self.expr()?;
+                      self.expect(Kind::RParen, "')'")?;
+                      Ok(value)
+                  }
+                  _ => Err(self.expected("a value")),
+              }
+          }
+
+          /// After a complete expression there must be nothing left.
+          fn finish(&self) -> Result<(), CalcError> {
+              match self.peek() {
+                  Some(_) => Err(self.expected("an operator")),
+                  None => Ok(()),
+              }
+          }
+      }
+
+      /// Runs one line, `let NAME = EXPR` or an expression, and returns the text to print.
+      fn run_line(line: &str, vars: &mut BTreeMap<String, f64>) -> Result<String, CalcError> {
+          let tokens = tokenize(line)?;
+          let is_let = matches!(tokens.first(), Some(Token { kind: Kind::Name, text: "let", .. }));
+          let mut parser = Parser { tokens, pos: 0, end: line.len(), vars };
+          if is_let {
+              parser.pos = 1;
+              let name = parser.expect(Kind::Name, "a name")?.text;
+              parser.expect(Kind::Equals, "'='")?;
+              let value = parser.expr()?;
+              parser.finish()?;
+              vars.insert(name.to_string(), value);
+              Ok(format!("{name} = {value}"))
+          } else {
+              let value = parser.expr()?;
+              parser.finish()?;
+              Ok(value.to_string())
+          }
+      }
+
+      fn main() {
+          let mut vars = BTreeMap::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match run_line(&line, &mut vars) {
+                  Ok(output) => println!("{output}"),
+                  Err(e) => println!("error at column {}: {e}", line[..e.pos()].chars().count() + 1),
+              }
+          }
+      }
+    tests:
+      - stdin: "let x = 6 * 7\nx / 2\nlet y = x - 2\ny * (x - y)\n"
+      - stdin: "let rate = 0.2\nlet price = 50\nprice * (1 + rate)\ntotal\nlet = 4\nlet r 5\nlet 9 = 1\n"
+      - stdin: "let a = 1\nlet a = a + 1\nlet b = a * a\nb - a\nlet c = d\nc\nlet max_hp2 = 120\n-max_hp2 / 4\n"
+        hidden: true
+    hints:
+      - "In the lexer, add a branch for `c.is_ascii_alphabetic() || c == '_'` that keeps going while characters are alphanumeric or `_`, producing `Kind::Name`. Add `'=' => Kind::Equals`."
+      - "Change the parser to `Parser<'src, 'v>` with `vars: &'v BTreeMap<String, f64>`, and in `factor` look a `Kind::Name` up with `self.vars.get(token.text)`."
+      - "In `run_line`: `let is_let = matches!(tokens.first(), Some(Token { kind: Kind::Name, text: \"let\", .. }));`. For a `let`, set `parser.pos = 1`, then `expect` a name and `=`, parse the expression, `finish`, and insert."
+
+  - title: "Polish: errors that point at the problem"
+    text: |
+      `error at column 13` makes the user count characters. Every good compiler instead shows the line and points at the spot, like rustc does for you all the time. Replace the error format with two lines: the input line, then a caret `^` under the problem and the message:
+
+      ```
+      2 + * 3
+          ^ expected a value, found '*'
+      ```
+
+      The caret goes under the character at the error's position (under the first character of a token, or one past the end of the line for "found the end"). There are as many spaces before it as there are characters before that position: `line[..pos].chars().count()`. Count characters, not bytes, or the caret drifts right after every `é`. `" ".repeat(n)` makes the spaces.
+
+      Put this in its own function, `fn report(line: &str, error: &CalcError)`. Formatting errors is its own job, and keeping it apart from parsing means the parser could later be reused by a GUI that highlights the spot instead.
+
+      ### Division by zero
+
+      Right now `10 / (5 - 5)` prints `inf`. That's correct IEEE floating point, and nearly always a mistake when a person typed it. Make it an error that points at the `/`:
+
+      ```
+      10 / (5 - 5)
+         ^ division by zero
+      ```
+
+      Add a `DivisionByZero { pos }` variant. In `term`, remember the slash token's position, parse the divisor, and check it *before* dividing: `if divisor == 0.0 { return Err(...) }`.
+
+      When you add the variant, the compiler sends you to every `match` on `CalcError` that needs a new arm (`pos()` and `Display`). That's the enum doing code review for you. Run all the earlier examples again: each error now shows exactly where it is, and you've built the same pipeline (lexer, parser, evaluator, diagnostics) that every compiler has, just smaller.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::fmt;
+      use std::io;
+      use std::io::BufRead;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Kind {
+          Number,
+          Name,
+          Plus,
+          Minus,
+          Star,
+          Slash,
+          LParen,
+          RParen,
+          Equals,
+      }
+
+      /// One token: its kind, the exact slice of the line it came from, and where that slice starts.
+      #[derive(Debug, Clone, Copy)]
+      struct Token<'a> {
+          kind: Kind,
+          text: &'a str,
+          pos: usize,
+      }
+
+      #[derive(Debug)]
+      enum CalcError {
+          UnexpectedChar { ch: char, pos: usize },
+          BadNumber { text: String, pos: usize },
+          Expected { what: &'static str, found: String, pos: usize },
+          UnknownVariable { name: String, pos: usize },
+          DivisionByZero { pos: usize },
+      }
+
+      impl CalcError {
+          /// The byte offset in the line where the problem is.
+          fn pos(&self) -> usize {
+              match self {
+                  CalcError::UnexpectedChar { pos, .. }
+                  | CalcError::BadNumber { pos, .. }
+                  | CalcError::Expected { pos, .. }
+                  | CalcError::UnknownVariable { pos, .. }
+                  | CalcError::DivisionByZero { pos } => *pos,
+              }
+          }
+      }
+
+      impl fmt::Display for CalcError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  CalcError::UnexpectedChar { ch, .. } => write!(f, "unexpected character '{ch}'"),
+                  CalcError::BadNumber { text, .. } => write!(f, "invalid number \"{text}\""),
+                  CalcError::Expected { what, found, .. } => write!(f, "expected {what}, found {found}"),
+                  CalcError::UnknownVariable { name, .. } => write!(f, "unknown variable \"{name}\""),
+                  CalcError::DivisionByZero { .. } => write!(f, "division by zero"),
+              }
+          }
+      }
+
+      impl std::error::Error for CalcError {}
+
+      /// Cuts a line into tokens. The tokens borrow their text from the line: nothing is copied.
+      struct Lexer<'a> {
+          src: &'a str,
+          pos: usize,
+      }
+
+      impl<'a> Lexer<'a> {
+          fn new(src: &'a str) -> Self {
+              Lexer { src, pos: 0 }
+          }
+
+          fn peek(&self) -> Option<char> {
+              self.src[self.pos..].chars().next()
+          }
+
+          /// The next token, or None at the end of the line.
+          fn next_token(&mut self) -> Result<Option<Token<'a>>, CalcError> {
+              while let Some(c) = self.peek() {
+                  if !c.is_whitespace() {
+                      break;
+                  }
+                  self.pos += c.len_utf8();
+              }
+              let start = self.pos;
+              let Some(c) = self.peek() else {
+                  return Ok(None);
+              };
+              let kind = if c.is_ascii_digit() || c == '.' {
+                  while let Some(c) = self.peek() {
+                      if !(c.is_ascii_digit() || c == '.') {
+                          break;
+                      }
+                      self.pos += 1;
+                  }
+                  Kind::Number
+              } else if c.is_ascii_alphabetic() || c == '_' {
+                  while let Some(c) = self.peek() {
+                      if !(c.is_ascii_alphanumeric() || c == '_') {
+                          break;
+                      }
+                      self.pos += 1;
+                  }
+                  Kind::Name
+              } else {
+                  let kind = match c {
+                      '+' => Kind::Plus,
+                      '-' => Kind::Minus,
+                      '*' => Kind::Star,
+                      '/' => Kind::Slash,
+                      '(' => Kind::LParen,
+                      ')' => Kind::RParen,
+                      '=' => Kind::Equals,
+                      _ => return Err(CalcError::UnexpectedChar { ch: c, pos: start }),
+                  };
+                  self.pos += 1;
+                  kind
+              };
+              Ok(Some(Token { kind, text: &self.src[start..self.pos], pos: start }))
+          }
+      }
+
+      fn tokenize<'a>(src: &'a str) -> Result<Vec<Token<'a>>, CalcError> {
+          let mut lexer = Lexer::new(src);
+          let mut tokens = Vec::new();
+          while let Some(token) = lexer.next_token()? {
+              tokens.push(token);
+          }
+          Ok(tokens)
+      }
+
+      /// A recursive-descent parser that evaluates as it parses. One method per grammar rule:
+      ///
+      ///   expr   = term (("+" | "-") term)*
+      ///   term   = factor (("*" | "/") factor)*
+      ///   factor = NUMBER | NAME | "-" factor | "(" expr ")"
+      struct Parser<'src, 'v> {
+          tokens: Vec<Token<'src>>,
+          pos: usize,
+          end: usize,
+          vars: &'v BTreeMap<String, f64>,
+      }
+
+      impl<'src, 'v> Parser<'src, 'v> {
+          fn peek(&self) -> Option<Token<'src>> {
+              if self.pos < self.tokens.len() { Some(self.tokens[self.pos]) } else { None }
+          }
+
+          /// An error saying what we wanted and what is actually next.
+          fn expected(&self, what: &'static str) -> CalcError {
+              match self.peek() {
+                  Some(token) => CalcError::Expected { what, found: format!("'{}'", token.text), pos: token.pos },
+                  None => CalcError::Expected { what, found: String::from("the end"), pos: self.end },
+              }
+          }
+
+          /// Consumes the next token if it has the given kind.
+          fn expect(&mut self, kind: Kind, what: &'static str) -> Result<Token<'src>, CalcError> {
+              match self.peek() {
+                  Some(token) if token.kind == kind => {
+                      self.pos += 1;
+                      Ok(token)
+                  }
+                  _ => Err(self.expected(what)),
+              }
+          }
+
+          fn expr(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.term()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Plus, .. }) => {
+                          self.pos += 1;
+                          value += self.term()?;
+                      }
+                      Some(Token { kind: Kind::Minus, .. }) => {
+                          self.pos += 1;
+                          value -= self.term()?;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn term(&mut self) -> Result<f64, CalcError> {
+              let mut value = self.factor()?;
+              loop {
+                  match self.peek() {
+                      Some(Token { kind: Kind::Star, .. }) => {
+                          self.pos += 1;
+                          value *= self.factor()?;
+                      }
+                      Some(Token { kind: Kind::Slash, pos, .. }) => {
+                          self.pos += 1;
+                          let divisor = self.factor()?;
+                          if divisor == 0.0 {
+                              return Err(CalcError::DivisionByZero { pos });
+                          }
+                          value /= divisor;
+                      }
+                      _ => return Ok(value),
+                  }
+              }
+          }
+
+          fn factor(&mut self) -> Result<f64, CalcError> {
+              let Some(token) = self.peek() else {
+                  return Err(self.expected("a value"));
+              };
+              match token.kind {
+                  Kind::Number => {
+                      self.pos += 1;
+                      token.text.parse().map_err(|_| CalcError::BadNumber { text: token.text.to_string(), pos: token.pos })
+                  }
+                  Kind::Name => {
+                      self.pos += 1;
+                      match self.vars.get(token.text) {
+                          Some(value) => Ok(*value),
+                          None => Err(CalcError::UnknownVariable { name: token.text.to_string(), pos: token.pos }),
+                      }
+                  }
+                  Kind::Minus => {
+                      self.pos += 1;
+                      Ok(-self.factor()?)
+                  }
+                  Kind::LParen => {
+                      self.pos += 1;
+                      let value = self.expr()?;
+                      self.expect(Kind::RParen, "')'")?;
+                      Ok(value)
+                  }
+                  _ => Err(self.expected("a value")),
+              }
+          }
+
+          /// After a complete expression there must be nothing left.
+          fn finish(&self) -> Result<(), CalcError> {
+              match self.peek() {
+                  Some(_) => Err(self.expected("an operator")),
+                  None => Ok(()),
+              }
+          }
+      }
+
+      /// Runs one line, `let NAME = EXPR` or an expression, and returns the text to print.
+      fn run_line(line: &str, vars: &mut BTreeMap<String, f64>) -> Result<String, CalcError> {
+          let tokens = tokenize(line)?;
+          let is_let = matches!(tokens.first(), Some(Token { kind: Kind::Name, text: "let", .. }));
+          let mut parser = Parser { tokens, pos: 0, end: line.len(), vars };
+          if is_let {
+              parser.pos = 1;
+              let name = parser.expect(Kind::Name, "a name")?.text;
+              parser.expect(Kind::Equals, "'='")?;
+              let value = parser.expr()?;
+              parser.finish()?;
+              vars.insert(name.to_string(), value);
+              Ok(format!("{name} = {value}"))
+          } else {
+              let value = parser.expr()?;
+              parser.finish()?;
+              Ok(value.to_string())
+          }
+      }
+
+      /// Prints the line with a caret under the problem:
+      ///
+      ///   2 + * 3
+      ///       ^ expected a value, found '*'
+      fn report(line: &str, error: &CalcError) {
+          let column = line[..error.pos()].chars().count();
+          println!("{line}");
+          println!("{}^ {error}", " ".repeat(column));
+      }
+
+      fn main() {
+          let mut vars = BTreeMap::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match run_line(&line, &mut vars) {
+                  Ok(output) => println!("{output}"),
+                  Err(e) => report(&line, &e),
+              }
+          }
+      }
+    tests:
+      - stdin: "2 + $\n2 + * 3\n(1 + 2\n2 3\n1.2.3 + 1\n"
+      - stdin: "10 / (5 - 5)\nlet x = 4\n1 / (x - 4)\nx / 2\nlet y = x + z\n"
+      - stdin: "let half = 0.5\n  half * 4 +\nhalf / 0\ncafé + 1\nlet = 2\n"
+        hidden: true
+    hints:
+      - "`fn report(line: &str, error: &CalcError)`: `let column = line[..error.pos()].chars().count();`, print the line, then `println!(\"{}^ {error}\", \" \".repeat(column));`."
+      - "In `term`'s slash arm, bind the position with `Some(Token { kind: Kind::Slash, pos, .. })`, then check the divisor for `0.0` before `value /= divisor`."
+      - "Add the `DivisionByZero { pos: usize }` variant to `CalcError` and the matching arms in `pos()` and `Display` (message `division by zero`)."

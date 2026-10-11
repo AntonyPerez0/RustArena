@@ -560,8 +560,9 @@ await test("symbol bar types into the editor and into blanks on a phone", async 
 await test("report a problem opens a pre-filled GitHub issue", async () => {
   await go(codeStep.path);
   const link = page.getByRole("link", { name: /Report a problem/ }).first();
-  await link.hover();
-  const href = await link.getAttribute("href");
+  // The link is filled in when it's used (so it carries the latest code): focusing it does that.
+  await link.focus();
+  const href = await link.evaluate((a) => a.href);
   const u = new URL(href);
   if (!/github\.com\/.+\/issues\/new$/.test(u.origin + u.pathname)) throw new Error("not an issue link: " + href);
   if (!u.searchParams.get("body").includes(codeStep.s.id) || !u.searchParams.get("title").includes("Lesson step")) throw new Error("issue is not pre-filled");
