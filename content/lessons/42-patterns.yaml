@@ -1,0 +1,2560 @@
+id: patterns-idioms
+title: Design Patterns and Idioms
+phase: "Rust at work"
+summary: The patterns experienced Rust developers reach for, and the ones reviewers ask for. Builders, newtypes, state machines, conversions, RAII guards and returned iterators, ending with a real code-review refactor.
+roadmap: [Design Patterns and Idioms, Builder Pattern, RAII, Typestate]
+steps:
+  - title: Constructors, Default and builders
+    id: patterns-idioms-1
+    text: |
+      Rust has no constructors in the language, no default arguments and no function overloading. Instead there are a few **conventions** every Rust developer recognizes, and following them makes your types feel familiar to your teammates.
+
+      - `fn new(...) -> Self` for the obvious way to create a value.
+      - The `Default` trait for "a sensible starting value", combined with **struct update syntax** to change just a few fields.
+      - The **builder pattern** when there are many optional settings, or when building can fail.
+
+      ### Default and struct update
+
+      ```rust run
+      struct Settings {
+          volume: u8,
+          fullscreen: bool,
+          name: String,
+          fps_limit: Option<u32>,
+      }
+
+      impl Default for Settings {
+          fn default() -> Self {
+              Settings { volume: 80, fullscreen: true, name: String::from("player"), fps_limit: None }
+          }
+      }
+
+      fn main() {
+          let s = Settings { volume: 30, fps_limit: Some(60), ..Default::default() };
+          println!("{} {} {} {:?}", s.volume, s.fullscreen, s.name, s.fps_limit);
+          let zeroes: (u32, String, Vec<i32>, bool, Option<u8>) = Default::default();
+          println!("{zeroes:?}");
+      }
+      ```
+
+      ```output
+      30 true player Some(60)
+      (0, "", [], false, None)
+      ```
+
+      `..Default::default()` fills every field you didn't write from `Settings::default()`. Most std types implement `Default` (0, empty string, empty collections, `false`, `None`), so `#[derive(Default)]` works whenever those zero values are right; write the impl by hand when they aren't. Clippy's `new_without_default` lint asks for a `Default` impl whenever you write a `new()` without arguments, because generic code (and `..Default::default()`) can use it.
+
+      ### Builders
+
+      An HTTP request has a URL and maybe a method, a timeout, headers, a body... A `new` with seven parameters is unreadable at the call site (`new(url, "GET", 30, true, None, ...)`: which `true` is which?). A **builder** gives every option a named method:
+
+      ```rust run
+      struct Request {
+          url: String,
+          method: String,
+          timeout_secs: u32,
+          headers: Vec<(String, String)>,
+      }
+
+      struct RequestBuilder {
+          url: String,
+          method: String,
+          timeout_secs: u32,
+          headers: Vec<(String, String)>,
+      }
+
+      impl RequestBuilder {
+          fn new(url: &str) -> Self {
+              RequestBuilder { url: url.to_string(), method: String::from("GET"), timeout_secs: 30, headers: Vec::new() }
+          }
+
+          fn method(mut self, method: &str) -> Self {
+              self.method = method.to_string();
+              self
+          }
+
+          fn timeout(mut self, secs: u32) -> Self {
+              self.timeout_secs = secs;
+              self
+          }
+
+          fn header(mut self, name: &str, value: &str) -> Self {
+              self.headers.push((name.to_string(), value.to_string()));
+              self
+          }
+
+          fn build(self) -> Result<Request, String> {
+              if !self.url.starts_with("https://") {
+                  return Err(format!("url must use https: {}", self.url));
+              }
+              if self.timeout_secs == 0 {
+                  return Err(String::from("timeout must be positive"));
+              }
+              Ok(Request { url: self.url, method: self.method, timeout_secs: self.timeout_secs, headers: self.headers })
+          }
+      }
+
+      fn main() {
+          let req = RequestBuilder::new("https://api.arena.dev/scores")
+              .method("POST")
+              .timeout(5)
+              .header("Accept", "application/json")
+              .build()
+              .expect("valid request");
+          println!("{} {} ({}s, {} header)", req.method, req.url, req.timeout_secs, req.headers.len());
+
+          match RequestBuilder::new("http://insecure.example").build() {
+              Ok(_) => println!("built"),
+              Err(e) => println!("error: {e}"),
+          }
+      }
+      ```
+
+      ```output
+      POST https://api.arena.dev/scores (5s, 1 header)
+      error: url must use https: http://insecure.example
+      ```
+
+      Piece by piece:
+
+      - Each setter takes `mut self` **by value** and returns `Self`, so calls chain: `new(..).method(..).timeout(..)`. This is the **consuming builder**, the most common style.
+      - `build(self)` checks the combination and returns `Result`, so an invalid `Request` can never exist. Validation lives in one place.
+      - Defaults (`GET`, 30 seconds) live in `new`, and the call site only mentions what differs.
+      - You've used builders already: `std::process::Command::new("ls").arg("-l")`, `std::thread::Builder`, `OpenOptions::new().append(true).open(..)`. Those use the **`&mut self` style** (`fn arg(&mut self, ..) -> &mut Self`), which also lets you configure conditionally: `if verbose { cmd.arg("-v"); }`.
+
+      ### Common mistakes
+
+      **Forgetting `.build()`**: you're holding a builder, not the thing you wanted.
+
+      ```rust compile_fail
+      struct Request {
+          url: String,
+      }
+
+      struct RequestBuilder {
+          url: String,
+      }
+
+      impl RequestBuilder {
+          fn new(url: &str) -> Self {
+              RequestBuilder { url: url.to_string() }
+          }
+
+          fn build(self) -> Request {
+              Request { url: self.url }
+          }
+      }
+
+      fn send(req: Request) {
+          println!("sending to {}", req.url);
+      }
+
+      fn main() {
+          send(RequestBuilder::new("https://arena.dev"));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      - **A builder for a two-field struct** is ceremony. Use one when there are several optional settings or building needs validation.
+      - **Setters that take `self` but forget to return it**: the chain breaks with ``no method named `timeout` found for unit type `()` ``.
+
+      **Your turn:** write a builder for `Server`. `Server::builder()` returns a `ServerBuilder` with defaults host `127.0.0.1`, port `8080`, workers `4`, tls `false`. Add consuming setters `host`, `port`, `workers` and `tls`, and `build()` returning `Result<Server, String>` with the errors `port must not be 0` and `workers must be 1 to 64` (check the port first).
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct Server {
+          host: String,
+          port: u16,
+          workers: u32,
+          tls: bool,
+      }
+
+      struct ServerBuilder {
+          host: String,
+          port: u16,
+          workers: u32,
+          tls: bool,
+      }
+
+      impl Server {
+          fn builder() -> ServerBuilder {
+              todo!()
+          }
+      }
+
+      impl ServerBuilder {
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct Server {
+          host: String,
+          port: u16,
+          workers: u32,
+          tls: bool,
+      }
+
+      struct ServerBuilder {
+          host: String,
+          port: u16,
+          workers: u32,
+          tls: bool,
+      }
+
+      impl Server {
+          fn builder() -> ServerBuilder {
+              ServerBuilder { host: String::from("127.0.0.1"), port: 8080, workers: 4, tls: false }
+          }
+      }
+
+      impl ServerBuilder {
+          fn host(mut self, host: &str) -> Self {
+              self.host = host.to_string();
+              self
+          }
+
+          fn port(mut self, port: u16) -> Self {
+              self.port = port;
+              self
+          }
+
+          fn workers(mut self, workers: u32) -> Self {
+              self.workers = workers;
+              self
+          }
+
+          fn tls(mut self, tls: bool) -> Self {
+              self.tls = tls;
+              self
+          }
+
+          fn build(self) -> Result<Server, String> {
+              if self.port == 0 {
+                  return Err(String::from("port must not be 0"));
+              }
+              if !(1..=64).contains(&self.workers) {
+                  return Err(String::from("workers must be 1 to 64"));
+              }
+              Ok(Server { host: self.host, port: self.port, workers: self.workers, tls: self.tls })
+          }
+      }
+    harness: |
+      #[test]
+      fn defaults_are_used_when_nothing_is_set() {
+          assert_eq!(Server::builder().build(), Ok(Server { host: String::from("127.0.0.1"), port: 8080, workers: 4, tls: false }), "Server::builder().build()");
+      }
+
+      #[test]
+      fn setters_chain_and_override_defaults() {
+          let s = Server::builder().host("0.0.0.0").port(443).tls(true).workers(16).build();
+          assert_eq!(s, Ok(Server { host: String::from("0.0.0.0"), port: 443, workers: 16, tls: true }), "all setters");
+      }
+
+      #[test]
+      fn port_zero_is_rejected() {
+          assert_eq!(Server::builder().port(0).build(), Err(String::from("port must not be 0")), "port(0)");
+          assert_eq!(Server::builder().port(0).workers(0).build(), Err(String::from("port must not be 0")), "port is checked first");
+      }
+
+      #[test]
+      fn workers_must_be_in_range() {
+          assert_eq!(Server::builder().workers(0).build(), Err(String::from("workers must be 1 to 64")), "workers(0)");
+          assert_eq!(Server::builder().workers(65).build(), Err(String::from("workers must be 1 to 64")), "workers(65)");
+          assert!(Server::builder().workers(64).build().is_ok(), "workers(64) is fine");
+      }
+    hints:
+      - "`builder()` returns `ServerBuilder { host: String::from(\"127.0.0.1\"), port: 8080, workers: 4, tls: false }`."
+      - "Each setter: `fn port(mut self, port: u16) -> Self { self.port = port; self }`."
+      - "`build(self)` checks `self.port == 0`, then `!(1..=64).contains(&self.workers)`, then moves the fields into a `Server`."
+    more:
+      - task: |
+          Implement `Default` for `LogConfig` (level `"info"`, color `true`, max_files `5`, path `"app.log"`), then write `fn debug_config() -> LogConfig` that returns the defaults with only `level` set to `"debug"` and `max_files` to `20`, using struct update syntax.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct LogConfig {
+              level: String,
+              color: bool,
+              max_files: u32,
+              path: String,
+          }
+
+          fn debug_config() -> LogConfig {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct LogConfig {
+              level: String,
+              color: bool,
+              max_files: u32,
+              path: String,
+          }
+
+          impl Default for LogConfig {
+              fn default() -> Self {
+                  LogConfig { level: String::from("info"), color: true, max_files: 5, path: String::from("app.log") }
+              }
+          }
+
+          fn debug_config() -> LogConfig {
+              LogConfig { level: String::from("debug"), max_files: 20, ..Default::default() }
+          }
+        require:
+          - pattern: '\.\.\s*(Default::default\(\)|LogConfig::default\(\))'
+            message: "Fill the remaining fields with struct update syntax: `..Default::default()`."
+        harness: |
+          #[test]
+          fn default_matches_the_spec() {
+              assert_eq!(LogConfig::default(), LogConfig { level: String::from("info"), color: true, max_files: 5, path: String::from("app.log") }, "LogConfig::default()");
+          }
+
+          #[test]
+          fn debug_config_changes_two_fields() {
+              assert_eq!(debug_config(), LogConfig { level: String::from("debug"), color: true, max_files: 20, path: String::from("app.log") }, "debug_config()");
+          }
+        hints:
+          - "`impl Default for LogConfig { fn default() -> Self { LogConfig { ... } } }`"
+          - "`LogConfig { level: String::from(\"debug\"), max_files: 20, ..Default::default() }`"
+      - task: |
+          Write a consuming builder that produces SQL text. `QueryBuilder::new("users")` starts a query; `.filter(cond)` can be called several times (conditions are joined with ` AND `), `.order_by(column)` and `.limit(n)` are optional. `.build()` returns the query string, for example `SELECT * FROM users WHERE age > 18 AND active ORDER BY name LIMIT 10`. Leave out the parts that weren't set.
+        seed: |
+          struct QueryBuilder {
+          }
+
+          impl QueryBuilder {
+          }
+        solution: |
+          struct QueryBuilder {
+              table: String,
+              filters: Vec<String>,
+              order: Option<String>,
+              limit: Option<usize>,
+          }
+
+          impl QueryBuilder {
+              fn new(table: &str) -> Self {
+                  QueryBuilder { table: table.to_string(), filters: Vec::new(), order: None, limit: None }
+              }
+
+              fn filter(mut self, condition: &str) -> Self {
+                  self.filters.push(condition.to_string());
+                  self
+              }
+
+              fn order_by(mut self, column: &str) -> Self {
+                  self.order = Some(column.to_string());
+                  self
+              }
+
+              fn limit(mut self, n: usize) -> Self {
+                  self.limit = Some(n);
+                  self
+              }
+
+              fn build(self) -> String {
+                  let mut sql = format!("SELECT * FROM {}", self.table);
+                  if !self.filters.is_empty() {
+                      sql.push_str(&format!(" WHERE {}", self.filters.join(" AND ")));
+                  }
+                  if let Some(column) = self.order {
+                      sql.push_str(&format!(" ORDER BY {column}"));
+                  }
+                  if let Some(n) = self.limit {
+                      sql.push_str(&format!(" LIMIT {n}"));
+                  }
+                  sql
+              }
+          }
+        harness: |
+          #[test]
+          fn a_bare_query_selects_everything() {
+              assert_eq!(QueryBuilder::new("users").build(), "SELECT * FROM users", "new(users).build()");
+          }
+
+          #[test]
+          fn every_part_in_order() {
+              let q = QueryBuilder::new("users").filter("age > 18").filter("active").order_by("name").limit(10).build();
+              assert_eq!(q, "SELECT * FROM users WHERE age > 18 AND active ORDER BY name LIMIT 10", "full query");
+          }
+
+          #[test]
+          fn the_call_order_does_not_matter() {
+              let q = QueryBuilder::new("orders").limit(5).filter("total > 100").build();
+              assert_eq!(q, "SELECT * FROM orders WHERE total > 100 LIMIT 5", "limit before filter");
+          }
+
+          #[test]
+          fn a_builder_can_be_configured_conditionally() {
+              let only_open = true;
+              let mut b = QueryBuilder::new("tickets");
+              if only_open {
+                  b = b.filter("status = 'open'");
+              }
+              assert_eq!(b.order_by("created").build(), "SELECT * FROM tickets WHERE status = 'open' ORDER BY created", "conditional filter");
+          }
+        hints:
+          - "Store `table: String`, `filters: Vec<String>`, `order: Option<String>` and `limit: Option<usize>`."
+          - "Setters take `mut self` and return `self`; `filter` pushes onto the Vec."
+          - "In `build`, start with `format!(\"SELECT * FROM {}\", self.table)` and append each part that is set."
+
+  - title: "Newtypes: give plain values a meaning"
+    id: patterns-idioms-2
+    text: |
+      In 1999 the Mars Climate Orbiter was lost because one team's software produced pound-force seconds and another's expected newton seconds. Both were just numbers. In your code it's `fn transfer(from: u64, to: u64, amount: u64)`: nothing stops a caller from swapping `from` and `to`.
+
+      A **newtype** is a tuple struct with one field that gives a plain value its own type:
+
+      ```rust compile_fail
+      struct UserId(u64);
+      struct OrderId(u64);
+
+      fn cancel_order(user: UserId, order: OrderId) {
+          println!("user {} cancels order {}", user.0, order.0);
+      }
+
+      fn main() {
+          let user = UserId(7);
+          let order = OrderId(1001);
+          cancel_order(order, user);
+      }
+      ```
+
+      ```error
+      error[E0308]: arguments to this function are incorrect
+      ```
+
+      The mix-up is now a compile error, and rustc even notices the two arguments are swapped and suggests the fix. Newtypes cost **nothing** at run time: a `UserId` is laid out exactly like a `u64`.
+
+      ### Parse, don't validate
+
+      A newtype with a **private field** goes further: if the only way to create one is a function that checks the input, then every value of that type is valid, everywhere, forever. Functions that take an `Email` never need to check it again.
+
+      ```rust run
+      mod email {
+          pub struct Email(String);
+
+          impl Email {
+              pub fn parse(s: &str) -> Result<Email, String> {
+                  let s = s.trim();
+                  match s.split_once('@') {
+                      Some((user, domain)) if !user.is_empty() && domain.contains('.') => Ok(Email(s.to_lowercase())),
+                      _ => Err(format!("invalid email: {s:?}")),
+                  }
+              }
+
+              pub fn as_str(&self) -> &str {
+                  &self.0
+              }
+          }
+      }
+
+      use email::Email;
+
+      fn send_welcome(to: &Email) -> String {
+          format!("welcome mail sent to {}", to.as_str())
+      }
+
+      fn main() {
+          for input in [" Ana@Arena.dev ", "not-an-email", "@arena.dev"] {
+              match Email::parse(input) {
+                  Ok(e) => println!("{}", send_welcome(&e)),
+                  Err(e) => println!("{e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      welcome mail sent to ana@arena.dev
+      invalid email: "not-an-email"
+      invalid email: "@arena.dev"
+      ```
+
+      `send_welcome` can't receive an unchecked string: outside the `email` module, `Email(String::from("oops"))` doesn't compile (``error[E0603]: tuple struct constructor `Email` is private``). The validation happens once, at the edge of the program, which is the idea behind the slogan **parse, don't validate**.
+
+      ### What newtypes are good for
+
+      - **Ids and units**: `UserId`, `OrderId`, `Meters`, `Cents`. Implement only the operations that make sense (`Cents + Cents` yes, `Cents * Cents` no).
+      - **Validated values**: `Email`, `Username`, `NonEmptyString`, `Port`.
+      - **The orphan rule**: you can't implement a foreign trait for a foreign type (`impl Display for Vec<String>` is refused), but you can for your newtype around it.
+
+      Derive what the type needs (`Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord`) and add accessors like `as_str` or `value`. Avoid implementing `Deref` just to "inherit" all the inner type's methods: it brings back the operations the newtype was meant to hide.
+
+      ### Common mistakes
+
+      - **Money as `f64`.** `0.1 + 0.2 != 0.3` in floating point. Store whole cents in an integer newtype.
+      - **A public field** (`pub struct Email(pub String)`) lets anyone build an unchecked value, defeating the point.
+      - **`.0` everywhere**: if callers constantly unwrap the newtype, give it the methods they need instead.
+
+      **Your turn:** write `Cents`, a money type. `Cents::parse(s)` accepts dollar amounts like `"12.34"`, `"12.3"`, `"5"` or `"$5"` (an optional leading `$`) and returns the amount in cents. Anything else (empty, a minus sign, more than two decimals, letters) is `Err(format!("invalid amount {s:?}"))`. Implement `Add` so two `Cents` can be added, and `Display` so `Cents(1234)` prints `$12.34`.
+    seed: |
+      use std::fmt;
+      use std::ops::Add;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Cents(u64);
+
+      impl Cents {
+          fn parse(s: &str) -> Result<Cents, String> {
+              todo!()
+          }
+      }
+    solution: |
+      use std::fmt;
+      use std::ops::Add;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Cents(u64);
+
+      impl Cents {
+          fn parse(s: &str) -> Result<Cents, String> {
+              let invalid = || format!("invalid amount {s:?}");
+              let digits = s.strip_prefix('$').unwrap_or(s);
+              let (whole, frac) = digits.split_once('.').unwrap_or((digits, ""));
+              let all_digits = |part: &str| part.chars().all(|c| c.is_ascii_digit());
+              if whole.is_empty() || !all_digits(whole) || !all_digits(frac) || frac.len() > 2 {
+                  return Err(invalid());
+              }
+              let dollars: u64 = whole.parse().map_err(|_| invalid())?;
+              let cents: u64 = format!("{frac:0<2}").parse().map_err(|_| invalid())?;
+              Ok(Cents(dollars * 100 + cents))
+          }
+      }
+
+      impl Add for Cents {
+          type Output = Cents;
+
+          fn add(self, other: Cents) -> Cents {
+              Cents(self.0 + other.0)
+          }
+      }
+
+      impl fmt::Display for Cents {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "${}.{:02}", self.0 / 100, self.0 % 100)
+          }
+      }
+    harness: |
+      #[test]
+      fn parses_dollars_and_cents() {
+          assert_eq!(Cents::parse("12.34"), Ok(Cents(1234)), "parse(\"12.34\")");
+          assert_eq!(Cents::parse("12.3"), Ok(Cents(1230)), "parse(\"12.3\")");
+          assert_eq!(Cents::parse("0.05"), Ok(Cents(5)), "parse(\"0.05\")");
+      }
+
+      #[test]
+      fn whole_dollars_and_dollar_signs() {
+          assert_eq!(Cents::parse("5"), Ok(Cents(500)), "parse(\"5\")");
+          assert_eq!(Cents::parse("$7.50"), Ok(Cents(750)), "parse(\"$7.50\")");
+      }
+
+      #[test]
+      fn rejects_bad_amounts() {
+          for bad in ["", "abc", "-1", "1.234", "1.2.3", ".5", "12,50", "$"] {
+              assert_eq!(Cents::parse(bad), Err(format!("invalid amount {bad:?}")), "parse({bad:?})");
+          }
+      }
+
+      #[test]
+      fn adds_amounts() {
+          assert_eq!(Cents(199) + Cents(1), Cents(200), "Cents(199) + Cents(1)");
+      }
+
+      #[test]
+      fn displays_as_dollars() {
+          assert_eq!(Cents(1234).to_string(), "$12.34", "Cents(1234)");
+          assert_eq!(Cents(5).to_string(), "$0.05", "Cents(5)");
+          assert_eq!(Cents(300).to_string(), "$3.00", "Cents(300)");
+      }
+    hints:
+      - "Strip an optional `$` with `strip_prefix('$').unwrap_or(s)`, then `split_once('.')` into whole and fraction (no dot means an empty fraction)."
+      - "Check that the whole part is non-empty, both parts are only ASCII digits, and the fraction has at most 2 digits. Pad the fraction to 2 digits (`format!(\"{frac:0<2}\")`) before parsing it."
+      - "`Display`: `write!(f, \"${}.{:02}\", self.0 / 100, self.0 % 100)`; `Add`: `type Output = Cents;` and `Cents(self.0 + other.0)`."
+    more:
+      - task: |
+          Stop ids from being mixed up. Create newtypes `UserId(u64)` and `OrderId(u64)` (derive `Debug, Clone, Copy, PartialEq, Eq, Hash`) and change `cancel` to take them, so `cancel(order, user)` no longer compiles. It returns `user 7 cancelled order 1001` and records the cancellation in the set.
+        seed: |
+          use std::collections::HashSet;
+
+          fn cancel(user: u64, order: u64, cancelled: &mut HashSet<u64>) -> String {
+              cancelled.insert(order);
+              format!("user {user} cancelled order {order}")
+          }
+        solution: |
+          use std::collections::HashSet;
+
+          #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+          struct UserId(u64);
+
+          #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+          struct OrderId(u64);
+
+          fn cancel(user: UserId, order: OrderId, cancelled: &mut HashSet<OrderId>) -> String {
+              cancelled.insert(order);
+              format!("user {} cancelled order {}", user.0, order.0)
+          }
+        harness: |
+          #[test]
+          fn cancels_with_typed_ids() {
+              let mut set = HashSet::new();
+              assert_eq!(cancel(UserId(7), OrderId(1001), &mut set), "user 7 cancelled order 1001", "cancel(UserId(7), OrderId(1001))");
+              assert!(set.contains(&OrderId(1001)), "the order id is recorded");
+          }
+
+          #[test]
+          fn ids_are_copy_and_comparable() {
+              let id = UserId(3);
+              let copy = id;
+              assert_eq!(id, copy, "UserId is Copy and PartialEq");
+          }
+        hints:
+          - "`#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)] struct UserId(u64);` and the same for `OrderId`."
+          - "The set becomes a `HashSet<OrderId>`; format the inner numbers with `user.0` and `order.0`."
+      - task: |
+          Use a newtype to get around the orphan rule. `Table` wraps rows of cells. Implement `Display` so each row prints its cells joined by ` | `, rows separated by newlines (no newline at the end), and `FromStr` that parses the same format back (split rows on `\n`, cells on `|`, trimming each cell). Parsing never fails, so use `type Err = std::convert::Infallible;`.
+        seed: |
+          use std::fmt;
+          use std::str::FromStr;
+
+          #[derive(Debug, PartialEq)]
+          struct Table(Vec<Vec<String>>);
+        solution: |
+          use std::fmt;
+          use std::str::FromStr;
+
+          #[derive(Debug, PartialEq)]
+          struct Table(Vec<Vec<String>>);
+
+          impl fmt::Display for Table {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  let rows: Vec<String> = self.0.iter().map(|row| row.join(" | ")).collect();
+                  write!(f, "{}", rows.join("\n"))
+              }
+          }
+
+          impl FromStr for Table {
+              type Err = std::convert::Infallible;
+
+              fn from_str(s: &str) -> Result<Self, Self::Err> {
+                  Ok(Table(s.lines().map(|line| line.split('|').map(|cell| cell.trim().to_string()).collect()).collect()))
+              }
+          }
+        harness: |
+          fn table(rows: &[&[&str]]) -> Table {
+              Table(rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect()).collect())
+          }
+
+          #[test]
+          fn displays_rows_and_cells() {
+              assert_eq!(table(&[&["name", "score"], &["ana", "40"]]).to_string(), "name | score\nana | 40", "Display");
+          }
+
+          #[test]
+          fn parses_its_own_output() {
+              let t = table(&[&["a", "b"], &["c", "d"]]);
+              assert_eq!(t.to_string().parse::<Table>().unwrap(), t, "round trip");
+          }
+
+          #[test]
+          fn trims_cells_when_parsing() {
+              assert_eq!("x|  y \n z|w".parse::<Table>().unwrap(), table(&[&["x", "y"], &["z", "w"]]), "parse with spaces");
+          }
+        hints:
+          - "`Display`: map each row to `row.join(\" | \")`, then join the rows with `\"\\n\"`."
+          - "`FromStr`: `s.lines().map(|line| line.split('|').map(|c| c.trim().to_string()).collect()).collect()` wrapped in `Ok(Table(...))`."
+
+  - title: Make invalid states unrepresentable
+    id: patterns-idioms-3
+    text: |
+      Look at this struct, the kind found in many codebases:
+
+      ```rust
+      struct Connection {
+          connected: bool,
+          connecting: bool,
+          session_id: Option<String>,
+          retries: u32,
+          error: Option<String>,
+      }
+      ```
+
+      What does `connected: true, connecting: true` mean? Or `connected: false` with a `session_id`? Those combinations are **possible**, so every function has to check for them, and someone eventually forgets. The idiomatic Rust fix: an **enum where each state carries exactly its data**, so nonsense combinations can't even be written:
+
+      ```rust
+      enum Connection {
+          Disconnected,
+          Connecting { attempt: u32 },
+          Connected { session_id: String },
+          Failed { reason: String },
+      }
+      ```
+
+      There's no session id unless you're connected, and `match` makes every function handle every state.
+
+      ### Enum state machines
+
+      Add **transitions** and you have a state machine. Matching on `(state, event)` pairs lists every allowed move in one place, and taking `self` **by value** means the old state is consumed: nobody can keep using a stale one.
+
+      ```rust run
+      #[derive(Debug)]
+      enum Order {
+          Cart { items: u32 },
+          Paid { items: u32, payment_id: String },
+          Shipped { tracking: String },
+          Cancelled,
+      }
+
+      #[derive(Debug)]
+      enum Event {
+          AddItem,
+          Pay(String),
+          Ship(String),
+          Cancel,
+      }
+
+      impl Order {
+          fn apply(self, event: Event) -> Result<Order, (Order, String)> {
+              match (self, event) {
+                  (Order::Cart { items }, Event::AddItem) => Ok(Order::Cart { items: items + 1 }),
+                  (Order::Cart { items }, Event::Pay(id)) if items > 0 => Ok(Order::Paid { items, payment_id: id }),
+                  (Order::Paid { .. }, Event::Ship(tracking)) => Ok(Order::Shipped { tracking }),
+                  (Order::Cart { .. } | Order::Paid { .. }, Event::Cancel) => Ok(Order::Cancelled),
+                  (state, event) => {
+                      let msg = format!("cannot apply {event:?} to {state:?}");
+                      Err((state, msg))
+                  }
+              }
+          }
+
+          fn describe(&self) -> String {
+              match self {
+                  Order::Cart { items } => format!("cart with {items} items"),
+                  Order::Paid { items, payment_id } => format!("{items} items paid ({payment_id})"),
+                  Order::Shipped { tracking } => format!("shipped, tracking {tracking}"),
+                  Order::Cancelled => String::from("cancelled"),
+              }
+          }
+      }
+
+      fn main() {
+          let mut order = Order::Cart { items: 0 };
+          let events = [
+              Event::Pay(String::from("pay_1")),
+              Event::AddItem,
+              Event::AddItem,
+              Event::Pay(String::from("pay_2")),
+              Event::Ship(String::from("TRK9")),
+              Event::Cancel,
+          ];
+          for event in events {
+              order = match order.apply(event) {
+                  Ok(next) => next,
+                  Err((same, msg)) => {
+                      println!("rejected: {msg}");
+                      same
+                  }
+              };
+              println!("now: {}", order.describe());
+          }
+      }
+      ```
+
+      ```output
+      rejected: cannot apply Pay("pay_1") to Cart { items: 0 }
+      now: cart with 0 items
+      now: cart with 1 items
+      now: cart with 2 items
+      now: 2 items paid (pay_2)
+      now: shipped, tracking TRK9
+      rejected: cannot apply Cancel to Shipped { tracking: "TRK9" }
+      now: shipped, tracking TRK9
+      ```
+
+      Why does the error carry the state back, as `Err((state, msg))`? Because `apply` took ownership of it. If the error held only a message, a rejected event would leave the caller with nothing, and the borrow checker says so:
+
+      ```rust compile_fail
+      enum Light {
+          Off,
+          On,
+      }
+
+      impl Light {
+          fn press(self, allowed: bool) -> Result<Light, String> {
+              if !allowed {
+                  return Err(String::from("locked"));
+              }
+              Ok(match self {
+                  Light::Off => Light::On,
+                  Light::On => Light::Off,
+              })
+          }
+      }
+
+      fn main() {
+          let mut light = Light::Off;
+          for allowed in [true, false, true] {
+              match light.press(allowed) {
+                  Ok(next) => light = next,
+                  Err(e) => println!("{e}"),
+              }
+          }
+          if let Light::On = light {
+              println!("on");
+          }
+      }
+      ```
+
+      ```error
+      error[E0382]: use of moved value: `light`
+      ```
+
+      In the `Err` arm, `light` has been moved into `press` and nothing was put back. Returning the unchanged state inside the error (or taking `&mut self` and changing it in place) solves it.
+
+      Piece by piece:
+
+      - `apply(self, ...)` **consumes** the old state and returns the new one: you can't accidentally keep using a stale state.
+      - The guard `if items > 0` encodes a rule (no paying for an empty cart) right in the transition table.
+      - The final arm `(state, event)` catches every move not listed, with the state handed back inside the `Err`.
+      - Adding a state means the compiler points at every `match` that must handle it.
+
+      ### Typestate: wrong order is a compile error
+
+      When the sequence of steps is fixed in your code (not decided by runtime data), you can go further and give **each state its own type** (the typestate pattern from the advanced traits module). Methods exist only on the states where they make sense:
+
+      ```rust compile_fail
+      struct Draft {
+          text: String,
+      }
+
+      struct Published {
+          text: String,
+      }
+
+      impl Draft {
+          fn publish(self) -> Published {
+              Published { text: self.text }
+          }
+      }
+
+      impl Published {
+          fn text(&self) -> &str {
+              &self.text
+          }
+      }
+
+      fn main() {
+          let post = Draft { text: String::from("Hello, crabs") }.publish();
+          println!("{}", post.text());
+          let again = post.publish();
+      }
+      ```
+
+      ```error
+      error[E0599]: no method named `publish` found for struct `Published` in the current scope
+      ```
+
+      **Which one?** Use an **enum** when the state comes from data at run time (an order loaded from the database can be in any state). Use **typestate** for protocols and builders written in code (a connection must be opened before sending, a request needs a URL before `send`).
+
+      **Your turn:** write a payment state machine. `Payment::next(self, event)` returns the new state or an error string. Allowed transitions:
+      - `Pending` + `Authorize(code)` becomes `Authorized { amount, auth_code: code }`
+      - `Pending` or `Authorized` + `Decline(reason)` becomes `Failed { reason }`
+      - `Authorized` + `Capture` becomes `Captured { amount }`
+      - `Captured` + `Refund` becomes `Refunded { amount }`
+
+      Anything else is `Err(format!("cannot {event:?} a {} payment", state.name()))`, where `name()` returns `pending`, `authorized`, `captured`, `refunded` or `failed`.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      enum Payment {
+          Pending { amount: u64 },
+          Authorized { amount: u64, auth_code: String },
+          Captured { amount: u64 },
+          Refunded { amount: u64 },
+          Failed { reason: String },
+      }
+
+      #[derive(Debug)]
+      enum Event {
+          Authorize(String),
+          Decline(String),
+          Capture,
+          Refund,
+      }
+
+      impl Payment {
+          fn name(&self) -> &'static str {
+              todo!()
+          }
+
+          fn next(self, event: Event) -> Result<Payment, String> {
+              todo!()
+          }
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      enum Payment {
+          Pending { amount: u64 },
+          Authorized { amount: u64, auth_code: String },
+          Captured { amount: u64 },
+          Refunded { amount: u64 },
+          Failed { reason: String },
+      }
+
+      #[derive(Debug)]
+      enum Event {
+          Authorize(String),
+          Decline(String),
+          Capture,
+          Refund,
+      }
+
+      impl Payment {
+          fn name(&self) -> &'static str {
+              match self {
+                  Payment::Pending { .. } => "pending",
+                  Payment::Authorized { .. } => "authorized",
+                  Payment::Captured { .. } => "captured",
+                  Payment::Refunded { .. } => "refunded",
+                  Payment::Failed { .. } => "failed",
+              }
+          }
+
+          fn next(self, event: Event) -> Result<Payment, String> {
+              match (self, event) {
+                  (Payment::Pending { amount }, Event::Authorize(code)) => Ok(Payment::Authorized { amount, auth_code: code }),
+                  (Payment::Pending { .. } | Payment::Authorized { .. }, Event::Decline(reason)) => Ok(Payment::Failed { reason }),
+                  (Payment::Authorized { amount, .. }, Event::Capture) => Ok(Payment::Captured { amount }),
+                  (Payment::Captured { amount }, Event::Refund) => Ok(Payment::Refunded { amount }),
+                  (state, event) => Err(format!("cannot {event:?} a {} payment", state.name())),
+              }
+          }
+      }
+    harness: |
+      #[test]
+      fn the_happy_path() {
+          let p = Payment::Pending { amount: 500 };
+          let p = p.next(Event::Authorize(String::from("A1"))).unwrap();
+          assert_eq!(p, Payment::Authorized { amount: 500, auth_code: String::from("A1") }, "after Authorize");
+          let p = p.next(Event::Capture).unwrap();
+          assert_eq!(p, Payment::Captured { amount: 500 }, "after Capture");
+          assert_eq!(p.next(Event::Refund), Ok(Payment::Refunded { amount: 500 }), "after Refund");
+      }
+
+      #[test]
+      fn declines_from_pending_or_authorized() {
+          assert_eq!(Payment::Pending { amount: 1 }.next(Event::Decline(String::from("card expired"))), Ok(Payment::Failed { reason: String::from("card expired") }), "decline pending");
+          let auth = Payment::Authorized { amount: 1, auth_code: String::from("X") };
+          assert_eq!(auth.next(Event::Decline(String::from("fraud"))), Ok(Payment::Failed { reason: String::from("fraud") }), "decline authorized");
+      }
+
+      #[test]
+      fn invalid_moves_are_errors() {
+          assert_eq!(Payment::Pending { amount: 9 }.next(Event::Capture), Err(String::from("cannot Capture a pending payment")), "capture pending");
+          assert_eq!(Payment::Captured { amount: 9 }.next(Event::Decline(String::from("x"))), Err(String::from("cannot Decline(\"x\") a captured payment")), "decline captured");
+          assert_eq!(Payment::Refunded { amount: 9 }.next(Event::Refund), Err(String::from("cannot Refund a refunded payment")), "refund twice");
+          assert_eq!(Payment::Failed { reason: String::new() }.next(Event::Authorize(String::from("B"))), Err(String::from("cannot Authorize(\"B\") a failed payment")), "authorize failed");
+      }
+
+      #[test]
+      fn names_every_state() {
+          let names: Vec<&str> = [
+              Payment::Pending { amount: 0 },
+              Payment::Authorized { amount: 0, auth_code: String::new() },
+              Payment::Captured { amount: 0 },
+              Payment::Refunded { amount: 0 },
+              Payment::Failed { reason: String::new() },
+          ]
+          .iter()
+          .map(Payment::name)
+          .collect();
+          assert_eq!(names, ["pending", "authorized", "captured", "refunded", "failed"], "names");
+      }
+    hints:
+      - "`name` is a `match self` with `{ .. }` patterns, one arm per variant."
+      - "In `next`, `match (self, event)`: `(Payment::Pending { amount }, Event::Authorize(code)) => Ok(Payment::Authorized { amount, auth_code: code })` and so on."
+      - "Combine states with `|`: `(Payment::Pending { .. } | Payment::Authorized { .. }, Event::Decline(reason))`. The last arm `(state, event) => Err(...)` catches the rest."
+    more:
+      - task: |
+          Replace the flag soup. Write `Connection::on(self, event: NetEvent) -> Connection` for this enum: `Disconnected` + `Dial` becomes `Connecting { attempt: 1 }`; `Connecting` + `Timeout` retries with `attempt + 1`, but after attempt 3 gives up and becomes `Disconnected`; `Connecting` + `Accepted(session)` becomes `Connected { session }`; `Connected` + `Hangup` becomes `Disconnected`. Any other event leaves the state unchanged. Also write `status(&self) -> String`: `offline`, `dialing (attempt 2)`, `online as s-42`.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          enum Connection {
+              Disconnected,
+              Connecting { attempt: u32 },
+              Connected { session: String },
+          }
+
+          enum NetEvent {
+              Dial,
+              Timeout,
+              Accepted(String),
+              Hangup,
+          }
+
+          impl Connection {
+              fn on(self, event: NetEvent) -> Connection {
+                  todo!()
+              }
+
+              fn status(&self) -> String {
+                  todo!()
+              }
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          enum Connection {
+              Disconnected,
+              Connecting { attempt: u32 },
+              Connected { session: String },
+          }
+
+          enum NetEvent {
+              Dial,
+              Timeout,
+              Accepted(String),
+              Hangup,
+          }
+
+          impl Connection {
+              fn on(self, event: NetEvent) -> Connection {
+                  match (self, event) {
+                      (Connection::Disconnected, NetEvent::Dial) => Connection::Connecting { attempt: 1 },
+                      (Connection::Connecting { attempt }, NetEvent::Timeout) if attempt >= 3 => Connection::Disconnected,
+                      (Connection::Connecting { attempt }, NetEvent::Timeout) => Connection::Connecting { attempt: attempt + 1 },
+                      (Connection::Connecting { .. }, NetEvent::Accepted(session)) => Connection::Connected { session },
+                      (Connection::Connected { .. }, NetEvent::Hangup) => Connection::Disconnected,
+                      (state, _) => state,
+                  }
+              }
+
+              fn status(&self) -> String {
+                  match self {
+                      Connection::Disconnected => String::from("offline"),
+                      Connection::Connecting { attempt } => format!("dialing (attempt {attempt})"),
+                      Connection::Connected { session } => format!("online as {session}"),
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn dials_and_connects() {
+              let c = Connection::Disconnected.on(NetEvent::Dial);
+              assert_eq!(c.status(), "dialing (attempt 1)", "after Dial");
+              let c = c.on(NetEvent::Accepted(String::from("s-42")));
+              assert_eq!(c.status(), "online as s-42", "after Accepted");
+              assert_eq!(c.on(NetEvent::Hangup), Connection::Disconnected, "after Hangup");
+          }
+
+          #[test]
+          fn retries_three_times_then_gives_up() {
+              let c = Connection::Disconnected.on(NetEvent::Dial).on(NetEvent::Timeout).on(NetEvent::Timeout);
+              assert_eq!(c, Connection::Connecting { attempt: 3 }, "after two timeouts");
+              assert_eq!(c.on(NetEvent::Timeout), Connection::Disconnected, "after the third timeout");
+          }
+
+          #[test]
+          fn other_events_change_nothing() {
+              assert_eq!(Connection::Disconnected.on(NetEvent::Hangup), Connection::Disconnected, "Hangup while offline");
+              let online = Connection::Connected { session: String::from("s") };
+              assert_eq!(online.on(NetEvent::Dial), Connection::Connected { session: String::from("s") }, "Dial while online");
+          }
+        hints:
+          - "`match (self, event)` with one arm per transition; put the guarded `attempt >= 3` arm before the plain retry arm."
+          - "The last arm `(state, _) => state` returns the state unchanged."
+      - task: |
+          Typestate: a request can only be sent once it has a URL. `RequestBuilder::new()` has no URL; `.url(..)` returns a `ReadyRequest` (a different type) holding it, and only `ReadyRequest` has `.header(..)` (chainable) and `.send()`, which returns a description like `GET https://arena.dev [accept: json]` (headers as `name: value` joined by `, `, and no brackets when there are no headers). Calling `send` on a `RequestBuilder` simply doesn't compile.
+        seed: |
+          struct RequestBuilder;
+
+          struct ReadyRequest {
+              url: String,
+              headers: Vec<(String, String)>,
+          }
+
+          impl RequestBuilder {
+              fn new() -> Self {
+                  RequestBuilder
+              }
+          }
+        solution: |
+          struct RequestBuilder;
+
+          struct ReadyRequest {
+              url: String,
+              headers: Vec<(String, String)>,
+          }
+
+          impl RequestBuilder {
+              fn new() -> Self {
+                  RequestBuilder
+              }
+
+              fn url(self, url: &str) -> ReadyRequest {
+                  ReadyRequest { url: url.to_string(), headers: Vec::new() }
+              }
+          }
+
+          impl ReadyRequest {
+              fn header(mut self, name: &str, value: &str) -> Self {
+                  self.headers.push((name.to_string(), value.to_string()));
+                  self
+              }
+
+              fn send(self) -> String {
+                  if self.headers.is_empty() {
+                      return format!("GET {}", self.url);
+                  }
+                  let headers: Vec<String> = self.headers.iter().map(|(n, v)| format!("{n}: {v}")).collect();
+                  format!("GET {} [{}]", self.url, headers.join(", "))
+              }
+          }
+        harness: |
+          #[test]
+          fn sends_once_a_url_is_set() {
+              assert_eq!(RequestBuilder::new().url("https://arena.dev").send(), "GET https://arena.dev", "no headers");
+          }
+
+          #[test]
+          fn headers_are_listed_in_order() {
+              let r = RequestBuilder::new().url("https://arena.dev/api").header("accept", "json").header("x-id", "7").send();
+              assert_eq!(r, "GET https://arena.dev/api [accept: json, x-id: 7]", "two headers");
+          }
+        hints:
+          - "`fn url(self, url: &str) -> ReadyRequest` on `RequestBuilder` is the transition to the next state."
+          - "Put `header` and `send` only in `impl ReadyRequest`."
+
+  - title: "Conversions and flexible parameters: From, Into, AsRef"
+    id: patterns-idioms-4
+    text: |
+      Good Rust APIs are pleasant to call: they accept what callers naturally have and convert it without fuss. Three traits do most of the work.
+
+      ### From and Into
+
+      Implement `From<A> for B` and you get **both** `B::from(a)` and `a.into()` (the standard library has a blanket `impl Into<B> for A` whenever `B: From<A>`). So you always implement `From`, never `Into` (clippy's `from_over_into` says so). Use it for conversions that can't fail and are unsurprising; for fallible ones, implement `TryFrom` (and get `try_into()`).
+
+      ### `impl Into<String>` for values you store
+
+      A constructor that stores a `String` should let callers pass a `&str` **or** a `String` they already own (without a forced extra copy):
+
+      ```rust run
+      struct Player {
+          name: String,
+          tags: Vec<String>,
+      }
+
+      impl Player {
+          fn new(name: impl Into<String>) -> Self {
+              Player { name: name.into(), tags: Vec::new() }
+          }
+
+          fn tag(mut self, t: impl Into<String>) -> Self {
+              self.tags.push(t.into());
+              self
+          }
+      }
+
+      fn longest<S: AsRef<str>>(words: &[S]) -> Option<&str> {
+          words.iter().map(|w| w.as_ref()).max_by_key(|w| w.len())
+      }
+
+      struct Celsius(f64);
+      struct Fahrenheit(f64);
+
+      impl From<Celsius> for Fahrenheit {
+          fn from(c: Celsius) -> Self {
+              Fahrenheit(c.0 * 9.0 / 5.0 + 32.0)
+          }
+      }
+
+      fn main() {
+          let owned = String::from("Ferris");
+          let a = Player::new("Corro").tag("mod");
+          let b = Player::new(owned).tag(String::from("crab"));
+          println!("{} {:?} / {} {:?}", a.name, a.tags, b.name, b.tags);
+
+          println!("{:?}", longest(&["a", "abc", "ab"]));
+          println!("{:?}", longest(&[String::from("crab"), String::from("lobster")]));
+
+          let f: Fahrenheit = Celsius(100.0).into();
+          println!("{}", f.0);
+      }
+      ```
+
+      ```output
+      Corro ["mod"] / Ferris ["crab"]
+      Some("abc")
+      Some("lobster")
+      212
+      ```
+
+      Piece by piece:
+
+      - `name: impl Into<String>` accepts anything convertible into a `String`. With a `&str`, `.into()` allocates the copy it must; with an owned `String`, it's just moved in, no copy at all.
+      - `S: AsRef<str>` accepts anything that can be **viewed** as a `&str` without converting: `&[&str]` and `&[String]` both work, as you see. `AsRef` borrows; `Into` converts (and may consume).
+      - `Celsius(100.0).into()` works because of `From<Celsius> for Fahrenheit`; the type annotation `let f: Fahrenheit` tells `into` which target to use.
+      - You've met `AsRef<Path>` already without noticing: `std::fs::read_to_string(path)` takes `P: AsRef<Path>`, which is why a `&str`, a `String` or a `PathBuf` all work.
+
+      ### Which parameter type?
+
+      | You need to | Take |
+      |---|---|
+      | read text | `&str` (a `&String` coerces to it automatically) |
+      | read a list | `&[T]`, not `&Vec<T>` |
+      | store a string | `impl Into<String>` (or just `String`) |
+      | read several strings of either kind | `&[S]` with `S: AsRef<str>` |
+      | open a file path | `impl AsRef<Path>` |
+      | consume any sequence | `impl IntoIterator<Item = T>` (next step) |
+
+      Don't over-generalize: `&str` is the right answer most of the time, and every generic parameter makes signatures harder to read and compile times longer. Reach for these when callers really have different types.
+
+      ### Common mistakes
+
+      `&String` parameters are a classic review comment (clippy: `ptr_arg`): they force callers to have a `String`, while `&str` accepts both.
+
+      ```rust compile_fail
+      fn greet(name: &String) -> String {
+          format!("Hello, {name}!")
+      }
+
+      fn main() {
+          println!("{}", greet("Ana"));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      - **`impl Into<String>` on a parameter you only read**: it allocates for nothing. Take `&str`.
+      - **`let x = value.into();`** with no type to aim at: ``error[E0283]: type annotations needed``. Annotate the variable or call `Target::from(value)`.
+
+      **Your turn:** tags on articles. Implement `From<&str> for Tag` (trim and lowercase the text) and `From<Tag> for String`. Write `fn normalize_all<S: AsRef<str>>(items: &[S]) -> Vec<Tag>` (works for `&[&str]` and `&[String]`), and give `Article` a constructor `new(title: impl Into<String>)` and a chainable `with_tag(mut self, tag: impl Into<Tag>) -> Self`.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct Tag(String);
+
+      struct Article {
+          title: String,
+          tags: Vec<Tag>,
+      }
+
+      fn normalize_all<S: AsRef<str>>(items: &[S]) -> Vec<Tag> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct Tag(String);
+
+      impl From<&str> for Tag {
+          fn from(s: &str) -> Self {
+              Tag(s.trim().to_lowercase())
+          }
+      }
+
+      impl From<Tag> for String {
+          fn from(tag: Tag) -> Self {
+              tag.0
+          }
+      }
+
+      struct Article {
+          title: String,
+          tags: Vec<Tag>,
+      }
+
+      impl Article {
+          fn new(title: impl Into<String>) -> Self {
+              Article { title: title.into(), tags: Vec::new() }
+          }
+
+          fn with_tag(mut self, tag: impl Into<Tag>) -> Self {
+              self.tags.push(tag.into());
+              self
+          }
+      }
+
+      fn normalize_all<S: AsRef<str>>(items: &[S]) -> Vec<Tag> {
+          items.iter().map(|s| Tag::from(s.as_ref())).collect()
+      }
+    harness: |
+      #[test]
+      fn tags_are_trimmed_and_lowercased() {
+          assert_eq!(Tag::from("  Rust "), Tag(String::from("rust")), "Tag::from(\"  Rust \")");
+          let t: Tag = "WebDev".into();
+          assert_eq!(t, Tag(String::from("webdev")), "\"WebDev\".into()");
+      }
+
+      #[test]
+      fn tags_convert_back_into_strings() {
+          let s: String = Tag::from("Async").into();
+          assert_eq!(s, "async", "String::from(tag)");
+      }
+
+      #[test]
+      fn normalize_all_accepts_str_and_string_slices() {
+          assert_eq!(normalize_all(&["A", " b "]), vec![Tag(String::from("a")), Tag(String::from("b"))], "normalize_all(&[&str])");
+          let owned = vec![String::from("CLI"), String::from("Serde")];
+          assert_eq!(normalize_all(&owned), vec![Tag(String::from("cli")), Tag(String::from("serde"))], "normalize_all(&Vec<String>)");
+      }
+
+      #[test]
+      fn articles_take_str_or_string() {
+          let a = Article::new("Ownership explained").with_tag("Rust").with_tag(Tag::from("memory"));
+          assert_eq!(a.title, "Ownership explained", "title from &str");
+          assert_eq!(a.tags, vec![Tag(String::from("rust")), Tag(String::from("memory"))], "tags");
+          let b = Article::new(String::from("Traits"));
+          assert_eq!(b.title, "Traits", "title from String");
+      }
+    hints:
+      - "`impl From<&str> for Tag { fn from(s: &str) -> Self { Tag(s.trim().to_lowercase()) } }`, and `impl From<Tag> for String` returns `tag.0`."
+      - "`normalize_all`: `items.iter().map(|s| Tag::from(s.as_ref())).collect()`."
+      - "`with_tag` pushes `tag.into()`; a `Tag` passed directly works too, because every type implements `From` for itself."
+    more:
+      - task: |
+          Colors. Implement `From<(u8, u8, u8)> for Rgb` and `From<Rgb> for String` (lowercase hex, `#ff8000`), and `TryFrom<&str> for Rgb` that parses `#rrggbb` (exactly 7 characters, a `#`, then hex digits) with `type Error = String` and the error `invalid color "red"`.
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Rgb(u8, u8, u8);
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Rgb(u8, u8, u8);
+
+          impl From<(u8, u8, u8)> for Rgb {
+              fn from((r, g, b): (u8, u8, u8)) -> Self {
+                  Rgb(r, g, b)
+              }
+          }
+
+          impl From<Rgb> for String {
+              fn from(c: Rgb) -> Self {
+                  format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
+              }
+          }
+
+          impl TryFrom<&str> for Rgb {
+              type Error = String;
+
+              fn try_from(s: &str) -> Result<Self, Self::Error> {
+                  let invalid = || format!("invalid color {s:?}");
+                  let hex = s.strip_prefix('#').ok_or_else(invalid)?;
+                  if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                      return Err(invalid());
+                  }
+                  let part = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|_| invalid());
+                  Ok(Rgb(part(0)?, part(2)?, part(4)?))
+              }
+          }
+        harness: |
+          #[test]
+          fn from_a_tuple() {
+              let c: Rgb = (255, 128, 0).into();
+              assert_eq!(c, Rgb(255, 128, 0), "(255, 128, 0).into()");
+          }
+
+          #[test]
+          fn into_a_hex_string() {
+              let s: String = Rgb(255, 128, 0).into();
+              assert_eq!(s, "#ff8000", "String::from(Rgb(255, 128, 0))");
+              assert_eq!(String::from(Rgb(0, 10, 1)), "#000a01", "String::from(Rgb(0, 10, 1))");
+          }
+
+          #[test]
+          fn parses_hex_with_try_from() {
+              assert_eq!(Rgb::try_from("#00ff7f"), Ok(Rgb(0, 255, 127)), "try_from(\"#00ff7f\")");
+              let c: Result<Rgb, String> = "#ABCDEF".try_into();
+              assert_eq!(c, Ok(Rgb(171, 205, 239)), "\"#ABCDEF\".try_into()");
+          }
+
+          #[test]
+          fn rejects_invalid_colors() {
+              for bad in ["red", "#fff", "#gg0000", "ff8000", "#ff80001", "#ffé00"] {
+                  assert_eq!(Rgb::try_from(bad), Err(format!("invalid color {bad:?}")), "try_from({bad:?})");
+              }
+          }
+        hints:
+          - "A tuple parameter can be destructured in the signature: `fn from((r, g, b): (u8, u8, u8)) -> Self`."
+          - "`format!(\"#{:02x}{:02x}{:02x}\", c.0, c.1, c.2)` writes two lowercase hex digits per channel."
+          - "Check `hex.len() == 6` and `is_ascii_hexdigit` on every char before slicing with `&hex[i..i + 2]`."
+      - task: |
+          Write `fn total_size<P: AsRef<Path>>(paths: &[P]) -> std::io::Result<u64>` that adds up the sizes in bytes of the given files (`std::fs::metadata(path)?.len()`). Thanks to `AsRef<Path>` it must accept `&[&str]`, `Vec<String>` and `Vec<PathBuf>`. A missing file returns the I/O error. (The tests run in a folder containing `a.txt` with 5 bytes and `b.txt` with 11.)
+        seed: |
+          use std::path::Path;
+
+          fn total_size<P: AsRef<Path>>(paths: &[P]) -> std::io::Result<u64> {
+              todo!()
+          }
+        solution: |
+          use std::path::Path;
+
+          fn total_size<P: AsRef<Path>>(paths: &[P]) -> std::io::Result<u64> {
+              let mut total = 0;
+              for path in paths {
+                  total += std::fs::metadata(path)?.len();
+              }
+              Ok(total)
+          }
+        harness: |
+          use std::path::PathBuf;
+
+          #[test]
+          fn works_with_str_slices() {
+              assert_eq!(total_size(&["a.txt", "b.txt"]).unwrap(), 16, "total_size(&[\"a.txt\", \"b.txt\"])");
+          }
+
+          #[test]
+          fn works_with_strings_and_pathbufs() {
+              assert_eq!(total_size(&vec![String::from("b.txt")]).unwrap(), 11, "Vec<String>");
+              assert_eq!(total_size(&vec![PathBuf::from("a.txt")]).unwrap(), 5, "Vec<PathBuf>");
+          }
+
+          #[test]
+          fn no_paths_is_zero() {
+              let none: [&str; 0] = [];
+              assert_eq!(total_size(&none).unwrap(), 0, "total_size(&[])");
+          }
+
+          #[test]
+          fn a_missing_file_is_an_error() {
+              let e = total_size(&["a.txt", "missing.txt"]).unwrap_err();
+              assert_eq!(e.kind(), std::io::ErrorKind::NotFound, "error kind");
+          }
+        tests:
+          - files: { "a.txt": "hello", "b.txt": "hello crabs" }
+        hints:
+          - "`std::fs::metadata` itself takes `impl AsRef<Path>`, so you can pass each `path` straight through."
+          - "Loop, add `std::fs::metadata(path)?.len()` to a total, and return `Ok(total)`."
+
+  - title: RAII guards and Drop
+    id: patterns-idioms-5
+    text: |
+      **RAII** ("resource acquisition is initialization", a name from C++) means: tie the cleanup of a resource to the lifetime of a value. When the value goes out of scope, its `Drop` code runs and the cleanup happens, no matter **how** the scope ends: normally, by `return`, by `?`, by `break`, or by a panic unwinding the stack. You've relied on it all along: a `File` closes itself, a `MutexGuard` unlocks, a `Vec` frees its memory.
+
+      A **guard** is a small value you create just for its `Drop`. It's the Rust answer to `try/finally` and `defer`, and it can't be forgotten on an early return.
+
+      ```rust run
+      struct Account {
+          balance: i64,
+          log: Vec<String>,
+      }
+
+      struct Transaction<'a> {
+          account: &'a mut Account,
+          start_balance: i64,
+          committed: bool,
+      }
+
+      impl<'a> Transaction<'a> {
+          fn begin(account: &'a mut Account) -> Self {
+              let start_balance = account.balance;
+              Transaction { account, start_balance, committed: false }
+          }
+
+          fn withdraw(&mut self, amount: i64) -> Result<(), String> {
+              if amount > self.account.balance {
+                  return Err(format!("cannot withdraw {amount}, balance is {}", self.account.balance));
+              }
+              self.account.balance -= amount;
+              Ok(())
+          }
+
+          fn commit(mut self) {
+              self.committed = true;
+              self.account.log.push(String::from("committed"));
+          }
+      }
+
+      impl Drop for Transaction<'_> {
+          fn drop(&mut self) {
+              if !self.committed {
+                  self.account.balance = self.start_balance;
+                  self.account.log.push(String::from("rolled back"));
+              }
+          }
+      }
+
+      fn pay_bills(account: &mut Account) -> Result<(), String> {
+          let mut tx = Transaction::begin(account);
+          tx.withdraw(700)?;
+          tx.withdraw(300)?;
+          tx.commit();
+          Ok(())
+      }
+
+      fn main() {
+          for start in [1500, 900] {
+              let mut acc = Account { balance: start, log: Vec::new() };
+              let result = pay_bills(&mut acc);
+              println!("{result:?} -> balance {} {:?}", acc.balance, acc.log);
+          }
+      }
+      ```
+
+      ```output
+      Ok(()) -> balance 500 ["committed"]
+      Err("cannot withdraw 300, balance is 200") -> balance 900 ["rolled back"]
+      ```
+
+      Piece by piece:
+
+      - `Transaction` holds `&mut Account`: while it's alive, nobody else can touch the account. The borrow checker enforces the "transaction" for free.
+      - In the second run, the second `withdraw` fails and `?` returns early. `tx` goes out of scope, `Drop` runs, sees `committed == false`, and restores the balance. There's no rollback code in `pay_bills` at all.
+      - `commit(mut self)` takes the guard **by value**: after committing you can't use the transaction again, and when `commit` ends, `self` is dropped with `committed == true`, so nothing is undone.
+      - Values are dropped in **reverse order** of declaration, so guards nest naturally.
+
+      ### `let _guard` vs `let _`
+
+      A subtle trap: `let _ = guard();` drops the guard **immediately**, because `_` doesn't bind anything. `let _guard = guard();` keeps it alive until the end of the scope.
+
+      ```rust run
+      struct Noisy(&'static str);
+
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              println!("drop {}", self.0);
+          }
+      }
+
+      fn main() {
+          let _a = Noisy("a");
+          let _ = Noisy("b");
+          println!("body");
+          {
+              let _c = Noisy("c");
+              println!("inner");
+          }
+          drop(Noisy("d"));
+          println!("end of main");
+      }
+      ```
+
+      ```output
+      drop b
+      body
+      inner
+      drop c
+      drop d
+      end of main
+      drop a
+      ```
+
+      `drop(x)` (the function `std::mem::drop`) ends a value's life early, for example to release a lock before slow work.
+
+      ### Common mistakes
+
+      - **Fallible cleanup in `Drop`.** `drop` can't return an error, and panicking inside it is a bad idea. When cleanup can fail (flushing a file), offer an explicit `fn close(self) -> Result<..>` and keep `Drop` as the fallback, like `BufWriter` does.
+      - **`std::process::exit` skips `Drop`**, as the CLI module said. So does `std::mem::forget`. Guards protect you from early returns and panics, not from killing the process.
+      - **Calling `x.drop()` directly** isn't allowed: `error[E0040]: explicit use of destructor method`. Use `drop(x)`.
+
+      **Your turn:** count active work with a guard. `Tracker::enter(&self)` increments `active`, updates `peak` (the highest `active` ever seen) and returns an `ActiveGuard`; dropping the guard decrements `active`. The fields are `Cell<u32>` so they can change through `&self` (interior mutability, from the smart pointers module).
+    seed: |
+      use std::cell::Cell;
+
+      #[derive(Default)]
+      struct Tracker {
+          active: Cell<u32>,
+          peak: Cell<u32>,
+      }
+
+      struct ActiveGuard<'a> {
+          tracker: &'a Tracker,
+      }
+
+      impl Tracker {
+          fn enter(&self) -> ActiveGuard<'_> {
+              todo!()
+          }
+
+          fn active(&self) -> u32 {
+              self.active.get()
+          }
+
+          fn peak(&self) -> u32 {
+              self.peak.get()
+          }
+      }
+    solution: |
+      use std::cell::Cell;
+
+      #[derive(Default)]
+      struct Tracker {
+          active: Cell<u32>,
+          peak: Cell<u32>,
+      }
+
+      struct ActiveGuard<'a> {
+          tracker: &'a Tracker,
+      }
+
+      impl Tracker {
+          fn enter(&self) -> ActiveGuard<'_> {
+              let now = self.active.get() + 1;
+              self.active.set(now);
+              self.peak.set(self.peak.get().max(now));
+              ActiveGuard { tracker: self }
+          }
+
+          fn active(&self) -> u32 {
+              self.active.get()
+          }
+
+          fn peak(&self) -> u32 {
+              self.peak.get()
+          }
+      }
+
+      impl Drop for ActiveGuard<'_> {
+          fn drop(&mut self) {
+              self.tracker.active.set(self.tracker.active.get() - 1);
+          }
+      }
+    harness: |
+      fn work(t: &Tracker, fail: bool) -> Result<u32, String> {
+          let _guard = t.enter();
+          if fail {
+              return Err(String::from("failed"));
+          }
+          Ok(t.active())
+      }
+
+      #[test]
+      fn entering_counts_and_dropping_uncounts() {
+          let t = Tracker::default();
+          let g = t.enter();
+          assert_eq!(t.active(), 1, "active while the guard lives");
+          drop(g);
+          assert_eq!(t.active(), 0, "active after drop");
+      }
+
+      #[test]
+      fn nested_guards_track_the_peak() {
+          let t = Tracker::default();
+          {
+              let _a = t.enter();
+              let _b = t.enter();
+              let _c = t.enter();
+              assert_eq!(t.active(), 3, "three guards");
+          }
+          let _d = t.enter();
+          assert_eq!((t.active(), t.peak()), (1, 3), "(active, peak) after the block");
+      }
+
+      #[test]
+      fn early_returns_still_clean_up() {
+          let t = Tracker::default();
+          assert_eq!(work(&t, false), Ok(1), "work(ok) sees itself as active");
+          assert_eq!(work(&t, true), Err(String::from("failed")), "work(fail)");
+          assert_eq!(t.active(), 0, "active after both calls");
+      }
+
+      #[test]
+      fn let_underscore_drops_at_once() {
+          let t = Tracker::default();
+          let _ = t.enter();
+          assert_eq!((t.active(), t.peak()), (0, 1), "(active, peak) after let _ = ...");
+      }
+    hints:
+      - "In `enter`: compute `self.active.get() + 1`, `set` it, update `peak` with `.max(now)`, and return `ActiveGuard { tracker: self }`."
+      - "`impl Drop for ActiveGuard<'_> { fn drop(&mut self) { ... } }` decrements `self.tracker.active`."
+    more:
+      - task: |
+          An undo guard for a list. `Undo::begin(list)` remembers the list's length; `push` adds items through the guard; `keep(self)` makes the changes permanent. If the guard is dropped without `keep`, the list is truncated back to its old length.
+        seed: |
+          struct Undo<'a> {
+              list: &'a mut Vec<String>,
+              start_len: usize,
+              kept: bool,
+          }
+
+          impl<'a> Undo<'a> {
+              fn begin(list: &'a mut Vec<String>) -> Self {
+                  todo!()
+              }
+
+              fn push(&mut self, item: &str) {
+                  todo!()
+              }
+
+              fn keep(mut self) {
+                  todo!()
+              }
+          }
+        solution: |
+          struct Undo<'a> {
+              list: &'a mut Vec<String>,
+              start_len: usize,
+              kept: bool,
+          }
+
+          impl<'a> Undo<'a> {
+              fn begin(list: &'a mut Vec<String>) -> Self {
+                  let start_len = list.len();
+                  Undo { list, start_len, kept: false }
+              }
+
+              fn push(&mut self, item: &str) {
+                  self.list.push(item.to_string());
+              }
+
+              fn keep(mut self) {
+                  self.kept = true;
+              }
+          }
+
+          impl Drop for Undo<'_> {
+              fn drop(&mut self) {
+                  if !self.kept {
+                      self.list.truncate(self.start_len);
+                  }
+              }
+          }
+        harness: |
+          fn import(list: &mut Vec<String>, items: &[&str]) -> Result<(), String> {
+              let mut undo = Undo::begin(list);
+              for item in items {
+                  if item.is_empty() {
+                      return Err(String::from("empty item"));
+                  }
+                  undo.push(item);
+              }
+              undo.keep();
+              Ok(())
+          }
+
+          #[test]
+          fn kept_changes_stay() {
+              let mut list = vec![String::from("a")];
+              assert_eq!(import(&mut list, &["b", "c"]), Ok(()), "import(b, c)");
+              assert_eq!(list, ["a", "b", "c"], "list after keep");
+          }
+
+          #[test]
+          fn failed_imports_are_undone() {
+              let mut list = vec![String::from("a")];
+              assert_eq!(import(&mut list, &["b", "", "c"]), Err(String::from("empty item")), "import(b, empty, c)");
+              assert_eq!(list, ["a"], "list after the failed import");
+          }
+
+          #[test]
+          fn dropping_without_keep_undoes_everything() {
+              let mut list = Vec::new();
+              {
+                  let mut u = Undo::begin(&mut list);
+                  u.push("x");
+              }
+              assert!(list.is_empty(), "list after dropping the guard");
+          }
+        hints:
+          - "`begin` records `list.len()` before storing the `&mut`."
+          - "`impl Drop for Undo<'_>`: if not kept, `self.list.truncate(self.start_len)`."
+      - task: |
+          A temporary file that cleans up after itself. `TempFile::new(path, contents)` writes the file and returns the guard (or the I/O error); `path()` returns the path; dropping the guard deletes the file (ignore errors while deleting: `let _ = std::fs::remove_file(..)`).
+        seed: |
+          struct TempFile {
+              path: String,
+          }
+
+          impl TempFile {
+              fn new(path: &str, contents: &str) -> std::io::Result<TempFile> {
+                  todo!()
+              }
+
+              fn path(&self) -> &str {
+                  todo!()
+              }
+          }
+        solution: |
+          struct TempFile {
+              path: String,
+          }
+
+          impl TempFile {
+              fn new(path: &str, contents: &str) -> std::io::Result<TempFile> {
+                  std::fs::write(path, contents)?;
+                  Ok(TempFile { path: path.to_string() })
+              }
+
+              fn path(&self) -> &str {
+                  &self.path
+              }
+          }
+
+          impl Drop for TempFile {
+              fn drop(&mut self) {
+                  let _ = std::fs::remove_file(&self.path);
+              }
+          }
+        harness: |
+          use std::path::Path;
+
+          #[test]
+          fn the_file_exists_while_the_guard_lives() {
+              let t = TempFile::new("scratch.txt", "hello").unwrap();
+              assert_eq!(std::fs::read_to_string(t.path()).unwrap(), "hello", "contents");
+          }
+
+          #[test]
+          fn the_file_is_removed_on_drop() {
+              {
+                  let _t = TempFile::new("gone.txt", "bye").unwrap();
+                  assert!(Path::new("gone.txt").exists(), "exists inside the block");
+              }
+              assert!(!Path::new("gone.txt").exists(), "removed after the block");
+          }
+
+          #[test]
+          fn removed_even_after_an_early_return() {
+              fn process() -> Result<(), String> {
+                  let t = TempFile::new("work.txt", "data").map_err(|e| e.to_string())?;
+                  if t.path().ends_with(".txt") {
+                      return Err(String::from("stop early"));
+                  }
+                  Ok(())
+              }
+              assert!(process().is_err(), "process() fails");
+              assert!(!Path::new("work.txt").exists(), "work.txt removed");
+          }
+        hints:
+          - "`std::fs::write(path, contents)?;` then return the guard holding `path.to_string()`."
+          - "`impl Drop for TempFile { fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); } }`"
+
+  - title: Returning iterators
+    id: patterns-idioms-6
+    text: |
+      A function that returns a `Vec` decides for the caller: it computes **everything** and allocates a new vector, even if the caller only wanted the first match, or a count, or to feed the items into another chain. Returning an **iterator** hands the caller a lazy sequence instead: nothing runs until they consume it, and they choose how.
+
+      ```rust run
+      struct User {
+          name: String,
+          active: bool,
+          score: u32,
+      }
+
+      struct Team {
+          users: Vec<User>,
+      }
+
+      impl Team {
+          fn active(&self) -> impl Iterator<Item = &User> {
+              self.users.iter().filter(|u| u.active)
+          }
+
+          fn names(&self) -> impl Iterator<Item = &str> {
+              self.users.iter().map(|u| u.name.as_str())
+          }
+      }
+
+      fn total(scores: impl IntoIterator<Item = u32>) -> u32 {
+          scores.into_iter().sum()
+      }
+
+      fn main() {
+          let team = Team {
+              users: vec![
+                  User { name: String::from("ana"), active: true, score: 70 },
+                  User { name: String::from("bo"), active: false, score: 95 },
+                  User { name: String::from("cy"), active: true, score: 40 },
+              ],
+          };
+          let strong: Vec<&str> = team.active().filter(|u| u.score > 50).map(|u| u.name.as_str()).collect();
+          println!("{strong:?}");
+          println!("{}", team.names().collect::<Vec<_>>().join(", "));
+          println!("{}", total(team.active().map(|u| u.score)));
+          println!("{}", total(vec![1, 2, 3]));
+          println!("{:?}", team.active().next().map(|u| &u.name));
+      }
+      ```
+
+      ```output
+      ["ana"]
+      ana, bo, cy
+      110
+      6
+      Some("ana")
+      ```
+
+      Piece by piece:
+
+      - `-> impl Iterator<Item = &User>` says "some iterator yielding `&User`", without naming its long real type (`Filter<std::slice::Iter<'_, User>, {closure}>`). The caller can chain more adapters onto it.
+      - The returned iterator **borrows** `self`. In edition 2024 that's automatic; in older code you'll see `-> impl Iterator<Item = &User> + '_` to say so explicitly.
+      - `.next()` on the result only does enough work to find the first active user: laziness means no wasted effort.
+      - On the input side, `impl IntoIterator<Item = u32>` accepts a `Vec`, an array, a range or any iterator chain.
+
+      ### When branches return different iterators
+
+      Each adapter chain has its own type, so this doesn't compile:
+
+      ```rust compile_fail
+      fn pick(v: &[u32], only_even: bool) -> impl Iterator<Item = &u32> {
+          if only_even {
+              v.iter().filter(|x| *x % 2 == 0)
+          } else {
+              v.iter()
+          }
+      }
+
+      fn main() {
+          println!("{}", pick(&[1, 2, 3], true).count());
+      }
+      ```
+
+      ```error
+      error[E0308]: `if` and `else` have incompatible types
+      ```
+
+      `impl Trait` means **one** concrete type chosen by the function. When it truly varies, return a **trait object**: `Box<dyn Iterator<Item = &u32> + '_>`, with `Box::new(...)` around each branch. It costs one allocation and dynamic calls, which is usually fine.
+
+      ### Common mistakes
+
+      - **`collect()` inside the function, then `.iter()` outside**: an allocation for nothing. Return the iterator and let the caller collect if they need to.
+      - **Returning an iterator over a local `Vec`**: the `Vec` is dropped when the function returns, so a borrowing iterator can't outlive it (`returns a value referencing data owned by the current function`). Return `vec.into_iter()`, which takes ownership, instead.
+      - **Forgetting it's lazy**: `team.active().map(|u| println!("{}", u.name));` prints nothing (and the compiler warns `unused Map that must be used`). Use a `for` loop for side effects.
+
+      **Your turn:** give `Log` three methods that return iterators (no `Vec` in their return types): `errors()` yields the lines that start with `ERROR`; `with_level(level)` yields the **message part** (after `LEVEL `) of lines with that level, so `with_level("WARN")` on `WARN disk 91%` yields `disk 91%`; `numbered()` yields `(line_number, line)` pairs counting from 1.
+    seed: |
+      struct Log {
+          lines: Vec<String>,
+      }
+
+      impl Log {
+      }
+    solution: |
+      struct Log {
+          lines: Vec<String>,
+      }
+
+      impl Log {
+          fn errors(&self) -> impl Iterator<Item = &str> {
+              self.lines.iter().map(|l| l.as_str()).filter(|l| l.starts_with("ERROR"))
+          }
+
+          fn with_level<'a>(&'a self, level: &'a str) -> impl Iterator<Item = &'a str> {
+              self.lines
+                  .iter()
+                  .filter_map(move |l| l.strip_prefix(level))
+                  .filter_map(|rest| rest.strip_prefix(' '))
+          }
+
+          fn numbered(&self) -> impl Iterator<Item = (usize, &str)> {
+              self.lines.iter().enumerate().map(|(i, l)| (i + 1, l.as_str()))
+          }
+      }
+    require:
+      - pattern: 'impl\s+Iterator'
+        message: Return `impl Iterator<Item = ...>` from the methods.
+    forbid:
+      - pattern: '->\s*Vec'
+        message: Return iterators, not vectors; the caller can collect if they need to.
+    harness: |
+      fn log() -> Log {
+          Log { lines: ["INFO boot", "WARN disk 91%", "ERROR db down", "INFO ok", "ERROR retry failed", "WARNING ignored"].iter().map(|s| s.to_string()).collect() }
+      }
+
+      #[test]
+      fn errors_yields_only_error_lines() {
+          assert_eq!(log().errors().collect::<Vec<_>>(), ["ERROR db down", "ERROR retry failed"], "errors()");
+      }
+
+      #[test]
+      fn with_level_yields_the_message_part() {
+          assert_eq!(log().with_level("WARN").collect::<Vec<_>>(), ["disk 91%"], "with_level(\"WARN\")");
+          assert_eq!(log().with_level("INFO").collect::<Vec<_>>(), ["boot", "ok"], "with_level(\"INFO\")");
+      }
+
+      #[test]
+      fn numbered_counts_from_one() {
+          let l = log();
+          let mut it = l.numbered();
+          assert_eq!(it.next(), Some((1, "INFO boot")), "first");
+          assert_eq!(it.nth(1), Some((3, "ERROR db down")), "third");
+      }
+
+      #[test]
+      fn the_iterators_are_lazy_and_chainable() {
+          assert_eq!(log().errors().count(), 2, "errors().count()");
+          assert_eq!(log().numbered().filter(|(_, l)| l.starts_with("INFO")).map(|(n, _)| n).collect::<Vec<_>>(), [1, 4], "INFO line numbers");
+      }
+    hints:
+      - "`fn errors(&self) -> impl Iterator<Item = &str> { self.lines.iter().map(|l| l.as_str()).filter(...) }`"
+      - "`with_level` needs both borrows to live as long as the iterator: `fn with_level<'a>(&'a self, level: &'a str) -> impl Iterator<Item = &'a str>`. Inside, a `move` closure with `l.strip_prefix(level)` and then `strip_prefix(' ')`."
+      - "`numbered`: `self.lines.iter().enumerate().map(|(i, l)| (i + 1, l.as_str()))`."
+    more:
+      - task: |
+          Infinite iterators are fine when they're lazy. Write `fn fibonacci() -> impl Iterator<Item = u64>` (0, 1, 1, 2, 3, 5, ...) and `fn multiples(n: u32) -> impl Iterator<Item = u32>` (n, 2n, 3n, ... forever). The callers decide how many to take. `std::iter::successors` or a struct implementing `Iterator` both work.
+        seed: |
+          fn fibonacci() -> impl Iterator<Item = u64> {
+              std::iter::empty()
+          }
+
+          fn multiples(n: u32) -> impl Iterator<Item = u32> {
+              std::iter::empty()
+          }
+        solution: |
+          fn fibonacci() -> impl Iterator<Item = u64> {
+              std::iter::successors(Some((0u64, 1u64)), |&(a, b)| Some((b, a + b))).map(|(a, _)| a)
+          }
+
+          fn multiples(n: u32) -> impl Iterator<Item = u32> {
+              (1..).map(move |k| k * n)
+          }
+        harness: |
+          #[test]
+          fn fibonacci_starts_correctly() {
+              assert_eq!(fibonacci().take(10).collect::<Vec<_>>(), [0, 1, 1, 2, 3, 5, 8, 13, 21, 34], "first 10");
+          }
+
+          #[test]
+          fn fibonacci_works_with_adapters() {
+              assert_eq!(fibonacci().find(|&f| f > 1000), Some(1597), "first above 1000");
+              assert_eq!(fibonacci().take_while(|&f| f < 100).filter(|f| f % 2 == 0).sum::<u64>(), 44, "sum of even ones below 100");
+          }
+
+          #[test]
+          fn multiples_go_on_forever() {
+              assert_eq!(multiples(7).take(4).collect::<Vec<_>>(), [7, 14, 21, 28], "multiples(7)");
+              assert_eq!(multiples(3).skip(99).next(), Some(300), "100th multiple of 3");
+          }
+        hints:
+          - "`std::iter::successors(Some((0, 1)), |&(a, b)| Some((b, a + b)))` yields pairs; `.map(|(a, _)| a)` keeps the first of each."
+          - "`(1..)` is an endless range; `.map(move |k| k * n)` multiplies (the `move` copies `n` into the closure)."
+      - task: |
+          Return different iterators from different branches. Write `fn select<'a>(items: &'a [Item], filter: Filter) -> Box<dyn Iterator<Item = &'a Item> + 'a>` where `Filter::All` yields every item, `Filter::InStock` only items with `qty > 0`, and `Filter::Category(name)` only items whose category equals `name`.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Item {
+              name: &'static str,
+              category: &'static str,
+              qty: u32,
+          }
+
+          enum Filter {
+              All,
+              InStock,
+              Category(String),
+          }
+
+          fn select<'a>(items: &'a [Item], filter: Filter) -> Box<dyn Iterator<Item = &'a Item> + 'a> {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Item {
+              name: &'static str,
+              category: &'static str,
+              qty: u32,
+          }
+
+          enum Filter {
+              All,
+              InStock,
+              Category(String),
+          }
+
+          fn select<'a>(items: &'a [Item], filter: Filter) -> Box<dyn Iterator<Item = &'a Item> + 'a> {
+              match filter {
+                  Filter::All => Box::new(items.iter()),
+                  Filter::InStock => Box::new(items.iter().filter(|i| i.qty > 0)),
+                  Filter::Category(name) => Box::new(items.iter().filter(move |i| i.category == name)),
+              }
+          }
+        harness: |
+          const ITEMS: [Item; 4] = [
+              Item { name: "mug", category: "kitchen", qty: 3 },
+              Item { name: "lamp", category: "office", qty: 0 },
+              Item { name: "pan", category: "kitchen", qty: 0 },
+              Item { name: "pen", category: "office", qty: 50 },
+          ];
+
+          fn names(it: Box<dyn Iterator<Item = &Item> + '_>) -> Vec<&'static str> {
+              it.map(|i| i.name).collect()
+          }
+
+          #[test]
+          fn all_yields_everything() {
+              assert_eq!(names(select(&ITEMS, Filter::All)), ["mug", "lamp", "pan", "pen"], "Filter::All");
+          }
+
+          #[test]
+          fn in_stock_skips_empty_items() {
+              assert_eq!(names(select(&ITEMS, Filter::InStock)), ["mug", "pen"], "Filter::InStock");
+          }
+
+          #[test]
+          fn category_filters_by_name() {
+              assert_eq!(names(select(&ITEMS, Filter::Category(String::from("kitchen")))), ["mug", "pan"], "Filter::Category(kitchen)");
+              assert_eq!(names(select(&ITEMS, Filter::Category(String::from("garden")))), Vec::<&str>::new(), "Filter::Category(garden)");
+          }
+        hints:
+          - "`match filter` and wrap each branch's iterator in `Box::new(...)`."
+          - "For `Category(name)`, the closure must own `name`: `filter(move |i| i.category == name)`."
+
+  - title: "Code review: from working to idiomatic"
+    id: patterns-idioms-7
+    text: |
+      At work, most of the Rust you write gets **reviewed** before it's merged, and much of what reviewers flag is the same short list. Many of those comments are automated by **clippy** (`cargo clippy`), and the rest you now know from this course. Here are the classics, with the clippy lint name where there is one:
+
+      | You wrote | Reviewers ask for | clippy lint |
+      |---|---|---|
+      | `for i in 0..v.len() { v[i] ... }` | `for x in &v`, or an iterator chain | `needless_range_loop` |
+      | `fn f(v: &Vec<T>)`, `fn g(s: &String)` | `&[T]`, `&str` | `ptr_arg` |
+      | `.clone()` to calm the borrow checker | borrow, or restructure | `redundant_clone` |
+      | `v.len() == 0` | `v.is_empty()` | `len_zero` |
+      | `if x == true` | `if x` | `bool_comparison` |
+      | `return x;` as the last line | just `x` | `needless_return` |
+      | `match o { Some(x) => Some(f(x)), None => None }` | `o.map(f)` | `manual_map` |
+      | `match o { Some(x) => x, None => d }` | `o.unwrap_or(d)` | `manual_unwrap_or` |
+      | `if a { if b { .. } }` | `if a && b { .. }` | `collapsible_if` |
+      | a loop that sets `found = true` | `.any(..)` / `.find(..)` / `.position(..)` | (`manual_find` and friends) |
+      | `.unwrap()` on input | `?`, `match`, a typed error | `unwrap_used` (opt-in) |
+      | `status: String` with `"shipped"` | `enum Status` | (design; no lint) |
+
+      Teams switch on stricter lints per project, in `Cargo.toml`:
+
+      ```toml
+      [lints.clippy]
+      unwrap_used = "warn"
+      pedantic = { level = "warn", priority = -1 }
+      ```
+
+      and CI runs `cargo clippy -- -D warnings` so warnings fail the build.
+
+      ### A small refactor
+
+      Both versions below print the same thing. The first is what a newcomer from another language writes; the second is what a reviewer hopes to see.
+
+      ```rust run
+      fn average_score(scores: &Vec<u32>) -> f64 {
+          if scores.len() == 0 {
+              return 0.0;
+          }
+          let mut sum = 0;
+          for i in 0..scores.len() {
+              sum = sum + scores[i];
+          }
+          return sum as f64 / scores.len() as f64;
+      }
+
+      fn main() {
+          println!("{:.2}", average_score(&vec![70, 85, 90]));
+          println!("{:.2}", average_score(&vec![]));
+      }
+      ```
+
+      ```output
+      81.67
+      0.00
+      ```
+
+      ```rust run
+      fn average_score(scores: &[u32]) -> f64 {
+          if scores.is_empty() {
+              return 0.0;
+          }
+          let sum: u32 = scores.iter().sum();
+          sum as f64 / scores.len() as f64
+      }
+
+      fn main() {
+          println!("{:.2}", average_score(&[70, 85, 90]));
+          println!("{:.2}", average_score(&[]));
+      }
+      ```
+
+      ```output
+      81.67
+      0.00
+      ```
+
+      (The early `return` for the empty case is fine: `needless_return` only flags a `return` on the **last** line.)
+
+      ### How to refactor safely
+
+      1. **Pin the behavior first**: make sure tests cover what the code does today, including edge cases (empty input, ties, bad input). On this site, the hidden tests play that role.
+      2. **One change at a time**, re-running the tests after each: types first (`&Vec` to `&[T]`, strings to enums), then loops to iterators, then error handling.
+      3. **Watch for behavior changes hiding in "cleanups"**: `max_by_key` returns the **last** maximum on ties while a hand-written `>` loop keeps the **first**; replacing `unwrap` with `unwrap_or_default` turns a crash into silently wrong data. A refactor that changes behavior isn't a refactor.
+      4. **Turning panics into errors** does change the signature (`-> Result<..>`). That's an improvement, but it's an API change your callers must know about.
+
+      **Your turn:** this order-processing code works on valid input, but it failed review. Refactor it:
+      - `parse_orders` takes `&str` and returns `Result<Vec<Order>, String>` instead of panicking. Errors name the line: `line 2: bad id`, `line 1: missing customer`, `line 3: unknown status "lost"`, `line 1: bad price "abc"`.
+      - The status becomes `enum Status { Pending, Shipped, Cancelled }` (derive `Debug, Clone, Copy, PartialEq`); the text values stay `pending`, `shipped`, `cancelled`.
+      - Slices instead of `&Vec`, iterators instead of index loops, no `.clone()`, no `.unwrap()`, no `== true`/`== false`.
+
+      `total`, `shipped_revenue` and `customers_with_pending` must behave exactly as before (the names come out sorted, without duplicates).
+    seed: |
+      struct Order {
+          id: u32,
+          customer: String,
+          status: String,
+          items: Vec<u32>,
+      }
+
+      fn parse_orders(text: &String) -> Vec<Order> {
+          let mut orders = Vec::new();
+          for line in text.lines() {
+              let parts: Vec<&str> = line.split(',').collect();
+              let id = parts[0].trim().parse::<u32>().unwrap();
+              let customer = parts[1].trim().to_string();
+              let status = parts[2].trim().to_string();
+              let mut items = Vec::new();
+              for i in 3..parts.len() {
+                  items.push(parts[i].trim().parse::<u32>().unwrap());
+              }
+              orders.push(Order { id: id, customer: customer.clone(), status: status.clone(), items: items.clone() });
+          }
+          orders
+      }
+
+      fn total(order: &Order) -> u32 {
+          let mut sum = 0;
+          for i in 0..order.items.len() {
+              sum = sum + order.items[i];
+          }
+          return sum;
+      }
+
+      fn shipped_revenue(orders: &Vec<Order>) -> u32 {
+          let mut revenue = 0;
+          for i in 0..orders.len() {
+              if orders[i].status == "shipped" {
+                  revenue += total(&orders[i]);
+              }
+          }
+          revenue
+      }
+
+      fn customers_with_pending(orders: &Vec<Order>) -> Vec<String> {
+          let mut names = Vec::new();
+          for o in orders.clone() {
+              if o.status == "pending" {
+                  if names.contains(&o.customer) == false {
+                      names.push(o.customer.clone());
+                  }
+              }
+          }
+          names.sort();
+          names
+      }
+    solution: |
+      use std::collections::BTreeSet;
+      use std::str::FromStr;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Status {
+          Pending,
+          Shipped,
+          Cancelled,
+      }
+
+      impl FromStr for Status {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              match s {
+                  "pending" => Ok(Status::Pending),
+                  "shipped" => Ok(Status::Shipped),
+                  "cancelled" => Ok(Status::Cancelled),
+                  other => Err(format!("unknown status {other:?}")),
+              }
+          }
+      }
+
+      struct Order {
+          id: u32,
+          customer: String,
+          status: Status,
+          items: Vec<u32>,
+      }
+
+      fn parse_line(line: &str) -> Result<Order, String> {
+          let mut parts = line.split(',').map(str::trim);
+          let id = parts.next().and_then(|p| p.parse().ok()).ok_or("bad id")?;
+          let customer = parts.next().filter(|c| !c.is_empty()).ok_or("missing customer")?.to_string();
+          let status = parts.next().ok_or("missing status")?.parse()?;
+          let items = parts
+              .map(|p| p.parse().map_err(|_| format!("bad price {p:?}")))
+              .collect::<Result<Vec<u32>, String>>()?;
+          Ok(Order { id, customer, status, items })
+      }
+
+      fn parse_orders(text: &str) -> Result<Vec<Order>, String> {
+          text.lines()
+              .enumerate()
+              .map(|(i, line)| parse_line(line).map_err(|e| format!("line {}: {e}", i + 1)))
+              .collect()
+      }
+
+      fn total(order: &Order) -> u32 {
+          order.items.iter().sum()
+      }
+
+      fn shipped_revenue(orders: &[Order]) -> u32 {
+          orders.iter().filter(|o| o.status == Status::Shipped).map(total).sum()
+      }
+
+      fn customers_with_pending(orders: &[Order]) -> Vec<String> {
+          let names: BTreeSet<&str> = orders
+              .iter()
+              .filter(|o| o.status == Status::Pending)
+              .map(|o| o.customer.as_str())
+              .collect();
+          names.into_iter().map(String::from).collect()
+      }
+    require:
+      - pattern: 'enum\s+Status'
+        message: Replace the status String with `enum Status { Pending, Shipped, Cancelled }`.
+    forbid:
+      - pattern: '\.unwrap\(\)'
+        message: "No `.unwrap()`: return errors from `parse_orders` instead."
+      - pattern: '\.clone\(\)'
+        message: "No `.clone()`: move or borrow the values instead."
+      - pattern: 'for\s+\w+\s+in\s+\d+\s*\.\.'
+        message: "No index loops (`for i in 0..len`): iterate over the items directly."
+      - pattern: '&\s*Vec<|&\s*String\b'
+        message: "Take slices (`&[Order]`) and `&str` instead of `&Vec` and `&String`."
+      - pattern: '==\s*(true|false)\b'
+        message: "Don't compare with `true`/`false`: use the boolean (or `!`) directly."
+      - pattern: '\.status\s*==\s*""'
+        message: "Compare the status with enum variants, not strings."
+    harness: |
+      const TEXT: &str = "1, ana, shipped, 1200, 300\n2, bo, pending, 450\n3, cy, cancelled, 999\n4, ana, pending, 100, 100\n5, bo, shipped, 50\n6, ana, pending";
+
+      #[test]
+      fn parses_valid_orders() {
+          let orders = parse_orders(TEXT).expect("valid text");
+          assert_eq!(orders.len(), 6, "number of orders");
+          assert_eq!((orders[0].id, orders[0].customer.as_str(), orders[0].status, orders[0].items.as_slice()), (1, "ana", Status::Shipped, &[1200, 300][..]), "first order");
+          assert_eq!(orders[2].status, Status::Cancelled, "third order's status");
+          assert!(orders[5].items.is_empty(), "an order may have no items");
+      }
+
+      #[test]
+      fn totals_and_revenue_are_unchanged() {
+          let orders = parse_orders(TEXT).expect("valid text");
+          assert_eq!(total(&orders[0]), 1500, "total(order 1)");
+          assert_eq!(shipped_revenue(&orders), 1550, "shipped_revenue");
+          assert_eq!(shipped_revenue(&[]), 0, "shipped_revenue(&[])");
+      }
+
+      #[test]
+      fn pending_customers_are_sorted_and_unique() {
+          let orders = parse_orders(TEXT).expect("valid text");
+          assert_eq!(customers_with_pending(&orders), ["ana", "bo"], "customers_with_pending");
+      }
+
+      #[test]
+      fn bad_input_is_an_error_not_a_panic() {
+          assert_eq!(parse_orders("1, ana, shipped, 5\nx, bo, pending").err(), Some(String::from("line 2: bad id")), "bad id");
+          assert_eq!(parse_orders("1, , shipped").err(), Some(String::from("line 1: missing customer")), "missing customer");
+          assert_eq!(parse_orders("1,a,shipped\n2,b,pending\n3,c,lost").err(), Some(String::from("line 3: unknown status \"lost\"")), "unknown status");
+          assert_eq!(parse_orders("1, ana, pending, abc").err(), Some(String::from("line 1: bad price \"abc\"")), "bad price");
+          assert_eq!(parse_orders("7").err(), Some(String::from("line 1: missing customer")), "only an id");
+      }
+
+      #[test]
+      fn empty_text_has_no_orders() {
+          assert_eq!(parse_orders("").map(|o| o.len()), Ok(0), "parse_orders(\"\")");
+      }
+    hints:
+      - "Start with the types: `enum Status` with `impl FromStr for Status` (so `\"shipped\".parse::<Status>()` works), slices in the signatures, `&str` for the text."
+      - "Parse one line in a helper `fn parse_line(line: &str) -> Result<Order, String>` using `split(',').map(str::trim)` and `next()`, then in `parse_orders` map each line through it and add `line N: ` with `map_err`. Collecting an iterator of `Result`s into `Result<Vec<_>, _>` stops at the first error."
+      - "`total` is `order.items.iter().sum()`; `shipped_revenue` is a `filter` + `map(total)` + `sum`; for unique sorted names, collect `&str`s into a `BTreeSet`."
+    more:
+      - task: |
+          A smaller review. Refactor these two functions: take `&[String]`, return `Option<&str>` from `longest_name` (`None` for an empty list, instead of an empty String), and use iterators. Keep the behavior: on a tie, `longest_name` returns the **first** of the longest names. No `.clone()`, no index loops, no `return`, no `len() == 0`, no `== true`.
+        seed: |
+          fn longest_name(names: &Vec<String>) -> String {
+              if names.len() == 0 {
+                  return String::from("");
+              }
+              let mut best = names[0].clone();
+              for i in 1..names.len() {
+                  if names[i].len() > best.len() {
+                      best = names[i].clone();
+                  }
+              }
+              return best;
+          }
+
+          fn count_long(names: &Vec<String>, min: usize) -> usize {
+              let mut count = 0;
+              for i in 0..names.len() {
+                  if (names[i].len() >= min) == true {
+                      count += 1;
+                  }
+              }
+              return count;
+          }
+        solution: |
+          fn longest_name(names: &[String]) -> Option<&str> {
+              names
+                  .iter()
+                  .rev()
+                  .max_by_key(|n| n.len())
+                  .map(|n| n.as_str())
+          }
+
+          fn count_long(names: &[String], min: usize) -> usize {
+              names.iter().filter(|n| n.len() >= min).count()
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: No `.clone()`.
+          - pattern: 'for\s+\w+\s+in\s+\d+\s*\.\.'
+            message: No index loops.
+          - pattern: '\breturn\b'
+            message: No `return`; let the last expression be the result.
+          - pattern: 'len\(\)\s*==\s*0'
+            message: Use `is_empty()` (or let the iterator handle the empty case).
+          - pattern: '==\s*(true|false)\b'
+            message: "Don't compare with `true`/`false`."
+          - pattern: '&\s*Vec<'
+            message: "Take `&[String]`, not `&Vec<String>`."
+        harness: |
+          fn v(names: &[&str]) -> Vec<String> {
+              names.iter().map(|s| s.to_string()).collect()
+          }
+
+          #[test]
+          fn finds_the_longest_name() {
+              assert_eq!(longest_name(&v(&["bo", "anastasia", "cy"])), Some("anastasia"), "longest_name");
+          }
+
+          #[test]
+          fn ties_keep_the_first() {
+              assert_eq!(longest_name(&v(&["ana", "bob", "cy"])), Some("ana"), "longest_name(ana, bob, cy)");
+          }
+
+          #[test]
+          fn empty_list_gives_none() {
+              assert_eq!(longest_name(&[]), None, "longest_name(&[])");
+          }
+
+          #[test]
+          fn counts_names_at_least_min_long() {
+              assert_eq!(count_long(&v(&["ana", "bo", "cyrus"]), 3), 2, "count_long(.., 3)");
+              assert_eq!(count_long(&[], 1), 0, "count_long(&[], 1)");
+          }
+        hints:
+          - "`count_long` is `names.iter().filter(|n| n.len() >= min).count()`."
+          - "`max_by_key` returns the **last** maximum on ties. Iterating in reverse first (`.iter().rev().max_by_key(..)`) makes it find the original first one."
+          - "Finish with `.map(|n| n.as_str())` to turn `Option<&String>` into `Option<&str>`; an empty slice gives `None` by itself."
+      - task: |
+          Clippy flagged every function here. Rewrite each one with the idiom its comment names, keeping the behavior: no `match`, no `for` loops, no `return`, and no nested `if`s left.
+        seed: |
+          fn double(o: Option<u32>) -> Option<u32> {
+              // clippy::manual_map
+              match o {
+                  Some(n) => Some(n * 2),
+                  None => None,
+              }
+          }
+
+          fn port_or_default(o: Option<u16>) -> u16 {
+              // clippy::manual_unwrap_or
+              match o {
+                  Some(p) => p,
+                  None => 8080,
+              }
+          }
+
+          fn is_admin(roles: &[String]) -> bool {
+              // use .any(..)
+              let mut found = false;
+              for r in roles {
+                  if r == "admin" {
+                      found = true;
+                  }
+              }
+              found
+          }
+
+          fn first_negative(v: &[i32]) -> Option<i32> {
+              // use .find(..) (plus .copied())
+              for x in v {
+                  if *x < 0 {
+                      return Some(*x);
+                  }
+              }
+              None
+          }
+
+          fn big_and_even(n: u32, log: &mut Vec<String>) {
+              // clippy::collapsible_if
+              if n > 100 {
+                  if n % 2 == 0 {
+                      log.push(format!("{n} is big and even"));
+                  }
+              }
+          }
+        solution: |
+          fn double(o: Option<u32>) -> Option<u32> {
+              // clippy::manual_map
+              o.map(|n| n * 2)
+          }
+
+          fn port_or_default(o: Option<u16>) -> u16 {
+              // clippy::manual_unwrap_or
+              o.unwrap_or(8080)
+          }
+
+          fn is_admin(roles: &[String]) -> bool {
+              // use .any(..)
+              roles.iter().any(|r| r == "admin")
+          }
+
+          fn first_negative(v: &[i32]) -> Option<i32> {
+              // use .find(..) (plus .copied())
+              v.iter().find(|x| **x < 0).copied()
+          }
+
+          fn big_and_even(n: u32, log: &mut Vec<String>) {
+              // clippy::collapsible_if
+              if n > 100 && n % 2 == 0 {
+                  log.push(format!("{n} is big and even"));
+              }
+          }
+        forbid:
+          - pattern: '\bmatch\b'
+            message: "Use `map` / `unwrap_or` instead of `match`."
+          - pattern: '\bfor\b'
+            message: "Use iterator methods (`any`, `find`) instead of `for` loops."
+          - pattern: '\breturn\b'
+            message: No `return`.
+          - pattern: '\bif\b[^{]*\{\s*if\b'
+            message: "Collapse the nested `if`s into one condition with `&&`."
+        harness: |
+          #[test]
+          fn double_maps_the_option() {
+              assert_eq!((double(Some(21)), double(None)), (Some(42), None), "double");
+          }
+
+          #[test]
+          fn port_falls_back_to_8080() {
+              assert_eq!((port_or_default(Some(443)), port_or_default(None)), (443, 8080), "port_or_default");
+          }
+
+          #[test]
+          fn is_admin_checks_every_role() {
+              let roles = vec![String::from("dev"), String::from("admin")];
+              assert!(is_admin(&roles), "is_admin(dev, admin)");
+              assert!(!is_admin(&roles[..1]), "is_admin(dev)");
+              assert!(!is_admin(&[]), "is_admin([])");
+          }
+
+          #[test]
+          fn first_negative_finds_the_first() {
+              assert_eq!(first_negative(&[3, -1, -7]), Some(-1), "first_negative(3, -1, -7)");
+              assert_eq!(first_negative(&[1, 2]), None, "first_negative(1, 2)");
+          }
+
+          #[test]
+          fn big_and_even_logs_only_big_even_numbers() {
+              let mut log = Vec::new();
+              for n in [50, 101, 102, 200] {
+                  big_and_even(n, &mut log);
+              }
+              assert_eq!(log, ["102 is big and even", "200 is big and even"], "log");
+          }
+        hints:
+          - "`o.map(|n| n * 2)` and `o.unwrap_or(8080)` replace the two `match`es."
+          - "`roles.iter().any(|r| r == \"admin\")` and `v.iter().find(|x| **x < 0).copied()`."
+          - "`if n > 100 && n % 2 == 0 { ... }`"

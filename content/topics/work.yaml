@@ -1,0 +1,850 @@
+# Reference pages at /topics/<slug>: Rust at work (serde, error handling crates, Cargo, tooling, macros, unsafe, performance).
+topics:
+  - slug: serde-json
+    title: "Serde JSON in Rust: serialize and deserialize structs"
+    description: "How to convert Rust structs to and from JSON with serde and serde_json: derive, to_string, from_str, rename, Option fields, defaults and errors."
+    modules: [serde]
+    body: |
+      **serde** (SERialize/DEserialize) is the standard Rust framework for converting data to and from formats like JSON, TOML and YAML. You describe your data as normal structs and enums, **derive** two traits, and a format crate such as `serde_json` does the rest.
+
+      ```toml
+      [dependencies]
+      serde = { version = "1", features = ["derive"] }
+      serde_json = "1"
+      ```
+
+      ## Struct to JSON and back
+
+      ```rust run
+      use serde::{Deserialize, Serialize};
+
+      #[derive(Debug, Serialize, Deserialize)]
+      struct Player {
+          name: String,
+          level: u32,
+          tags: Vec<String>,
+      }
+
+      fn main() {
+          let p = Player { name: "Ferris".into(), level: 7, tags: vec!["crab".into()] };
+          let json = serde_json::to_string(&p).unwrap();
+          println!("{json}");
+
+          let back: Player = serde_json::from_str(r#"{"name":"Corro","level":3,"tags":[]}"#).unwrap();
+          println!("{back:?}");
+      }
+      ```
+
+      ```output
+      {"name":"Ferris","level":7,"tags":["crab"]}
+      Player { name: "Corro", level: 3, tags: [] }
+      ```
+
+      - `serde_json::to_string(&value)` produces compact JSON; `to_string_pretty` adds indentation.
+      - `serde_json::from_str::<T>(text)` parses. It needs the target type, from an annotation or turbofish.
+      - Both return a `Result`: serialization rarely fails, but parsing outside data fails all the time.
+
+      `r#"..."#` is a **raw string**: quotes inside don't need escaping, which is handy for JSON in code.
+
+      ## Shaping the JSON with attributes
+
+      | Attribute | Effect |
+      |---|---|
+      | `#[serde(rename_all = "camelCase")]` on the struct | `user_id` becomes `"userId"` |
+      | `#[serde(rename = "type")]` on a field | use a JSON name that's a Rust keyword |
+      | `Option<T>` field | `null` or a missing key becomes `None` |
+      | `#[serde(default)]` | missing key uses `Default::default()` |
+      | `#[serde(skip_serializing_if = "Option::is_none")]` | leave out `None` fields when writing |
+      | `#[serde(skip)]` | never read or write this field |
+      | `#[serde(tag = "type")]` on an enum | internally tagged: `{"type": "Click", "x": 1}` |
+      | `#[serde(deny_unknown_fields)]` | reject keys you didn't expect |
+
+      By default, unknown JSON keys are **ignored**, and a missing non-`Option` field is an error.
+
+      ## Handling errors
+
+      `serde_json::Error` says what went wrong and where:
+
+      - ``missing field `level` at line 1 column 17``
+      - `invalid type: string "seven", expected u32 at line 1 column 15`
+      - `expected value at line 1 column 1` (not JSON at all)
+
+      Match on the `Result`, or propagate with `?` into your error type (with `anyhow`, add context: `.context("parsing config.json")`).
+
+      ## Untyped JSON: Value and json!
+
+      When the shape isn't known in advance, parse into `serde_json::Value` and index it: `v["user"]["name"].as_str()`. The `json!` macro builds a `Value` with JSON-like syntax. Prefer typed structs for anything you'll use more than once: the compiler then checks every field access.
+
+      ## Common mistakes
+
+      - **Forgetting the derive feature:** ``cannot find derive macro `Serialize` in this scope``. Enable `features = ["derive"]` on `serde`.
+      - **Field names not matching** the JSON's naming style: use `rename_all` instead of renaming every Rust field.
+      - **`unwrap()` on `from_str` with user data.** One bad request crashes the server. Return the error.
+      - **Floats for money.** `19.99` in JSON parses into an `f64` with rounding error; use integer cents or a decimal crate.
+      - **Expecting map key order** from a `HashMap` field. Use `BTreeMap` for stable output.
+    example: |
+      use serde::{Deserialize, Serialize};
+      use serde_json::json;
+
+      #[derive(Debug, Serialize, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Order {
+          order_id: u64,
+          customer: String,
+          items: Vec<Item>,
+          #[serde(default)]
+          gift_wrap: bool,
+          #[serde(skip_serializing_if = "Option::is_none")]
+          coupon: Option<String>,
+      }
+
+      #[derive(Debug, Serialize, Deserialize)]
+      struct Item {
+          sku: String,
+          qty: u32,
+          price_cents: u64,
+      }
+
+      fn main() {
+          let input = r#"{
+              "orderId": 1042,
+              "customer": "Ferris",
+              "items": [
+                  {"sku": "MUG-01", "qty": 2, "price_cents": 1250},
+                  {"sku": "TEE-XL", "qty": 1, "price_cents": 2000}
+              ]
+          }"#;
+
+          let order: Order = serde_json::from_str(input).expect("valid order JSON");
+          let total: u64 = order.items.iter().map(|i| u64::from(i.qty) * i.price_cents).sum();
+          println!("order {} for {}: {} items, total {total} cents, gift wrap {}", order.order_id, order.customer, order.items.len(), order.gift_wrap);
+          println!("first sku {}", order.items[0].sku);
+
+          println!("{}", serde_json::to_string(&order).unwrap());
+
+          for bad in [r#"{"orderId": 1}"#, r#"{"orderId": "x", "customer": "a", "items": []}"#, "<html>502</html>"] {
+              match serde_json::from_str::<Order>(bad) {
+                  Ok(o) => println!("parsed {:?}", o.coupon),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+
+          let event = json!({ "type": "checkout", "order": order.order_id, "ok": true });
+          println!("{} {}", event, event["order"].as_u64().unwrap_or(0));
+      }
+
+  - slug: anyhow-vs-thiserror
+    title: "anyhow vs thiserror in Rust: which should you use?"
+    description: "The difference between anyhow and thiserror for Rust error handling, when to use each, with context(), bail!, #[error] and #[from] examples."
+    modules: [app-errors, custom-errors]
+    body: |
+      Two crates dominate Rust error handling, and they solve different problems. The short version: **thiserror for libraries, anyhow for applications**, and many projects use both.
+
+      | | `thiserror` | `anyhow` |
+      |---|---|---|
+      | What it gives you | a derive that writes `Display`, `Error` and `From` for **your own** error enum | one catch-all error type, `anyhow::Error` |
+      | Callers can match on the error | yes, it's a normal enum | not easily (only by downcasting) |
+      | Adding context | add fields to variants | `.context("...")` on any `Result` |
+      | Best for | libraries, modules with errors callers handle differently | binaries, CLIs, `main`, glue code, tests |
+
+      ## thiserror: typed errors without boilerplate
+
+      ```rust
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      pub enum StoreError {
+          #[error("item `{0}` not found")]
+          NotFound(String),
+          #[error("only {available} left, asked for {requested}")]
+          OutOfStock { requested: u32, available: u32 },
+          #[error("invalid quantity")]
+          BadQuantity(#[from] std::num::ParseIntError),
+      }
+      ```
+
+      - `#[error("...")]` writes the `Display` message, with fields in braces.
+      - `#[from]` writes `impl From<ParseIntError> for StoreError`, so `?` converts automatically, and records it as the `source()`.
+      - The result is an ordinary enum: callers can `match` and retry on `OutOfStock`, show a 404 on `NotFound`, and so on. thiserror doesn't appear in your public API; it only generates code.
+
+      ## anyhow: one error type for the whole application
+
+      ```rust
+      use anyhow::{bail, Context, Result};
+
+      fn load_config(path: &str) -> Result<Config> {
+          let text = std::fs::read_to_string(path)
+              .with_context(|| format!("reading {path}"))?;
+          let config: Config = toml::from_str(&text).context("parsing config")?;
+          if config.workers == 0 {
+              bail!("workers must be at least 1");
+          }
+          Ok(config)
+      }
+      ```
+
+      - `anyhow::Result<T>` is `Result<T, anyhow::Error>`, and `?` accepts **any** error type.
+      - `.context(...)` / `.with_context(|| ...)` wrap the error with a message describing what you were doing. Needs `use anyhow::Context;`.
+      - `bail!("...")` returns an error immediately; `ensure!(cond, "...")` bails if the condition is false; `anyhow!("...")` builds an error value.
+      - `main` can return `anyhow::Result<()>`; on error it prints the whole chain:
+
+      ```text
+      Error: reading /etc/arena.toml
+
+      Caused by:
+          No such file or directory (os error 2)
+      ```
+
+      Print a chain yourself with `{:#}` (one line, causes joined with `: `) or `{:?}` (the multi-line report).
+
+      ## How they fit together
+
+      A typical service: each module (database, payments, parsing) defines a `thiserror` enum that callers inside the codebase can match on. Request handlers and `main` use `anyhow::Result` and `.context()`, converting module errors with `?`, and log the full chain at the top. When code really needs to inspect an `anyhow::Error`, `err.downcast_ref::<StoreError>()` recovers the typed error.
+
+      ## Common mistakes
+
+      - **anyhow in a library's public API.** Callers lose the ability to handle specific failures. Expose a typed error.
+      - **Forgetting `use anyhow::Context;`**: then `.context()` is "no method named `context` found".
+      - **Context that repeats the cause.** Say what you were trying to do ("loading user 42"), not what failed ("file not found"); the cause is already in the chain.
+      - **Formatting with `{}` and losing causes.** `{}` prints only the outermost message; use `{:#}` in logs.
+    example: |
+      use anyhow::{Context, Result, bail, ensure};
+      use thiserror::Error;
+
+      // A "library" error: callers can match on it.
+      #[derive(Debug, Error)]
+      enum StoreError {
+          #[error("item `{0}` not found")]
+          NotFound(String),
+          #[error("only {available} left, asked for {requested}")]
+          OutOfStock { requested: u32, available: u32 },
+          #[error("invalid quantity")]
+          BadQuantity(#[from] std::num::ParseIntError),
+      }
+
+      fn reserve(stock: &[(&str, u32)], item: &str, qty_text: &str) -> Result<u32, StoreError> {
+          let requested: u32 = qty_text.trim().parse()?; // ParseIntError -> StoreError via #[from]
+          let (_, available) = stock.iter().find(|(name, _)| *name == item).ok_or_else(|| StoreError::NotFound(item.to_string()))?;
+          if requested > *available {
+              return Err(StoreError::OutOfStock { requested, available: *available });
+          }
+          Ok(available - requested)
+      }
+
+      // "Application" code: anyhow plus context.
+      fn handle_order(stock: &[(&str, u32)], line: &str) -> Result<String> {
+          let (item, qty) = line.split_once(':').context("expected `item:qty`")?;
+          ensure!(!item.is_empty(), "empty item name");
+          if item == "banned" {
+              bail!("item `{item}` cannot be sold");
+          }
+          let left = reserve(stock, item, qty).with_context(|| format!("processing order {line:?}"))?;
+          Ok(format!("reserved {item}, {left} left"))
+      }
+
+      fn main() {
+          let stock = [("mug", 5), ("tee", 1)];
+          for line in ["mug:2", "tee:3", "hat:1", "mug:two", "banned:1", "no colon"] {
+              match handle_order(&stock, line) {
+                  Ok(msg) => println!("ok    {msg}"),
+                  Err(e) => {
+                      println!("error {e:#}");
+                      if let Some(StoreError::OutOfStock { available, .. }) = e.downcast_ref::<StoreError>() {
+                          println!("      (could offer {available} instead)");
+                      }
+                  }
+              }
+          }
+      }
+
+  - slug: cargo-toml-and-features
+    title: "Cargo.toml explained: dependencies, versions and features"
+    description: "A practical guide to Cargo.toml: package metadata, dependency version requirements (semver), features, dev-dependencies, profiles and Cargo.lock."
+    modules: [modules, tooling]
+    body: |
+      Every Rust project is described by a `Cargo.toml` file at its root, written in **TOML** (a simple `key = value` format with `[sections]`). Here's a realistic one for a small web service:
+
+      ```toml
+      [package]
+      name = "arena-api"
+      version = "0.3.1"
+      edition = "2024"
+      rust-version = "1.85"
+
+      [dependencies]
+      serde = { version = "1", features = ["derive"] }
+      serde_json = "1"
+      tokio = { version = "1.40", features = ["rt-multi-thread", "macros"] }
+      anyhow = "1"
+      regex = { version = "1", optional = true }
+
+      [dev-dependencies]
+      pretty_assertions = "1"
+
+      [features]
+      default = ["search"]
+      search = ["dep:regex"]
+
+      [profile.release]
+      lto = true
+      ```
+
+      ## [package]
+
+      `name` and `version` identify the crate; `edition` selects the language edition (2024 is current; editions are opt-in language updates, and crates of different editions work together). `rust-version` declares the oldest compiler you support.
+
+      ## Version requirements are semver ranges
+
+      `serde = "1.0.200"` does **not** mean exactly 1.0.200. It's a **caret requirement**: any version compatible with it under **semantic versioning**, here `>=1.0.200, <2.0.0`. Cargo picks the newest matching version. The rules:
+
+      | Requirement | Allows |
+      |---|---|
+      | `"1.4.2"` (same as `"^1.4.2"`) | `>=1.4.2, <2.0.0` |
+      | `"0.4.2"` | `>=0.4.2, <0.5.0` (for 0.x, the minor number is the breaking one) |
+      | `"~1.4.2"` | `>=1.4.2, <1.5.0` |
+      | `"=1.4.2"` | exactly 1.4.2 |
+      | `"*"` | anything (not allowed on crates.io) |
+
+      `cargo add serde --features derive` edits the file for you; `cargo update` moves to the newest allowed versions; `cargo tree` shows the full dependency graph.
+
+      ## Cargo.lock
+
+      `Cargo.lock` records the **exact** version of every dependency that was resolved, so every build (yours, CI's, a colleague's) uses the same code. Commit it. (Older advice said not to commit it for libraries; current guidance is to commit it for all projects.)
+
+      ## Features
+
+      **Features** are named switches that turn on optional code or optional dependencies. Using a crate's feature: `tokio = { version = "1", features = ["full"] }`. Defining your own: the `[features]` table above makes `regex` an **optional dependency** pulled in only by the `search` feature, and `default` lists features enabled unless a user opts out with `default-features = false`. In code, `#[cfg(feature = "search")]` includes an item only when the feature is on.
+
+      Features must be **additive**: enabling one may add functionality but must never break code that doesn't use it, because Cargo unifies features across the whole dependency graph.
+
+      ## Other sections
+
+      - `[dev-dependencies]`: only for tests, examples and benchmarks.
+      - `[build-dependencies]`: for `build.rs` scripts.
+      - `[profile.release]` / `[profile.dev]`: optimization settings (`opt-level`, `lto`, `codegen-units`, `debug`, `overflow-checks`, `panic = "abort"`).
+      - `[workspace]`: several crates in one repository sharing one `Cargo.lock` and `target/` directory.
+      - `[lints]`: set rustc and clippy lint levels for the whole package.
+
+      ## Common mistakes
+
+      - Pinning exact versions (`=1.2.3`) everywhere, which blocks bug fixes and causes conflicts. Use caret requirements and rely on `Cargo.lock`.
+      - Forgetting a feature a crate needs (`serde` without `derive`, `tokio` without `macros` for `#[tokio::main]`): the error is a missing macro or item.
+      - Treating `0.x` minor bumps as safe: `0.4` to `0.5` is a breaking change.
+    example: |
+      #[derive(Debug, PartialEq, PartialOrd)]
+      struct Version {
+          major: u64,
+          minor: u64,
+          patch: u64,
+      }
+
+      fn parse(v: &str) -> Option<Version> {
+          let mut parts = v.split('.').map(|p| p.parse::<u64>().ok());
+          let (major, minor, patch) = (parts.next()??, parts.next()??, parts.next()??);
+          Some(Version { major, minor, patch })
+      }
+
+      // Cargo's default (caret) requirement: same leftmost non-zero number, and not older.
+      fn caret_allows(req: &str, candidate: &str) -> bool {
+          let (Some(r), Some(c)) = (parse(req), parse(candidate)) else {
+              return false;
+          };
+          let compatible = if r.major > 0 {
+              c.major == r.major
+          } else if r.minor > 0 {
+              c.major == 0 && c.minor == r.minor
+          } else {
+              c.major == 0 && c.minor == 0 && c.patch == r.patch
+          };
+          compatible && c >= r
+      }
+
+      fn main() {
+          let checks = [
+              ("1.4.2", "1.4.9"),
+              ("1.4.2", "1.9.0"),
+              ("1.4.2", "2.0.0"),
+              ("1.4.2", "1.4.1"),
+              ("0.4.2", "0.4.7"),
+              ("0.4.2", "0.5.0"),
+              ("0.0.3", "0.0.4"),
+          ];
+          for (req, candidate) in checks {
+              let verdict = if caret_allows(req, candidate) { "allowed" } else { "rejected" };
+              println!("{:<9} {candidate:<6} {verdict}", format!("\"{req}\""));
+          }
+          println!("debug build: {}", cfg!(debug_assertions));
+      }
+
+  - slug: clippy-and-rustfmt
+    title: "Clippy and rustfmt: linting and formatting Rust code"
+    description: "How to use cargo clippy and cargo fmt: the most common clippy suggestions with before and after code, lint levels, configuration, and running both in CI."
+    modules: [tooling, hello]
+    body: |
+      Two tools come with every Rust installation and are used on virtually every professional Rust project:
+
+      - **rustfmt** (`cargo fmt`) formats code in the community style: indentation, line breaks, spacing. Nobody argues about style in code review because nobody formats by hand.
+      - **clippy** (`cargo clippy`) is a **linter** with hundreds of checks for bugs, slow code, and non-idiomatic patterns, each with an explanation and usually a suggested fix.
+
+      ## rustfmt
+
+      ```text
+      $ cargo fmt            # format the whole project
+      $ cargo fmt --check    # CI: fail if anything isn't formatted
+      ```
+
+      Configure it (rarely) with a `rustfmt.toml`, for example `max_width = 120`. Most teams keep the defaults. Set your editor to format on save; rust-analyzer does it for you in VS Code.
+
+      ## clippy's most common suggestions
+
+      | Lint | Before | After |
+      |---|---|---|
+      | `needless_return` | `return x;` as the last line | `x` |
+      | `len_zero` | `if v.len() == 0` | `if v.is_empty()` |
+      | `needless_range_loop` | `for i in 0..v.len() { v[i] ... }` | `for x in &v` or `.iter().enumerate()` |
+      | `ptr_arg` | `fn f(s: &String)`, `fn g(v: &Vec<i32>)` | `fn f(s: &str)`, `fn g(v: &[i32])` |
+      | `bool_comparison` | `if done == true` | `if done` |
+      | `clone_on_copy` | `x.clone()` on an `i32` | `x` |
+      | `manual_map` | `match opt { Some(x) => Some(f(x)), None => None }` | `opt.map(f)` |
+      | `collapsible_if` | `if a { if b { ... } }` | `if a && b { ... }` |
+      | `single_match` | a `match` with one arm and `_ => {}` | `if let` |
+      | `useless_format` | `format!("{}", s)` | `s.to_string()` |
+      | `unwrap_or_default` | `.unwrap_or(Vec::new())` | `.unwrap_or_default()` |
+      | `map_entry` | `if !m.contains_key(k) { m.insert(k, v) }` | `m.entry(k).or_insert(v)` |
+
+      A clippy warning looks like a compiler warning, with a link to the lint's documentation:
+
+      ```text
+      warning: length comparison to zero
+       --> src/main.rs:4:8
+        |
+      4 |     if names.len() == 0 {
+        |        ^^^^^^^^^^^^^^^^ help: using `is_empty` is clearer and more explicit: `names.is_empty()`
+      ```
+
+      ## Lint groups and levels
+
+      Lints are grouped: `clippy::correctness` (likely bugs, **deny** by default), `suspicious`, `style`, `complexity` and `perf` (warn by default), plus opt-in `pedantic`, `nursery` and `restriction`. Adjust them:
+
+      - In code: `#[allow(clippy::too_many_arguments)]` on an item, or better `#[expect(clippy::lint_name, reason = "...")]`, which warns you when the exception is no longer needed.
+      - Project-wide in `Cargo.toml`:
+
+      ```toml
+      [lints.clippy]
+      pedantic = { level = "warn", priority = -1 }
+      unwrap_used = "warn"
+      module_name_repetitions = "allow"
+      ```
+
+      ## In CI
+
+      ```text
+      cargo fmt --check
+      cargo clippy --all-targets --all-features -- -D warnings
+      cargo test
+      ```
+
+      `-D warnings` turns every warning into an error, so the main branch stays clean. `cargo clippy --fix` applies machine-applicable suggestions automatically.
+
+      ## Advice
+
+      - Fix clippy warnings as you go; they're cheap when the code is fresh.
+      - Read the lint's explanation before silencing it. Most suggestions also make code faster or clearer.
+      - Don't enable all of `pedantic` on an existing codebase in one go; pick the lints your team agrees on.
+    example: |
+      // Idiomatic versions of the "before" patterns from the table above.
+      use std::collections::HashMap;
+
+      fn shout(s: &str) -> String {
+          s.to_uppercase()
+      }
+
+      fn total(values: &[i32]) -> i32 {
+          values.iter().sum()
+      }
+
+      fn first_long(words: &[&str]) -> Option<usize> {
+          words.iter().find(|w| w.len() > 4).map(|w| w.len())
+      }
+
+      fn main() {
+          let names: Vec<String> = Vec::new();
+          if names.is_empty() {
+              println!("no names yet");
+          }
+
+          let scores = vec![3, 9, 4];
+          for (i, s) in scores.iter().enumerate() {
+              println!("#{i}: {s}");
+          }
+          println!("total {}", total(&scores));
+
+          let greeting = String::from("hello");
+          println!("{}", shout(&greeting));
+
+          let mut counts: HashMap<&str, u32> = HashMap::new();
+          for word in ["a", "b", "a"] {
+              *counts.entry(word).or_insert(0) += 1;
+          }
+          let mut keys: Vec<_> = counts.iter().collect();
+          keys.sort();
+          println!("{keys:?}");
+
+          let empty: Option<Vec<i32>> = None;
+          println!("{:?} {:?}", empty.unwrap_or_default(), first_long(&["hi", "crabby"]));
+      }
+
+  - slug: macro-rules
+    title: "macro_rules! in Rust: writing your own macros"
+    description: "How to write declarative macros in Rust with macro_rules!: matchers, fragment specifiers like expr and ident, repetition with $(...),*, and when to use them."
+    modules: [macros]
+    body: |
+      You've been calling macros since your first program: `println!`, `vec!`, `format!`, `assert_eq!`. A **macro** is code that writes code at compile time. `macro_rules!` lets you write your own **declarative macros**: you describe input patterns, and what each one expands to.
+
+      ## A first macro
+
+      ```rust run
+      macro_rules! square {
+          ($x:expr) => {
+              $x * $x
+          };
+      }
+
+      fn main() {
+          println!("{}", square!(7));
+          println!("{}", square!(2 + 3));
+      }
+      ```
+
+      ```output
+      49
+      25
+      ```
+
+      - Each **rule** is `(matcher) => { expansion };`. Rules are tried top to bottom; the first that matches is used.
+      - `$x:expr` matches any expression and names it `$x`. `square!(2 + 3)` gives 25, not 11: macros work on syntax trees, not text, so `$x` stays one expression. (Unlike C's `#define`.)
+
+      ## Fragment specifiers
+
+      | Specifier | Matches |
+      |---|---|
+      | `expr` | an expression: `1 + 2`, `foo(x)`, `vec![1]` |
+      | `ident` | an identifier: `count`, `Player` |
+      | `ty` | a type: `u32`, `Vec<String>` |
+      | `literal` | a literal: `42`, `"hi"`, `true` |
+      | `pat` | a pattern: `Some(x)`, `1..=5` |
+      | `block` | a `{ ... }` block |
+      | `tt` | a single token tree (the most flexible) |
+
+      ## Repetition
+
+      `$( ... ),*` matches zero or more comma-separated items; `+` means one or more; `?` means optional. Repeat the same group in the expansion to emit code per item:
+
+      ```rust
+      macro_rules! hashmap {
+          ($($key:expr => $value:expr),* $(,)?) => {{
+              let mut map = std::collections::HashMap::new();
+              $( map.insert($key, $value); )*
+              map
+          }};
+      }
+
+      let ages = hashmap! { "Ferris" => 7, "Corro" => 3 };
+      ```
+
+      `$(,)?` accepts an optional trailing comma. The double braces `{{ ... }}` make the expansion a block expression, so the macro can be used where a value is expected.
+
+      ## Hygiene
+
+      Variables created inside a macro (like `map` above) can't clash with the caller's variables of the same name: `macro_rules!` is **hygienic** for local variables. Items (functions, types) are not, so refer to them with full paths (`$crate::helper`, `::std::collections::HashMap`) in macros you export.
+
+      ## When to write a macro
+
+      Reach for a function or a generic first: they're easier to read, type-check and debug. Macros earn their place when you need something functions can't do:
+
+      - a variable number of arguments (`vec!`, `println!`),
+      - generating repetitive items (`impl` blocks for many types, enum variants with matching methods),
+      - small domain-specific syntax (`hashmap!{ k => v }`, test tables),
+      - code that needs the caller's tokens, like `stringify!(expr)` for assertion messages.
+
+      `#[macro_export]` makes a macro available to other crates. `cargo expand` (an installable tool) shows what macros expand to, which is the best way to debug them.
+
+      ## Errors
+
+      Calling a macro with input no rule matches gives errors like ``no rules expected `,` `` or `unexpected end of macro invocation`. Errors inside the expansion point into the macro's body.
+
+      ## Procedural macros
+
+      `#[derive(Serialize)]`, `#[tokio::main]` and `#[test]`-like attributes are **procedural macros**: Rust functions, in a separate crate, that receive a token stream and return a new one. They're far more powerful (and more work) than `macro_rules!`; most developers use them every day but rarely write one.
+    example: |
+      use std::collections::BTreeMap;
+
+      macro_rules! square {
+          ($x:expr) => {
+              $x * $x
+          };
+      }
+
+      // Variadic: zero or more key => value pairs, optional trailing comma.
+      macro_rules! btreemap {
+          ($($key:expr => $value:expr),* $(,)?) => {{
+              let mut map = BTreeMap::new();
+              $( map.insert($key, $value); )*
+              map
+          }};
+      }
+
+      // Several rules, tried in order.
+      macro_rules! max_of {
+          ($x:expr) => { $x };
+          ($x:expr, $($rest:expr),+) => {{
+              let a = $x;
+              let b = max_of!($($rest),+);
+              if a > b { a } else { b }
+          }};
+      }
+
+      // Generating items: one function per identifier.
+      macro_rules! unit_fns {
+          ($($name:ident => $factor:expr),* $(,)?) => {
+              $( fn $name(v: f64) -> f64 { v * $factor } )*
+          };
+      }
+
+      unit_fns! {
+          km_to_miles => 0.621371,
+          kg_to_pounds => 2.20462,
+      }
+
+      // stringify! turns the caller's tokens into text.
+      macro_rules! check {
+          ($cond:expr) => {
+              println!("{:<22} {}", stringify!($cond), if $cond { "ok" } else { "FAILED" });
+          };
+      }
+
+      fn main() {
+          println!("{} {}", square!(7), square!(2 + 3));
+          let stock = btreemap! { "potion" => 5, "sword" => 1, "arrow" => 40, };
+          println!("{stock:?}");
+          println!("max {}", max_of!(3, 17, 9, 12));
+          println!("{:.2} miles, {:.1} lb", km_to_miles(10.0), kg_to_pounds(5.0));
+          check!(square!(4) == 16);
+          check!(stock.len() > 5);
+      }
+
+  - slug: unsafe-rust
+    title: "Unsafe Rust: what it allows and when to use it"
+    description: "What the unsafe keyword actually permits in Rust, raw pointers, unsafe functions, FFI, writing safe abstractions with SAFETY comments, and when it's justified."
+    modules: [unsafe]
+    body: |
+      Safe Rust guarantees no dangling pointers, no data races and no use-after-free. Some correct programs can't be proven safe by the compiler, though: talking to C libraries, writing a new data structure, using special CPU instructions. **`unsafe`** marks code where **you** take responsibility for upholding those guarantees.
+
+      ## What unsafe allows (and only this)
+
+      Inside an `unsafe { }` block you may:
+
+      1. dereference a **raw pointer** (`*const T`, `*mut T`),
+      2. call an **`unsafe fn`** (including C functions via FFI),
+      3. read or write a **`static mut`**,
+      4. implement an **`unsafe trait`** (like `Send` or `Sync`),
+      5. access fields of a **`union`**.
+
+      That's the complete list. `unsafe` does **not** turn off the borrow checker, type checking or bounds checks on normal code. Creating a raw pointer is safe; only using it needs `unsafe`:
+
+      ```rust compile_fail
+      fn main() {
+          let x = 5;
+          let p = &x as *const i32;
+          println!("{}", *p);
+      }
+      ```
+
+      ```error
+      error[E0133]: dereference of raw pointer is unsafe and requires unsafe block
+      ```
+
+      ## Undefined behavior
+
+      If unsafe code breaks Rust's rules (a dangling or misaligned pointer, two `&mut` to the same data, an invalid `bool` or `char` value, a data race), the program has **undefined behavior**: the compiler's optimizations assume it can't happen, and anything may result, including bugs that appear far away and only in release builds.
+
+      ## Safe abstractions
+
+      The idiomatic use of `unsafe` is a small block inside a function with a **safe** signature, where the function's own checks guarantee the unsafe operations are valid. The standard library is full of these: `Vec`, `String` and `split_at_mut` are built on unsafe code that you call safely.
+
+      Every unsafe block should have a `// SAFETY:` comment explaining why it's sound, and every `unsafe fn` a `# Safety` doc section listing what callers must guarantee. Clippy can require these (`undocumented_unsafe_blocks`).
+
+      ## FFI: calling C
+
+      Functions from other languages are declared in an `extern` block. In the 2024 edition the block itself is written `unsafe extern "C"`, because declaring a foreign signature wrongly is itself unsound. Calls to the functions need an `unsafe` block, since the compiler can't check C code. Libraries usually wrap these calls in safe Rust functions (the `-sys` crate plus a safe wrapper crate pattern).
+
+      ## When unsafe is justified at work
+
+      - **FFI**: calling C libraries or the OS, or exposing Rust to other languages.
+      - **Performance**, only after profiling shows a real need, and after trying safe options (iterators, `chunks_exact`, slices instead of indexing) that remove bounds checks anyway.
+      - **Low-level data structures** that need raw pointers (intrusive lists, lock-free queues, custom allocators).
+
+      Otherwise, prefer existing well-reviewed crates. Many companies require extra review for any new `unsafe`, and `#![forbid(unsafe_code)]` at the crate root lets a project ban it outright.
+
+      ## Tools
+
+      **Miri** (`cargo +nightly miri test`) runs your tests in an interpreter that detects many kinds of undefined behavior. Sanitizers (AddressSanitizer, ThreadSanitizer) help with FFI-heavy code.
+
+      ## Common mistakes
+
+      - **`static mut` for global state.** Use atomics, `Mutex`, or `OnceLock`/`LazyLock`; the 2024 edition rejects references to `static mut` by default (`static_mut_refs`).
+      - **Large unsafe blocks.** Keep them to the exact operations that need it, so reviewers know where to look.
+      - **"It works in my test" as proof.** Undefined behavior can pass every test. Reason about the rules, and run Miri.
+    example: |
+      /// Splits a slice into two mutable halves at `mid`, like the standard `split_at_mut`.
+      fn split_halves(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+          let len = values.len();
+          assert!(mid <= len, "mid {mid} out of range for length {len}");
+          let ptr = values.as_mut_ptr();
+          // SAFETY: mid <= len was checked above, so both ranges are inside the slice,
+          // and [0, mid) and [mid, len) don't overlap, so the two &mut never alias.
+          unsafe { (std::slice::from_raw_parts_mut(ptr, mid), std::slice::from_raw_parts_mut(ptr.add(mid), len - mid)) }
+      }
+
+      unsafe extern "C" {
+          // The C standard library's abs(), linked into every Rust program on common platforms.
+          fn abs(input: i32) -> i32;
+      }
+
+      fn c_abs(x: i32) -> i32 {
+          // SAFETY: abs has no preconditions for values other than i32::MIN.
+          if x == i32::MIN { i32::MAX } else { unsafe { abs(x) } }
+      }
+
+      fn main() {
+          let mut scores = [10, 20, 30, 40, 50];
+          let (left, right) = split_halves(&mut scores, 2);
+          left[0] += 1;
+          right[0] += 100;
+          println!("{scores:?}");
+
+          let x = 42;
+          let p = &x as *const i32; // creating a raw pointer is safe
+          // SAFETY: p points to x, which is alive and initialized.
+          let value = unsafe { *p };
+          println!("through raw pointer: {value}");
+
+          println!("abs from C: {} {}", c_abs(-17), c_abs(5));
+      }
+
+  - slug: performance-tips
+    title: "Rust performance tips: release builds, allocations and iterators"
+    description: "Practical ways to make Rust code faster: build with --release, measure first, avoid needless clones and allocations, pre-size collections, buffer output."
+    modules: [performance]
+    body: |
+      Rust is fast by default, but a few habits make a big difference, and a few mistakes are common enough to check first.
+
+      ## 1. Build in release mode
+
+      `cargo run` and `cargo build` produce **debug** builds: no optimizations, overflow checks on. They can be 10 to 100 times slower than **release** builds. Before measuring or comparing anything:
+
+      ```text
+      cargo run --release
+      cargo build --release   # binary in target/release/
+      ```
+
+      For a little more speed, `[profile.release]` in `Cargo.toml` can set `lto = true` (link-time optimization across crates) and `codegen-units = 1`, at the cost of compile time.
+
+      ## 2. Measure before optimizing
+
+      Guessing where time goes is usually wrong. Use real tools:
+
+      - **criterion** (a crate) for reliable micro-benchmarks with statistics, run with `cargo bench` (the built-in `#[bench]` attribute is nightly-only).
+      - **perf** (Linux), **Instruments** (macOS), or **cargo flamegraph** to see which functions use the CPU.
+      - `std::time::Instant` for quick, rough timings of whole phases.
+
+      ## 3. Fix the algorithm first
+
+      Replacing an O(n²) nested loop with a `HashMap` lookup or a sort plus binary search beats any micro-optimization. Check that membership tests in big collections use a `HashSet`, not `Vec::contains`.
+
+      ## 4. Avoid needless allocations
+
+      Each `String`, `Vec`, `Box` or `.clone()` allocates on the heap. In hot code:
+
+      - **Borrow instead of cloning.** Take `&str` and `&[T]` parameters; return references when the data already exists.
+      - **Pre-size collections:** `Vec::with_capacity(n)`, `String::with_capacity(n)`, `HashMap::with_capacity(n)`.
+      - **Reuse buffers:** `buf.clear()` keeps the capacity, so a loop that reads lines into one `String` allocates once.
+      - **Don't `collect` in the middle of a chain** just to iterate again.
+      - **`Cow<str>`** returns borrowed data when nothing changed and allocates only when it must.
+
+      ## 5. Use iterators
+
+      Iterator chains (`iter().filter().map().sum()`) compile to tight loops, frequently without bounds checks, and the optimizer can vectorize them. They're at least as fast as index loops, and clearer.
+
+      ## 6. Buffer I/O
+
+      `println!` locks stdout and may flush on each line. For lots of output, lock once and wrap it in a `BufWriter`; use `BufReader` (or `read_to_string`) for input. This alone can speed up a text-processing program many times over.
+
+      ## 7. Choose the right collection
+
+      | Need | Use |
+      |---|---|
+      | push/pop at the end, index | `Vec` |
+      | push/pop at both ends (queue) | `VecDeque` |
+      | key lookup | `HashMap` (or `BTreeMap` if you need ordering or ranges) |
+      | always take the smallest/largest | `BinaryHeap` |
+      | membership tests | `HashSet` |
+
+      ## 8. Smaller wins
+
+      - `sort_unstable` is faster than `sort` when equal elements' order doesn't matter.
+      - Prefer generics (static dispatch) to `Box<dyn Trait>` in very hot loops.
+      - Parallelize CPU-bound work over large data with `rayon` (`par_iter()`).
+      - `#[inline]` rarely helps inside one crate; the optimizer already decides well.
+
+      ## Common mistakes
+
+      - Benchmarking a debug build.
+      - Cloning to satisfy the borrow checker inside a loop.
+      - Calling `to_string()` or `format!` just to compare or look up keys (compare `&str` directly).
+      - `v.contains(&x)` on a big `Vec` inside a loop: O(n²) overall.
+    example: |
+      use std::collections::HashSet;
+      use std::io::{self, BufWriter, Write};
+
+      // Borrows its input and returns a count: no allocation per call.
+      fn count_errors(lines: &[&str]) -> usize {
+          lines.iter().filter(|l| l.starts_with("ERROR")).count()
+      }
+
+      fn main() -> io::Result<()> {
+          let log: Vec<String> = (0..1000).map(|i| if i % 7 == 0 { format!("ERROR job {i}") } else { format!("INFO job {i}") }).collect();
+          let views: Vec<&str> = log.iter().map(|s| s.as_str()).collect();
+          println!("errors: {}", count_errors(&views));
+
+          // Reuse one buffer instead of allocating a new String per line.
+          let mut buf = String::with_capacity(64);
+          let mut longest = 0;
+          for line in &log {
+              buf.clear();
+              buf.push_str(line);
+              buf.make_ascii_uppercase();
+              longest = longest.max(buf.len());
+          }
+          println!("longest line {longest} bytes, buffer capacity still {}", buf.capacity() >= 64);
+
+          // HashSet membership instead of Vec::contains in a loop.
+          let banned: HashSet<u32> = [7, 49, 343].into_iter().collect();
+          let allowed = (1..=1000).filter(|n| !banned.contains(n)).count();
+          println!("allowed ids: {allowed}");
+
+          // Pre-sized Vec plus an iterator chain.
+          let mut squares = Vec::with_capacity(10);
+          squares.extend((1..=10u64).map(|n| n * n));
+          println!("sum of squares {}", squares.iter().sum::<u64>());
+
+          // Lock stdout once and buffer many writes.
+          let stdout = io::stdout();
+          let mut out = BufWriter::new(stdout.lock());
+          for n in squares.iter().take(5) {
+              write!(out, "{n} ")?;
+          }
+          writeln!(out)?;
+          out.flush()?;
+          Ok(())
+      }

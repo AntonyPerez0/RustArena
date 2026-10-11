@@ -1,0 +1,1899 @@
+id: inventory
+title: A shop inventory and checkout
+level: Intermediate
+after: traits
+summary: A small point-of-sale system. Load a stock list, print it with your own Display impls, sort and total it with derived traits, report bad lines with a real error type, check out orders, and apply discounts through a pricing trait.
+seed: |
+  use std::fmt;
+  use std::io;
+  use std::io::Read;
+
+  /// An amount of money in cents. Whole cents never round wrongly, unlike f64.
+  #[derive(Debug, Clone, Copy)]
+  struct Money(u64);
+
+  impl fmt::Display for Money {
+      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+          todo!("print cents as dollars, like $12.50")
+      }
+  }
+
+  #[derive(Debug, Clone, Copy)]
+  enum Category {
+      Food,
+      Tools,
+      Toys,
+  }
+
+  impl fmt::Display for Category {
+      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+          todo!("print food, tools or toys")
+      }
+  }
+
+  struct Item {
+      name: String,
+      category: Category,
+      price: Money,
+      qty: u32,
+  }
+
+  impl fmt::Display for Item {
+      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+          todo!("print one line of the stock table")
+      }
+  }
+
+  /// "12.50" -> Money(1250)
+  fn parse_money(text: &str) -> Money {
+      let (whole, cents) = text.split_once('.').expect("a price looks like 12.50");
+      let whole: u64 = whole.parse().expect("invalid price");
+      let cents: u64 = cents.parse().expect("invalid price");
+      Money(whole * 100 + cents)
+  }
+
+  fn parse_category(text: &str) -> Category {
+      match text {
+          "food" => Category::Food,
+          "tools" => Category::Tools,
+          "toys" => Category::Toys,
+          other => panic!("unknown category {other}"),
+      }
+  }
+
+  /// "hammer, tools, 12.50, 10" -> Item
+  fn parse_item(line: &str) -> Item {
+      let fields: Vec<&str> = line.split(',').collect();
+      let [name, category, price, qty] = fields.as_slice() else {
+          panic!("expected 4 fields: {line}");
+      };
+      Item {
+          name: name.trim().to_string(),
+          category: parse_category(category.trim()),
+          price: parse_money(price.trim()),
+          qty: qty.trim().parse().expect("invalid quantity"),
+      }
+  }
+
+  fn main() {
+      let mut text = String::new();
+      io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+      let mut items = Vec::new();
+      for line in text.lines() {
+          if line.trim().is_empty() {
+              break; // a blank line ends the stock list
+          }
+          items.push(parse_item(line));
+      }
+
+      for item in &items {
+          println!("{item}");
+      }
+  }
+milestones:
+  - title: Items that print themselves
+    text: |
+      Every shop runs on the same data: a list of items with prices and quantities, and orders that take items out of stock. In this project you'll build a small **point-of-sale** program. It reads the stock list, prints it, and (from milestone 4) checks out a customer's order and prints a receipt.
+
+      The input starts with the stock list, one item per line, as comma-separated fields:
+
+      ```
+      hammer, tools, 12.50, 10
+      apple, food, 0.40, 200
+      drill, tools, 89.99, 3
+      ```
+
+      The starter code already parses each line into an `Item`. Your job is to make the types print themselves, so `println!("{item}")` produces one tidy line per item:
+
+      ```
+      hammer     tools    $12.50  x10
+      apple      food      $0.40  x200
+      drill      tools    $89.99  x3
+      ```
+
+      ### Money is a type, not an f64
+
+      Prices are stored as `Money(u64)`, a **newtype** holding a number of cents. Why not `f64`? Because `0.1 + 0.2` is `0.30000000000000004` in floating point, and a till that is off by a fraction of a cent on every sale is a bug report waiting to happen. Integer cents are exact. Wrapping them in their own type also means you can't accidentally add a price to a quantity: `Money` and `u32` are different types.
+
+      ### Implementing Display
+
+      `{}` works on any type that implements `std::fmt::Display`. You implement its one method, `fmt`, which writes the text into a `Formatter`:
+
+      - **Money** prints as `$12.50`: dollars, a point, and exactly two digits of cents (`{:02}` pads with zeros, so 5 cents is `$0.05`).
+      - **Category** prints as `food`, `tools` or `toys`.
+      - **Item** prints the name left-aligned in 10 characters, a space, the category left-aligned in 6, a space, the price right-aligned in 8, two spaces, and `x` with the quantity: `write!(f, "{:<10} {:<6} {:>8}  x{}", ...)`.
+
+      There's one trap. `{:>8}` asks for a width of 8, but it's up to *your* `fmt` to honor it. `write!` ignores it; `f.pad(text)` applies the caller's width and alignment:
+
+      ```rust run
+      use std::fmt;
+
+      struct Padded(u64);
+      struct Unpadded(u64);
+
+      impl fmt::Display for Padded {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              f.pad(&format!("${}.{:02}", self.0 / 100, self.0 % 100))
+          }
+      }
+
+      impl fmt::Display for Unpadded {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "${}.{:02}", self.0 / 100, self.0 % 100)
+          }
+      }
+
+      fn main() {
+          println!("[{:>8}]", Padded(1250));
+          println!("[{:>8}]", Unpadded(1250));
+          println!("[{}]", Padded(5));
+      }
+      ```
+
+      ```output
+      [  $12.50]
+      [$12.50]
+      [$0.05]
+      ```
+
+      So use `f.pad(...)` for `Money` and `Category` (they're used inside a column), and `write!` for `Item` (the whole line, whose columns are padded field by field).
+
+      Once a type implements `Display`, you also get `.to_string()` for free: the standard library implements `ToString` for every `Display` type. That's a **blanket implementation**, and it's why implementing one small trait is worth it.
+    solution: |
+      use std::fmt;
+      use std::io;
+      use std::io::Read;
+
+      /// An amount of money in cents. Whole cents never round wrongly, unlike f64.
+      #[derive(Debug, Clone, Copy)]
+      struct Money(u64);
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              // pad() applies the caller's width and alignment, so "{:>8}" works on Money.
+              f.pad(&format!("${}.{:02}", self.0 / 100, self.0 % 100))
+          }
+      }
+
+      #[derive(Debug, Clone, Copy)]
+      enum Category {
+          Food,
+          Tools,
+          Toys,
+      }
+
+      impl fmt::Display for Category {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Category::Food => "food",
+                  Category::Tools => "tools",
+                  Category::Toys => "toys",
+              };
+              f.pad(name)
+          }
+      }
+
+      struct Item {
+          name: String,
+          category: Category,
+          price: Money,
+          qty: u32,
+      }
+
+      impl fmt::Display for Item {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{:<10} {:<6} {:>8}  x{}", self.name, self.category, self.price, self.qty)
+          }
+      }
+
+      /// "12.50" -> Money(1250)
+      fn parse_money(text: &str) -> Money {
+          let (whole, cents) = text.split_once('.').expect("a price looks like 12.50");
+          let whole: u64 = whole.parse().expect("invalid price");
+          let cents: u64 = cents.parse().expect("invalid price");
+          Money(whole * 100 + cents)
+      }
+
+      fn parse_category(text: &str) -> Category {
+          match text {
+              "food" => Category::Food,
+              "tools" => Category::Tools,
+              "toys" => Category::Toys,
+              other => panic!("unknown category {other}"),
+          }
+      }
+
+      /// "hammer, tools, 12.50, 10" -> Item
+      fn parse_item(line: &str) -> Item {
+          let fields: Vec<&str> = line.split(',').collect();
+          let [name, category, price, qty] = fields.as_slice() else {
+              panic!("expected 4 fields: {line}");
+          };
+          Item {
+              name: name.trim().to_string(),
+              category: parse_category(category.trim()),
+              price: parse_money(price.trim()),
+              qty: qty.trim().parse().expect("invalid quantity"),
+          }
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          let mut items = Vec::new();
+          for line in text.lines() {
+              if line.trim().is_empty() {
+                  break; // a blank line ends the stock list
+              }
+              items.push(parse_item(line));
+          }
+
+          for item in &items {
+              println!("{item}");
+          }
+      }
+    tests:
+      - stdin: "hammer, tools, 12.50, 10\napple, food, 0.40, 200\ndrill, tools, 89.99, 3\nteddy, toys, 15.00, 8\n"
+      - stdin: "rope, tools, 7.05, 0\nflour,food,1.00,1000\n"
+      - stdin: "kite, toys, 120.00, 1\ncheese, food, 3.99, 12\n\nthis line is after the stock list\n"
+        hidden: true
+    hints:
+      - "`Money`: `f.pad(&format!(\"${}.{:02}\", self.0 / 100, self.0 % 100))`: the dollars, then the cents padded to two digits."
+      - "`Category`: `let name = match self { Category::Food => \"food\", ... };` then `f.pad(name)`."
+      - "`Item`: `write!(f, \"{:<10} {:<6} {:>8}  x{}\", self.name, self.category, self.price, self.qty)`."
+
+  - title: Sorted stock and category totals
+    text: |
+      A stock list in whatever order it was typed is hard to read. Sort it **by category, then by name**, and after the items, print a summary line per category with its number of units and the total value of that stock (price times quantity):
+
+      ```
+      apple      food      $0.40  x200
+      drill      tools    $89.99  x3
+      hammer     tools    $12.50  x10
+      teddy      toys     $15.00  x8
+      food: 200 units, $80.00
+      tools: 13 units, $394.97
+      toys: 8 units, $120.00
+      ```
+
+      Categories come in the order food, tools, toys: the order the variants are declared in.
+
+      ### Deriving an order
+
+      To sort by category, Rust has to know how to compare two categories. You could write that by hand, but `#[derive(PartialEq, Eq, PartialOrd, Ord)]` on the enum does it for you: variants compare in **declaration order**, so `Food < Tools < Toys`. Then:
+
+      ```rust
+      self.items.sort_by(|a, b| a.category.cmp(&b.category).then(a.name.cmp(&b.name)));
+      ```
+
+      sorts by category and breaks ties by name, the same two-level comparison you'd use in any sort.
+
+      The derived order pays off twice: a `BTreeMap<Category, (u32, Money)>` needs keys that implement `Ord`, and it then keeps the categories sorted for the summary. One derive line, two features.
+
+      ### Arithmetic on Money
+
+      You need "price times quantity" and "add this to the running total". Give `Money` small methods:
+
+      ```rust
+      impl Money {
+          fn times(self, qty: u32) -> Money { ... }
+          fn plus(self, other: Money) -> Money { ... }
+      }
+      ```
+
+      (In the std-traits module you'll learn to make `+` itself work on your types; methods are perfectly idiomatic too.) Because `Money` derives `Copy`, these can take `self` by value without moving anything away.
+
+      ### A Shop type
+
+      Put the items in a `struct Shop { items: Vec<Item> }` with two methods, `sort(&mut self)` and `print_stock(&self)`. `main` then just loads, sorts and prints. Notice which method needs `&mut self` and which only `&self`: the signature tells every reader whether a call can change the shop.
+
+      For the totals, the entry API gives you mutable access to both halves of the tuple at once:
+
+      ```rust
+      let (units, value) = by_category.entry(item.category).or_insert((0, Money(0)));
+      *units += item.qty;
+      *value = value.plus(item.price.times(item.qty));
+      ```
+    solution: |
+      use std::collections::BTreeMap;
+      use std::fmt;
+      use std::io;
+      use std::io::Read;
+
+      /// An amount of money in cents. Whole cents never round wrongly, unlike f64.
+      #[derive(Debug, Clone, Copy)]
+      struct Money(u64);
+
+      impl Money {
+          fn times(self, qty: u32) -> Money {
+              Money(self.0 * qty as u64)
+          }
+
+          fn plus(self, other: Money) -> Money {
+              Money(self.0 + other.0)
+          }
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              // pad() applies the caller's width and alignment, so "{:>8}" works on Money.
+              f.pad(&format!("${}.{:02}", self.0 / 100, self.0 % 100))
+          }
+      }
+
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Category {
+          Food,
+          Tools,
+          Toys,
+      }
+
+      impl fmt::Display for Category {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Category::Food => "food",
+                  Category::Tools => "tools",
+                  Category::Toys => "toys",
+              };
+              f.pad(name)
+          }
+      }
+
+      struct Item {
+          name: String,
+          category: Category,
+          price: Money,
+          qty: u32,
+      }
+
+      impl fmt::Display for Item {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{:<10} {:<6} {:>8}  x{}", self.name, self.category, self.price, self.qty)
+          }
+      }
+
+      struct Shop {
+          items: Vec<Item>,
+      }
+
+      impl Shop {
+          /// By category, then by name.
+          fn sort(&mut self) {
+              self.items.sort_by(|a, b| a.category.cmp(&b.category).then(a.name.cmp(&b.name)));
+          }
+
+          fn print_stock(&self) {
+              let mut by_category: BTreeMap<Category, (u32, Money)> = BTreeMap::new();
+              for item in &self.items {
+                  println!("{item}");
+                  let (units, value) = by_category.entry(item.category).or_insert((0, Money(0)));
+                  *units += item.qty;
+                  *value = value.plus(item.price.times(item.qty));
+              }
+              for (category, (units, value)) in &by_category {
+                  println!("{category}: {units} units, {value}");
+              }
+          }
+      }
+
+      /// "12.50" -> Money(1250)
+      fn parse_money(text: &str) -> Money {
+          let (whole, cents) = text.split_once('.').expect("a price looks like 12.50");
+          let whole: u64 = whole.parse().expect("invalid price");
+          let cents: u64 = cents.parse().expect("invalid price");
+          Money(whole * 100 + cents)
+      }
+
+      fn parse_category(text: &str) -> Category {
+          match text {
+              "food" => Category::Food,
+              "tools" => Category::Tools,
+              "toys" => Category::Toys,
+              other => panic!("unknown category {other}"),
+          }
+      }
+
+      /// "hammer, tools, 12.50, 10" -> Item
+      fn parse_item(line: &str) -> Item {
+          let fields: Vec<&str> = line.split(',').collect();
+          let [name, category, price, qty] = fields.as_slice() else {
+              panic!("expected 4 fields: {line}");
+          };
+          Item {
+              name: name.trim().to_string(),
+              category: parse_category(category.trim()),
+              price: parse_money(price.trim()),
+              qty: qty.trim().parse().expect("invalid quantity"),
+          }
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          let mut shop = Shop { items: Vec::new() };
+          for line in text.lines() {
+              if line.trim().is_empty() {
+                  break; // a blank line ends the stock list
+              }
+              shop.items.push(parse_item(line));
+          }
+
+          shop.sort();
+          shop.print_stock();
+      }
+    tests:
+      - stdin: "hammer, tools, 12.50, 10\napple, food, 0.40, 200\ndrill, tools, 89.99, 3\nteddy, toys, 15.00, 8\n"
+      - stdin: "yoyo, toys, 2.50, 40\nbread, food, 3.20, 15\nkite, toys, 18.00, 2\naxe, tools, 45.00, 0\n"
+      - stdin: "saw, tools, 25.00, 2\nrice, food, 1.99, 50\nawl, tools, 6.75, 4\n"
+        hidden: true
+    hints:
+      - "Add `PartialEq, Eq, PartialOrd, Ord` to the `#[derive(...)]` on `Category`, then sort with `a.category.cmp(&b.category).then(a.name.cmp(&b.name))`."
+      - "`Money::times` is `Money(self.0 * qty as u64)` and `Money::plus` is `Money(self.0 + other.0)`."
+      - "In `print_stock`, print each item while adding it to a `BTreeMap<Category, (u32, Money)>`, then loop over the map for the summary lines `{category}: {units} units, {value}`."
+
+  - title: Bad lines and a real error type
+    text: |
+      Stock lists are typed by people, exported from spreadsheets and edited by scripts, so they contain mistakes. Right now one bad line panics and the shop can't open. Instead, report each bad line with its line number, skip it, and load the rest:
+
+      ```
+      line 5: unknown category "garden"
+      line 6: invalid price "0.1"
+      line 8: duplicate item "apple"
+      line 9: expected 4 fields, found 3
+      ```
+
+      The error lines come first (as each line is loaded), then the sorted stock and summary as before.
+
+      | Problem | Message |
+      |---|---|
+      | not exactly 4 comma-separated fields | `expected 4 fields, found 3` |
+      | a price that isn't dollars with exactly two decimals (`12.50`), or whole dollars (`12`) | `invalid price "0.1"` |
+      | a quantity that isn't a whole number 0 or above | `invalid quantity "many"` |
+      | a category other than food, tools, toys | `unknown category "garden"` |
+      | a name that's already in the shop | `duplicate item "apple"` |
+
+      ### One enum for everything that can go wrong
+
+      Model the errors as an enum, one variant per problem, carrying the data the message needs:
+
+      ```rust
+      #[derive(Debug)]
+      enum ShopError {
+          FieldCount(usize),
+          BadPrice(String),
+          BadQuantity(String),
+          UnknownCategory(String),
+          Duplicate(String),
+      }
+      ```
+
+      Then implement `Display` (a `match` with one `write!` per variant) and the standard `std::error::Error` trait (an empty `impl` is enough: its methods all have defaults). With those two impls, `ShopError` is a proper Rust error: it prints nicely, works with `?`, and can be boxed into `Box<dyn Error>` by any code that uses yours.
+
+      Why an enum instead of `String` messages? Because code can *react* to an enum. A future web version could return 404 for `UnknownItem` and 400 for `BadPrice` by matching on the variant; with strings it would have to parse its own error messages.
+
+      ### Plumbing with ?
+
+      Make the parsers return `Result<_, ShopError>`: `parse_money`, a new `parse_quantity`, `parse_category` and `parse_item`. Inside `parse_item`, every field becomes a one-liner with `?`:
+
+      ```rust
+      Ok(Item {
+          name: name.trim().to_string(),
+          category: parse_category(category.trim())?,
+          price: parse_money(price.trim())?,
+          qty: parse_quantity(qty.trim())?,
+      })
+      ```
+
+      `map_err` converts the standard library's parse errors into yours: `text.parse().map_err(|_| ShopError::BadQuantity(text.to_string()))`.
+
+      Duplicates can only be detected by the shop, so give `Shop` an `add(&mut self, item: Item) -> Result<(), ShopError>` method. Then loading one line is a two-step chain:
+
+      ```rust
+      fn load(shop: &mut Shop, line: &str) -> Result<(), ShopError> {
+          shop.add(parse_item(line)?)
+      }
+      ```
+
+      and `main` prints `line N: {e}` for any error. Check the price carefully: `split_once('.')` must give exactly two digits after the point (`0.1` is rejected, since nobody can tell whether it meant 10 cents or 1), and no point at all means whole dollars.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::fmt;
+      use std::io;
+      use std::io::Read;
+
+      /// An amount of money in cents. Whole cents never round wrongly, unlike f64.
+      #[derive(Debug, Clone, Copy)]
+      struct Money(u64);
+
+      impl Money {
+          fn times(self, qty: u32) -> Money {
+              Money(self.0 * qty as u64)
+          }
+
+          fn plus(self, other: Money) -> Money {
+              Money(self.0 + other.0)
+          }
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              // pad() applies the caller's width and alignment, so "{:>8}" works on Money.
+              f.pad(&format!("${}.{:02}", self.0 / 100, self.0 % 100))
+          }
+      }
+
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Category {
+          Food,
+          Tools,
+          Toys,
+      }
+
+      impl fmt::Display for Category {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Category::Food => "food",
+                  Category::Tools => "tools",
+                  Category::Toys => "toys",
+              };
+              f.pad(name)
+          }
+      }
+
+      struct Item {
+          name: String,
+          category: Category,
+          price: Money,
+          qty: u32,
+      }
+
+      impl fmt::Display for Item {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{:<10} {:<6} {:>8}  x{}", self.name, self.category, self.price, self.qty)
+          }
+      }
+
+      #[derive(Debug)]
+      enum ShopError {
+          FieldCount(usize),
+          BadPrice(String),
+          BadQuantity(String),
+          UnknownCategory(String),
+          Duplicate(String),
+      }
+
+      impl fmt::Display for ShopError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ShopError::FieldCount(n) => write!(f, "expected 4 fields, found {n}"),
+                  ShopError::BadPrice(text) => write!(f, "invalid price \"{text}\""),
+                  ShopError::BadQuantity(text) => write!(f, "invalid quantity \"{text}\""),
+                  ShopError::UnknownCategory(text) => write!(f, "unknown category \"{text}\""),
+                  ShopError::Duplicate(name) => write!(f, "duplicate item \"{name}\""),
+              }
+          }
+      }
+
+      impl std::error::Error for ShopError {}
+
+      struct Shop {
+          items: Vec<Item>,
+      }
+
+      impl Shop {
+          fn add(&mut self, item: Item) -> Result<(), ShopError> {
+              for existing in &self.items {
+                  if existing.name == item.name {
+                      return Err(ShopError::Duplicate(item.name));
+                  }
+              }
+              self.items.push(item);
+              Ok(())
+          }
+
+          /// By category, then by name.
+          fn sort(&mut self) {
+              self.items.sort_by(|a, b| a.category.cmp(&b.category).then(a.name.cmp(&b.name)));
+          }
+
+          fn print_stock(&self) {
+              let mut by_category: BTreeMap<Category, (u32, Money)> = BTreeMap::new();
+              for item in &self.items {
+                  println!("{item}");
+                  let (units, value) = by_category.entry(item.category).or_insert((0, Money(0)));
+                  *units += item.qty;
+                  *value = value.plus(item.price.times(item.qty));
+              }
+              for (category, (units, value)) in &by_category {
+                  println!("{category}: {units} units, {value}");
+              }
+          }
+      }
+
+      /// "12.50" -> Money(1250). Exactly two digits after the point; "12" means 12.00.
+      fn parse_money(text: &str) -> Result<Money, ShopError> {
+          let (whole, cents) = match text.split_once('.') {
+              Some((whole, cents)) if cents.len() == 2 => (whole, cents),
+              Some(_) => return Err(ShopError::BadPrice(text.to_string())),
+              None => (text, "00"),
+          };
+          let whole: u64 = whole.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          let cents: u64 = cents.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          Ok(Money(whole * 100 + cents))
+      }
+
+      fn parse_quantity(text: &str) -> Result<u32, ShopError> {
+          text.parse().map_err(|_| ShopError::BadQuantity(text.to_string()))
+      }
+
+      fn parse_category(text: &str) -> Result<Category, ShopError> {
+          match text {
+              "food" => Ok(Category::Food),
+              "tools" => Ok(Category::Tools),
+              "toys" => Ok(Category::Toys),
+              other => Err(ShopError::UnknownCategory(other.to_string())),
+          }
+      }
+
+      /// "hammer, tools, 12.50, 10" -> Item
+      fn parse_item(line: &str) -> Result<Item, ShopError> {
+          let fields: Vec<&str> = line.split(',').collect();
+          let [name, category, price, qty] = fields.as_slice() else {
+              return Err(ShopError::FieldCount(fields.len()));
+          };
+          Ok(Item {
+              name: name.trim().to_string(),
+              category: parse_category(category.trim())?,
+              price: parse_money(price.trim())?,
+              qty: parse_quantity(qty.trim())?,
+          })
+      }
+
+      fn load(shop: &mut Shop, line: &str) -> Result<(), ShopError> {
+          shop.add(parse_item(line)?)
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          let mut shop = Shop { items: Vec::new() };
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  break; // a blank line ends the stock list
+              }
+              if let Err(e) = load(&mut shop, line) {
+                  println!("line {}: {e}", i + 1);
+              }
+          }
+
+          shop.sort();
+          shop.print_stock();
+      }
+    tests:
+      - stdin: "hammer, tools, 12.50, 10\napple, food, 0.40, 200\ndrill, tools, 89.99, 3\nteddy, toys, 15.00, 8\nrake, garden, 9.99, 4\nbolt, tools, 0.1, 100\nnail, tools, abc, 1\napple, food, 0.45, 10\nlamp, toys, 20.00\nglue, tools, 3, many\nsaw,tools,25,2\n"
+      - stdin: "pear, food, 0.75, -3\nplum, food, 1.5.0, 3\nfig, food, 2.10, 7\n"
+      - stdin: "kite, toys, 18.00, 2, red\ncarrot, food, .50, 9\nkite, toys, 18.00, 2\nkite, toys, 19.00, 1\nmallet, Tools, 30.00, 1\n"
+        hidden: true
+    hints:
+      - "Start with the `ShopError` enum, an `impl fmt::Display for ShopError` with one `write!` per variant, and `impl std::error::Error for ShopError {}`."
+      - "In `parse_money`, `match text.split_once('.')` with three arms: `Some((whole, cents)) if cents.len() == 2`, `Some(_)` (an error), and `None` (whole dollars, cents \"00\")."
+      - "`Shop::add` loops over the existing items and returns `Err(ShopError::Duplicate(item.name))` on a name match, otherwise pushes and returns `Ok(())`."
+
+  - title: Checkout
+    text: |
+      Now the shop can sell. After the stock list comes a **blank line**, then the customer's order, one `NAME QUANTITY` per line:
+
+      ```
+      hammer, tools, 12.50, 10
+      apple, food, 0.40, 200
+      drill, tools, 89.99, 3
+
+      apple 60
+      drill 4
+      hammer 2
+      ```
+
+      After the stock report (unchanged: it shows the stock *before* the order), print `receipt:` and one line per order line, then the total:
+
+      ```
+      receipt:
+        apple       60 x   $0.40 =   $24.00
+      line 6: cannot sell 4 drill: only 3 in stock
+        hammer       2 x  $12.50 =   $25.00
+      total: $49.00
+      ```
+
+      Selling takes the units out of stock, so later lines see the reduced quantity. If there are no order lines at all, print neither `receipt:` nor the total. The new errors (with line numbers, as before):
+
+      | Problem | Message |
+      |---|---|
+      | not exactly two words | `expected NAME QUANTITY` |
+      | bad quantity | `invalid quantity "x"` (as for stock) |
+      | no such item | `no item named "pear"` |
+      | not enough in stock | `cannot sell 4 drill: only 3 in stock` |
+
+      ### Reading in two sections
+
+      Read the input into two lists first: every non-blank line before the first blank line is stock, every non-blank line after it is the order. Keep each line's number with it, as a `(usize, &str)` tuple, so errors can still point at the right line. Then process the stock list, print the report, and process the order.
+
+      ### A receipt line is a type too
+
+      Each successful order line becomes a `ReceiptLine { name, qty, price }` with a `subtotal()` method and its own `Display` impl: `"  {:<10}{:>4} x {:>7} = {:>8}"` with the name, quantity, unit price and subtotal. Your `Money` padding from milestone 1 is what makes those columns line up.
+
+      ### Borrowing out of the shop
+
+      `Shop` gets two methods:
+
+      ```rust
+      fn find_mut(&mut self, name: &str) -> Result<&mut Item, ShopError>
+      fn sell(&mut self, name: &str, qty: u32) -> Result<&Item, ShopError>
+      ```
+
+      `sell` finds the item, checks the quantity, subtracts, and hands back a shared reference to the item so the caller can read its name and price. Returning a reference into the shop is cheap (nothing is copied), and the borrow checker makes sure nobody changes the shop while the receipt code is still looking at that item.
+
+      A `checkout(shop, line)` function ties it together with `?`: parse the order line, sell, build the `ReceiptLine`.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::fmt;
+      use std::io;
+      use std::io::Read;
+
+      /// An amount of money in cents. Whole cents never round wrongly, unlike f64.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      struct Money(u64);
+
+      impl Money {
+          fn times(self, qty: u32) -> Money {
+              Money(self.0 * qty as u64)
+          }
+
+          fn plus(self, other: Money) -> Money {
+              Money(self.0 + other.0)
+          }
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              // pad() applies the caller's width and alignment, so "{:>8}" works on Money.
+              f.pad(&format!("${}.{:02}", self.0 / 100, self.0 % 100))
+          }
+      }
+
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Category {
+          Food,
+          Tools,
+          Toys,
+      }
+
+      impl fmt::Display for Category {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Category::Food => "food",
+                  Category::Tools => "tools",
+                  Category::Toys => "toys",
+              };
+              f.pad(name)
+          }
+      }
+
+      struct Item {
+          name: String,
+          category: Category,
+          price: Money,
+          qty: u32,
+      }
+
+      impl fmt::Display for Item {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{:<10} {:<6} {:>8}  x{}", self.name, self.category, self.price, self.qty)
+          }
+      }
+
+      #[derive(Debug)]
+      enum ShopError {
+          FieldCount(usize),
+          BadPrice(String),
+          BadQuantity(String),
+          UnknownCategory(String),
+          Duplicate(String),
+          OrderFormat,
+          UnknownItem(String),
+          NotEnough { name: String, wanted: u32, available: u32 },
+      }
+
+      impl fmt::Display for ShopError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ShopError::FieldCount(n) => write!(f, "expected 4 fields, found {n}"),
+                  ShopError::BadPrice(text) => write!(f, "invalid price \"{text}\""),
+                  ShopError::BadQuantity(text) => write!(f, "invalid quantity \"{text}\""),
+                  ShopError::UnknownCategory(text) => write!(f, "unknown category \"{text}\""),
+                  ShopError::Duplicate(name) => write!(f, "duplicate item \"{name}\""),
+                  ShopError::OrderFormat => write!(f, "expected NAME QUANTITY"),
+                  ShopError::UnknownItem(name) => write!(f, "no item named \"{name}\""),
+                  ShopError::NotEnough { name, wanted, available } => {
+                      write!(f, "cannot sell {wanted} {name}: only {available} in stock")
+                  }
+              }
+          }
+      }
+
+      impl std::error::Error for ShopError {}
+
+      fn parse_money(text: &str) -> Result<Money, ShopError> {
+          let (whole, cents) = match text.split_once('.') {
+              Some((whole, cents)) if cents.len() == 2 => (whole, cents),
+              Some(_) => return Err(ShopError::BadPrice(text.to_string())),
+              None => (text, "00"),
+          };
+          let whole: u64 = whole.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          let cents: u64 = cents.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          Ok(Money(whole * 100 + cents))
+      }
+
+      fn parse_quantity(text: &str) -> Result<u32, ShopError> {
+          text.parse().map_err(|_| ShopError::BadQuantity(text.to_string()))
+      }
+
+      fn parse_category(text: &str) -> Result<Category, ShopError> {
+          match text {
+              "food" => Ok(Category::Food),
+              "tools" => Ok(Category::Tools),
+              "toys" => Ok(Category::Toys),
+              other => Err(ShopError::UnknownCategory(other.to_string())),
+          }
+      }
+
+      /// "hammer, tools, 12.50, 10" -> Item
+      fn parse_item(line: &str) -> Result<Item, ShopError> {
+          let fields: Vec<&str> = line.split(',').collect();
+          let [name, category, price, qty] = fields.as_slice() else {
+              return Err(ShopError::FieldCount(fields.len()));
+          };
+          Ok(Item {
+              name: name.trim().to_string(),
+              category: parse_category(category.trim())?,
+              price: parse_money(price.trim())?,
+              qty: parse_quantity(qty.trim())?,
+          })
+      }
+
+      /// "drill 4" -> ("drill", 4)
+      fn parse_order(line: &str) -> Result<(&str, u32), ShopError> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          let [name, qty] = parts.as_slice() else {
+              return Err(ShopError::OrderFormat);
+          };
+          Ok((name, parse_quantity(qty)?))
+      }
+
+      struct ReceiptLine {
+          name: String,
+          qty: u32,
+          price: Money,
+      }
+
+      impl ReceiptLine {
+          fn subtotal(&self) -> Money {
+              self.price.times(self.qty)
+          }
+      }
+
+      impl fmt::Display for ReceiptLine {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "  {:<10}{:>4} x {:>7} = {:>8}", self.name, self.qty, self.price, self.subtotal())
+          }
+      }
+
+      struct Shop {
+          items: Vec<Item>,
+      }
+
+      impl Shop {
+          fn add(&mut self, item: Item) -> Result<(), ShopError> {
+              for existing in &self.items {
+                  if existing.name == item.name {
+                      return Err(ShopError::Duplicate(item.name));
+                  }
+              }
+              self.items.push(item);
+              Ok(())
+          }
+
+          fn find_mut(&mut self, name: &str) -> Result<&mut Item, ShopError> {
+              for item in &mut self.items {
+                  if item.name == name {
+                      return Ok(item);
+                  }
+              }
+              Err(ShopError::UnknownItem(name.to_string()))
+          }
+
+          /// Takes `qty` units out of stock and returns the item they came from.
+          fn sell(&mut self, name: &str, qty: u32) -> Result<&Item, ShopError> {
+              let item = self.find_mut(name)?;
+              if qty > item.qty {
+                  return Err(ShopError::NotEnough { name: name.to_string(), wanted: qty, available: item.qty });
+              }
+              item.qty -= qty;
+              Ok(item)
+          }
+
+          /// By category, then by name.
+          fn sort(&mut self) {
+              self.items.sort_by(|a, b| a.category.cmp(&b.category).then(a.name.cmp(&b.name)));
+          }
+
+          fn print_stock(&self) {
+              let mut by_category: BTreeMap<Category, (u32, Money)> = BTreeMap::new();
+              for item in &self.items {
+                  println!("{item}");
+                  let (units, value) = by_category.entry(item.category).or_insert((0, Money(0)));
+                  *units += item.qty;
+                  *value = value.plus(item.price.times(item.qty));
+              }
+              for (category, (units, value)) in &by_category {
+                  println!("{category}: {units} units, {value}");
+              }
+          }
+      }
+
+      fn load(shop: &mut Shop, line: &str) -> Result<(), ShopError> {
+          shop.add(parse_item(line)?)
+      }
+
+      fn checkout(shop: &mut Shop, line: &str) -> Result<ReceiptLine, ShopError> {
+          let (name, qty) = parse_order(line)?;
+          let item = shop.sell(name, qty)?;
+          Ok(ReceiptLine { name: item.name.clone(), qty, price: item.price })
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          // The stock list comes first; a blank line separates it from the order.
+          let mut stock = Vec::new();
+          let mut order = Vec::new();
+          let mut in_order = false;
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  in_order = true;
+              } else if in_order {
+                  order.push((i + 1, line));
+              } else {
+                  stock.push((i + 1, line));
+              }
+          }
+
+          let mut shop = Shop { items: Vec::new() };
+          for (number, line) in stock {
+              if let Err(e) = load(&mut shop, line) {
+                  println!("line {number}: {e}");
+              }
+          }
+          shop.sort();
+          shop.print_stock();
+
+          if !order.is_empty() {
+              println!("receipt:");
+              let mut total = Money(0);
+              for (number, line) in order {
+                  match checkout(&mut shop, line) {
+                      Ok(receipt_line) => {
+                          println!("{receipt_line}");
+                          total = total.plus(receipt_line.subtotal());
+                      }
+                      Err(e) => println!("line {number}: {e}"),
+                  }
+              }
+              println!("total: {total}");
+          }
+      }
+    tests:
+      - stdin: "hammer, tools, 12.50, 10\napple, food, 0.40, 200\ndrill, tools, 89.99, 3\nteddy, toys, 15.00, 8\nrake, garden, 9.99, 4\nbolt, tools, 0.1, 100\nnail, tools, abc, 1\napple, food, 0.45, 10\nlamp, toys, 20.00\n\napple 60\ndrill 4\nhammer 2\nteddy 10\npear 1\nbolt\ndrill 3\nteddy x\n"
+      - stdin: "apple, food, 0.40, 200\n\n\napple 150\napple 50\napple 1\n"
+      - stdin: "kite, toys, 18.00, 2\nyoyo, toys, 2.50, 40\n"
+      - stdin: "saw, tools, 25.00, 2\nrice, food, 1.99, 50\n\nrice 10\nsaw 1\nsaw 1\nsaw 1\nrice ten\nrice 10 bags\n"
+        hidden: true
+    hints:
+      - "Split the input with a flag: `if line.trim().is_empty() { in_order = true; } else if in_order { order.push((i + 1, line)); } else { stock.push((i + 1, line)); }`."
+      - "`sell`: `let item = self.find_mut(name)?;`, return `ShopError::NotEnough { .. }` if `qty > item.qty`, otherwise subtract and `Ok(item)`."
+      - "`checkout`: `let (name, qty) = parse_order(line)?; let item = shop.sell(name, qty)?; Ok(ReceiptLine { name: item.name.clone(), qty, price: item.price })`."
+
+  - title: Discounts with a trait
+    text: |
+      Shops run promotions, and promotions change every week. This week:
+
+      - **Bulk:** 10% off any order line of 10 or more units, and 20% off for 50 or more.
+      - **Sale:** 15% off everything in the tools category.
+
+      Each order line gets the **single biggest** discount that applies (they don't stack). The discount is a percentage of the line's subtotal, rounded down to the cent. Lines with a discount show it after the subtotal, and the end of the receipt shows three totals:
+
+      ```
+      receipt:
+        apple       60 x   $0.40 =   $24.00  -$4.80 (20% off 50+)
+        hammer       2 x  $12.50 =   $25.00  -$3.75 (15% off tools)
+      subtotal: $49.00
+      discounts: -$8.55
+      total: $40.45
+      ```
+
+      ### A trait for "something that prices an order line"
+
+      Bulk discounts and category sales are different structs with different data, but the checkout code wants to ask them the same question: "do you apply here, and how much?" That shared behavior is a **trait**:
+
+      ```rust
+      trait PriceRule {
+          /// A short description for the receipt, like "10% off 10+".
+          fn label(&self) -> String;
+
+          /// The percentage off for this purchase, or None if the rule doesn't apply.
+          fn percent_off(&self, item: &Item, qty: u32) -> Option<u64>;
+
+          /// The discount for buying `qty` of `item`.
+          fn discount(&self, item: &Item, qty: u32) -> Option<Discount> {
+              let percent = self.percent_off(item, qty)?;
+              Some(Discount { amount: item.price.times(qty).percent(percent), label: self.label() })
+          }
+      }
+      ```
+
+      Two **required** methods that every rule must write, and one **default** method built on top of them. A new kind of rule only has to answer two small questions, and the arithmetic (the part that's easy to get subtly wrong) lives in one place. The standard library's `Iterator` is designed exactly like this: you write `next`, and you get `map`, `filter`, `sum` and dozens more for free.
+
+      Implement it for `BulkDiscount { min_qty, percent }` (label `10% off 10+`) and `CategorySale { category, percent }` (label `15% off tools`). Parameters a rule doesn't need get a leading underscore, like `_item`, which tells the compiler (and readers) it's unused on purpose.
+
+      ### A generic function over any rule
+
+      ```rust
+      fn best_discount<R: PriceRule>(rules: &[R], item: &Item, qty: u32) -> Option<Discount>
+      ```
+
+      works for a slice of *any* type that implements `PriceRule`. The compiler generates one copy for `BulkDiscount` and one for `CategorySale` (monomorphization), so there's no runtime cost. Call it once per kind of rule and keep the bigger result. (A single `Vec<Box<dyn PriceRule>>` holding both kinds is the other classic design; that's the trait objects module.)
+
+      Give `Money` a `percent(self, percent: u64)` method (`Money(self.0 * percent / 100)`: integer division rounds down) and a `minus` method for the final total. `Money` needs `PartialOrd` to compare discounts, so derive `PartialEq, Eq, PartialOrd, Ord` on it too. When two discounts are equal, keep the bulk one.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::fmt;
+      use std::io;
+      use std::io::Read;
+
+      /// An amount of money in cents. Whole cents never round wrongly, unlike f64.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      struct Money(u64);
+
+      impl Money {
+          fn times(self, qty: u32) -> Money {
+              Money(self.0 * qty as u64)
+          }
+
+          fn percent(self, percent: u64) -> Money {
+              Money(self.0 * percent / 100)
+          }
+
+          fn plus(self, other: Money) -> Money {
+              Money(self.0 + other.0)
+          }
+
+          fn minus(self, other: Money) -> Money {
+              Money(self.0 - other.0)
+          }
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              // pad() applies the caller's width and alignment, so "{:>8}" works on Money.
+              f.pad(&format!("${}.{:02}", self.0 / 100, self.0 % 100))
+          }
+      }
+
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Category {
+          Food,
+          Tools,
+          Toys,
+      }
+
+      impl fmt::Display for Category {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Category::Food => "food",
+                  Category::Tools => "tools",
+                  Category::Toys => "toys",
+              };
+              f.pad(name)
+          }
+      }
+
+      struct Item {
+          name: String,
+          category: Category,
+          price: Money,
+          qty: u32,
+      }
+
+      impl fmt::Display for Item {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{:<10} {:<6} {:>8}  x{}", self.name, self.category, self.price, self.qty)
+          }
+      }
+
+      #[derive(Debug)]
+      enum ShopError {
+          FieldCount(usize),
+          BadPrice(String),
+          BadQuantity(String),
+          UnknownCategory(String),
+          Duplicate(String),
+          OrderFormat,
+          UnknownItem(String),
+          NotEnough { name: String, wanted: u32, available: u32 },
+      }
+
+      impl fmt::Display for ShopError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ShopError::FieldCount(n) => write!(f, "expected 4 fields, found {n}"),
+                  ShopError::BadPrice(text) => write!(f, "invalid price \"{text}\""),
+                  ShopError::BadQuantity(text) => write!(f, "invalid quantity \"{text}\""),
+                  ShopError::UnknownCategory(text) => write!(f, "unknown category \"{text}\""),
+                  ShopError::Duplicate(name) => write!(f, "duplicate item \"{name}\""),
+                  ShopError::OrderFormat => write!(f, "expected NAME QUANTITY"),
+                  ShopError::UnknownItem(name) => write!(f, "no item named \"{name}\""),
+                  ShopError::NotEnough { name, wanted, available } => {
+                      write!(f, "cannot sell {wanted} {name}: only {available} in stock")
+                  }
+              }
+          }
+      }
+
+      impl std::error::Error for ShopError {}
+
+      fn parse_money(text: &str) -> Result<Money, ShopError> {
+          let (whole, cents) = match text.split_once('.') {
+              Some((whole, cents)) if cents.len() == 2 => (whole, cents),
+              Some(_) => return Err(ShopError::BadPrice(text.to_string())),
+              None => (text, "00"),
+          };
+          let whole: u64 = whole.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          let cents: u64 = cents.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          Ok(Money(whole * 100 + cents))
+      }
+
+      fn parse_quantity(text: &str) -> Result<u32, ShopError> {
+          text.parse().map_err(|_| ShopError::BadQuantity(text.to_string()))
+      }
+
+      fn parse_category(text: &str) -> Result<Category, ShopError> {
+          match text {
+              "food" => Ok(Category::Food),
+              "tools" => Ok(Category::Tools),
+              "toys" => Ok(Category::Toys),
+              other => Err(ShopError::UnknownCategory(other.to_string())),
+          }
+      }
+
+      /// "hammer, tools, 12.50, 10" -> Item
+      fn parse_item(line: &str) -> Result<Item, ShopError> {
+          let fields: Vec<&str> = line.split(',').collect();
+          let [name, category, price, qty] = fields.as_slice() else {
+              return Err(ShopError::FieldCount(fields.len()));
+          };
+          Ok(Item {
+              name: name.trim().to_string(),
+              category: parse_category(category.trim())?,
+              price: parse_money(price.trim())?,
+              qty: parse_quantity(qty.trim())?,
+          })
+      }
+
+      /// "drill 4" -> ("drill", 4)
+      fn parse_order(line: &str) -> Result<(&str, u32), ShopError> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          let [name, qty] = parts.as_slice() else {
+              return Err(ShopError::OrderFormat);
+          };
+          Ok((name, parse_quantity(qty)?))
+      }
+
+      /// A pricing rule. Implementors say when they apply and how much; the trait does the math.
+      trait PriceRule {
+          /// A short description for the receipt, like "10% off 10+".
+          fn label(&self) -> String;
+
+          /// The percentage off for this purchase, or None if the rule doesn't apply.
+          fn percent_off(&self, item: &Item, qty: u32) -> Option<u64>;
+
+          /// The discount for buying `qty` of `item`. Rules rarely need to override this.
+          fn discount(&self, item: &Item, qty: u32) -> Option<Discount> {
+              let percent = self.percent_off(item, qty)?;
+              Some(Discount { amount: item.price.times(qty).percent(percent), label: self.label() })
+          }
+      }
+
+      /// Buy at least `min_qty` units of anything and get `percent` off.
+      struct BulkDiscount {
+          min_qty: u32,
+          percent: u64,
+      }
+
+      impl PriceRule for BulkDiscount {
+          fn label(&self) -> String {
+              format!("{}% off {}+", self.percent, self.min_qty)
+          }
+
+          fn percent_off(&self, _item: &Item, qty: u32) -> Option<u64> {
+              if qty >= self.min_qty { Some(self.percent) } else { None }
+          }
+      }
+
+      /// Everything in one category is `percent` off.
+      struct CategorySale {
+          category: Category,
+          percent: u64,
+      }
+
+      impl PriceRule for CategorySale {
+          fn label(&self) -> String {
+              format!("{}% off {}", self.percent, self.category)
+          }
+
+          fn percent_off(&self, item: &Item, _qty: u32) -> Option<u64> {
+              if item.category == self.category { Some(self.percent) } else { None }
+          }
+      }
+
+      struct Discount {
+          amount: Money,
+          label: String,
+      }
+
+      /// The biggest discount any of `rules` gives (the first one wins a tie).
+      fn best_discount<R: PriceRule>(rules: &[R], item: &Item, qty: u32) -> Option<Discount> {
+          let mut best: Option<Discount> = None;
+          for rule in rules {
+              if let Some(d) = rule.discount(item, qty) {
+                  let is_better = match &best {
+                      Some(current) => d.amount > current.amount,
+                      None => true,
+                  };
+                  if is_better {
+                      best = Some(d);
+                  }
+              }
+          }
+          best
+      }
+
+      /// The bigger of two optional discounts (`a` wins a tie).
+      fn bigger(a: Option<Discount>, b: Option<Discount>) -> Option<Discount> {
+          match (a, b) {
+              (Some(a), Some(b)) => Some(if b.amount > a.amount { b } else { a }),
+              (a, None) => a,
+              (None, b) => b,
+          }
+      }
+
+      struct ReceiptLine {
+          name: String,
+          qty: u32,
+          price: Money,
+          discount: Option<Discount>,
+      }
+
+      impl ReceiptLine {
+          fn subtotal(&self) -> Money {
+              self.price.times(self.qty)
+          }
+
+          fn discount_amount(&self) -> Money {
+              match &self.discount {
+                  Some(d) => d.amount,
+                  None => Money(0),
+              }
+          }
+      }
+
+      impl fmt::Display for ReceiptLine {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "  {:<10}{:>4} x {:>7} = {:>8}", self.name, self.qty, self.price, self.subtotal())?;
+              if let Some(d) = &self.discount {
+                  write!(f, "  -{} ({})", d.amount, d.label)?;
+              }
+              Ok(())
+          }
+      }
+
+      struct Shop {
+          items: Vec<Item>,
+      }
+
+      impl Shop {
+          fn add(&mut self, item: Item) -> Result<(), ShopError> {
+              for existing in &self.items {
+                  if existing.name == item.name {
+                      return Err(ShopError::Duplicate(item.name));
+                  }
+              }
+              self.items.push(item);
+              Ok(())
+          }
+
+          fn find_mut(&mut self, name: &str) -> Result<&mut Item, ShopError> {
+              for item in &mut self.items {
+                  if item.name == name {
+                      return Ok(item);
+                  }
+              }
+              Err(ShopError::UnknownItem(name.to_string()))
+          }
+
+          /// Takes `qty` units out of stock and returns the item they came from.
+          fn sell(&mut self, name: &str, qty: u32) -> Result<&Item, ShopError> {
+              let item = self.find_mut(name)?;
+              if qty > item.qty {
+                  return Err(ShopError::NotEnough { name: name.to_string(), wanted: qty, available: item.qty });
+              }
+              item.qty -= qty;
+              Ok(item)
+          }
+
+          /// By category, then by name.
+          fn sort(&mut self) {
+              self.items.sort_by(|a, b| a.category.cmp(&b.category).then(a.name.cmp(&b.name)));
+          }
+
+          fn print_stock(&self) {
+              let mut by_category: BTreeMap<Category, (u32, Money)> = BTreeMap::new();
+              for item in &self.items {
+                  println!("{item}");
+                  let (units, value) = by_category.entry(item.category).or_insert((0, Money(0)));
+                  *units += item.qty;
+                  *value = value.plus(item.price.times(item.qty));
+              }
+              for (category, (units, value)) in &by_category {
+                  println!("{category}: {units} units, {value}");
+              }
+          }
+      }
+
+      fn load(shop: &mut Shop, line: &str) -> Result<(), ShopError> {
+          shop.add(parse_item(line)?)
+      }
+
+      fn checkout(shop: &mut Shop, line: &str, bulk: &[BulkDiscount], sales: &[CategorySale]) -> Result<ReceiptLine, ShopError> {
+          let (name, qty) = parse_order(line)?;
+          let item = shop.sell(name, qty)?;
+          let discount = bigger(best_discount(bulk, item, qty), best_discount(sales, item, qty));
+          Ok(ReceiptLine { name: item.name.clone(), qty, price: item.price, discount })
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          // This week's promotions. A customer gets the single biggest discount that applies.
+          let bulk = [BulkDiscount { min_qty: 10, percent: 10 }, BulkDiscount { min_qty: 50, percent: 20 }];
+          let sales = [CategorySale { category: Category::Tools, percent: 15 }];
+
+          // The stock list comes first; a blank line separates it from the order.
+          let mut stock = Vec::new();
+          let mut order = Vec::new();
+          let mut in_order = false;
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  in_order = true;
+              } else if in_order {
+                  order.push((i + 1, line));
+              } else {
+                  stock.push((i + 1, line));
+              }
+          }
+
+          let mut shop = Shop { items: Vec::new() };
+          for (number, line) in stock {
+              if let Err(e) = load(&mut shop, line) {
+                  println!("line {number}: {e}");
+              }
+          }
+          shop.sort();
+          shop.print_stock();
+
+          if !order.is_empty() {
+              println!("receipt:");
+              let mut subtotal = Money(0);
+              let mut discounts = Money(0);
+              for (number, line) in order {
+                  match checkout(&mut shop, line, &bulk, &sales) {
+                      Ok(receipt_line) => {
+                          println!("{receipt_line}");
+                          subtotal = subtotal.plus(receipt_line.subtotal());
+                          discounts = discounts.plus(receipt_line.discount_amount());
+                      }
+                      Err(e) => println!("line {number}: {e}"),
+                  }
+              }
+              println!("subtotal: {subtotal}");
+              println!("discounts: -{discounts}");
+              println!("total: {}", subtotal.minus(discounts));
+          }
+      }
+    tests:
+      - stdin: "hammer, tools, 12.50, 10\napple, food, 0.40, 200\ndrill, tools, 89.99, 3\nteddy, toys, 15.00, 8\n\napple 60\ndrill 4\nhammer 2\nteddy 8\npear 1\ndrill 3\n"
+      - stdin: "nail, tools, 0.05, 1000\nbean, food, 0.10, 1000\n\nnail 9\nnail 10\nnail 49\nnail 50\nbean 9\nbean 10\nbean 50\n"
+      - stdin: "yoyo, toys, 2.50, 40\n\nyoyo 5\n"
+      - stdin: "saw, tools, 25.00, 20\nrice, food, 1.99, 100\n\nrice 10\nsaw 12\nrice 60\nsaw 9\nsaw 8\n"
+        hidden: true
+    hints:
+      - "Write the `PriceRule` trait with `label` and `percent_off` as required methods and `discount` as a default method, then two small `impl PriceRule for ...` blocks."
+      - "`best_discount<R: PriceRule>` loops over the rules, calls `rule.discount(item, qty)`, and keeps it if it's bigger than the best so far."
+      - "Combine the two kinds with a helper like `fn bigger(a: Option<Discount>, b: Option<Discount>) -> Option<Discount>` that matches on `(a, b)`."
+
+  - title: "Polish: promotions in one place, and restock warnings"
+    text: |
+      Two finishing touches, the kind a code review would ask for.
+
+      ### Group the promotions
+
+      `checkout` now takes the shop, the line, the bulk rules *and* the sales rules. Every new kind of promotion would add another parameter to every function on the way down. When several values always travel together, they want to be a struct:
+
+      ```rust
+      struct Promotions {
+          bulk: Vec<BulkDiscount>,
+          sales: Vec<CategorySale>,
+      }
+
+      impl Promotions {
+          fn this_week() -> Self { ... }
+          fn best_for(&self, item: &Item, qty: u32) -> Option<Discount> { ... }
+      }
+      ```
+
+      `this_week()` is the one place that says what's on offer, and `best_for` is the one place that knows promotions don't stack. `checkout` becomes `checkout(shop: &mut Shop, promotions: &Promotions, line: &str)`, and adding a third kind of rule later touches only `Promotions`.
+
+      ### Restock warnings
+
+      After everything else (after the receipt, or after the stock report if there was no order), list every item with **fewer than 5** units left, in stock-report order:
+
+      ```
+      restock soon: drill (0 left)
+      restock soon: kite (2 left)
+      ```
+
+      Put the threshold in a constant, `const LOW_STOCK: u32 = 5;`, and the question in a method, `fn low_stock(&self) -> Vec<&Item>`, that returns references to the items rather than copies. The items stay owned by the shop; the caller just gets to look at them.
+
+      Run your program on the examples once more and read `main` from top to bottom. It should read like the description of a till: load the stock, report it, check out the order, print the totals, warn about low stock.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::fmt;
+      use std::io;
+      use std::io::Read;
+
+      /// Items with fewer units than this after the order get a restock warning.
+      const LOW_STOCK: u32 = 5;
+
+      /// An amount of money in cents. Whole cents never round wrongly, unlike f64.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      struct Money(u64);
+
+      impl Money {
+          fn times(self, qty: u32) -> Money {
+              Money(self.0 * qty as u64)
+          }
+
+          fn percent(self, percent: u64) -> Money {
+              Money(self.0 * percent / 100)
+          }
+
+          fn plus(self, other: Money) -> Money {
+              Money(self.0 + other.0)
+          }
+
+          fn minus(self, other: Money) -> Money {
+              Money(self.0 - other.0)
+          }
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              // pad() applies the caller's width and alignment, so "{:>8}" works on Money.
+              f.pad(&format!("${}.{:02}", self.0 / 100, self.0 % 100))
+          }
+      }
+
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Category {
+          Food,
+          Tools,
+          Toys,
+      }
+
+      impl fmt::Display for Category {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Category::Food => "food",
+                  Category::Tools => "tools",
+                  Category::Toys => "toys",
+              };
+              f.pad(name)
+          }
+      }
+
+      struct Item {
+          name: String,
+          category: Category,
+          price: Money,
+          qty: u32,
+      }
+
+      impl fmt::Display for Item {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{:<10} {:<6} {:>8}  x{}", self.name, self.category, self.price, self.qty)
+          }
+      }
+
+      #[derive(Debug)]
+      enum ShopError {
+          FieldCount(usize),
+          BadPrice(String),
+          BadQuantity(String),
+          UnknownCategory(String),
+          Duplicate(String),
+          OrderFormat,
+          UnknownItem(String),
+          NotEnough { name: String, wanted: u32, available: u32 },
+      }
+
+      impl fmt::Display for ShopError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ShopError::FieldCount(n) => write!(f, "expected 4 fields, found {n}"),
+                  ShopError::BadPrice(text) => write!(f, "invalid price \"{text}\""),
+                  ShopError::BadQuantity(text) => write!(f, "invalid quantity \"{text}\""),
+                  ShopError::UnknownCategory(text) => write!(f, "unknown category \"{text}\""),
+                  ShopError::Duplicate(name) => write!(f, "duplicate item \"{name}\""),
+                  ShopError::OrderFormat => write!(f, "expected NAME QUANTITY"),
+                  ShopError::UnknownItem(name) => write!(f, "no item named \"{name}\""),
+                  ShopError::NotEnough { name, wanted, available } => {
+                      write!(f, "cannot sell {wanted} {name}: only {available} in stock")
+                  }
+              }
+          }
+      }
+
+      impl std::error::Error for ShopError {}
+
+      fn parse_money(text: &str) -> Result<Money, ShopError> {
+          let (whole, cents) = match text.split_once('.') {
+              Some((whole, cents)) if cents.len() == 2 => (whole, cents),
+              Some(_) => return Err(ShopError::BadPrice(text.to_string())),
+              None => (text, "00"),
+          };
+          let whole: u64 = whole.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          let cents: u64 = cents.parse().map_err(|_| ShopError::BadPrice(text.to_string()))?;
+          Ok(Money(whole * 100 + cents))
+      }
+
+      fn parse_quantity(text: &str) -> Result<u32, ShopError> {
+          text.parse().map_err(|_| ShopError::BadQuantity(text.to_string()))
+      }
+
+      fn parse_category(text: &str) -> Result<Category, ShopError> {
+          match text {
+              "food" => Ok(Category::Food),
+              "tools" => Ok(Category::Tools),
+              "toys" => Ok(Category::Toys),
+              other => Err(ShopError::UnknownCategory(other.to_string())),
+          }
+      }
+
+      /// "hammer, tools, 12.50, 10" -> Item
+      fn parse_item(line: &str) -> Result<Item, ShopError> {
+          let fields: Vec<&str> = line.split(',').collect();
+          let [name, category, price, qty] = fields.as_slice() else {
+              return Err(ShopError::FieldCount(fields.len()));
+          };
+          Ok(Item {
+              name: name.trim().to_string(),
+              category: parse_category(category.trim())?,
+              price: parse_money(price.trim())?,
+              qty: parse_quantity(qty.trim())?,
+          })
+      }
+
+      /// "drill 4" -> ("drill", 4)
+      fn parse_order(line: &str) -> Result<(&str, u32), ShopError> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          let [name, qty] = parts.as_slice() else {
+              return Err(ShopError::OrderFormat);
+          };
+          Ok((name, parse_quantity(qty)?))
+      }
+
+      /// A pricing rule. Implementors say when they apply and how much; the trait does the math.
+      trait PriceRule {
+          /// A short description for the receipt, like "10% off 10+".
+          fn label(&self) -> String;
+
+          /// The percentage off for this purchase, or None if the rule doesn't apply.
+          fn percent_off(&self, item: &Item, qty: u32) -> Option<u64>;
+
+          /// The discount for buying `qty` of `item`. Rules rarely need to override this.
+          fn discount(&self, item: &Item, qty: u32) -> Option<Discount> {
+              let percent = self.percent_off(item, qty)?;
+              Some(Discount { amount: item.price.times(qty).percent(percent), label: self.label() })
+          }
+      }
+
+      /// Buy at least `min_qty` units of anything and get `percent` off.
+      struct BulkDiscount {
+          min_qty: u32,
+          percent: u64,
+      }
+
+      impl PriceRule for BulkDiscount {
+          fn label(&self) -> String {
+              format!("{}% off {}+", self.percent, self.min_qty)
+          }
+
+          fn percent_off(&self, _item: &Item, qty: u32) -> Option<u64> {
+              if qty >= self.min_qty { Some(self.percent) } else { None }
+          }
+      }
+
+      /// Everything in one category is `percent` off.
+      struct CategorySale {
+          category: Category,
+          percent: u64,
+      }
+
+      impl PriceRule for CategorySale {
+          fn label(&self) -> String {
+              format!("{}% off {}", self.percent, self.category)
+          }
+
+          fn percent_off(&self, item: &Item, _qty: u32) -> Option<u64> {
+              if item.category == self.category { Some(self.percent) } else { None }
+          }
+      }
+
+      struct Discount {
+          amount: Money,
+          label: String,
+      }
+
+      /// The biggest discount any of `rules` gives (the first one wins a tie).
+      fn best_discount<R: PriceRule>(rules: &[R], item: &Item, qty: u32) -> Option<Discount> {
+          let mut best: Option<Discount> = None;
+          for rule in rules {
+              if let Some(d) = rule.discount(item, qty) {
+                  let is_better = match &best {
+                      Some(current) => d.amount > current.amount,
+                      None => true,
+                  };
+                  if is_better {
+                      best = Some(d);
+                  }
+              }
+          }
+          best
+      }
+
+      /// The bigger of two optional discounts (`a` wins a tie).
+      fn bigger(a: Option<Discount>, b: Option<Discount>) -> Option<Discount> {
+          match (a, b) {
+              (Some(a), Some(b)) => Some(if b.amount > a.amount { b } else { a }),
+              (a, None) => a,
+              (None, b) => b,
+          }
+      }
+
+      /// The promotions running this week. A customer gets the single biggest discount that applies.
+      struct Promotions {
+          bulk: Vec<BulkDiscount>,
+          sales: Vec<CategorySale>,
+      }
+
+      impl Promotions {
+          fn this_week() -> Self {
+              Promotions {
+                  bulk: vec![BulkDiscount { min_qty: 10, percent: 10 }, BulkDiscount { min_qty: 50, percent: 20 }],
+                  sales: vec![CategorySale { category: Category::Tools, percent: 15 }],
+              }
+          }
+
+          fn best_for(&self, item: &Item, qty: u32) -> Option<Discount> {
+              bigger(best_discount(&self.bulk, item, qty), best_discount(&self.sales, item, qty))
+          }
+      }
+
+      struct ReceiptLine {
+          name: String,
+          qty: u32,
+          price: Money,
+          discount: Option<Discount>,
+      }
+
+      impl ReceiptLine {
+          fn subtotal(&self) -> Money {
+              self.price.times(self.qty)
+          }
+
+          fn discount_amount(&self) -> Money {
+              match &self.discount {
+                  Some(d) => d.amount,
+                  None => Money(0),
+              }
+          }
+      }
+
+      impl fmt::Display for ReceiptLine {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "  {:<10}{:>4} x {:>7} = {:>8}", self.name, self.qty, self.price, self.subtotal())?;
+              if let Some(d) = &self.discount {
+                  write!(f, "  -{} ({})", d.amount, d.label)?;
+              }
+              Ok(())
+          }
+      }
+
+      struct Shop {
+          items: Vec<Item>,
+      }
+
+      impl Shop {
+          fn add(&mut self, item: Item) -> Result<(), ShopError> {
+              for existing in &self.items {
+                  if existing.name == item.name {
+                      return Err(ShopError::Duplicate(item.name));
+                  }
+              }
+              self.items.push(item);
+              Ok(())
+          }
+
+          fn find_mut(&mut self, name: &str) -> Result<&mut Item, ShopError> {
+              for item in &mut self.items {
+                  if item.name == name {
+                      return Ok(item);
+                  }
+              }
+              Err(ShopError::UnknownItem(name.to_string()))
+          }
+
+          /// Takes `qty` units out of stock and returns the item they came from.
+          fn sell(&mut self, name: &str, qty: u32) -> Result<&Item, ShopError> {
+              let item = self.find_mut(name)?;
+              if qty > item.qty {
+                  return Err(ShopError::NotEnough { name: name.to_string(), wanted: qty, available: item.qty });
+              }
+              item.qty -= qty;
+              Ok(item)
+          }
+
+          /// By category, then by name.
+          fn sort(&mut self) {
+              self.items.sort_by(|a, b| a.category.cmp(&b.category).then(a.name.cmp(&b.name)));
+          }
+
+          fn print_stock(&self) {
+              let mut by_category: BTreeMap<Category, (u32, Money)> = BTreeMap::new();
+              for item in &self.items {
+                  println!("{item}");
+                  let (units, value) = by_category.entry(item.category).or_insert((0, Money(0)));
+                  *units += item.qty;
+                  *value = value.plus(item.price.times(item.qty));
+              }
+              for (category, (units, value)) in &by_category {
+                  println!("{category}: {units} units, {value}");
+              }
+          }
+
+          fn low_stock(&self) -> Vec<&Item> {
+              let mut low = Vec::new();
+              for item in &self.items {
+                  if item.qty < LOW_STOCK {
+                      low.push(item);
+                  }
+              }
+              low
+          }
+      }
+
+      fn load(shop: &mut Shop, line: &str) -> Result<(), ShopError> {
+          shop.add(parse_item(line)?)
+      }
+
+      fn checkout(shop: &mut Shop, promotions: &Promotions, line: &str) -> Result<ReceiptLine, ShopError> {
+          let (name, qty) = parse_order(line)?;
+          let item = shop.sell(name, qty)?;
+          let discount = promotions.best_for(item, qty);
+          Ok(ReceiptLine { name: item.name.clone(), qty, price: item.price, discount })
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          let promotions = Promotions::this_week();
+
+          // The stock list comes first; a blank line separates it from the order.
+          let mut stock = Vec::new();
+          let mut order = Vec::new();
+          let mut in_order = false;
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  in_order = true;
+              } else if in_order {
+                  order.push((i + 1, line));
+              } else {
+                  stock.push((i + 1, line));
+              }
+          }
+
+          let mut shop = Shop { items: Vec::new() };
+          for (number, line) in stock {
+              if let Err(e) = load(&mut shop, line) {
+                  println!("line {number}: {e}");
+              }
+          }
+          shop.sort();
+          shop.print_stock();
+
+          if !order.is_empty() {
+              println!("receipt:");
+              let mut subtotal = Money(0);
+              let mut discounts = Money(0);
+              for (number, line) in order {
+                  match checkout(&mut shop, &promotions, line) {
+                      Ok(receipt_line) => {
+                          println!("{receipt_line}");
+                          subtotal = subtotal.plus(receipt_line.subtotal());
+                          discounts = discounts.plus(receipt_line.discount_amount());
+                      }
+                      Err(e) => println!("line {number}: {e}"),
+                  }
+              }
+              println!("subtotal: {subtotal}");
+              println!("discounts: -{discounts}");
+              println!("total: {}", subtotal.minus(discounts));
+          }
+
+          for item in shop.low_stock() {
+              println!("restock soon: {} ({} left)", item.name, item.qty);
+          }
+      }
+    tests:
+      - stdin: "hammer, tools, 12.50, 10\napple, food, 0.40, 200\ndrill, tools, 89.99, 3\nteddy, toys, 15.00, 8\nrake, garden, 9.99, 4\n\napple 60\ndrill 4\nhammer 2\nteddy 4\ndrill 3\n"
+      - stdin: "kite, toys, 18.00, 2\nyoyo, toys, 2.50, 40\naxe, tools, 45.00, 5\n"
+      - stdin: "saw, tools, 25.00, 20\nrice, food, 1.99, 100\nawl, tools, 6.75, 4\n\nrice 96\nsaw 15\nsaw 1\nawl 4\n"
+        hidden: true
+    hints:
+      - "Move the two rule lists into `struct Promotions` with `fn this_week() -> Self` and `fn best_for(&self, item: &Item, qty: u32) -> Option<Discount>`."
+      - "`low_stock` loops over `&self.items` and pushes every `item` with `item.qty < LOW_STOCK` into a `Vec<&Item>`."
+      - "At the very end of `main`: `for item in shop.low_stock() { println!(\"restock soon: {} ({} left)\", item.name, item.qty); }`."

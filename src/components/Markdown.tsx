@@ -29,7 +29,7 @@ function shiftHeadings(html: string, top: number): string {
 export default function Markdown({ text, className = "", top }: { text: string; className?: string; top?: number }) {
   // Code blocks and tables can scroll sideways (tables do on phones), so they must be reachable with the keyboard.
   const html = useMemo(() => {
-    const out = (marked.parse(text, { async: false }) as string).replace(/<(pre|table)>/g, '<$1 tabindex="0">');
+    const out = (marked.parse(text, { async: false }) as string).replace(/<(pre|table)(\s[^>]*)?>/g, '<$1$2 tabindex="0">');
     return top ? shiftHeadings(out, top) : out;
   }, [text, top]);
   return <div className={"md " + className} dangerouslySetInnerHTML={{ __html: html }} />;

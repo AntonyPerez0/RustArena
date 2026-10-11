@@ -1,0 +1,627 @@
+# Reference pages at /topics/<slug>: the Concurrency and async phase (threads, shared state, channels, Send/Sync, Tokio).
+topics:
+  - slug: threads
+    title: "Threads in Rust: thread::spawn, join and move closures"
+    description: "How to run code in parallel with std::thread in Rust: spawn and join, returning values, move closures, scoped threads, and the E0373 error."
+    modules: [threads]
+    body: |
+      A **thread** runs code at the same time as the rest of your program. `std::thread::spawn` starts one and returns a **`JoinHandle`**; calling `.join()` waits for the thread to finish and gives back the value its closure returned.
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let handle = thread::spawn(|| {
+              let mut sum = 0u64;
+              for i in 1..=1_000 {
+                  sum += i;
+              }
+              sum
+          });
+          let total = handle.join().unwrap();
+          println!("sum is {total}");
+      }
+      ```
+
+      ```output
+      sum is 500500
+      ```
+
+      `join()` returns a `Result`: `Err` if the thread panicked. A panic in a spawned thread doesn't crash the main thread; it's reported when you join.
+
+      ## Giving data to a thread: move
+
+      A spawned thread may run longer than the function that started it, so its closure can't borrow local variables:
+
+      ```rust compile_fail
+      use std::thread;
+
+      fn main() {
+          let names = vec!["Ferris", "Corro"];
+          let handle = thread::spawn(|| {
+              println!("{} names", names.len());
+          });
+          handle.join().unwrap();
+      }
+      ```
+
+      ```error
+      error[E0373]: closure may outlive the current function, but it borrows `names`, which is owned by the current function
+       --> src/main.rs:5:32
+        |
+      5 |     let handle = thread::spawn(|| {
+        |                                ^^ may outlive borrowed value `names`
+      6 |         println!("{} names", names.len());
+        |                              ----- `names` is borrowed here
+        |
+      help: to force the closure to take ownership of `names` (and any other referenced variables), use the `move` keyword
+      ```
+
+      Add `move` and the closure **owns** `names`. The thread can then use it as long as it likes, and `main` can't use it afterwards. If both need the data, clone it before spawning, or share it with `Arc`.
+
+      ## Scoped threads: borrowing safely
+
+      `thread::scope` guarantees that every thread spawned inside it finishes before the scope returns, so those threads **may borrow** local data, no `move` or `Arc` needed:
+
+      ```rust
+      thread::scope(|s| {
+          for chunk in data.chunks(1000) {
+              s.spawn(move || process(chunk));
+          }
+      }); // all threads have finished here
+      ```
+
+      This is the simplest way to split work over a slice.
+
+      ## Many threads, results in order
+
+      Spawn the threads, keep their handles in a `Vec`, then join them **in order**. Collecting results this way gives deterministic output even though the threads finish in any order. Printing from inside the threads doesn't: the lines interleave differently on every run.
+
+      ## Shared state and communication
+
+      - To send results back as they're ready: **channels** (`std::sync::mpsc`).
+      - To share and mutate data: **`Arc<Mutex<T>>`**, or atomics for counters.
+      - The compiler enforces safety through the **`Send`** and **`Sync`** traits: `Rc` and `RefCell` can't cross threads, and the error says so.
+
+      ## Common mistakes
+
+      - **Forgetting to join.** When `main` returns, the process exits and unfinished threads are killed mid-work.
+      - **Expecting a fixed order of output** from several threads. Collect results, then print.
+      - **Spawning a thread per tiny task.** Threads cost memory (2 MB of stack each by default) and start-up time. For data parallelism, `rayon`'s `par_iter()` splits work over a thread pool for you.
+      - **Using threads for waiting on I/O at scale.** Thousands of network connections are better served by async (Tokio).
+      - **`thread::sleep` to "wait" for another thread.** Use `join`, a channel, or a condition variable instead; sleeping is a guess.
+    example: |
+      use std::thread;
+
+      fn count_primes(from: u32, to: u32) -> usize {
+          (from..to).filter(|&n| n >= 2 && (2..).take_while(|d| d * d <= n).all(|d| n % d != 0)).count()
+      }
+
+      fn main() {
+          // Each thread owns its range (move) and returns a value.
+          let ranges = [(0, 25_000), (25_000, 50_000), (50_000, 75_000), (75_000, 100_000)];
+          let mut handles = Vec::new();
+          for (from, to) in ranges {
+              handles.push(thread::spawn(move || (from, to, count_primes(from, to))));
+          }
+          let mut total = 0;
+          for h in handles {
+              let (from, to, n) = h.join().expect("worker panicked");
+              println!("{from:>6}..{to:<6} {n} primes");
+              total += n;
+          }
+          println!("total {total}");
+
+          // Scoped threads can borrow local data.
+          let words = vec!["ferris", "crab", "rustacean", "borrow"];
+          let lengths: Vec<usize> = thread::scope(|s| {
+              let handles: Vec<_> = words.iter().map(|w| s.spawn(move || w.len())).collect();
+              handles.into_iter().map(|h| h.join().unwrap()).collect()
+          });
+          println!("{words:?} -> {lengths:?}");
+
+          // A panic in a thread is reported by join, not by crashing main.
+          let result = thread::spawn(|| {
+              let empty: Vec<i32> = Vec::new();
+              empty[0] // panics: index out of bounds
+          })
+          .join();
+          println!("worker panicked: {}", result.is_err());
+      }
+
+  - slug: arc-mutex
+    title: "Arc<Mutex<T>> in Rust: sharing mutable state between threads"
+    description: "How to share and change data across threads in Rust with Arc and Mutex, how lock guards work, poisoning, RwLock, atomics, and avoiding deadlocks."
+    modules: [sync]
+    body: |
+      When several threads need to **change the same data**, Rust's usual tools don't work: ownership allows only one owner, `&mut` allows only one writer, and `Rc`/`RefCell` aren't thread-safe. The standard answer is **`Arc<Mutex<T>>`**:
+
+      - **`Arc<T>`** (atomically reference counted) gives every thread an owning handle to the same data. `Arc::clone(&a)` bumps a counter (atomically, so it's safe across threads); the data is freed when the last handle is dropped.
+      - **`Mutex<T>`** (mutual exclusion) guarantees only one thread at a time accesses the `T` inside.
+
+      ```rust run
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      fn main() {
+          let counter = Arc::new(Mutex::new(0));
+          let mut handles = Vec::new();
+          for _ in 0..8 {
+              let counter = Arc::clone(&counter);
+              handles.push(thread::spawn(move || {
+                  for _ in 0..1000 {
+                      *counter.lock().unwrap() += 1;
+                  }
+              }));
+          }
+          for h in handles {
+              h.join().unwrap();
+          }
+          println!("count = {}", *counter.lock().unwrap());
+      }
+      ```
+
+      ```output
+      count = 8000
+      ```
+
+      ## How lock() works
+
+      `mutex.lock()` waits until no other thread holds the lock, then returns a **`MutexGuard`**. The guard derefs to the data (`*guard += 1`, `guard.push(x)`), and **unlocks automatically when it's dropped**, at the end of the statement or block. You can't forget to unlock, and you can't touch the data without locking: it's inside the mutex.
+
+      `lock()` returns a `Result` because of **poisoning**: if a thread panicked while holding the lock, the data might be half-updated, and later `lock()` calls return `Err`. Most code calls `.unwrap()` (propagating the panic) or `.unwrap_or_else(|e| e.into_inner())` to accept the data anyway.
+
+      ## Why not Rc<Mutex<T>>?
+
+      ```rust compile_fail
+      use std::rc::Rc;
+      use std::sync::Mutex;
+      use std::thread;
+
+      fn main() {
+          let counter = Rc::new(Mutex::new(0));
+          let c = Rc::clone(&counter);
+          let h = thread::spawn(move || {
+              *c.lock().unwrap() += 1;
+          });
+          h.join().unwrap();
+      }
+      ```
+
+      ```error
+      error[E0277]: `Rc<std::sync::Mutex<i32>>` cannot be sent between threads safely
+      ```
+
+      `Rc`'s counter isn't atomic, so two threads cloning it at once could corrupt the count. The compiler knows this through the `Send` trait. Swap `Rc` for `Arc`.
+
+      ## Alternatives
+
+      | Tool | Use when |
+      |---|---|
+      | `Mutex<T>` | general shared mutable state |
+      | `RwLock<T>` | many readers, rare writers (`read()` / `write()`) |
+      | `AtomicUsize`, `AtomicBool`, ... | a single counter or flag: `fetch_add(1, Ordering::Relaxed)`, no lock |
+      | channels (`mpsc`) | threads hand results to one owner instead of sharing |
+      | `thread::scope` + `&mut` chunks | each thread works on its own part of the data |
+      | `OnceLock` / `LazyLock` | a global initialized once, then read-only |
+
+      ## Common mistakes
+
+      - **Holding a lock too long.** Keep the guard's scope tiny: compute outside, lock, update, drop. A guard held across slow work serializes your threads.
+      - **Deadlock from locking twice.** `let a = m.lock().unwrap(); let b = m.lock().unwrap();` on the same mutex in one thread blocks forever. Two mutexes locked in opposite orders by two threads also deadlock; always lock in a consistent order.
+      - **A guard living longer than you think.** In `if let Some(x) = map.lock().unwrap().get(k) { ... }`, the guard lives for the whole `if let` block. Copy what you need into a local first.
+      - **Holding a `std::sync::MutexGuard` across `.await`** in async code: the future stops being `Send`. Drop the guard before awaiting, or use `tokio::sync::Mutex`.
+    example: |
+      use std::collections::BTreeMap;
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::sync::{Arc, Mutex, RwLock};
+      use std::thread;
+
+      fn main() {
+          let orders = vec![("north", 120), ("south", 75), ("north", 30), ("east", 210), ("south", 25), ("east", 5)];
+
+          let totals: Arc<Mutex<BTreeMap<&str, u32>>> = Arc::new(Mutex::new(BTreeMap::new()));
+          let processed = Arc::new(AtomicUsize::new(0));
+          let config = Arc::new(RwLock::new(10_u32)); // shipping fee, read by all
+
+          let mut handles = Vec::new();
+          for chunk in orders.chunks(2) {
+              let chunk = chunk.to_vec();
+              let totals = Arc::clone(&totals);
+              let processed = Arc::clone(&processed);
+              let config = Arc::clone(&config);
+              handles.push(thread::spawn(move || {
+                  let fee = *config.read().unwrap();
+                  for (region, amount) in chunk {
+                      let with_fee = amount + fee; // compute outside the lock
+                      *totals.lock().unwrap().entry(region).or_insert(0) += with_fee;
+                      processed.fetch_add(1, Ordering::Relaxed);
+                  }
+              }));
+          }
+          for h in handles {
+              h.join().unwrap();
+          }
+
+          *config.write().unwrap() = 0; // writers get exclusive access
+          println!("processed {} orders", processed.load(Ordering::Relaxed));
+          for (region, total) in totals.lock().unwrap().iter() {
+              println!("{region:<6} {total}");
+          }
+          println!("fee is now {}", config.read().unwrap());
+      }
+
+  - slug: channels
+    title: "Channels in Rust: message passing with mpsc"
+    description: "How to send data between threads with std::sync::mpsc channels in Rust: send and recv, multiple producers, iterating the receiver, and bounded channels."
+    modules: [sync]
+    body: |
+      A **channel** is a queue that threads use to send values to each other, instead of sharing memory. "Do not communicate by sharing memory; share memory by communicating." Rust's standard channel lives in `std::sync::mpsc`, which stands for **multiple producer, single consumer**: many senders, one receiver.
+
+      ```rust run
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn main() {
+          let (tx, rx) = mpsc::channel();
+          let producer = thread::spawn(move || {
+              for job in ["resize", "compress", "upload"] {
+                  tx.send(job.to_string()).unwrap();
+              }
+          });
+          for msg in rx {
+              println!("got {msg}");
+          }
+          producer.join().unwrap();
+          println!("all senders gone, loop ended");
+      }
+      ```
+
+      ```output
+      got resize
+      got compress
+      got upload
+      all senders gone, loop ended
+      ```
+
+      - `mpsc::channel()` returns a `(Sender<T>, Receiver<T>)` pair. The type `T` is inferred from what you send.
+      - `tx.send(value)` **moves** the value into the channel; the sending thread can't use it afterwards. That's how ownership travels between threads without locks.
+      - `rx.recv()` blocks until a value arrives. It returns `Err` once every `Sender` has been dropped and the queue is empty.
+      - `for msg in rx` (or `rx.iter()`) receives until that happens, so the loop ends by itself when all producers finish.
+      - `rx.try_recv()` doesn't block; `rx.recv_timeout(d)` waits at most `d`.
+
+      ## Multiple producers
+
+      Clone the sender for each producer thread: `let tx2 = tx.clone();`. Messages from one producer arrive in the order it sent them, but messages from different producers interleave in whatever order the threads happen to run. If output order matters, tag each message (with a worker id or a sequence number) and sort after receiving.
+
+      ## The classic hang: an extra sender
+
+      The receiving loop ends only when **all** senders are dropped. If you clone `tx` for each worker but keep the original alive in `main`, the loop waits forever. Either move the original into the last worker, or call `drop(tx)` after spawning.
+
+      ## Bounded channels and backpressure
+
+      `mpsc::channel()` is unbounded: a fast producer can fill memory. `mpsc::sync_channel(n)` holds at most `n` messages, and `send` **blocks** when it's full, slowing the producer to the consumer's pace (**backpressure**). `sync_channel(0)` is a rendezvous: each send waits for a matching receive.
+
+      ## Channels vs Arc<Mutex<T>>
+
+      Use channels when work flows in one direction (producers to a consumer, a pipeline of stages, workers reporting results). Use shared state when many threads need to read and update the same structure. Channels are often easier to reason about because each value has one owner at a time.
+
+      ## Errors
+
+      - `send` returns `Err(SendError(value))` if the receiver was dropped, giving the value back.
+      - `recv` returns `Err(RecvError)` when the channel is empty and every sender is gone.
+
+      ## Beyond std
+
+      `crossbeam-channel` offers multi-consumer channels and `select!` over several channels. In async code, use `tokio::sync::mpsc` (with `.send(x).await` and `.recv().await`) so waiting doesn't block a runtime thread.
+    example: |
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn checksum(data: &str) -> u32 {
+          data.bytes().map(u32::from).sum()
+      }
+
+      fn main() {
+          let files = vec!["config.toml", "main.rs", "README.md", "Cargo.lock", "lib.rs"];
+          let (tx, rx) = mpsc::channel();
+
+          let mut handles = Vec::new();
+          for (worker, chunk) in files.chunks(2).enumerate() {
+              let tx = tx.clone();
+              let chunk: Vec<String> = chunk.iter().map(|s| s.to_string()).collect();
+              handles.push(thread::spawn(move || {
+                  for name in chunk {
+                      let sum = checksum(&name);
+                      tx.send((name, worker, sum)).expect("receiver is alive");
+                  }
+              }));
+          }
+          drop(tx); // only the workers' clones remain, so the loop below can end
+
+          let mut results: Vec<(String, usize, u32)> = rx.iter().collect();
+          for h in handles {
+              h.join().unwrap();
+          }
+          results.sort(); // arrival order varies between runs; sort for stable output
+          for (name, worker, sum) in &results {
+              println!("{name:<12} worker {worker} checksum {sum}");
+          }
+
+          let (btx, brx) = mpsc::sync_channel::<u32>(1);
+          let producer = thread::spawn(move || {
+              for n in 1..=3 {
+                  btx.send(n * n).unwrap(); // blocks while the buffer is full
+              }
+          });
+          let squares: Vec<u32> = brx.iter().collect();
+          producer.join().unwrap();
+          println!("bounded channel delivered {squares:?}");
+      }
+
+  - slug: send-and-sync
+    title: "Send and Sync in Rust explained"
+    description: "What the Send and Sync traits mean in Rust, which types are not Send or Sync (Rc, RefCell, Cell), and how to fix 'cannot be sent between threads safely'."
+    modules: [threads, sync]
+    body: |
+      Rust prevents data races at compile time with two **marker traits** (traits with no methods that describe a property of a type):
+
+      - **`Send`**: a value of this type can be **moved** to another thread.
+      - **`Sync`**: a value of this type can be **shared** between threads by reference. Precisely, `T` is `Sync` when `&T` is `Send`.
+
+      You almost never implement them. They're **auto traits**: the compiler implements them for your struct or enum automatically when all its fields are `Send` / `Sync`. A struct containing an `Rc` is not `Send`, because `Rc` isn't.
+
+      ## Which types are which
+
+      | Type | Send | Sync | Why |
+      |---|---|---|---|
+      | `i32`, `String`, `Vec<T>`, `Box<T>` (of Send/Sync data) | yes | yes | plain owned data |
+      | `Arc<T>` (T: Send + Sync) | yes | yes | atomic reference count |
+      | `Mutex<T>` (T: Send) | yes | yes | the lock serializes access |
+      | `Rc<T>` | **no** | **no** | non-atomic reference count |
+      | `RefCell<T>`, `Cell<T>` | yes | **no** | unsynchronized interior mutability |
+      | `MutexGuard<T>` | **no** | yes | must be unlocked on the thread that locked it |
+      | raw pointers `*const T`, `*mut T` | **no** | **no** | the compiler can't check what they point to |
+
+      ## The errors
+
+      `thread::spawn` requires its closure (and everything it captures) to be `Send + 'static`. Moving an `Rc` into a thread fails:
+
+      ```rust compile_fail
+      use std::rc::Rc;
+      use std::thread;
+
+      fn main() {
+          let data = Rc::new(5);
+          let h = thread::spawn(move || {
+              println!("{data}");
+          });
+          h.join().unwrap();
+      }
+      ```
+
+      ```error
+      error[E0277]: `Rc<i32>` cannot be sent between threads safely
+      ```
+
+      The note explains: "within `{closure}`, the trait `Send` is not implemented for `Rc<i32>`". Fix: use `Arc`.
+
+      Sharing a `RefCell` through an `Arc` fails on `Sync`:
+
+      ```rust compile_fail
+      use std::cell::RefCell;
+      use std::sync::Arc;
+      use std::thread;
+
+      fn main() {
+          let data = Arc::new(RefCell::new(5));
+          let d = Arc::clone(&data);
+          let h = thread::spawn(move || {
+              *d.borrow_mut() += 1;
+          });
+          h.join().unwrap();
+      }
+      ```
+
+      ```error
+      error[E0277]: `RefCell<i32>` cannot be shared between threads safely
+      ```
+
+      `Arc<T>` is only `Send` if `T` is `Sync`, and `RefCell` isn't (two threads could both call `borrow_mut` at once). Fix: `Arc<Mutex<T>>`, `Arc<RwLock<T>>`, or an atomic.
+
+      ## The thread-safe equivalents
+
+      | Single-threaded | Thread-safe |
+      |---|---|
+      | `Rc<T>` | `Arc<T>` |
+      | `RefCell<T>` | `Mutex<T>` or `RwLock<T>` |
+      | `Cell<u32>` | `AtomicU32` |
+      | `Rc<RefCell<T>>` | `Arc<Mutex<T>>` |
+
+      ## Send in async code
+
+      `tokio::spawn` also requires `Send` futures, because a task can move between worker threads at each `.await`. Holding an `Rc` or a `std::sync::MutexGuard` across an `.await` makes the future non-`Send`, and the error reads "future cannot be sent between threads safely". Drop such values before awaiting, or use `Arc` and `tokio::sync::Mutex`.
+
+      ## unsafe impl Send
+
+      Types wrapping raw pointers (FFI handles, custom data structures) can promise thread safety with `unsafe impl Send for MyType {}`. It's `unsafe` because the compiler can no longer check it: you're vouching that it's correct. In application code, you should essentially never need it.
+    example: |
+      use std::cell::RefCell;
+      use std::rc::Rc;
+      use std::sync::atomic::{AtomicU32, Ordering};
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      fn assert_send<T: Send>(name: &str) {
+          println!("{name} is Send");
+      }
+
+      fn assert_sync<T: Sync>(name: &str) {
+          println!("{name} is Sync");
+      }
+
+      struct Stats {
+          hits: AtomicU32,
+          names: Mutex<Vec<String>>,
+      }
+
+      fn main() {
+          assert_send::<String>("String");
+          assert_sync::<Arc<Mutex<Vec<i32>>>>("Arc<Mutex<Vec<i32>>>");
+          assert_send::<RefCell<i32>>("RefCell<i32>"); // Send, but not Sync
+          assert_sync::<Stats>("Stats (all fields are Sync)");
+
+          // Single-threaded sharing: Rc<RefCell<T>>.
+          let local = Rc::new(RefCell::new(vec![1]));
+          Rc::clone(&local).borrow_mut().push(2);
+          println!("local {:?}", local.borrow());
+
+          // The thread-safe version: Arc with a Mutex and an atomic.
+          let stats = Arc::new(Stats { hits: AtomicU32::new(0), names: Mutex::new(Vec::new()) });
+          let handles: Vec<_> = ["ferris", "corro", "gopher"]
+              .into_iter()
+              .map(|name| {
+                  let stats = Arc::clone(&stats);
+                  thread::spawn(move || {
+                      stats.hits.fetch_add(1, Ordering::Relaxed);
+                      stats.names.lock().unwrap().push(name.to_uppercase());
+                  })
+              })
+              .collect();
+          for h in handles {
+              h.join().unwrap();
+          }
+          let mut names = stats.names.lock().unwrap().clone();
+          names.sort();
+          println!("{} hits from {names:?}", stats.hits.load(Ordering::Relaxed));
+      }
+
+  - slug: async-await-tokio
+    title: "Async/await in Rust with Tokio: the basics"
+    description: "Getting started with async Rust: futures, async fn and .await, #[tokio::main], tokio::spawn, join!, async sleep, and when to use async vs threads."
+    modules: [async]
+    body: |
+      **Async** Rust lets one thread juggle many tasks that spend most of their time **waiting**: on the network, a database, a timer. While one task waits, the thread runs another. That's why web servers written with async Rust handle tens of thousands of connections with a handful of threads.
+
+      ## Futures are lazy
+
+      An `async fn` doesn't run when you call it. It returns a **future**, a value representing work that hasn't happened yet. `.await` runs the future to completion (pausing the current task while it waits) and gives you its output:
+
+      ```rust
+      async fn fetch_price(item: &str) -> u32 { ... }
+
+      let price = fetch_price("potion").await;
+      ```
+
+      Calling an async function without awaiting it does nothing, and rustc warns: "unused implementer of `Future` that must be used ... futures do nothing unless you `.await` or poll them".
+
+      `.await` is only allowed inside async code:
+
+      ```rust compile_fail
+      async fn fetch() -> u32 {
+          5
+      }
+
+      fn main() {
+          let n = fetch().await;
+          println!("{n}");
+      }
+      ```
+
+      ```error
+      error[E0728]: `await` is only allowed inside `async` functions and blocks
+      ```
+
+      ## A runtime: Tokio
+
+      Rust's standard library defines futures but doesn't include a **runtime** to drive them. **Tokio** is the one most teams use. Add it to `Cargo.toml`:
+
+      ```toml
+      [dependencies]
+      tokio = { version = "1", features = ["full"] }
+      ```
+
+      and mark `main`:
+
+      ```rust
+      #[tokio::main]
+      async fn main() {
+          let price = fetch_price("potion").await;
+          println!("{price}");
+      }
+      ```
+
+      `#[tokio::main]` starts a multi-threaded runtime and runs your async `main` on it.
+
+      ## Running things concurrently
+
+      Awaiting one future after another runs them **in sequence**. To run them at the same time:
+
+      - **`tokio::join!(a, b, c)`** runs several futures concurrently in the current task and returns all their outputs, **in argument order**. `try_join!` stops at the first `Err`.
+      - **`tokio::spawn(future)`** starts an independent **task** that the runtime may run on any worker thread. It returns a `JoinHandle`; `handle.await` gives `Result<T, JoinError>` (`Err` if the task panicked). Spawned tasks must be `Send + 'static`, like threads, so use `async move` and owned data.
+      - **`tokio::select!`** waits on several futures and continues with whichever finishes **first** (timeouts, cancellation).
+
+      ## Don't block the runtime
+
+      Inside async code, never call blocking functions such as `std::thread::sleep`, heavy CPU loops, or blocking file and network I/O: they freeze a whole worker thread and every task on it. Use the async versions (`tokio::time::sleep`, `tokio::fs`, `tokio::net`), and move CPU-heavy or blocking work to `tokio::task::spawn_blocking`.
+
+      ## Async vs threads
+
+      | Use async when | Use threads when |
+      |---|---|
+      | many tasks mostly waiting on I/O (servers, crawlers, chat) | a few CPU-heavy jobs (image processing, compression) |
+      | you need timeouts and cancellation everywhere | the code calls blocking libraries |
+      | you use async libraries (axum, reqwest, sqlx) | simplicity matters more than scale |
+
+      For CPU-bound data parallelism, `rayon` is usually simpler than both.
+
+      ## Common mistakes
+
+      - Forgetting `.await` (the work never happens).
+      - `std::sync::Mutex` guards held across `.await` (the future isn't `Send`; use `tokio::sync::Mutex` or drop the guard first).
+      - Expecting spawned tasks to print in a fixed order. Collect their results through `JoinHandle`s or `join!`, then print.
+    example: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_price(item: &str, delay_ms: u64) -> u32 {
+          sleep(Duration::from_millis(delay_ms)).await; // pretend this is a network call
+          match item {
+              "potion" => 30,
+              "sword" => 150,
+              _ => 0,
+          }
+      }
+
+      async fn checkout(items: Vec<&'static str>) -> Result<u32, String> {
+          let mut total = 0;
+          for item in items {
+              let price = fetch_price(item, 5).await;
+              if price == 0 {
+                  return Err(format!("unknown item {item}"));
+              }
+              total += price;
+          }
+          Ok(total)
+      }
+
+      #[tokio::main]
+      async fn main() {
+          // Concurrently: both waits overlap. Results come back in argument order.
+          let (potion, sword) = tokio::join!(fetch_price("potion", 30), fetch_price("sword", 10));
+          println!("potion {potion}, sword {sword}");
+
+          // Independent tasks on the runtime; await the handles in order.
+          let mut handles = Vec::new();
+          for (i, cart) in [vec!["potion", "sword"], vec!["potion", "shield"], vec!["sword"]].into_iter().enumerate() {
+              handles.push(tokio::spawn(async move { (i, checkout(cart).await) }));
+          }
+          for h in handles {
+              let (i, result) = h.await.expect("task panicked");
+              println!("cart {i}: {result:?}");
+          }
+
+          // CPU-heavy work goes to a blocking thread, not the async workers.
+          let sum = tokio::task::spawn_blocking(|| (1..=1_000_000u64).sum::<u64>()).await.unwrap();
+          println!("sum {sum}");
+      }

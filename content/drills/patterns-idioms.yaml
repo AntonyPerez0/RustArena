@@ -1,0 +1,328 @@
+topic: patterns-idioms
+drills:
+  - type: predict
+    pre: |
+      #[derive(Debug, Default)]
+      struct Settings {
+          volume: u8,
+          muted: bool,
+          name: String,
+      }
+    body: |
+      let s = Settings { volume: 7, ..Default::default() };
+      println!("{} {} {:?}", s.volume, s.muted, s.name);
+    why: "..Default::default() fills every field not written: derived Default gives false for bool and an empty String."
+
+  - type: predict
+    pre: |
+      struct Noisy(&'static str);
+
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              println!("drop {}", self.0);
+          }
+      }
+    body: |
+      let _a = Noisy("a");
+      let _b = Noisy("b");
+      println!("end");
+    why: Values are dropped at the end of their scope in reverse order of declaration, so b goes before a.
+
+  - type: predict
+    pre: |
+      struct Noisy(&'static str);
+
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              println!("drop {}", self.0);
+          }
+      }
+    body: |
+      let _ = Noisy("x");
+      let _y = Noisy("y");
+      println!("after");
+    why: "let _ = ... doesn't bind the value, so it's dropped immediately. let _y keeps it alive until the end of the scope."
+
+  - type: predict
+    pre: |
+      struct Celsius(f64);
+      struct Fahrenheit(f64);
+
+      impl From<Celsius> for Fahrenheit {
+          fn from(c: Celsius) -> Self {
+              Fahrenheit(c.0 * 9.0 / 5.0 + 32.0)
+          }
+      }
+    body: |
+      let f: Fahrenheit = Celsius(-40.0).into();
+      println!("{}", f.0);
+    why: Implementing From<Celsius> for Fahrenheit also provides into(); -40 is the same in both scales.
+
+  - type: predict
+    body: |
+      let v = vec![1, 2, 3];
+      let doubled = v.iter().map(|x| {
+          println!("saw {x}");
+          x * 2
+      });
+      println!("start");
+      let first: Vec<i32> = doubled.take(1).collect();
+      println!("{first:?}");
+    why: Iterators are lazy. Nothing runs until collect pulls items, and take(1) pulls only one.
+
+  - type: fill
+    prompt: Make the setter chainable, as in a consuming builder.
+    pre: |
+      struct Builder {
+          level: u8,
+      }
+
+      impl Builder {
+          fn level(mut self, level: u8) -> [[Self‖Builder]] {
+              self.level = level;
+              self
+          }
+      }
+    body: |
+      let b = Builder { level: 0 }.level(3).level(5);
+      println!("{}", b.level);
+    why: Each setter takes self by value and returns it, so calls chain.
+
+  - type: fill
+    prompt: Implement the trait that also gives you into() for free.
+    pre: |
+      struct Meters(f64);
+      struct Feet(f64);
+
+      impl [[From]]<Feet> for Meters {
+          fn from(f: Feet) -> Self {
+              Meters(f.0 * 0.3048)
+          }
+      }
+    body: |
+      let m: Meters = Feet(10.0).into();
+      println!("{:.3}", m.0);
+    why: Implement From and the standard library's blanket impl provides Into. Implementing Into directly is discouraged (clippy::from_over_into).
+
+  - type: fill
+    prompt: Accept both &str and String for a value the struct stores.
+    pre: |
+      struct Player {
+          name: String,
+      }
+
+      impl Player {
+          fn new(name: impl [[Into]]<String>) -> Self {
+              Player { name: name.into() }
+          }
+      }
+    body: |
+      let a = Player::new("Ferris");
+      let b = Player::new(String::from("Corro"));
+      println!("{} {}", a.name, b.name);
+    why: impl Into<String> accepts a &str (copied into a new String) or an owned String (moved in without a copy).
+
+  - type: bug
+    pre: |
+      use std::cell::Cell;
+
+      struct Busy<'a>(&'a Cell<u32>);
+
+      impl Drop for Busy<'_> {
+          fn drop(&mut self) {
+              self.0.set(self.0.get() - 1);
+          }
+      }
+
+      fn enter(count: &Cell<u32>) -> Busy<'_> {
+          count.set(count.get() + 1);
+          Busy(count)
+      }
+    body: |
+      let count = Cell::new(0);
+      let _ = enter(&count); // BUG
+      println!("busy: {}", count.get());
+    fix: 'let _guard = enter(&count);'
+    prompt: "While the guard is alive this should print `busy: 1`. Click the line with the bug."
+    why: "let _ drops the guard on the spot, undoing the count. Binding it to a name like _guard keeps it alive until the end of the scope."
+
+  - type: bug
+    pre: |
+      #[derive(Debug)]
+      enum State {
+          Cart,
+          Paid,
+          Shipped,
+      }
+
+      enum Event {
+          Pay,
+          Ship,
+      }
+
+      fn next(state: State, event: Event) -> State {
+          match (state, event) {
+              (State::Cart, Event::Pay) => State::Paid,
+              (State::Paid, Event::Ship) => State::Paid, // BUG
+              (s, _) => s,
+          }
+      }
+    body: |
+      let s = next(next(State::Cart, Event::Pay), Event::Ship);
+      println!("{s:?}");
+    fix: '(State::Paid, Event::Ship) => State::Shipped,'
+    prompt: "Paying and then shipping should end in `Shipped`. Click the line with the bug."
+    why: The transition table is the single source of truth for the state machine; the Paid + Ship arm returned the old state.
+
+  - type: bug
+    body: |
+      let names = ["ana", "bo", "cyd"];
+      let longest = names.iter().max_by_key(|n| n.len()).unwrap(); // BUG
+      println!("{longest}");
+    fix: 'let longest = names.iter().rev().max_by_key(|n| n.len()).unwrap();'
+    prompt: "On a tie this should keep the first of the longest names, so it prints `ana`. Click the line with the bug."
+    why: max_by_key returns the last maximum on ties. Reversing first makes the original first one win, a classic behavior change hidden in a refactor.
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct UserId(u64);
+      struct OrderId(u64);
+
+      fn refund(user: UserId, order: OrderId) -> String {
+          format!("{} {}", user.0, order.0)
+      }
+    body: |
+      println!("{}", refund(OrderId(9), UserId(1)));
+    why: The newtypes make the swapped arguments a type error, which is exactly the point of using them.
+
+  - type: compiles
+    answer: no
+    pre: |
+      mod money {
+          pub struct Cents(u64);
+
+          impl Cents {
+              pub fn new(c: u64) -> Cents {
+                  Cents(c)
+              }
+          }
+      }
+    body: |
+      let c = money::Cents(500);
+    why: The tuple field is private, so outside the module the only way to build a Cents is through its constructor. That's how a newtype guarantees its rules.
+
+  - type: compiles
+    answer: yes
+    body: |
+      let v = vec![1, 2, 3, 4];
+      let only_even = true;
+      let it: Box<dyn Iterator<Item = &i32>> = if only_even {
+          Box::new(v.iter().filter(|x| *x % 2 == 0))
+      } else {
+          Box::new(v.iter())
+      };
+      println!("{}", it.count());
+    why: The two branches have different iterator types, but both fit in a Box<dyn Iterator<Item = &i32>>.
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Draft;
+      struct Published;
+
+      impl Draft {
+          fn publish(self) -> Published {
+              Published
+          }
+      }
+    body: |
+      let p = Draft.publish();
+      let again = p.publish();
+    why: With the typestate pattern, publish exists only on Draft. Publishing twice is a compile error instead of a runtime check.
+
+  - type: choice
+    prompt: Orders are loaded from a database and can be in any state (cart, paid, shipped). How should you model the state?
+    choices: ["A String field like \"paid\"", "Several bool flags (is_paid, is_shipped)", "An enum whose variants carry each state's data", "Typestate: a separate type per state"]
+    answer: 3
+    why: The state is only known at run time, so an enum fits, and it can't hold nonsense combinations. Typestate needs the state to be known at compile time.
+
+  - type: choice
+    prompt: "Which parameter type lets a function read a list of names whether the caller has a `Vec<String>` or an array of `&str`?"
+    choices: ["&Vec<String>", "&[String]", "&[S] where S: AsRef<str>", "Vec<&str>"]
+    answer: 3
+    why: AsRef<str> borrows each item as a &str without converting, so both &[String] and &[&str] work. &[String] alone rejects &str arrays.
+
+  - type: boss
+    prompt: |
+      Write a `Version` newtype for `major.minor.patch` versions. `Version::parse(s)` accepts exactly three dot-separated numbers (`u32`) and otherwise returns `Err(format!("invalid version {s:?}"))`. Derive ordering so `1.10.0` is greater than `1.9.3` (compare numbers, not text), implement `Display` as `v1.2.3`, and write `fn latest(inputs: &[&str]) -> Option<Version>` returning the newest valid version, skipping invalid ones.
+    seed: |
+      use std::fmt;
+
+      #[derive(Debug, PartialEq)]
+      struct Version(u32, u32, u32);
+
+      impl Version {
+          fn parse(s: &str) -> Result<Version, String> {
+              todo!()
+          }
+      }
+
+      fn latest(inputs: &[&str]) -> Option<Version> {
+          todo!()
+      }
+    solution: |
+      use std::fmt;
+
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      struct Version(u32, u32, u32);
+
+      impl Version {
+          fn parse(s: &str) -> Result<Version, String> {
+              let parts: Vec<&str> = s.split('.').collect();
+              let [a, b, c] = parts[..] else {
+                  return Err(format!("invalid version {s:?}"));
+              };
+              let num = |p: &str| p.parse::<u32>().map_err(|_| format!("invalid version {s:?}"));
+              Ok(Version(num(a)?, num(b)?, num(c)?))
+          }
+      }
+
+      impl fmt::Display for Version {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "v{}.{}.{}", self.0, self.1, self.2)
+          }
+      }
+
+      fn latest(inputs: &[&str]) -> Option<Version> {
+          inputs.iter().filter_map(|s| Version::parse(s).ok()).max()
+      }
+    harness: |
+      #[test]
+      fn parses_three_numbers() {
+          assert_eq!(Version::parse("1.2.3"), Ok(Version(1, 2, 3)), "parse(\"1.2.3\")");
+      }
+
+      #[test]
+      fn rejects_other_shapes() {
+          for bad in ["1.2", "1.2.3.4", "a.b.c", "", "1..3"] {
+              assert_eq!(Version::parse(bad), Err(format!("invalid version {bad:?}")), "parse({bad:?})");
+          }
+      }
+
+      #[test]
+      fn compares_numerically() {
+          assert!(Version(1, 10, 0) > Version(1, 9, 3), "1.10.0 > 1.9.3");
+          assert_eq!(Version(2, 0, 1).to_string(), "v2.0.1", "Display");
+      }
+
+      #[test]
+      fn latest_skips_invalid_versions() {
+          assert_eq!(latest(&["1.9.3", "oops", "1.10.0", "0.99.99"]), Some(Version(1, 10, 0)), "latest(..)");
+          assert_eq!(latest(&["x"]), None, "latest(only invalid)");
+      }
+    hints:
+      - "Derived `PartialOrd, Ord` on a tuple struct compare field by field, which is exactly version order."
+      - "Split on '.', require exactly three parts with a slice pattern, and parse each as `u32`."
+      - "`latest`: `inputs.iter().filter_map(|s| Version::parse(s).ok()).max()`."
+    why: A newtype with a validating constructor, derived ordering and Display gives plain strings real meaning, and comparison becomes correct by construction.

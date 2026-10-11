@@ -6,9 +6,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/../../tools/lib.sh"
 
 provided_files_unchanged() {
-  unchanged "$HERE/tests/correctness.rs" b46720aecc5ba09df1f1f86af909b3a4fdeb0648d646db93713c6ed386a50fdb &&
-    unchanged "$HERE/tests/budget.rs" 733aeee425040fd1ce6045ec4236900d288c53d670b554689d019585eb15555e &&
-    unchanged "$HERE/src/data.rs" 5faf0f28e7671641daeab7344aafa84cf26317c8937c68a47f2e24edc5cd06ab
+  unchanged "$HERE/tests/correctness.rs" 085b1538cba45bccf5aee7fc7f0ea4b155fcc0d63730be0a82360deb6dcc469b &&
+    unchanged "$HERE/tests/budget.rs" 5ca1f48603e368e82d5f237b6f1b4c83f0d17cbe60b753d41fc4580c9afc8cb3 &&
+    unchanged "$HERE/src/data.rs" a1ac32d20bc3f4e986765f54738596cf45ea74c846fb37bf14eec349bfa8ce85
 }
 
 benches_compile() {

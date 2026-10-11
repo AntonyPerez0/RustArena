@@ -1,0 +1,236 @@
+topic: recursion-dp
+drills:
+  - type: predict
+    pre: |
+      fn show(n: u32) {
+          if n == 0 {
+              return;
+          }
+          print!("{n} ");
+          show(n - 1);
+          print!("{n} ");
+      }
+    body: |
+      show(3);
+      println!();
+    why: Each call prints n on the way down, then waits for the inner calls to finish before printing n again on the way back up.
+  - type: predict
+    pre: |
+      fn f(n: u64) -> u64 {
+          if n <= 1 { 1 } else { n * f(n - 2) }
+      }
+    body: |
+      println!("{}", f(7));
+    why: f(7) = 7 * f(5) = 7 * 5 * f(3) = 7 * 5 * 3 * f(1), and f(1) is the base case 1, so 105.
+  - type: predict
+    pre: |
+      fn count_evens(v: &[i32]) -> usize {
+          match v {
+              [] => 0,
+              [x, rest @ ..] => usize::from(x % 2 == 0) + count_evens(rest),
+          }
+      }
+    body: |
+      println!("{}", count_evens(&[1, 2, 3, 4, 6]));
+    why: Each call looks at the first number and recurses on the rest; 2, 4 and 6 are even.
+  - type: predict
+    pre: |
+      fn fib(n: u32, calls: &mut u32) -> u32 {
+          *calls += 1;
+          if n < 2 { n } else { fib(n - 1, calls) + fib(n - 2, calls) }
+      }
+    body: |
+      let mut calls = 0;
+      let v = fib(5, &mut calls);
+      println!("{v} {calls}");
+    why: Without memoization the same values are recomputed; fib(5) already needs 15 calls, and the count grows about 1.6 times per extra n.
+  - type: predict
+    body: |
+      let mut dp = vec![1u64; 6];
+      for i in 2..6 {
+          dp[i] = dp[i - 1] + dp[i - 2];
+      }
+      println!("{:?}", dp);
+    why: Bottom-up, each entry is built from the two before it, which are already filled.
+  - type: predict
+    body: |
+      let mut g = vec![vec![1u32; 3]; 3];
+      for r in 1..3 {
+          for c in 1..3 {
+              g[r][c] = g[r - 1][c] + g[r][c - 1];
+          }
+      }
+      println!("{}", g[2][2]);
+    why: Each cell counts the right/down routes to it as the sum of the cells above and to the left; a 3 by 3 grid has 6 routes to its corner.
+  - type: fill
+    prompt: Add the base case so the recursion stops.
+    pre: |
+      fn power(base: u64, exp: u32) -> u64 {
+          if exp == [[0]] {
+              return 1;
+          }
+          base * power(base, exp - 1)
+      }
+    body: |
+      println!("{}", power(2, 10));
+    why: Anything to the power 0 is 1. Without a base case at 0, exp - 1 would underflow and panic.
+  - type: fill
+    prompt: Look the answer up in the memo before computing it.
+    pre: |
+      use std::collections::HashMap;
+
+      fn ways(n: u64, memo: &mut HashMap<u64, u64>) -> u64 {
+          if n <= 1 {
+              return 1;
+          }
+          if let Some(&known) = memo.[[get]](&n) {
+              return known;
+          }
+          let value = ways(n - 1, memo) + ways(n - 2, memo);
+          memo.insert(n, value);
+          value
+      }
+    body: |
+      println!("{}", ways(40, &mut HashMap::new()));
+    why: memo.get(&n) returns Some(&value) for an answer computed earlier, so each n is computed only once.
+  - type: fill
+    prompt: Make each item usable at most once in the one-row knapsack.
+    body: |
+      let items = [(6, 30), (5, 20), (5, 20)];
+      let cap = 10;
+      let mut best = vec![0; cap + 1];
+      for &(weight, value) in &items {
+          for w in (weight..=cap).[[rev]]() {
+              best[w] = best[w].max(best[w - weight] + value);
+          }
+      }
+      println!("{}", best[cap]);
+    why: Going from high to low capacity, best[w - weight] still holds the value from before this item, so the item can't be added twice.
+  - type: bug
+    pre: |
+      fn subsets(items: &[char], i: usize, path: &mut String, out: &mut Vec<String>) {
+          if i == items.len() {
+              out.push(path.clone());
+              return;
+          }
+          path.push(items[i]);
+          subsets(items, i + 1, path, out);
+          path.push(items[i]); // BUG
+          subsets(items, i + 1, path, out);
+      }
+    body: |
+      let mut out = Vec::new();
+      subsets(&['a', 'b'], 0, &mut String::new(), &mut out);
+      println!("{:?}", out);
+    fix: "path.pop();"
+    why: Backtracking must undo its choice before exploring the other branch; pushing again corrupts every later subset.
+  - type: bug
+    body: |
+      let coins = [2, 5];
+      let amount = 7;
+      let mut best = vec![u32::MAX; amount + 1];
+      best[0] = 0;
+      for a in 1..=amount {
+          for &c in &coins {
+              if c <= a { // BUG
+                  best[a] = best[a].min(best[a - c] + 1);
+              }
+          }
+      }
+      println!("{}", best[amount]);
+    fix: "if c <= a && best[a - c] != u32::MAX {"
+    prompt: "This should print 2 (7 = 2 + 5). Click the line with the bug."
+    why: u32::MAX marks an impossible amount; adding 1 to it overflows and panics in a debug build. Skip impossible sub-amounts.
+  - type: compiles
+    answer: no
+    pre: |
+      use std::collections::HashMap;
+
+      fn fib(n: u64, memo: &mut HashMap<u64, u64>) -> u64 {
+          if n < 2 {
+              return n;
+          }
+          *memo.entry(n).or_insert_with(|| fib(n - 1, memo) + fib(n - 2, memo))
+      }
+    body: |
+      println!("{}", fib(30, &mut HashMap::new()));
+    why: The entry keeps the map mutably borrowed while the closure needs the map again. Use get, compute, then insert.
+  - type: compiles
+    answer: yes
+    pre: |
+      fn depth(n: u32) -> u32 {
+          if n == 0 { 0 } else { 1 + depth(n / 2) }
+      }
+    body: |
+      println!("{}", depth(1000));
+    why: A function may call itself; this one halves n each time, so it recurses only about 10 levels deep.
+  - type: compiles
+    answer: yes
+    body: |
+      let table = vec![vec![0u64; 4]; 3];
+      println!("{} rows, {} columns, corner {}", table.len(), table[0].len(), table[2][3]);
+    why: vec![vec![0; cols]; rows] clones the inner Vec for each row, giving a rows by cols table indexed [row][col].
+  - type: choice
+    prompt: When does memoizing a recursive function make it dramatically faster?
+    choices: ["Whenever it is recursive", "When the same subproblems are reached many times (overlapping subproblems)", "When it recurses very deeply", "Only when the answer is a number"]
+    answer: 2
+    why: Memoization only saves work by reusing answers. If every call has a different input (like a countdown), the memo just costs memory.
+  - type: choice
+    prompt: A recursive function processes a list of 1,000,000 items one at a time, recursing once per item. What's the likely result?
+    choices: ["It runs fine because Rust optimizes tail calls", "It overflows the stack and the program aborts", "The compiler rejects it", "It runs, but uses a lot of heap memory"]
+    answer: 2
+    why: Each call needs a stack frame and Rust doesn't guarantee tail-call optimization, so a million nested calls overflow the stack. Use a loop or an iterator.
+  - type: boss
+    prompt: |
+      A trading tool wants the length of the **longest rising run** of prices, where the prices don't have to be consecutive days, only in order: for `[10, 9, 2, 5, 3, 7, 101, 18]` it's 4 (`2, 3, 7, 18`). This is the **longest increasing subsequence** (strictly increasing).
+
+      Write `fn longest_rising(prices: &[i32]) -> usize` with bottom-up DP: `best[i]` is the length of the longest rising run that **ends** at day `i`. It's 1 plus the largest `best[j]` for an earlier day `j` with a lower price (or just 1). The answer is the largest `best[i]` (0 for no prices).
+    seed: |
+      fn longest_rising(prices: &[i32]) -> usize {
+          todo!()
+      }
+    solution: |
+      fn longest_rising(prices: &[i32]) -> usize {
+          // best[i] = length of the longest rising run ending at day i
+          let mut best = vec![1usize; prices.len()];
+          for i in 0..prices.len() {
+              for j in 0..i {
+                  if prices[j] < prices[i] {
+                      best[i] = best[i].max(best[j] + 1);
+                  }
+              }
+          }
+          best.into_iter().max().unwrap_or(0)
+      }
+    harness: |
+      #[test]
+      fn finds_the_classic_example() {
+          assert_eq!(longest_rising(&[10, 9, 2, 5, 3, 7, 101, 18]), 4, "longest_rising(&[10, 9, 2, 5, 3, 7, 101, 18])");
+      }
+
+      #[test]
+      fn equal_prices_do_not_rise() {
+          assert_eq!(longest_rising(&[7, 7, 7]), 1, "longest_rising(&[7, 7, 7])");
+      }
+
+      #[test]
+      fn a_falling_market_has_runs_of_one() {
+          assert_eq!(longest_rising(&[5, 4, 3]), 1, "longest_rising(&[5, 4, 3])");
+      }
+
+      #[test]
+      fn no_prices_give_zero() {
+          assert_eq!(longest_rising(&[]), 0, "longest_rising(&[])");
+      }
+
+      #[test]
+      fn handles_2000_prices() {
+          let prices: Vec<i32> = (0..2000).map(|i| (i * 7919) % 2003).collect();
+          assert_eq!(longest_rising(&prices), 65, "longest_rising(2,000 scrambled prices)");
+          assert_eq!(longest_rising(&(0..2000).collect::<Vec<i32>>()), 2000, "longest_rising(0..2000)");
+      }
+    hints:
+      - "`let mut best = vec![1usize; prices.len()];`: every day is a run of length 1 on its own."
+      - "For each `i`, look at every earlier `j`: if `prices[j] < prices[i]`, then `best[i] = best[i].max(best[j] + 1)`."
+      - "Return the largest entry: `best.into_iter().max().unwrap_or(0)`."
+    why: Each day extends the best run ending at any earlier, lower day; that's O(n²) instead of trying all 2ⁿ subsequences.

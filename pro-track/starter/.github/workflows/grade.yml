@@ -51,10 +51,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      # Every project is its own Cargo package sharing one target/ folder (.cargo/config.toml),
+      # so the cache is the Cargo registry plus that folder, per project.
+      - uses: actions/cache@v4
         with:
-          workspaces: ". -> target"
-          key: ${{ matrix.project }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: grade-${{ matrix.project }}-${{ hashFiles(format('projects/{0}/**/Cargo.lock', matrix.project), format('projects/{0}/**/Cargo.toml', matrix.project)) }}
+          restore-keys: grade-${{ matrix.project }}-
       - name: Install SQLite
         run: sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
       - name: Grade

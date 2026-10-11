@@ -437,6 +437,7 @@ await test("interview prep: open to everyone, all question types answer correctl
 });
 
 // ---------------------------------------------------------------- projects, pro track, playground
+if (content.projects.length)
 await test("project milestone passes, and the next one starts from your code", async () => {
   const p = content.projects[0];
   await go(`/projects/${p.id}`);
@@ -486,7 +487,7 @@ await test("playground: runs with input and arguments, explains errors and panic
   if (!/\/playground#code=/.test(link)) throw new Error("unexpected share link " + link);
   const ctx = await browser.newContext({ serviceWorkers: "block" });
   const pg = await ctx.newPage();
-  await pg.goto(link.replace(/^https?:\/\/[^/]+\//, BASE));
+  await pg.goto(link.replace(/^https?:\/\/[^/]+\//, `http://localhost:${PORT}/`));
   await pg.waitForFunction(() => document.querySelector("#pg-stdin")?.value === "hello", null, { timeout: 10000 });
   await pg.getByRole("button", { name: /^Run/ }).click();
   await pg.locator(".playground .console", { hasText: "shared hello" }).waitFor({ timeout: 120000 });
@@ -559,6 +560,7 @@ await test("symbol bar types into the editor and into blanks on a phone", async 
 await test("report a problem opens a pre-filled GitHub issue", async () => {
   await go(codeStep.path);
   const link = page.getByRole("link", { name: /Report a problem/ }).first();
+  await link.hover();
   const href = await link.getAttribute("href");
   const u = new URL(href);
   if (!/github\.com\/.+\/issues\/new$/.test(u.origin + u.pathname)) throw new Error("not an issue link: " + href);

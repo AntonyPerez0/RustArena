@@ -1,0 +1,1397 @@
+id: performance
+title: Performance
+phase: "Advanced Rust"
+summary: Honest, measured performance work. Pick the right algorithm and collection first, then cut needless clones and allocations, lean on zero-cost iterators and Cow, and learn the release builds, benchmarks and profilers that tell you where the time really goes.
+roadmap: ["Performance and Profiling", "Criterion.rs", "Benchmarking"]
+steps:
+  - title: Measure first, and fix the algorithm first
+    id: performance-1
+    text: |
+      Rust is fast by default, and most code is fast enough as written. When something **is** slow, the time almost always goes to a few hot spots, and the biggest wins come from doing **less work**, not from clever tricks. The order teams follow: make it work, make it right, then measure, and only then make it fast.
+
+      ### Debug versus release
+
+      `cargo run` and `cargo build` make a **debug build**: no optimizations, plus extra checks like integer overflow. It compiles quickly and is great for development, but it's often 10 to 100 times slower than a **release build**:
+
+      ```text
+      $ cargo build --release
+      $ ./target/release/report big_input.txt
+      ```
+
+      Never judge speed from a debug build, and never benchmark one. Release builds can be tuned in `Cargo.toml`:
+
+      ```toml
+      [profile.release]
+      lto = true            # optimize across crates: slower to build, often a bit faster to run
+      codegen-units = 1     # fewer parallel compile units: better optimization, slower builds
+      debug = true          # keep symbols so profilers can show function names
+      ```
+
+      This site runs debug builds, so its tests can't measure fine-grained speed. Instead, the exercises in this module check what matters most: the **amount of work**. Tests use inputs big enough that a quadratic solution runs past the 2-second time limit, while a linear one finishes in milliseconds, even unoptimized. Other exercises check for allocations and clones with rules.
+
+      ### Big-O beats micro-optimization
+
+      **Big-O** describes how the work grows with the input size `n`. For `n = 100_000`:
+
+      | Complexity | Example | Steps for 100,000 items |
+      |---|---|---|
+      | O(1) | `HashSet::contains`, `Vec` index | 1 |
+      | O(log n) | `binary_search` on a sorted Vec | about 17 |
+      | O(n) | one pass over the data | 100,000 |
+      | O(n log n) | sorting | about 1.7 million |
+      | O(n²) | a loop inside a loop | 10,000,000,000 |
+
+      No compiler flag turns ten billion steps into a hundred thousand. The most common O(n²) at work hides in one innocent line: **`Vec::contains` inside a loop**.
+
+      ```rust run
+      use std::collections::HashSet;
+
+      // O(n * m): for every wanted id, scan the whole stock list.
+      fn missing_slow(wanted: &[u32], in_stock: &[u32]) -> Vec<u32> {
+          wanted.iter().filter(|id| !in_stock.contains(id)).copied().collect()
+      }
+
+      // O(n + m): build a set once, then each lookup is O(1).
+      fn missing_fast(wanted: &[u32], in_stock: &[u32]) -> Vec<u32> {
+          let stock: HashSet<u32> = in_stock.iter().copied().collect();
+          wanted.iter().filter(|id| !stock.contains(id)).copied().collect()
+      }
+
+      fn main() {
+          let wanted = [3, 8, 15, 42];
+          let in_stock = [42, 8, 7];
+          println!("{:?}", missing_slow(&wanted, &in_stock));
+          println!("{:?}", missing_fast(&wanted, &in_stock));
+      }
+      ```
+
+      ```output
+      [3, 15]
+      [3, 15]
+      ```
+
+      Same answer. With 100,000 orders and 100,000 stock items, the slow version does ten billion comparisons; the fast one does about 200,000 hash operations. For a dozen items, though, the `Vec` is fine (hashing has a cost too). Big-O matters when `n` can grow.
+
+      ### Choosing a collection
+
+      | You need | Use | Cost per operation |
+      |---|---|---|
+      | "is X in here?" many times | `HashSet` / `HashMap` | O(1) on average |
+      | keys in sorted order, or ranges | `BTreeMap` / `BTreeSet` | O(log n) |
+      | many searches in data that rarely changes | sort once, then `binary_search` | O(log n) per search |
+      | a queue (push at the back, pop at the front) | `VecDeque` | O(1); `Vec::remove(0)` is O(n) |
+      | counting things | `HashMap` with `entry` | O(1) per item |
+
+      ### Common mistakes
+
+      - **Optimizing without measuring**: you'll speed up code that wasn't slow and make it harder to read.
+      - **Sorting inside a loop**, or calling `.contains` on a `Vec` inside a loop: each turns a linear job into a quadratic one.
+      - **Reaching for a `HashMap` for five items**: a small `Vec` or array is simpler and often faster.
+
+      **Your turn:** `has_duplicates` compares every pair of ids, which is O(n²); with 100,000 ids it blows the time limit. Make it O(n) with a `HashSet`: remember that `insert` returns `false` when the value was already there. (Sorting a copy and comparing neighbours, O(n log n), would also pass.)
+    seed: |
+      fn has_duplicates(ids: &[u64]) -> bool {
+          for i in 0..ids.len() {
+              for j in (i + 1)..ids.len() {
+                  if ids[i] == ids[j] {
+                      return true;
+                  }
+              }
+          }
+          false
+      }
+    solution: |
+      use std::collections::HashSet;
+
+      fn has_duplicates(ids: &[u64]) -> bool {
+          let mut seen = HashSet::with_capacity(ids.len());
+          for &id in ids {
+              if !seen.insert(id) {
+                  return true;
+              }
+          }
+          false
+      }
+    harness: |
+      #[test]
+      fn finds_a_duplicate() {
+          assert_eq!(has_duplicates(&[4, 8, 15, 8]), true, "has_duplicates(&[4, 8, 15, 8])");
+      }
+
+      #[test]
+      fn all_different_is_false() {
+          assert_eq!(has_duplicates(&[1, 2, 3]), false, "has_duplicates(&[1, 2, 3])");
+      }
+
+      #[test]
+      fn empty_and_single_are_false() {
+          assert_eq!(has_duplicates(&[]), false, "has_duplicates(&[])");
+          assert_eq!(has_duplicates(&[7]), false, "has_duplicates(&[7])");
+      }
+
+      #[test]
+      fn handles_100_000_unique_ids_quickly() {
+          let ids: Vec<u64> = (0..100_000u64).map(|i| i * 7 + 3).collect();
+          assert_eq!(has_duplicates(&ids), false, "100,000 unique ids");
+      }
+
+      #[test]
+      fn finds_a_duplicate_at_the_very_end_of_a_big_list() {
+          let mut ids: Vec<u64> = (0..100_000u64).collect();
+          ids.push(0);
+          assert_eq!(has_duplicates(&ids), true, "100,001 ids where the last repeats the first");
+      }
+    hints:
+      - "Keep a `HashSet` of the ids you've seen so far."
+      - "`seen.insert(id)` returns `false` if `id` was already in the set: that's your duplicate."
+      - "`let mut seen = HashSet::new(); for &id in ids { if !seen.insert(id) { return true; } } false`"
+    more:
+      - task: |
+          `count_known` counts how many words appear in a dictionary, but it calls `dictionary.contains` for every word: O(words × dictionary). Put the dictionary into a `HashSet<&str>` first (no need to copy the strings: the set can hold the borrowed `&str`s).
+        seed: |
+          fn count_known(words: &[&str], dictionary: &[&str]) -> usize {
+              words.iter().filter(|w| dictionary.contains(w)).count()
+          }
+        solution: |
+          use std::collections::HashSet;
+
+          fn count_known(words: &[&str], dictionary: &[&str]) -> usize {
+              let known: HashSet<&str> = dictionary.iter().copied().collect();
+              words.iter().filter(|w| known.contains(*w)).count()
+          }
+        harness: |
+          #[test]
+          fn counts_words_in_the_dictionary() {
+              assert_eq!(count_known(&["crab", "sea", "zzz", "crab"], &["sea", "crab", "sand"]), 3, "two crabs and a sea");
+          }
+
+          #[test]
+          fn no_dictionary_means_nothing_is_known() {
+              assert_eq!(count_known(&["a", "b"], &[]), 0, "empty dictionary");
+          }
+
+          #[test]
+          fn no_words_counts_zero() {
+              assert_eq!(count_known(&[], &["a"]), 0, "no words");
+          }
+
+          #[test]
+          fn handles_100_000_words_and_a_100_000_word_dictionary() {
+              let dict_owned: Vec<String> = (0..100_000).map(|i| format!("w{}", i * 2)).collect();
+              let words_owned: Vec<String> = (0..100_000).map(|i| format!("w{i}")).collect();
+              let dictionary: Vec<&str> = dict_owned.iter().map(|s| s.as_str()).collect();
+              let words: Vec<&str> = words_owned.iter().map(|s| s.as_str()).collect();
+              assert_eq!(count_known(&words, &dictionary), 50_000, "every even word is known");
+          }
+        require:
+          - pattern: 'HashSet'
+            message: Look the words up in a `HashSet`.
+        hints:
+          - "`let known: HashSet<&str> = dictionary.iter().copied().collect();`"
+          - "Then `words.iter().filter(|w| known.contains(*w)).count()`."
+      - task: |
+          A classic interview problem, done in O(n). Write `has_pair_with_sum(values, target)`: is there a pair of values at **two different positions** that adds up to `target`? Walk the list once, keeping a `HashSet` of the values seen so far; for each value `v`, check whether `target - v` is already in the set. (Nested loops would time out on the 100,000-value test.)
+        seed: |
+          fn has_pair_with_sum(values: &[i64], target: i64) -> bool {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashSet;
+
+          fn has_pair_with_sum(values: &[i64], target: i64) -> bool {
+              let mut seen = HashSet::with_capacity(values.len());
+              for &v in values {
+                  if seen.contains(&(target - v)) {
+                      return true;
+                  }
+                  seen.insert(v);
+              }
+              false
+          }
+        harness: |
+          #[test]
+          fn finds_a_pair() {
+              assert_eq!(has_pair_with_sum(&[3, 9, 14, 5], 8), true, "3 + 5 = 8");
+          }
+
+          #[test]
+          fn reports_when_there_is_no_pair() {
+              assert_eq!(has_pair_with_sum(&[1, 2, 4], 8), false, "no pair makes 8");
+          }
+
+          #[test]
+          fn one_value_cannot_be_used_twice() {
+              assert_eq!(has_pair_with_sum(&[4, 1], 8), false, "4 alone can't make 8");
+              assert_eq!(has_pair_with_sum(&[4, 1, 4], 8), true, "two 4s make 8");
+          }
+
+          #[test]
+          fn works_with_negatives_and_empty_input() {
+              assert_eq!(has_pair_with_sum(&[-3, 10, 7], 4), true, "-3 + 7 = 4");
+              assert_eq!(has_pair_with_sum(&[], 0), false, "empty input");
+          }
+
+          #[test]
+          fn handles_100_000_values_quickly() {
+              let values: Vec<i64> = (0..100_000).map(|i| i * 2).collect();
+              assert_eq!(has_pair_with_sum(&values, -1), false, "an odd target from even values");
+              assert_eq!(has_pair_with_sum(&values, 399_994), true, "the two largest values");
+          }
+        hints:
+          - "For each `v`, the partner it needs is `target - v`."
+          - "Check the set **before** inserting `v`, so a value can't pair with itself."
+          - "`for &v in values { if seen.contains(&(target - v)) { return true; } seen.insert(v); } false`"
+
+  - title: Borrow, don't clone
+    id: performance-2
+    text: |
+      Every `.clone()` of a `String` or `Vec` allocates new heap memory and copies every byte. One clone costs nanoseconds, but a clone inside a loop that runs a million times is a million allocations. Needless clones and `.to_string()` calls are the first thing reviewers look for in Rust performance work, and usually the easiest to remove.
+
+      ### Take `&str` and `&[T]` when you only read
+
+      A parameter of type `String` or `Vec<T>` takes ownership, so a caller who wants to keep their value has to clone it first. If the function only reads, borrow: `&str` accepts string literals, `&String` and slices of either; `&[T]` accepts arrays, `&Vec<T>` and slices.
+
+      ```rust run
+      #[derive(Debug)]
+      struct User {
+          name: String,
+          country: String,
+      }
+
+      // Borrows everything: no allocation at all.
+      fn find_user<'a>(users: &'a [User], name: &str) -> Option<&'a User> {
+          users.iter().find(|u| u.name == name)
+      }
+
+      // Only the results are cloned, not every user.
+      fn names_in(users: &[User], country: &str) -> Vec<String> {
+          users.iter().filter(|u| u.country == country).map(|u| u.name.clone()).collect()
+      }
+
+      fn main() {
+          let users = vec![
+              User { name: "ana".to_string(), country: "PT".to_string() },
+              User { name: "bo".to_string(), country: "SE".to_string() },
+              User { name: "cy".to_string(), country: "PT".to_string() },
+          ];
+          println!("{:?}", find_user(&users, "bo").map(|u| &u.country));
+          println!("{:?}", names_in(&users, "PT"));
+      }
+      ```
+
+      ```output
+      Some("SE")
+      ["ana", "cy"]
+      ```
+
+      - `find_user` returns `Option<&'a User>`: a reference **into** the caller's slice. Nothing is copied. The lifetime `'a` says the result borrows from `users`, not from `name`.
+      - `names_in` has to return owned names (the caller keeps them), but it clones only the matches, after filtering.
+      - `u.name == name` compares a `String` with a `&str` directly; no conversion needed.
+
+      ### When owning is right
+
+      If the function **stores** the value (in a struct field, a map, a channel), take it by value: `fn add_tag(&mut self, tag: String)`. Then the caller decides: move a `String` they no longer need (free), or clone one they still need. Cloning inside the function would force a copy even when the caller didn't need one.
+
+      ### Common mistakes
+
+      - **`for x in list.clone()`** just to loop: write `for x in &list`.
+      - **Converting to compare**: `if word.to_lowercase() == "error"` allocates a new `String` for every word. `word.eq_ignore_ascii_case("error")` allocates nothing.
+      - **`.iter().cloned().filter(...)`**: clones everything, then throws most of it away. Filter first, clone the survivors.
+      - **Over-correcting**: a clone of a short string at startup costs nothing that matters. Keep clones out of hot loops; elsewhere, readability wins. Cloning an `Rc` or `Arc` is cheap (it just bumps a counter).
+
+      clippy helps: `redundant_clone`, `unnecessary_to_owned` and `needless_pass_by_value` (in the `clippy::pedantic` group) flag many of these.
+
+      **Your turn:** `orders_for` takes ownership of everything and clones on every step. Change it to `fn orders_for<'a>(orders: &'a [Order], customer: &str) -> Vec<&'a Order>`: borrow the orders, borrow the name, and return references to the matching orders, with no clones or string conversions at all.
+    seed: |
+      #[derive(Debug, Clone)]
+      struct Order {
+          id: u32,
+          customer: String,
+          total_cents: u64,
+      }
+
+      fn orders_for(orders: Vec<Order>, customer: String) -> Vec<Order> {
+          let mut result = Vec::new();
+          for order in orders.clone() {
+              if order.customer.clone() == customer.clone() {
+                  result.push(order.clone());
+              }
+          }
+          result
+      }
+    solution: |
+      #[derive(Debug, Clone)]
+      struct Order {
+          id: u32,
+          customer: String,
+          total_cents: u64,
+      }
+
+      fn orders_for<'a>(orders: &'a [Order], customer: &str) -> Vec<&'a Order> {
+          orders.iter().filter(|o| o.customer == customer).collect()
+      }
+    harness: |
+      fn sample() -> Vec<Order> {
+          vec![
+              Order { id: 1, customer: "ana".to_string(), total_cents: 1200 },
+              Order { id: 2, customer: "bo".to_string(), total_cents: 300 },
+              Order { id: 3, customer: "ana".to_string(), total_cents: 45 },
+          ]
+      }
+
+      #[test]
+      fn finds_the_customers_orders() {
+          let orders = sample();
+          let ids: Vec<u32> = orders_for(&orders, "ana").iter().map(|o| o.id).collect();
+          assert_eq!(ids, vec![1, 3], "ids of ana's orders");
+      }
+
+      #[test]
+      fn returns_references_into_the_original_list() {
+          let orders = sample();
+          let found = orders_for(&orders, "bo");
+          assert!(std::ptr::eq(found[0], &orders[1]), "the result should point at the original order, not a copy");
+      }
+
+      #[test]
+      fn totals_can_be_read_through_the_references() {
+          let orders = sample();
+          let total: u64 = orders_for(&orders, "ana").iter().map(|o| o.total_cents).sum();
+          assert_eq!(total, 1245, "ana's total");
+      }
+
+      #[test]
+      fn an_unknown_customer_gets_nothing() {
+          let orders = sample();
+          assert!(orders_for(&orders, "cy").is_empty(), "orders_for(.., \"cy\") should be empty");
+      }
+    forbid:
+      - pattern: '\.clone\(\)|\.to_string\(\)|\.to_owned\(\)|String::from'
+        message: Borrow instead of cloning or converting.
+    hints:
+      - "Start with the new signature: `fn orders_for<'a>(orders: &'a [Order], customer: &str) -> Vec<&'a Order>`."
+      - "`orders.iter()` yields `&Order`s; keep the ones whose `customer` equals the name."
+      - "`orders.iter().filter(|o| o.customer == customer).collect()`"
+    more:
+      - task: |
+          `longest_word` takes a `String` and returns a new `String`, cloning along the way. Change it to `fn longest_word(text: &str) -> &str`, returning a slice of the input. If several words tie for longest, return the first. For text with no words, return `""`.
+        seed: |
+          fn longest_word(text: String) -> String {
+              let mut best = String::new();
+              for word in text.clone().split_whitespace() {
+                  if word.to_string().len() > best.len() {
+                      best = word.to_string();
+                  }
+              }
+              best
+          }
+        solution: |
+          fn longest_word(text: &str) -> &str {
+              let mut best = "";
+              for word in text.split_whitespace() {
+                  if word.len() > best.len() {
+                      best = word;
+                  }
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn finds_the_longest_word() {
+              assert_eq!(longest_word("the crab scuttled away"), "scuttled", "longest_word(\"the crab scuttled away\")");
+          }
+
+          #[test]
+          fn the_first_of_a_tie_wins() {
+              assert_eq!(longest_word("sand reef wave"), "sand", "longest_word(\"sand reef wave\")");
+          }
+
+          #[test]
+          fn no_words_gives_an_empty_str() {
+              assert_eq!(longest_word("   "), "", "longest_word(\"   \")");
+          }
+
+          #[test]
+          fn the_result_borrows_from_the_input() {
+              let text = String::from("a bb ccc");
+              let w = longest_word(&text);
+              assert!(std::ptr::eq(w.as_ptr(), text[5..].as_ptr()), "the result should be a slice of the input");
+          }
+        forbid:
+          - pattern: '\.clone\(\)|\.to_string\(\)|\.to_owned\(\)|String'
+            message: Return a slice of the input; no new Strings.
+        hints:
+          - "Start `best` as the empty string slice `\"\"`."
+          - "`split_whitespace` already yields `&str` slices of `text`; keep the longest one in `best`."
+      - task: |
+          Write `count_errors`, which counts the log lines that start with `error` in any ASCII case (`ERROR disk full`, `Error: timeout`, `error`) **without allocating**: no `to_lowercase`, no new `String`s. Take the first 5 bytes with `line.get(..5)` (it returns `None` if the line is shorter or byte 5 isn't a character boundary) and compare with `eq_ignore_ascii_case`. `Option::is_some_and(|x| ...)` is a handy way to test the value inside an `Option` in one call.
+        seed: |
+          fn count_errors(lines: &[&str]) -> usize {
+              todo!()
+          }
+        solution: |
+          fn count_errors(lines: &[&str]) -> usize {
+              lines
+                  .iter()
+                  .filter(|line| line.get(..5).is_some_and(|start| start.eq_ignore_ascii_case("error")))
+                  .count()
+          }
+        harness: |
+          #[test]
+          fn counts_every_spelling() {
+              assert_eq!(count_errors(&["ERROR disk full", "Error: timeout", "error"]), 3, "three error lines");
+          }
+
+          #[test]
+          fn ignores_other_lines() {
+              assert_eq!(count_errors(&["warning: error later", "info", "err", ""]), 0, "no line starts with error");
+          }
+
+          #[test]
+          fn handles_non_ascii_text_safely() {
+              assert_eq!(count_errors(&["éeeee", "ÉRROR", "error ✓"]), 1, "only the last line counts");
+          }
+
+          #[test]
+          fn handles_lots_of_lines() {
+              let lines: Vec<&str> = (0..30_000).map(|i| if i % 3 == 0 { "Error x" } else { "ok" }).collect();
+              assert_eq!(count_errors(&lines), 10_000, "every third line is an error");
+          }
+        forbid:
+          - pattern: 'to_lowercase|to_uppercase|to_ascii_lowercase|to_ascii_uppercase|to_string|to_owned|String|format!'
+            message: Compare without allocating, using `eq_ignore_ascii_case`.
+        hints:
+          - "`line.get(..5)` gives `Option<&str>`: the first five bytes, if they form valid text."
+          - "`.is_some_and(|start| start.eq_ignore_ascii_case(\"error\"))` checks it without allocating."
+          - "`lines.iter().filter(|line| line.get(..5).is_some_and(|s| s.eq_ignore_ascii_case(\"error\"))).count()`"
+
+  - title: Allocate less
+    id: performance-3
+    text: |
+      A `Vec` (and a `String`, which is a `Vec<u8>` inside) keeps its elements in one heap buffer with room to spare: its **capacity**. When you push past the capacity, it allocates a bigger buffer (about double), copies everything over and frees the old one.
+
+      ```rust run
+      fn main() {
+          let mut grown = Vec::new();
+          let mut allocations = 0;
+          let mut last_capacity = grown.capacity();
+          for i in 0..1000 {
+              grown.push(i);
+              if grown.capacity() != last_capacity {
+                  allocations += 1;
+                  last_capacity = grown.capacity();
+              }
+          }
+          println!("Vec::new: {allocations} allocations, capacity {}", grown.capacity());
+
+          let mut sized = Vec::with_capacity(1000);
+          let start = sized.capacity();
+          for i in 0..1000 {
+              sized.push(i);
+          }
+          println!("with_capacity: capacity {} -> {}", start, sized.capacity());
+      }
+      ```
+
+      ```output
+      Vec::new: 9 allocations, capacity 1024
+      with_capacity: capacity 1000 -> 1000
+      ```
+
+      Doubling keeps pushes cheap on average, but when you **know** the final size, `Vec::with_capacity(n)` or `String::with_capacity(n)` allocates once. The exact growth steps are an implementation detail; the guarantee is that `with_capacity(n)` gives at least (in practice exactly) `n`.
+
+      You often get this for free: `collect()` asks the iterator for its size first, so `(0..n).map(f).collect::<Vec<_>>()` allocates once. `join` and `concat` add up the lengths before allocating, too.
+
+      ### Building strings
+
+      `format!` always creates a **new** `String`. Inside a loop that appends to a result, that's an extra allocation per line, and `result = format!("{result}{line}")` even copies everything built so far, every time: quadratic. Write straight into one buffer instead with `push_str`, or with `write!` and `writeln!` (from the `std::fmt::Write` trait), which format directly into an existing `String`:
+
+      ```rust run
+      use std::fmt::Write;
+
+      fn report(items: &[(&str, u32)]) -> String {
+          let mut out = String::with_capacity(items.len() * 16);
+          for (name, qty) in items {
+              writeln!(out, "{name:<8}{qty:>4}").unwrap();
+          }
+          out
+      }
+
+      fn main() {
+          print!("{}", report(&[("potion", 3), ("arrow", 120), ("map", 1)]));
+      }
+      ```
+
+      ```output
+      potion     3
+      arrow    120
+      map        1
+      ```
+
+      `writeln!` into a `String` returns a `fmt::Result` that can never actually be an error, so `.unwrap()` is fine here. (`std::fmt::Write` and `std::io::Write` share the name `Write`, so a file that needs both imports one anonymously: `use std::io::Write as _;` still brings its methods into scope.)
+
+      ### Reuse buffers
+
+      When a loop needs a temporary `String` or `Vec`, create it **once** outside the loop and `clear()` it each time round. `clear` keeps the capacity, so after the first few rounds the loop stops allocating. The classic case is reading input line by line with `read_line(&mut line)` and `line.clear()`.
+
+      ### Common mistakes
+
+      **Capacity isn't length.** `with_capacity` reserves room but the `Vec` is still empty, so indexing panics:
+
+      ```rust panics
+      fn main() {
+          let mut v: Vec<u32> = Vec::with_capacity(10);
+          println!("len {} capacity {}", v.len(), v.capacity());
+          v[0] = 1;
+      }
+      ```
+
+      ```output
+      len 0 capacity 10
+      ```
+
+      Use `push`, or `vec![0; 10]` if you really want ten zeros to overwrite.
+
+      - **Guessing huge capacities** "to be safe" wastes memory. Use exact counts when you know them; otherwise let the `Vec` grow.
+
+      **Your turn:** write `join_path`, which joins path parts with `/` (`["usr", "local", "bin"]` gives `"usr/local/bin"`) and allocates **exactly once**: compute the final length first (all the parts plus one `/` between each pair, careful with an empty list), create the `String` with that capacity, then `push_str` and `push`. A test checks the capacity equals the length. (`parts.join("/")` does exactly this internally; here you write it yourself.)
+    seed: |
+      fn join_path(parts: &[&str]) -> String {
+          todo!()
+      }
+    solution: |
+      fn join_path(parts: &[&str]) -> String {
+          let total: usize = parts.iter().map(|p| p.len()).sum::<usize>() + parts.len().saturating_sub(1);
+          let mut out = String::with_capacity(total);
+          for (i, part) in parts.iter().enumerate() {
+              if i > 0 {
+                  out.push('/');
+              }
+              out.push_str(part);
+          }
+          out
+      }
+    harness: |
+      #[test]
+      fn joins_with_slashes() {
+          assert_eq!(join_path(&["usr", "local", "bin"]), "usr/local/bin", "join_path(&[\"usr\", \"local\", \"bin\"])");
+      }
+
+      #[test]
+      fn allocates_exactly_the_right_size() {
+          let p = join_path(&["home", "ferris", "projects", "arena"]);
+          assert_eq!(p.capacity(), p.len(), "capacity should equal the final length");
+      }
+
+      #[test]
+      fn a_single_part_has_no_slash() {
+          let p = join_path(&["etc"]);
+          assert_eq!(p, "etc", "join_path(&[\"etc\"])");
+          assert_eq!(p.capacity(), 3, "capacity for one part");
+      }
+
+      #[test]
+      fn no_parts_is_an_empty_string() {
+          let p = join_path(&[]);
+          assert_eq!(p, "", "join_path(&[])");
+          assert_eq!(p.capacity(), 0, "capacity for no parts");
+      }
+
+      #[test]
+      fn lengths_are_in_bytes() {
+          let p = join_path(&["café", "menü"]);
+          assert_eq!(p, "café/menü", "join_path with accents");
+          assert_eq!(p.capacity(), p.len(), "capacity with multi-byte characters");
+      }
+    require:
+      - pattern: 'with_capacity'
+        message: Allocate once with `String::with_capacity`.
+    forbid:
+      - pattern: '\.join\(|\.concat\(|format!'
+        message: Build the string yourself with `push_str` and `push`.
+    hints:
+      - "The length is the sum of `p.len()` over all parts, plus `parts.len() - 1` slashes. `saturating_sub(1)` keeps that from going below zero for an empty list."
+      - "Push a `/` before every part except the first: `for (i, part) in parts.iter().enumerate() { if i > 0 { out.push('/'); } out.push_str(part); }`."
+    more:
+      - task: |
+          Write `render_table`, which turns `(name, quantity)` rows into lines like `potion: 3`, each ending with `\n`. Build everything in one `String` created with `with_capacity` (a rough estimate is fine), and append each line with `writeln!` instead of `format!`.
+        seed: |
+          use std::fmt::Write;
+
+          fn render_table(rows: &[(&str, u32)]) -> String {
+              todo!()
+          }
+        solution: |
+          use std::fmt::Write;
+
+          fn render_table(rows: &[(&str, u32)]) -> String {
+              let mut out = String::with_capacity(rows.len() * 16);
+              for (name, qty) in rows {
+                  writeln!(out, "{name}: {qty}").unwrap();
+              }
+              out
+          }
+        harness: |
+          #[test]
+          fn renders_each_row_on_its_own_line() {
+              assert_eq!(render_table(&[("potion", 3), ("arrow", 120)]), "potion: 3\narrow: 120\n", "two rows");
+          }
+
+          #[test]
+          fn no_rows_is_empty() {
+              assert_eq!(render_table(&[]), "", "no rows");
+          }
+
+          #[test]
+          fn handles_many_rows() {
+              let rows: Vec<(&str, u32)> = (0..10_000).map(|i| ("gem", i)).collect();
+              let out = render_table(&rows);
+              assert_eq!(out.lines().count(), 10_000, "number of lines");
+              assert!(out.ends_with("gem: 9999\n"), "the last line should be gem: 9999");
+          }
+        require:
+          - pattern: 'with_capacity'
+            message: Start from `String::with_capacity`.
+          - pattern: 'writeln!|write!'
+            message: Append with `writeln!` (from `std::fmt::Write`).
+        forbid:
+          - pattern: 'format!'
+            message: "`format!` makes a new String per line; write into `out` instead."
+        hints:
+          - "`let mut out = String::with_capacity(rows.len() * 16);`"
+          - "`writeln!(out, \"{name}: {qty}\").unwrap();` inside the loop, then return `out`."
+      - task: |
+          `numbered_list` rebuilds the whole string on every line with `format!`, so the total copying grows with the square of the list length: 200,000 items take far longer than the time limit. Make it linear by appending to one `String` instead. The output format stays the same: `1. first\n2. second\n...`.
+        seed: |
+          fn numbered_list(items: &[&str]) -> String {
+              let mut out = String::new();
+              for (i, item) in items.iter().enumerate() {
+                  out = format!("{}{}. {}\n", out, i + 1, item);
+              }
+              out
+          }
+        solution: |
+          use std::fmt::Write;
+
+          fn numbered_list(items: &[&str]) -> String {
+              let mut out = String::new();
+              for (i, item) in items.iter().enumerate() {
+                  writeln!(out, "{}. {}", i + 1, item).unwrap();
+              }
+              out
+          }
+        harness: |
+          #[test]
+          fn numbers_each_item() {
+              assert_eq!(numbered_list(&["wake up", "feed crab"]), "1. wake up\n2. feed crab\n", "two items");
+          }
+
+          #[test]
+          fn an_empty_list_is_empty() {
+              assert_eq!(numbered_list(&[]), "", "no items");
+          }
+
+          #[test]
+          fn handles_200_000_items_quickly() {
+              let items = vec!["task"; 200_000];
+              let out = numbered_list(&items);
+              assert_eq!(out.lines().count(), 200_000, "number of lines");
+              assert!(out.ends_with("200000. task\n"), "the last line should be numbered 200000");
+          }
+        forbid:
+          - pattern: 'format!'
+            message: Append to `out` instead of rebuilding it with `format!`.
+        hints:
+          - "The fix is to stop creating a new String per item and append to `out` instead."
+          - "`use std::fmt::Write;` then `writeln!(out, \"{}. {}\", i + 1, item).unwrap();` in the loop."
+
+  - title: Iterator chains and avoiding intermediate collections
+    id: performance-4
+    text: |
+      Iterators are a **zero-cost abstraction**: in a release build, a chain like `.filter().map().sum()` compiles to the same machine code as a hand-written loop, often better, because iterators don't need bounds checks on every element. You can't beat them by writing the loop yourself.
+
+      What **does** cost is collecting in the middle. Every `.collect::<Vec<_>>()` allocates a whole new vector, and the next step then reads it all again:
+
+      ```rust run
+      fn long_words_wasteful(text: &str) -> usize {
+          let words: Vec<&str> = text.split_whitespace().collect();
+          let long: Vec<&&str> = words.iter().filter(|w| w.len() > 3).collect();
+          long.len()
+      }
+
+      fn long_words(text: &str) -> usize {
+          text.split_whitespace().filter(|w| w.len() > 3).count()
+      }
+
+      fn main() {
+          let text = "the crab scuttled across the warm sand";
+          println!("{} {}", long_words_wasteful(text), long_words(text));
+      }
+      ```
+
+      ```output
+      5 5
+      ```
+
+      Same answer, but the first version builds two vectors it immediately throws away. The chain walks the words once and allocates nothing. clippy's `needless_collect` lint points these out.
+
+      ### Laziness lets you stop early
+
+      Adapters do nothing until a consumer pulls items, and consumers like `any`, `all`, `find`, `position` and `take` **stop as soon as they have the answer**:
+
+      ```rust run
+      fn main() {
+          let mut checked = 0;
+          let readings = [12, 15, 99, 14, 13, 18, 11];
+          let alarm = readings.iter().any(|&r| {
+              checked += 1;
+              r > 90
+          });
+          println!("alarm: {alarm}, readings checked: {checked}");
+      }
+      ```
+
+      ```output
+      alarm: true, readings checked: 3
+      ```
+
+      If the readings came from a huge file or a network stream, the lazy version stops reading at the third one. Collecting first would read everything.
+
+      ### Don't sort to find one thing
+
+      Sorting is O(n log n) and usually needs a copy. To find the largest or smallest item, `max`, `min`, `max_by_key` and `min_by_key` do one O(n) pass and return a reference, no copy. (For the top `k` of many, `select_nth_unstable` beats a full sort.)
+
+      ### Common mistakes
+
+      - **`.collect::<Vec<_>>().len()`**: use `.count()`.
+      - **`v.iter().count()`** on a `Vec`: it's just `v.len()`.
+      - **`.map(...).collect::<Vec<_>>()` then `.iter().sum()`**: sum directly.
+      - **`list.clone()` then sort, just to read the first element**: use `min_by_key`/`max_by_key`.
+      - **Index loops** (`for i in 0..v.len() { v[i] }`): iterate the values; it's clearer and skips bounds checks.
+
+      **Your turn:** `paid_revenue` collects two throwaway vectors and then loops. Rewrite it as **one** iterator chain: keep paid orders, turn each into `qty * price_cents` (as `u64`), and `sum` them. No `collect` and no loops.
+    seed: |
+      struct Order {
+          paid: bool,
+          qty: u32,
+          price_cents: u64,
+      }
+
+      /// Total revenue (qty * price) of the paid orders.
+      fn paid_revenue(orders: &[Order]) -> u64 {
+          let paid: Vec<&Order> = orders.iter().filter(|o| o.paid).collect();
+          let amounts: Vec<u64> = paid.iter().map(|o| o.qty as u64 * o.price_cents).collect();
+          let mut total = 0;
+          for a in amounts {
+              total += a;
+          }
+          total
+      }
+    solution: |
+      struct Order {
+          paid: bool,
+          qty: u32,
+          price_cents: u64,
+      }
+
+      /// Total revenue (qty * price) of the paid orders.
+      fn paid_revenue(orders: &[Order]) -> u64 {
+          orders.iter().filter(|o| o.paid).map(|o| o.qty as u64 * o.price_cents).sum()
+      }
+    harness: |
+      #[test]
+      fn adds_up_paid_orders_only() {
+          let orders = vec![
+              Order { paid: true, qty: 2, price_cents: 350 },
+              Order { paid: false, qty: 5, price_cents: 100 },
+              Order { paid: true, qty: 1, price_cents: 1999 },
+          ];
+          assert_eq!(paid_revenue(&orders), 2699, "2 * 350 + 1999");
+      }
+
+      #[test]
+      fn nothing_paid_is_zero() {
+          let orders = vec![Order { paid: false, qty: 3, price_cents: 10 }];
+          assert_eq!(paid_revenue(&orders), 0, "no paid orders");
+          assert_eq!(paid_revenue(&[]), 0, "no orders at all");
+      }
+
+      #[test]
+      fn big_quantities_do_not_overflow() {
+          let orders = vec![Order { paid: true, qty: 4_000_000_000, price_cents: 10 }];
+          assert_eq!(paid_revenue(&orders), 40_000_000_000, "qty is converted to u64 before multiplying");
+      }
+    forbid:
+      - pattern: '\.collect|\bfor\b|\bwhile\b|\bloop\b'
+        message: Use one iterator chain ending in `sum()`, with no `collect` and no loops.
+    hints:
+      - "`orders.iter().filter(|o| o.paid)` keeps the paid ones."
+      - "`.map(|o| o.qty as u64 * o.price_cents).sum()`: convert before multiplying so big quantities don't overflow."
+    more:
+      - task: |
+          `first_bad_line` receives lines from a stream (it could be a multi-gigabyte log) and returns the position of the first line that isn't a valid integer (after trimming). The current version collects every line before looking. Make it stop as soon as it finds the answer, using `position`. A hidden test feeds it a stream that panics if read past the bad line.
+        seed: |
+          fn first_bad_line<'a>(lines: impl Iterator<Item = &'a str>) -> Option<usize> {
+              let all: Vec<&str> = lines.collect();
+              all.iter().position(|l| l.trim().parse::<i64>().is_err())
+          }
+        solution: |
+          fn first_bad_line<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<usize> {
+              lines.position(|l| l.trim().parse::<i64>().is_err())
+          }
+        harness: |
+          #[test]
+          fn finds_the_first_bad_line() {
+              assert_eq!(first_bad_line(["10", " 20 ", "x", "y"].into_iter()), Some(2), "lines 10, 20, x, y");
+          }
+
+          #[test]
+          fn all_good_lines_give_none() {
+              assert_eq!(first_bad_line(["1", "-2", "3"].into_iter()), None, "three numbers");
+              assert_eq!(first_bad_line(std::iter::empty()), None, "no lines");
+          }
+
+          #[test]
+          fn stops_reading_at_the_bad_line() {
+              let stream = ["5", "oops"].into_iter().chain(std::iter::from_fn(|| -> Option<&str> {
+                  panic!("read past the bad line")
+              }));
+              assert_eq!(first_bad_line(stream), Some(1), "should stop at \"oops\"");
+          }
+        forbid:
+          - pattern: '\.collect'
+            message: Don't collect the lines; search the iterator directly.
+        hints:
+          - "`position` is a consumer that stops at the first item matching the closure."
+          - "It needs the iterator to be mutable: `fn first_bad_line<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<usize>`."
+          - "`lines.position(|l| l.trim().parse::<i64>().is_err())`"
+      - task: |
+          `top_scorer` copies and sorts the whole roster just to read one player. Rewrite it to return `Option<&Player>` (a reference into the slice) in a single pass, with no sorting, cloning or collecting. If several players share the top score, return the **first** of them in the list. Hint: `max_by_key` returns the **last** of equal maximums, so use `reduce` (or a loop) that only replaces the best when a score is strictly greater.
+        seed: |
+          #[derive(Debug, Clone)]
+          struct Player {
+              name: String,
+              score: u32,
+          }
+
+          fn top_scorer(players: &[Player]) -> Option<Player> {
+              let mut sorted = players.to_vec();
+              sorted.sort_by(|a, b| b.score.cmp(&a.score));
+              sorted.first().cloned()
+          }
+        solution: |
+          #[derive(Debug, Clone)]
+          struct Player {
+              name: String,
+              score: u32,
+          }
+
+          fn top_scorer(players: &[Player]) -> Option<&Player> {
+              players.iter().reduce(|best, p| if p.score > best.score { p } else { best })
+          }
+        harness: |
+          fn roster() -> Vec<Player> {
+              vec![
+                  Player { name: "ana".to_string(), score: 40 },
+                  Player { name: "bo".to_string(), score: 95 },
+                  Player { name: "cy".to_string(), score: 95 },
+                  Player { name: "di".to_string(), score: 12 },
+              ]
+          }
+
+          #[test]
+          fn finds_the_top_score() {
+              let players = roster();
+              assert_eq!(top_scorer(&players).map(|p| p.score), Some(95), "top score");
+          }
+
+          #[test]
+          fn the_first_of_a_tie_wins() {
+              let players = roster();
+              assert_eq!(top_scorer(&players).map(|p| p.name.as_str()), Some("bo"), "bo and cy tie; bo comes first");
+          }
+
+          #[test]
+          fn returns_a_reference_into_the_roster() {
+              let players = roster();
+              let top = top_scorer(&players).unwrap();
+              assert!(std::ptr::eq(top, &players[1]), "the result should point into the roster, not be a copy");
+          }
+
+          #[test]
+          fn an_empty_roster_has_no_top_scorer() {
+              assert!(top_scorer(&[]).is_none(), "top_scorer(&[]) should be None");
+          }
+        forbid:
+          - pattern: 'sort|\.clone|cloned|to_vec|\.collect'
+            message: Find the best player in one pass, without sorting or copying.
+        hints:
+          - "Change the return type to `Option<&Player>`; `players.iter()` yields references you can return directly."
+          - "`reduce` starts with the first item and folds the rest into it: `players.iter().reduce(|best, p| ...)`."
+          - "Inside: `if p.score > best.score { p } else { best }`. Strictly greater keeps the first of a tie."
+
+  - title: "Cow: borrow when you can, own when you must"
+    id: performance-5
+    text: |
+      Some functions usually return their input **unchanged** but occasionally need to modify it: escaping text that rarely contains special characters, normalizing paths that are usually already normal. Returning `String` allocates every time, even for the common case. Returning `&str` can't express the modified case.
+
+      **`Cow`** ("clone on write", from `std::borrow`) handles both. `Cow<'a, str>` is an enum with two variants: `Borrowed(&'a str)` or `Owned(String)`.
+
+      ```rust run
+      use std::borrow::Cow;
+
+      fn escape_html(input: &str) -> Cow<'_, str> {
+          if !input.contains(['<', '>', '&']) {
+              return Cow::Borrowed(input); // the common case: no allocation
+          }
+          let mut out = String::with_capacity(input.len() + 16);
+          for c in input.chars() {
+              match c {
+                  '<' => out.push_str("&lt;"),
+                  '>' => out.push_str("&gt;"),
+                  '&' => out.push_str("&amp;"),
+                  _ => out.push(c),
+              }
+          }
+          Cow::Owned(out)
+      }
+
+      fn main() {
+          for text in ["hello crab", "1 < 2 & 3 > 2"] {
+              let escaped = escape_html(text);
+              let kind = match &escaped {
+                  Cow::Borrowed(_) => "borrowed",
+                  Cow::Owned(_) => "owned",
+              };
+              println!("{kind}: {escaped}");
+          }
+      }
+      ```
+
+      ```output
+      borrowed: hello crab
+      owned: 1 &lt; 2 &amp; 3 &gt; 2
+      ```
+
+      - `Cow<'_, str>` borrows from `input` (the `'_` is the elided lifetime of `input`).
+      - Callers don't care which variant they got: `Cow<str>` dereferences to `&str`, so it prints, compares and slices like one. `.into_owned()` gives a `String` (allocating only if it was borrowed).
+      - `.to_mut()` turns a `Borrowed` into an `Owned` copy the first time you need to change it, and returns `&mut` to the owned value. That's the "clone on write" in the name.
+
+      std uses `Cow` too: `String::from_utf8_lossy(bytes)` returns `Cow::Borrowed` when the bytes were valid UTF-8 and `Cow::Owned` only when it had to replace bad bytes. A `Cow<'static, str>` field is a common way to hold messages that are usually string literals but sometimes built with `format!`.
+
+      ### When not to use it
+
+      `Cow` adds a lifetime and a little complexity to every caller. It pays off when the unchanged case is common and the data is big or the function is hot. If you modify the input most of the time anyway, just return `String`.
+
+      ### Common mistakes
+
+      - **`Cow::Owned(s)` with a `&str`**: the owned variant holds a `String`, so write `Cow::Owned(s.to_string())`.
+      - **Calling `.to_string()` on the result** "to be safe": that allocates every time and throws the benefit away. Use the `Cow` as a `&str` where you can.
+      - **Returning `Cow::Borrowed` of a local `String`**: the borrow can't outlive the function. Anything you built inside must be `Owned`.
+
+      **Your turn:** write `redact_digits`, which replaces every ASCII digit with `#` (`"pin 1234"` becomes `"pin ####"`). Text without digits must come back as `Cow::Borrowed` (no allocation); a hidden test checks the variant.
+    seed: |
+      use std::borrow::Cow;
+
+      fn redact_digits(s: &str) -> Cow<'_, str> {
+          todo!()
+      }
+    solution: |
+      use std::borrow::Cow;
+
+      fn redact_digits(s: &str) -> Cow<'_, str> {
+          if !s.chars().any(|c| c.is_ascii_digit()) {
+              return Cow::Borrowed(s);
+          }
+          let redacted: String = s.chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect();
+          Cow::Owned(redacted)
+      }
+    harness: |
+      use std::borrow::Cow;
+
+      #[test]
+      fn replaces_digits() {
+          assert_eq!(redact_digits("pin 1234"), "pin ####", "redact_digits(\"pin 1234\")");
+      }
+
+      #[test]
+      fn text_without_digits_is_borrowed() {
+          let r = redact_digits("no numbers here");
+          assert_eq!(r, "no numbers here", "content");
+          assert!(matches!(r, Cow::Borrowed(_)), "text without digits should come back as Cow::Borrowed");
+      }
+
+      #[test]
+      fn changed_text_is_owned() {
+          let r = redact_digits("card 4111-1111");
+          assert_eq!(r, "card ####-####", "content");
+          assert!(matches!(r, Cow::Owned(_)), "redacted text should be Cow::Owned");
+      }
+
+      #[test]
+      fn keeps_other_characters_including_unicode() {
+          assert_eq!(redact_digits("café 7 ✓"), "café # ✓", "redact_digits(\"café 7 ✓\")");
+          assert!(matches!(redact_digits(""), Cow::Borrowed(_)), "an empty string should be borrowed");
+      }
+    hints:
+      - "First check whether there's anything to change: `s.chars().any(|c| c.is_ascii_digit())`. If not, `return Cow::Borrowed(s);`."
+      - "Otherwise build the new text with `s.chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect::<String>()` and wrap it in `Cow::Owned`."
+    more:
+      - task: |
+          Write `ensure_trailing_slash`, which makes sure a directory path ends with `/`: `"/usr/bin"` becomes `"/usr/bin/"` (owned), `"/usr/bin/"` comes back unchanged (borrowed), and `""` becomes `"/"`.
+        seed: |
+          use std::borrow::Cow;
+
+          fn ensure_trailing_slash(path: &str) -> Cow<'_, str> {
+              todo!()
+          }
+        solution: |
+          use std::borrow::Cow;
+
+          fn ensure_trailing_slash(path: &str) -> Cow<'_, str> {
+              if path.ends_with('/') {
+                  Cow::Borrowed(path)
+              } else {
+                  let mut owned = String::with_capacity(path.len() + 1);
+                  owned.push_str(path);
+                  owned.push('/');
+                  Cow::Owned(owned)
+              }
+          }
+        harness: |
+          use std::borrow::Cow;
+
+          #[test]
+          fn adds_a_missing_slash() {
+              let r = ensure_trailing_slash("/usr/bin");
+              assert_eq!(r, "/usr/bin/", "content");
+              assert!(matches!(r, Cow::Owned(_)), "a changed path should be Cow::Owned");
+          }
+
+          #[test]
+          fn leaves_a_path_with_a_slash_alone() {
+              let r = ensure_trailing_slash("/usr/bin/");
+              assert_eq!(r, "/usr/bin/", "content");
+              assert!(matches!(r, Cow::Borrowed(_)), "an unchanged path should be Cow::Borrowed");
+          }
+
+          #[test]
+          fn an_empty_path_becomes_root() {
+              assert_eq!(ensure_trailing_slash(""), "/", "ensure_trailing_slash(\"\")");
+          }
+        hints:
+          - "`if path.ends_with('/') { Cow::Borrowed(path) } else { ... }`"
+          - "The else branch builds a new String: `Cow::Owned(format!(\"{path}/\"))` works, or push into a `String::with_capacity(path.len() + 1)`."
+      - task: |
+          `Cow` works for slices too: `Cow<'_, [i32]>` is either a borrowed `&[i32]` or an owned `Vec<i32>`. Write `clamp_negatives`, which replaces negative numbers with `0`. Start with `Cow::Borrowed(values)` and call `.to_mut()` only when you find a negative number: the first call copies the slice into a `Vec`, later calls reuse it. A slice with no negatives comes back borrowed.
+        seed: |
+          use std::borrow::Cow;
+
+          fn clamp_negatives(values: &[i32]) -> Cow<'_, [i32]> {
+              todo!()
+          }
+        solution: |
+          use std::borrow::Cow;
+
+          fn clamp_negatives(values: &[i32]) -> Cow<'_, [i32]> {
+              let mut result = Cow::Borrowed(values);
+              for (i, &v) in values.iter().enumerate() {
+                  if v < 0 {
+                      result.to_mut()[i] = 0;
+                  }
+              }
+              result
+          }
+        harness: |
+          use std::borrow::Cow;
+
+          #[test]
+          fn clamps_negative_values() {
+              let r = clamp_negatives(&[3, -1, 4, -5]);
+              assert_eq!(&*r, &[3, 0, 4, 0], "clamp_negatives(&[3, -1, 4, -5])");
+              assert!(matches!(r, Cow::Owned(_)), "a changed slice should be Cow::Owned");
+          }
+
+          #[test]
+          fn leaves_non_negative_slices_borrowed() {
+              let r = clamp_negatives(&[0, 7, 9]);
+              assert_eq!(&*r, &[0, 7, 9], "clamp_negatives(&[0, 7, 9])");
+              assert!(matches!(r, Cow::Borrowed(_)), "an unchanged slice should be Cow::Borrowed");
+          }
+
+          #[test]
+          fn handles_empty_and_all_negative() {
+              assert!(matches!(clamp_negatives(&[]), Cow::Borrowed(_)), "an empty slice should be borrowed");
+              assert_eq!(&*clamp_negatives(&[-1, -2]), &[0, 0], "clamp_negatives(&[-1, -2])");
+          }
+        require:
+          - pattern: '\.to_mut\(\)'
+            message: Copy only when needed, with `.to_mut()`.
+        hints:
+          - "`let mut result = Cow::Borrowed(values);`"
+          - "For each negative value at index `i`: `result.to_mut()[i] = 0;`. `to_mut` gives a `&mut Vec<i32>`, copying the slice the first time."
+          - "`for (i, &v) in values.iter().enumerate() { if v < 0 { result.to_mut()[i] = 0; } }` then return `result`."
+
+  - title: Benchmarks and profilers
+    id: performance-6
+    text: |
+      Guessing where a program spends its time is famously unreliable, even for experts. Two tools replace guessing: **profilers** tell you *where* the time goes, and **benchmarks** tell you *how much* a change helped.
+
+      ### Benchmarks with criterion
+
+      **criterion** is the standard benchmarking crate. It runs your code many times, warms up first, and uses statistics to tell real changes from noise:
+
+      ```toml
+      # Cargo.toml
+      [dev-dependencies]
+      criterion = "0.5"   # check crates.io for the current version
+
+      [[bench]]
+      name = "word_count"
+      harness = false
+      ```
+
+      ```rust
+      // benches/word_count.rs
+      use criterion::{criterion_group, criterion_main, Criterion};
+      use std::hint::black_box;
+      use my_app::count_words;
+
+      fn bench_count_words(c: &mut Criterion) {
+          let text = std::fs::read_to_string("benches/sample.txt").unwrap();
+          c.bench_function("count_words 1 MB", |b| {
+              b.iter(|| count_words(black_box(&text)))
+          });
+      }
+
+      criterion_group!(benches, bench_count_words);
+      criterion_main!(benches);
+      ```
+
+      ```text
+      $ cargo bench
+      count_words 1 MB        time:   [2.8131 ms 2.8297 ms 2.8476 ms]
+                              change: [-41.205% -40.731% -40.249%] (p = 0.00 < 0.05)
+                              Performance has improved.
+      ```
+
+      - `cargo bench` always builds with optimizations.
+      - **`std::hint::black_box`** hides a value from the optimizer. Without it, the compiler may notice the result is unused and delete the work you meant to measure.
+      - The three times are a confidence interval; the `change` line compares with the previous run.
+      - Benchmark with **realistic input**. A function that's fastest on 10 items may be slowest on 10 million.
+
+      A hand-rolled `Instant::now()` timing loop is fine for a rough idea, in a release build, but it won't tell you whether a 3% difference is real.
+
+      ### Profilers: where does the time go?
+
+      A **sampling profiler** interrupts the program thousands of times per second and records which function was running. On Linux:
+
+      ```text
+      $ cargo build --release            # with debug = true in [profile.release]
+      $ perf record -g ./target/release/report big_input.txt
+      $ perf report                      # functions sorted by share of samples
+      ```
+
+      **Flamegraphs** draw the same data as a picture. `cargo install flamegraph`, then `cargo flamegraph --bin report -- big_input.txt` writes `flamegraph.svg` (it builds in release mode by default). How to read one:
+
+      - Each box is a function; the boxes on top of it are the functions it called.
+      - **Width** is the share of samples, so wide boxes are where the time goes. The x-axis is **not** time order.
+      - Look for wide plateaus near the top: a function that is wide itself, not just because of what it calls.
+
+      `samply` is a cross-platform alternative that opens results in the Firefox profiler; macOS has Instruments. For memory, `heaptrack` and the `dhat` crate show who allocates.
+
+      ### The workflow
+
+      1. Reproduce the slowness with realistic input, in a **release** build.
+      2. Profile. Find the widest box.
+      3. Fix that one thing (usually an algorithm, a collection, or an allocation in a loop).
+      4. Benchmark before and after, and keep the benchmark so a later change can't quietly undo it.
+
+      ### A real hot spot
+
+      Suppose a flamegraph of a text tool looks like this (one line per stack level, with its share of samples):
+
+      ```text
+      main                                 100%
+      └─ count_vowels                       98%
+         └─ core::iter::Iterator::nth       96%   <- almost all the time
+      ```
+
+      and `count_vowels` is:
+
+      ```rust
+      fn count_vowels(text: &str) -> usize {
+          let mut count = 0;
+          for i in 0..text.chars().count() {
+              let c = text.chars().nth(i).unwrap(); // walks from the start every time
+              if "aeiouAEIOU".contains(c) {
+                  count += 1;
+              }
+          }
+          count
+      }
+      ```
+
+      Strings are UTF-8, so finding the `i`-th character means walking from the start: `nth(i)` is O(i), and the loop makes the whole function O(n²). The profile points straight at it; no amount of compiler tuning would.
+
+      **Your turn:** fix `count_vowels` so it walks the characters once (O(n)), without `nth`. The tests include a 100,000-character string.
+    seed: |
+      fn count_vowels(text: &str) -> usize {
+          let mut count = 0;
+          for i in 0..text.chars().count() {
+              let c = text.chars().nth(i).unwrap();
+              if "aeiouAEIOU".contains(c) {
+                  count += 1;
+              }
+          }
+          count
+      }
+    solution: |
+      fn count_vowels(text: &str) -> usize {
+          text.chars().filter(|&c| "aeiouAEIOU".contains(c)).count()
+      }
+    harness: |
+      #[test]
+      fn counts_vowels_in_a_word() {
+          assert_eq!(count_vowels("arena"), 3, "count_vowels(\"arena\")");
+      }
+
+      #[test]
+      fn counts_both_cases() {
+          assert_eq!(count_vowels("AEIOU aeiou"), 10, "count_vowels(\"AEIOU aeiou\")");
+      }
+
+      #[test]
+      fn handles_empty_and_unicode_text() {
+          assert_eq!(count_vowels(""), 0, "count_vowels(\"\")");
+          assert_eq!(count_vowels("crab 🦀 é"), 1, "accented letters aren't in the list");
+      }
+
+      #[test]
+      fn handles_100_000_characters_quickly() {
+          let text = "rust!".repeat(20_000);
+          assert_eq!(count_vowels(&text), 20_000, "one vowel in every rust!");
+      }
+    forbid:
+      - pattern: '\.nth\s*\('
+        message: Walk the characters once instead of calling `nth` for each position.
+    hints:
+      - "`text.chars()` already gives every character in order; you don't need the index at all."
+      - "`text.chars().filter(|&c| \"aeiouAEIOU\".contains(c)).count()`"
+    more:
+      - task: |
+          A profile of a job scheduler shows 99% of the time in `Vec::remove`, called from `finish_times`. Removing the first element of a `Vec` shifts every other element down, so the loop is O(n²). Rewrite it to walk the jobs in order without removing anything: each job's finish time is the running total of the costs so far.
+        seed: |
+          /// Runs jobs in order; returns the time at which each one finishes.
+          fn finish_times(mut jobs: Vec<u32>) -> Vec<u64> {
+              let mut clock = 0u64;
+              let mut out = Vec::new();
+              while !jobs.is_empty() {
+                  let job = jobs.remove(0);
+                  clock += job as u64;
+                  out.push(clock);
+              }
+              out
+          }
+        solution: |
+          /// Runs jobs in order; returns the time at which each one finishes.
+          fn finish_times(jobs: Vec<u32>) -> Vec<u64> {
+              let mut clock = 0u64;
+              let mut out = Vec::with_capacity(jobs.len());
+              for job in jobs {
+                  clock += job as u64;
+                  out.push(clock);
+              }
+              out
+          }
+        harness: |
+          #[test]
+          fn adds_up_running_totals() {
+              assert_eq!(finish_times(vec![3, 1, 4]), vec![3, 4, 8], "finish_times(vec![3, 1, 4])");
+          }
+
+          #[test]
+          fn no_jobs_gives_no_times() {
+              assert_eq!(finish_times(vec![]), Vec::<u64>::new(), "finish_times(vec![])");
+          }
+
+          #[test]
+          fn uses_u64_for_big_totals() {
+              assert_eq!(finish_times(vec![u32::MAX, u32::MAX]), vec![4_294_967_295, 8_589_934_590], "two huge jobs");
+          }
+
+          #[test]
+          fn handles_200_000_jobs_quickly() {
+              let times = finish_times(vec![2; 200_000]);
+              assert_eq!(times.len(), 200_000, "one finish time per job");
+              assert_eq!(times[199_999], 400_000, "the last job finishes at 400000");
+          }
+        forbid:
+          - pattern: '\.remove\s*\(\s*0\s*\)'
+            message: Don't remove from the front of the Vec; iterate over it.
+        hints:
+          - "`for job in jobs { ... }` visits the jobs in order without moving the others."
+          - "Keep `clock += job as u64; out.push(clock);` inside the loop."
+      - task: |
+          A profile of a word counter shows most of its time in `to_string` allocations and hashing, because every word is converted to a `String` up to three times and looked up up to three times. Rewrite `word_counts` to return `HashMap<&str, usize>` that **borrows** the words from `text` (no allocation per word), and use the `entry` API so each word is hashed once.
+        seed: |
+          use std::collections::HashMap;
+
+          fn word_counts(text: &str) -> HashMap<String, usize> {
+              let mut counts = HashMap::new();
+              for word in text.split_whitespace() {
+                  if counts.contains_key(&word.to_string()) {
+                      let n = counts.get(&word.to_string()).unwrap() + 1;
+                      counts.insert(word.to_string(), n);
+                  } else {
+                      counts.insert(word.to_string(), 1);
+                  }
+              }
+              counts
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn word_counts(text: &str) -> HashMap<&str, usize> {
+              let mut counts = HashMap::new();
+              for word in text.split_whitespace() {
+                  *counts.entry(word).or_insert(0) += 1;
+              }
+              counts
+          }
+        harness: |
+          #[test]
+          fn counts_each_word() {
+              let counts = word_counts("the crab and the sea and the sand");
+              assert_eq!(counts.get("the"), Some(&3), "count of the");
+              assert_eq!(counts.get("and"), Some(&2), "count of and");
+              assert_eq!(counts.get("crab"), Some(&1), "count of crab");
+              assert_eq!(counts.len(), 5, "number of distinct words");
+          }
+
+          #[test]
+          fn missing_words_are_absent() {
+              assert_eq!(word_counts("a b").get("c"), None, "count of c");
+          }
+
+          #[test]
+          fn empty_text_gives_an_empty_map() {
+              assert!(word_counts("   ").is_empty(), "word_counts(\"   \") should be empty");
+          }
+
+          #[test]
+          fn keys_borrow_from_the_text() {
+              let text = String::from("solo");
+              let counts = word_counts(&text);
+              let key = counts.keys().next().unwrap();
+              assert!(std::ptr::eq(key.as_ptr(), text.as_ptr()), "the key should be a slice of the text, not a copy");
+          }
+        require:
+          - pattern: '\.entry\s*\('
+            message: Use the `entry` API so each word is looked up once.
+        forbid:
+          - pattern: 'to_string|to_owned|String::from|contains_key'
+            message: Borrow the words from `text` and drop the extra lookups.
+        hints:
+          - "Change the return type to `HashMap<&str, usize>`; the `&str`s from `split_whitespace` borrow from `text`."
+          - "`*counts.entry(word).or_insert(0) += 1;` inserts 0 the first time, then adds 1, with one hash per word."

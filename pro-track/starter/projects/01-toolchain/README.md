@@ -18,7 +18,7 @@ rustup toolchain install 1.85        # an older compiler, to test your minimum v
 cargo +1.85 test                     # run one command with that toolchain
 ```
 
-Teams often commit a `rust-toolchain.toml` so every laptop and CI machine uses the same channel. rustup reads it automatically in that folder:
+Teams often commit a `rust-toolchain.toml` so every laptop and CI machine uses the same channel:
 
 ```toml
 [toolchain]
@@ -32,7 +32,6 @@ Versions are not **editions** (2018, 2021, 2024): an edition is a set of languag
 
 | Command | What it does |
 |---|---|
-| `cargo new name` | create a package (`--lib` for a library) |
 | `cargo check` | type-check without producing a binary: the fastest feedback |
 | `cargo build` / `cargo run -- ARGS` | compile (and run) a debug build; `--` separates your program's arguments from Cargo's |
 | `cargo test` | build and run unit, integration and doc tests |
@@ -73,11 +72,11 @@ Never benchmark or ship a debug build.
 
 ### rustfmt and clippy
 
-**rustfmt** formats code one standard way. Teams run it on save and check it in CI, so code review is about logic, not spacing. `cargo fmt` rewrites files; `cargo fmt --check` only reports. **clippy** is a linter with hundreds of lints for bugs, slow code and unidiomatic code; each warning links to an explanation. CI runs it with `-D warnings` so every warning is an error. When a lint is wrong for one spot, silence it there with `#[allow(clippy::lint_name)]` and a comment saying why.
+**rustfmt** formats code one standard way, so code review is about logic, not spacing. `cargo fmt` rewrites files; `cargo fmt --check` only reports. **clippy** is a linter with hundreds of lints for bugs, slow code and unidiomatic code; each warning links to an explanation. CI runs it with `-D warnings` so every warning is an error. When a lint is wrong for one spot, silence it there with `#[allow(clippy::lint_name)]` and a comment saying why.
 
 ### Continuous integration
 
-Open `.github/workflows/grade.yml` at the root of this repository. On every push, GitHub Actions starts a fresh Ubuntu machine, installs stable Rust with rustfmt and clippy, restores a cache of compiled dependencies, and runs `bash tools/grade.sh <project>`, which runs `cargo fmt --check`, `cargo clippy`, `cargo test` and project checks. A fresh machine catches "works on my laptop" problems (a file you forgot to commit), and a green check is what lets teammates trust and merge a change.
+Open `.github/workflows/grade.yml`. On every push, GitHub Actions starts a fresh Ubuntu machine, installs stable Rust with rustfmt and clippy, restores cached dependencies and runs `bash tools/grade.sh <project>`: the same `cargo fmt --check`, `cargo clippy` and `cargo test` you run locally, plus project checks. A fresh machine catches "works on my laptop" problems (a file you forgot to commit), and a green check is what lets teammates trust and merge a change.
 
 ## Your tasks
 
@@ -85,7 +84,7 @@ Work in `projects/01-toolchain` (`cd projects/01-toolchain`).
 
 1. **Check your tools.** Run `rustup show`, `cargo --version` and `bash ../../tools/doctor.sh`. Then `cargo run -- --help` builds and runs the program, and `cargo test` fails with `not yet implemented`: that's what you'll fix.
 2. **Fill in the metadata.** In `Cargo.toml`, add `description`, `license` and `rust-version = "1.85"` (edition 2024 needs at least 1.85).
-3. **Add a dependency.** Splitting text into words correctly (apostrophes, decimal numbers, accents) is harder than it looks, and the Unicode standard already defines it. Run `cargo add unicode-segmentation`, then look at what changed in `Cargo.toml` and `Cargo.lock`, and run `cargo tree`. Read its docs with `cargo doc --open`.
+3. **Add a dependency.** Splitting text into words correctly (apostrophes, decimals, accents) is harder than it looks, and Unicode already defines it. Run `cargo add unicode-segmentation`, then look at what changed in `Cargo.toml` and `Cargo.lock`, and run `cargo tree`. Read its docs with `cargo doc --open`.
 4. **Write the library.** Complete TODO 1 and TODO 2 in `src/lib.rs`:
    - `count_words`: `use unicode_segmentation::UnicodeSegmentation;` adds `unicode_words()` to `&str`. Lowercase each word with `to_lowercase()` and count with `*counts.entry(word).or_insert(0) += 1`.
    - `top_words`: collect the pairs into a `Vec`, sort with `sort_by` comparing counts in reverse and then words (`Ordering::then_with`), and `truncate(n)`.
@@ -112,4 +111,3 @@ Work in `projects/01-toolchain` (`cd projects/01-toolchain`).
 
 - Prove your `rust-version` is honest: `rustup toolchain install 1.85 && cargo +1.85 test`.
 - Run `cargo run --release < big.txt | head -n 1` on a large file: `println!` panics when `head` closes the pipe. Write through `std::io::stdout().lock()` with `writeln!` and stop quietly on `ErrorKind::BrokenPipe`.
-- Install your tool like any Rust user would: `cargo install --path .`, then run `wordfreq` from anywhere.

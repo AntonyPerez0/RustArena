@@ -1,0 +1,649 @@
+# Reference pages at /topics/<slug>: the Idiomatic Rust phase (closures, iterators, modules, smart pointers, testing).
+topics:
+  - slug: closures-and-fn-traits
+    title: "Closures in Rust and the Fn, FnMut and FnOnce traits"
+    description: "How Rust closures capture variables, the difference between Fn, FnMut and FnOnce, the move keyword, and passing or returning closures."
+    modules: [closures]
+    body: |
+      A **closure** is an anonymous function you can store in a variable or pass to another function. Unlike a normal `fn`, it can use variables from the scope where it's created; this is called **capturing** them.
+
+      ```rust run
+      fn main() {
+          let tax_rate = 0.2;
+          let with_tax = |price: f64| price * (1.0 + tax_rate);
+          println!("{:.2}", with_tax(10.0));
+
+          let double = |x| x * 2;
+          println!("{}", double(21));
+      }
+      ```
+
+      ```output
+      12.00
+      42
+      ```
+
+      Parameters go between `|` bars; the body is an expression (use `{ }` for several statements). Types are usually inferred, but each closure gets **one** set of types: after `double(21)`, calling `double(1.5)` is E0308, mismatched types.
+
+      ## How closures capture
+
+      The compiler picks the least powerful capture that works:
+
+      1. **By shared reference** if the closure only reads the variable.
+      2. **By mutable reference** if it changes it.
+      3. **By value (move)** if it consumes it (moves it somewhere, drops it).
+
+      The kind of capture decides which **Fn traits** the closure implements:
+
+      | Trait | The closure... | Can be called | Example |
+      |---|---|---|---|
+      | `Fn` | only reads its captures | many times, even concurrently | `\|x\| x * factor` |
+      | `FnMut` | changes its captures | many times, needs `mut` | `\|\| count += 1` |
+      | `FnOnce` | consumes a capture | once | `\|\| drop(buffer)` |
+
+      Every `Fn` is also `FnMut` and `FnOnce`, so a function asking for `FnOnce` accepts anything; one asking for `Fn` accepts the fewest closures.
+
+      ## The move keyword
+
+      `move |...| ...` forces the closure to take **ownership** of everything it captures, even if it only reads it. You need it when the closure outlives the current scope: threads (`thread::spawn(move || ...)`), async tasks, and closures you return. `move` doesn't change which Fn trait the closure implements; it changes where the data lives.
+
+      ## Taking closures as parameters
+
+      ```rust
+      fn apply<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 { f(x) }
+      fn apply(f: impl Fn(i32) -> i32, x: i32) -> i32 { f(x) }      // same thing
+      fn retry<F: FnMut() -> bool>(mut attempt: F) { ... }           // stateful callback
+      ```
+
+      Pick the most permissive bound that your function's use allows: `FnOnce` if you call it once, `FnMut` if you call it repeatedly, `Fn` only if you need to call it through a shared reference or from several threads.
+
+      ## Returning closures
+
+      Each closure has its own unnamed type, so you return it as `impl Fn(...)`, or as `Box<dyn Fn(...)>` when different branches return different closures:
+
+      ```rust
+      fn make_multiplier(n: i32) -> impl Fn(i32) -> i32 {
+          move |x| x * n
+      }
+      ```
+
+      ## Common mistakes
+
+      - **A mutating closure stored without `mut`:** E0596, "cannot borrow `bump` as mutable, as it is not declared as mutable". Write `let mut bump = || ...`.
+      - **Using a captured variable while the closure still holds a mutable borrow:** E0502 or E0499. Call the closure for the last time first.
+      - **Passing an `FnMut` closure where `Fn` is required:** E0596, "cannot borrow `log` as mutable, as it is a captured variable in a `Fn` closure". Change the bound to `FnMut`.
+      - **Moving out of a capture in an `Fn` closure:** E0507, "cannot move out of `name`, a captured variable in an `Fn` closure". Clone inside, or accept `FnOnce`.
+      - **Forgetting `move` for a thread:** E0373, "closure may outlive the current function".
+
+      Closures shine with iterator adapters and sorting: `v.sort_by_key(|p| p.age)`, `v.retain(|x| *x > 0)`, `items.iter().map(|i| i.price).sum()`.
+    example: |
+      fn apply_twice<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {
+          f(f(x))
+      }
+
+      fn run_n<F: FnMut()>(n: usize, mut f: F) {
+          for _ in 0..n {
+              f();
+          }
+      }
+
+      fn consume<F: FnOnce() -> String>(f: F) -> String {
+          f()
+      }
+
+      fn make_multiplier(n: i32) -> impl Fn(i32) -> i32 {
+          move |x| x * n
+      }
+
+      fn make_op(name: &str) -> Box<dyn Fn(i32, i32) -> i32> {
+          match name {
+              "add" => Box::new(|a, b| a + b),
+              "max" => Box::new(|a, b| a.max(b)),
+              _ => Box::new(|_, _| 0),
+          }
+      }
+
+      fn main() {
+          let bonus = 5;
+          println!("{}", apply_twice(|x| x + bonus, 10));
+
+          let mut hits = Vec::new();
+          run_n(3, || hits.push(hits.len() * 10));
+          println!("{hits:?}");
+
+          let report = String::from("all systems go");
+          println!("{}", consume(move || report + "!"));
+
+          let triple = make_multiplier(3);
+          println!("{} {}", triple(7), make_multiplier(10)(4));
+          println!("{} {}", make_op("add")(2, 3), make_op("max")(2, 3));
+
+          let mut players = vec![("Ferris", 31), ("Corro", 12), ("Gopher", 25)];
+          let min_score = 20;
+          players.retain(|(_, score)| *score >= min_score);
+          players.sort_by_key(|(name, _)| *name);
+          println!("{players:?}");
+      }
+
+  - slug: iterators
+    title: "Iterators in Rust: map, filter, collect and other adapters"
+    description: "How Rust iterators work: the Iterator trait, lazy adapters like map, filter and enumerate, consumers like collect, sum and fold, and writing your own."
+    modules: [iterators]
+    body: |
+      An **iterator** produces a sequence of values, one at a time. Anything implementing the `Iterator` trait has a `next` method that returns `Some(item)` until it's done, then `None`. `for` loops call `next` for you.
+
+      ```rust run
+      fn main() {
+          let orders = vec![120, 45, 300, 80, 15];
+          let big_total: i32 = orders
+              .iter()
+              .filter(|&&amount| amount >= 50)
+              .map(|amount| amount * 2)
+              .sum();
+          println!("{big_total}");
+
+          let labels: Vec<String> = orders.iter().enumerate().map(|(i, a)| format!("#{}={a}", i + 1)).collect();
+          println!("{labels:?}");
+      }
+      ```
+
+      ```output
+      1000
+      ["#1=120", "#2=45", "#3=300", "#4=80", "#5=15"]
+      ```
+
+      ## Three ways to start
+
+      - `v.iter()` yields `&T` (borrows), `v.iter_mut()` yields `&mut T`, `v.into_iter()` yields `T` (consumes `v`).
+      - Ranges are iterators: `(1..=10)`, `(0..n).rev()`, `(0..100).step_by(5)`.
+      - Many methods return one: `s.chars()`, `s.lines()`, `s.split(',')`, `map.keys()`, `slice.windows(2)`.
+
+      ## Adapters (lazy) and consumers (do the work)
+
+      **Adapters** take an iterator and return a new one. They're **lazy**: nothing runs until a **consumer** pulls values through. Calling `v.iter().map(|x| x * 2);` on its own does nothing, and rustc warns: "unused `Map` that must be used... iterators are lazy and do nothing unless consumed".
+
+      | Adapters | Consumers |
+      |---|---|
+      | `map`, `filter`, `filter_map` | `collect`, `sum`, `product`, `count` |
+      | `enumerate`, `zip`, `chain` | `min`, `max`, `min_by_key`, `max_by` |
+      | `take`, `skip`, `take_while`, `skip_while` | `fold`, `reduce` |
+      | `rev`, `step_by`, `peekable` | `any`, `all`, `find`, `position` |
+      | `flat_map`, `flatten`, `inspect` | `last`, `nth`, `for_each`, `partition` |
+      | `cloned`, `copied`, `windows`/`chunks` (on slices) | `join` (on `Vec<String>` after collect) |
+
+      ## collect needs a target type
+
+      `collect` can build a `Vec`, `String`, `HashMap`, `HashSet`, `BTreeMap` and more, so tell it which: `let v: Vec<_> = ...collect();` or `.collect::<Vec<_>>()`. Without that you get E0283 or E0282, "type annotations needed". Two handy tricks:
+
+      - Collecting `(key, value)` pairs builds a map: `.collect::<HashMap<_, _>>()`.
+      - Collecting `Result`s into `Result<Vec<T>, E>` stops at the first error: `lines.map(|l| l.parse::<i32>()).collect::<Result<Vec<_>, _>>()?`.
+
+      ## Zero-cost
+
+      Iterator chains compile down to the same machine code as a hand-written loop, often better, since bounds checks can be removed. Prefer them for clarity; there's no speed penalty in release builds.
+
+      ## Writing your own
+
+      Implement `next`, and every adapter above comes for free:
+
+      ```rust
+      impl Iterator for Countdown {
+          type Item = u32;
+          fn next(&mut self) -> Option<u32> { ... }
+      }
+      ```
+
+      ## Common mistakes
+
+      - **Collecting references when you wanted values:** "a value of type `Vec<i32>` cannot be built from an iterator over elements of type `&i32`" (E0277). Add `.copied()` or `.cloned()`.
+      - **`filter` closures get a reference to the item**, so with `iter()` you see `&&i32`. Write `|&&x| x > 5` or `|x| **x > 5`, or use `.copied()` first.
+      - **Collecting just to iterate again.** `v.iter().map(...).collect::<Vec<_>>().iter().sum()` allocates for nothing; chain directly.
+      - **`sum()` without a type:** write `let total: i32 = ...sum();` or `.sum::<i32>()`.
+    example: |
+      use std::collections::HashMap;
+
+      struct Countdown {
+          n: u32,
+      }
+
+      impl Iterator for Countdown {
+          type Item = u32;
+          fn next(&mut self) -> Option<u32> {
+              if self.n == 0 {
+                  return None;
+              }
+              self.n -= 1;
+              Some(self.n + 1)
+          }
+      }
+
+      fn main() {
+          let log = "INFO start\nWARN disk 91%\nERROR db down\nINFO retry\nERROR db down";
+
+          let errors: Vec<&str> = log.lines().filter(|l| l.starts_with("ERROR")).collect();
+          println!("{} errors, first: {:?}", errors.len(), errors.first());
+
+          let counts: HashMap<&str, usize> = log.lines().filter_map(|l| l.split_whitespace().next()).fold(HashMap::new(), |mut m, level| {
+              *m.entry(level).or_insert(0) += 1;
+              m
+          });
+          let mut levels: Vec<_> = counts.into_iter().collect();
+          levels.sort();
+          println!("{levels:?}");
+
+          let parsed: Result<Vec<i32>, _> = "4 8 15 16".split(' ').map(|s| s.parse::<i32>()).collect();
+          let broken: Result<Vec<i32>, _> = "4 x 15".split(' ').map(|s| s.parse::<i32>()).collect();
+          println!("{parsed:?} / {}", broken.is_err());
+
+          let squares: Vec<u64> = (1..=5).map(|n: u64| n * n).collect();
+          let (even, odd): (Vec<u64>, Vec<u64>) = squares.iter().partition(|&&n| n % 2 == 0);
+          println!("{squares:?} even {even:?} odd {odd:?}");
+
+          let launch: Vec<String> = Countdown { n: 3 }.map(|n| n.to_string()).chain(["liftoff".to_string()]).collect();
+          println!("{}", launch.join(" "));
+
+          let best = ["Ferris:31", "Corro:12", "Gopher:25"]
+              .iter()
+              .filter_map(|s| s.split_once(':'))
+              .max_by_key(|(_, score)| score.parse::<u32>().unwrap_or(0));
+          println!("{best:?}");
+      }
+
+  - slug: modules-and-visibility
+    title: "Modules and visibility in Rust: mod, pub and use"
+    description: "How Rust modules work: mod blocks and files, private by default, pub and pub(crate), paths with crate:: and super::, use, and re-exports."
+    modules: [modules]
+    body: |
+      **Modules** organize code into named groups and control what's visible from outside. Every crate has a tree of modules rooted at `src/main.rs` (for a binary) or `src/lib.rs` (for a library).
+
+      ## Private by default
+
+      ```rust
+      mod bank {
+          pub struct Account {
+              pub owner: String,
+              balance: u64,          // private field
+          }
+
+          impl Account {
+              pub fn new(owner: &str) -> Self { ... }
+              pub fn balance(&self) -> u64 { self.balance }
+              fn audit(&self) { ... }  // private method
+          }
+      }
+      ```
+
+      Everything inside a module is **private** to that module (and its child modules) unless marked `pub`. That includes struct **fields**: a `pub struct` with private fields can only be created through the functions you provide, which is how you protect rules like "balance never goes negative".
+
+      Using private items from outside is a compile error:
+
+      - E0603, "function `audit` is private"
+      - E0616, "field `balance` of struct `Account` is private"
+      - E0451, "field `balance` of struct `Account` is private" when building the struct with `Account { ... }` from outside
+
+      | Visibility | Visible to |
+      |---|---|
+      | (nothing) | this module and its children |
+      | `pub` | everyone who can see the module |
+      | `pub(crate)` | anywhere in this crate, not to users of your library |
+      | `pub(super)` | the parent module |
+
+      ## Paths and use
+
+      Refer to items with **paths**: `crate::bank::Account` (absolute, from the crate root), `super::helper` (the parent module), `self::inner` (this module). `use` brings a path into scope so you can write the short name:
+
+      ```rust
+      use std::collections::{HashMap, HashSet};
+      use crate::bank::Account;
+      use std::io::Result as IoResult;   // rename to avoid a clash
+      ```
+
+      Conventions: import types, traits and macros by name (`use std::collections::HashMap;`), but call functions through their module (`use std::fs;` then `fs::read_to_string(...)`), so readers can see where a function comes from.
+
+      ## Modules in files
+
+      A `mod bank;` declaration (with a semicolon instead of a body) tells the compiler to load the module from a file:
+
+      ```text
+      src/
+      ├── main.rs        // mod bank;  mod report;
+      ├── bank.rs        // the bank module; may declare `pub mod ledger;`
+      ├── bank/
+      │   └── ledger.rs  // bank::ledger
+      └── report.rs
+      ```
+
+      Files are never compiled unless some module declares them with `mod`. The older `bank/mod.rs` layout also works.
+
+      ## Re-exports with pub use
+
+      `pub use` makes an item available at a different path. Libraries use it to offer a flat, stable API while keeping a deeper internal structure: `pub use crate::bank::ledger::Entry;` in `lib.rs` lets users write `mycrate::Entry`.
+
+      ## Crates and packages
+
+      A **crate** is one compilation unit (a library or a binary). A **package** is what `Cargo.toml` describes: one or more crates. Dependencies from crates.io are added under `[dependencies]` and used with their crate name: `use serde::Deserialize;`.
+
+      ## Common mistakes
+
+      - **Forgetting `pub` on the struct's fields or `new`** and then being unable to build it from `main`.
+      - **Creating `foo.rs` but never writing `mod foo;`**: the file is ignored and its items are "not found".
+      - **Writing `mod foo;` in several places**: declare each module once, in its parent; elsewhere, `use` it.
+      - **Making everything `pub`.** Start private and widen only what callers need. Private items can be changed freely without breaking anyone.
+    example: |
+      mod bank {
+          pub mod ledger {
+              #[derive(Debug)]
+              pub struct Entry {
+                  pub amount: i64,
+                  pub note: String,
+              }
+
+              pub(crate) fn describe(e: &Entry) -> String {
+                  format!("{:+} ({})", e.amount, e.note)
+              }
+          }
+
+          use self::ledger::Entry;
+
+          pub struct Account {
+              pub owner: String,
+              balance: i64,
+              history: Vec<Entry>,
+          }
+
+          impl Account {
+              pub fn new(owner: &str) -> Self {
+                  Account { owner: owner.to_string(), balance: 0, history: Vec::new() }
+              }
+
+              pub fn deposit(&mut self, amount: i64, note: &str) -> Result<(), String> {
+                  check_amount(amount)?;
+                  self.balance += amount;
+                  self.history.push(Entry { amount, note: note.to_string() });
+                  Ok(())
+              }
+
+              pub fn balance(&self) -> i64 {
+                  self.balance
+              }
+
+              pub fn history(&self) -> &[Entry] {
+                  &self.history
+              }
+          }
+
+          fn check_amount(amount: i64) -> Result<(), String> {
+              if amount <= 0 {
+                  return Err(format!("amount must be positive, got {amount}"));
+              }
+              Ok(())
+          }
+      }
+
+      pub use bank::ledger::Entry;
+      use bank::Account;
+
+      fn main() {
+          let mut acct = Account::new("Ferris");
+          acct.deposit(100, "salary").unwrap();
+          acct.deposit(25, "refund").unwrap();
+          if let Err(e) = acct.deposit(-5, "oops") {
+              println!("rejected: {e}");
+          }
+          println!("{} has {}", acct.owner, acct.balance());
+          for e in acct.history() {
+              println!("  {}", bank::ledger::describe(e));
+          }
+          let first: &Entry = &acct.history()[0];
+          println!("{first:?}");
+      }
+
+  - slug: box-rc-refcell
+    title: "Box, Rc and RefCell in Rust: smart pointers explained"
+    description: "When to use Box<T>, Rc<T>, RefCell<T>, Rc<RefCell<T>> and Weak<T> in Rust, with the trade-offs and the runtime borrow panic to avoid."
+    modules: [smart-pointers]
+    body: |
+      A **smart pointer** is a type that acts like a reference but also owns and manages what it points to. You've already used two: `String` and `Vec<T>`. The standard library adds three you'll meet constantly.
+
+      | Type | Gives you | Cost | Typical use |
+      |---|---|---|---|
+      | `Box<T>` | one owner, value on the heap | one allocation | recursive types, trait objects, large values |
+      | `Rc<T>` | several owners (single thread), read-only | allocation + reference count | shared data in trees and graphs, caches |
+      | `RefCell<T>` | mutation through a shared reference, checked at run time | a borrow flag | interior mutability |
+      | `Rc<RefCell<T>>` | several owners that can all mutate | both | shared mutable state in one thread |
+      | `Weak<T>` | a non-owning link to `Rc` data | a second count | parent pointers, breaking cycles |
+      | `Arc<T>`, `Mutex<T>` | the thread-safe versions of `Rc`, `RefCell` | atomic operations, locking | sharing across threads |
+
+      ## Box<T>: single ownership on the heap
+
+      `Box::new(x)` moves `x` to the heap and gives you a pointer that owns it. The box frees the value when it's dropped. You need it for **recursive types** (a tree node containing nodes: without a box the type would have infinite size, error E0072) and for **trait objects** like `Box<dyn Error>` or `Vec<Box<dyn Shape>>`.
+
+      ## Rc<T>: shared ownership
+
+      **`Rc`** (reference counted) lets several parts of a program own the same value. `Rc::clone(&rc)` doesn't copy the data, it increments a counter; the value is freed when the last `Rc` is dropped. `Rc::strong_count(&rc)` shows the count. The data inside is **read-only**:
+
+      ```rust compile_fail
+      use std::rc::Rc;
+
+      fn main() {
+          let shared = Rc::new(vec![1, 2]);
+          shared.push(3);
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow data in an `Rc` as mutable
+      ```
+
+      `Rc` is not thread-safe (its counter isn't atomic). The compiler stops you from sending it to another thread; use `Arc` there.
+
+      ## RefCell<T>: borrow checking at run time
+
+      **`RefCell`** moves the borrowing rules from compile time to run time. `.borrow()` gives a shared borrow, `.borrow_mut()` a mutable one, both through a plain `&RefCell<T>`. This is **interior mutability**. The rules still apply: if you call `borrow_mut()` while another borrow is alive, the program **panics** with `RefCell already borrowed`. Keep borrows short (don't hold one across a call that might borrow again), or use `try_borrow_mut()` to get a `Result`.
+
+      For `Copy` values, **`Cell<T>`** is simpler: `get()` and `set()`, no borrows, no panics.
+
+      ## Rc<RefCell<T>>: shared and mutable
+
+      Combine them when several owners must change the same data, such as observers sharing a log, or nodes in a graph. Each owner holds an `Rc`, and calls `.borrow_mut()` to change the value.
+
+      ## Weak<T>: avoiding cycles
+
+      Two `Rc`s pointing at each other never reach a count of zero, so they **leak**. Make one direction **weak**: `Rc::downgrade(&rc)` gives a `Weak`, which doesn't keep the value alive; `weak.upgrade()` returns `Option<Rc<T>>`. Trees typically use `Rc` for children and `Weak` for the parent link.
+
+      ## Advice at work
+
+      - Reach for plain ownership and references first. `Rc<RefCell<T>>` everywhere is often a sign the data structure should be redesigned (indices into a `Vec`, or an arena).
+      - Write `Rc::clone(&x)` rather than `x.clone()`, so readers see it's a cheap pointer copy.
+      - In multithreaded code the pair is `Arc<Mutex<T>>` (or `Arc<RwLock<T>>`).
+    example: |
+      use std::cell::{Cell, RefCell};
+      use std::rc::{Rc, Weak};
+
+      #[derive(Debug)]
+      enum Tree {
+          Leaf(i32),
+          Node(Box<Tree>, Box<Tree>),
+      }
+
+      fn sum(t: &Tree) -> i32 {
+          match t {
+              Tree::Leaf(v) => *v,
+              Tree::Node(l, r) => sum(l) + sum(r),
+          }
+      }
+
+      struct Team {
+          name: String,
+          members: RefCell<Vec<Rc<Player>>>,
+      }
+
+      struct Player {
+          name: String,
+          team: RefCell<Weak<Team>>,
+          score: Cell<u32>,
+      }
+
+      fn main() {
+          let tree = Tree::Node(Box::new(Tree::Leaf(1)), Box::new(Tree::Node(Box::new(Tree::Leaf(2)), Box::new(Tree::Leaf(3)))));
+          println!("tree sum {}", sum(&tree));
+
+          let log = Rc::new(RefCell::new(Vec::new()));
+          let writer_a = Rc::clone(&log);
+          let writer_b = Rc::clone(&log);
+          writer_a.borrow_mut().push("a: started");
+          writer_b.borrow_mut().push("b: started");
+          println!("{:?}, {} owners", log.borrow(), Rc::strong_count(&log));
+
+          let team = Rc::new(Team { name: String::from("Crabs"), members: RefCell::new(Vec::new()) });
+          let ferris = Rc::new(Player { name: String::from("Ferris"), team: RefCell::new(Weak::new()), score: Cell::new(0) });
+          *ferris.team.borrow_mut() = Rc::downgrade(&team);
+          team.members.borrow_mut().push(Rc::clone(&ferris));
+
+          ferris.score.set(ferris.score.get() + 10);
+          let team_name = ferris.team.borrow().upgrade().map(|t| t.name.clone());
+          println!("{} plays for {:?} with {} points", ferris.name, team_name, ferris.score.get());
+          println!("team has {} member(s)", team.members.borrow().len());
+
+          let first = log.borrow();
+          println!("second borrow_mut while reading: {}", log.try_borrow_mut().is_err());
+          println!("first entry {}", first[0]);
+      }
+
+  - slug: testing
+    title: "Unit testing in Rust: #[test], assert_eq! and cargo test"
+    description: "How to write tests in Rust: #[test] functions, assert!, assert_eq! with messages, should_panic, tests returning Result, and unit vs integration tests."
+    modules: [testing]
+    body: |
+      Rust has testing built in: no framework to install. A **test** is a function marked `#[test]`; `cargo test` compiles your crate in test mode, runs every test, and reports which passed.
+
+      ## Unit tests live next to the code
+
+      ```rust
+      pub fn apply_discount(price_cents: u64, percent: u64) -> u64 {
+          price_cents - price_cents * percent / 100
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn ten_percent_off() {
+              assert_eq!(apply_discount(1000, 10), 900);
+          }
+
+          #[test]
+          fn zero_percent_changes_nothing() {
+              assert_eq!(apply_discount(1999, 0), 1999, "0% should keep the price");
+          }
+      }
+      ```
+
+      - `#[cfg(test)]` compiles the module only for `cargo test`, so tests add nothing to your real program.
+      - `use super::*;` brings the parent module's items into scope, **including private functions**: unit tests can test internals.
+
+      ```text
+      $ cargo test
+      running 2 tests
+      test tests::ten_percent_off ... ok
+      test tests::zero_percent_changes_nothing ... ok
+
+      test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+      ```
+
+      `cargo test discount` runs only tests whose name contains "discount". Output from `println!` in passing tests is hidden; `cargo test -- --nocapture` shows it.
+
+      ## The assertion macros
+
+      | Macro | Fails when |
+      |---|---|
+      | `assert!(cond)` | `cond` is false |
+      | `assert_eq!(left, right)` | they're not equal; prints both values |
+      | `assert_ne!(left, right)` | they're equal |
+
+      All accept a trailing message with format arguments: `assert_eq!(total, 30, "cart total for {items:?}")`. The values compared with `assert_eq!` must implement `PartialEq` and `Debug`, so derive both on your types. Floats rarely compare exactly; assert that the difference is small: `assert!((a - b).abs() < 1e-9)`.
+
+      ## Testing failures
+
+      - `#[should_panic(expected = "divide by zero")]` passes only if the test panics with a message containing that text.
+      - A test can return `Result<(), E>` and use `?` inside; returning `Err` fails the test.
+      - For functions returning `Result`, assert on the error: `assert!(parse("x").is_err())` or `assert_eq!(parse("x"), Err(ParseError::Empty))`.
+
+      ## Integration tests and doc tests
+
+      - Files in a top-level `tests/` directory are **integration tests**: each one is a separate crate that can only use your library's public API, the way real users would.
+      - Code blocks in `///` doc comments are compiled and run as **doc tests** by `cargo test`, so examples in your documentation can't go stale.
+
+      ## Good tests at work
+
+      - Name tests as sentences describing behavior: `rejects_empty_username`, not `test1`.
+      - One behavior per test, with the edge cases: empty input, zero, negative numbers, unicode, the maximum value.
+      - Test through the public interface where possible; tests that poke at internals break on every refactor.
+      - Keep tests deterministic: no real clock, no network, no random numbers without a fixed seed.
+      - Run `cargo test` in CI on every pull request, alongside `cargo clippy` and `cargo fmt --check`.
+
+      ## Common mistakes
+
+      - **Forgetting `use super::*;`**: "cannot find function `apply_discount` in this scope".
+      - **Comparing types without `PartialEq` or `Debug`** in `assert_eq!` (E0369 or E0277): derive them.
+      - **`#[should_panic]` without `expected`**: the test passes for *any* panic, including the wrong one.
+    example: |
+      pub fn apply_discount(price_cents: u64, percent: u64) -> u64 {
+          assert!(percent <= 100, "percent must be at most 100, got {percent}");
+          price_cents - price_cents * percent / 100
+      }
+
+      #[derive(Debug, PartialEq)]
+      pub enum ParseError {
+          Empty,
+          NotANumber(String),
+      }
+
+      pub fn parse_qty(s: &str) -> Result<u32, ParseError> {
+          let s = s.trim();
+          if s.is_empty() {
+              return Err(ParseError::Empty);
+          }
+          s.parse().map_err(|_| ParseError::NotANumber(s.to_string()))
+      }
+
+      fn main() {
+          println!("{}", apply_discount(1000, 10));
+          println!("{:?}", parse_qty(" 7 "));
+          println!("{:?}", parse_qty(""));
+          println!("{:?}", parse_qty("seven"));
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn ten_percent_off() {
+              assert_eq!(apply_discount(1000, 10), 900);
+          }
+
+          #[test]
+          fn full_discount_is_free() {
+              assert_eq!(apply_discount(1999, 100), 0, "100% off should cost nothing");
+          }
+
+          #[test]
+          #[should_panic(expected = "at most 100")]
+          fn rejects_discount_over_100() {
+              apply_discount(1000, 150);
+          }
+
+          #[test]
+          fn parses_with_whitespace() -> Result<(), ParseError> {
+              assert_eq!(parse_qty(" 42\n")?, 42);
+              Ok(())
+          }
+
+          #[test]
+          fn reports_empty_and_bad_input() {
+              assert_eq!(parse_qty("   "), Err(ParseError::Empty));
+              assert_eq!(parse_qty("4x"), Err(ParseError::NotANumber("4x".to_string())));
+          }
+      }

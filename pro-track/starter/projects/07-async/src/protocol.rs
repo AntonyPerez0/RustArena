@@ -49,7 +49,10 @@ mod tests {
     fn parses_commands() {
         assert_eq!(Command::parse("NICK alice"), Command::Nick("alice".into()));
         assert_eq!(Command::parse("NICK"), Command::Nick("".into()));
-        assert_eq!(Command::parse("MSG hello there"), Command::Msg("hello there".into()));
+        assert_eq!(
+            Command::parse("MSG hello there"),
+            Command::Msg("hello there".into())
+        );
         assert_eq!(Command::parse("WHO"), Command::Who);
         assert_eq!(Command::parse("QUIT"), Command::Quit);
         assert_eq!(Command::parse("QUIT now"), Command::Unknown);

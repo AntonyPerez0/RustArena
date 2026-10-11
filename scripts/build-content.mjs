@@ -517,7 +517,9 @@ async function buildDrill(where, id, topic, d) {
     case "compiles": {
       const res = await runProgram(drillProgram(pre, body), one);
       const answer = res.compiled ? "yes" : "no";
-      if (d.answer != null && String(d.answer) !== answer) errors.push(`${where}: author says ${d.answer} but rustc says ${answer}\n${res.diagnostics}`);
+      // YAML 1.1 tools turn yes/no into true/false: accept both spellings.
+      const said = d.answer === true ? "yes" : d.answer === false ? "no" : d.answer;
+      if (said != null && String(said) !== answer) errors.push(`${where}: author says ${said} but rustc says ${answer}\n${res.diagnostics}`);
       let why = d.why ?? "";
       let error;
       if (!res.compiled) {
