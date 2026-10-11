@@ -1,0 +1,513 @@
+topic: trait-objects
+drills:
+  - type: predict
+    pre: |
+      trait Animal {
+          fn sound(&self) -> String;
+      }
+
+      struct Crab;
+      struct Cat;
+
+      impl Animal for Crab {
+          fn sound(&self) -> String {
+              String::from("click")
+          }
+      }
+
+      impl Animal for Cat {
+          fn sound(&self) -> String {
+              String::from("meow")
+          }
+      }
+    body: |
+      let zoo: Vec<Box<dyn Animal>> = vec![Box::new(Cat), Box::new(Crab), Box::new(Cat)];
+      for a in &zoo {
+          print!("{} ", a.sound());
+      }
+      println!();
+    why: Each box holds a different type, and each call runs that type's sound method, chosen at run time.
+
+  - type: predict
+    body: |
+      use std::mem::size_of;
+      println!("{} {}", size_of::<&u8>(), size_of::<&dyn std::fmt::Display>());
+    why: "A &dyn Trait is a fat pointer: the address of the data plus the address of its vtable, so 16 bytes instead of 8 on a 64-bit machine."
+
+  - type: predict
+    pre: |
+      trait Plugin {
+          fn handle(&mut self);
+          fn report(&self) -> u32;
+      }
+
+      struct Counter {
+          n: u32,
+      }
+
+      impl Plugin for Counter {
+          fn handle(&mut self) {
+              self.n += 1;
+          }
+          fn report(&self) -> u32 {
+              self.n
+          }
+      }
+    body: |
+      let mut plugins: Vec<Box<dyn Plugin>> = vec![Box::new(Counter { n: 0 }), Box::new(Counter { n: 10 })];
+      for _ in 0..3 {
+          for p in &mut plugins {
+              p.handle();
+          }
+      }
+      println!("{} {}", plugins[0].report(), plugins[1].report());
+    why: Trait objects can have &mut self methods. Each counter keeps its own state and is incremented three times.
+
+  - type: predict
+    body: |
+      use std::any::Any;
+      let v: Box<dyn Any> = Box::new(3u8);
+      println!("{:?} {:?}", v.downcast_ref::<u8>(), v.downcast_ref::<i32>());
+    why: downcast_ref::<T>() returns Some only if the value really is a T. The value is a u8, so asking for an i32 gives None.
+
+  - type: predict
+    pre: |
+      trait Greeter {
+          fn name(&self) -> String;
+          fn greet(&self) -> String {
+              format!("Hello, {}", self.name())
+          }
+      }
+
+      struct En;
+      struct Pt;
+
+      impl Greeter for En {
+          fn name(&self) -> String {
+              String::from("Ana")
+          }
+      }
+
+      impl Greeter for Pt {
+          fn name(&self) -> String {
+              String::from("Bo")
+          }
+          fn greet(&self) -> String {
+              format!("Olá, {}", self.name())
+          }
+      }
+    body: |
+      let gs: Vec<Box<dyn Greeter>> = vec![Box::new(En), Box::new(Pt)];
+      println!("{} / {}", gs[0].greet(), gs[1].greet());
+    why: Default and overridden methods both go through the vtable, so each value uses its own type's version.
+
+  - type: fill
+    prompt: A vector of boxed trait objects.
+    pre: |
+      trait Shape {
+          fn area(&self) -> f64;
+      }
+
+      struct Sq(f64);
+
+      impl Shape for Sq {
+          fn area(&self) -> f64 {
+              self.0 * self.0
+          }
+      }
+    body: |
+      let shapes: Vec<Box<[[dyn]] Shape>> = vec![Box::new(Sq(2.0)), Box::new(Sq(3.0))];
+      println!("{}", shapes[0].area() + shapes[1].area());
+    why: "dyn Shape names the trait object type; since the 2021 edition the dyn keyword is required."
+
+  - type: fill
+    prompt: Return a different shape type depending on the input.
+    pre: |
+      trait Shape {
+          fn name(&self) -> String;
+      }
+
+      struct Circle;
+      struct Square;
+
+      impl Shape for Circle {
+          fn name(&self) -> String {
+              String::from("circle")
+          }
+      }
+
+      impl Shape for Square {
+          fn name(&self) -> String {
+              String::from("square")
+          }
+      }
+
+      fn make(round: bool) -> [[Box<dyn Shape>]] {
+          if round { Box::new(Circle) } else { Box::new(Square) }
+      }
+    body: |
+      println!("{} {}", make(true).name(), make(false).name());
+    why: impl Shape can only stand for one concrete type. A Box<dyn Shape> can hold either, chosen at run time.
+
+  - type: fill
+    prompt: Keep the trait dyn compatible while still offering a constructor.
+    pre: |
+      trait Store {
+          fn new() -> Self
+          where
+              Self: [[Sized]];
+          fn count(&self) -> usize;
+      }
+
+      struct Mem(Vec<u32>);
+
+      impl Store for Mem {
+          fn new() -> Self {
+              Mem(vec![1, 2, 3])
+          }
+          fn count(&self) -> usize {
+              self.0.len()
+          }
+      }
+    body: |
+      let s: Box<dyn Store> = Box::new(Mem::new());
+      println!("{}", s.count());
+    why: "where Self: Sized removes new from the vtable: it can still be called on concrete types like Mem, and the trait can be used as dyn Store."
+
+  - type: bug
+    pre: |
+      trait Shape {
+          fn area(&self) -> f64;
+      }
+
+      struct Sq(f64);
+
+      impl Shape for Sq {
+          fn area(&self) -> f64 {
+              self.0 * self.0
+          }
+      }
+
+      fn report(s: &dyn Shape) -> String {
+          format!("area {}", s.area())
+      }
+    body: |
+      let b: Box<dyn Shape> = Box::new(Sq(3.0));
+      println!("{}", report(&b)); // BUG
+    fix: 'println!("{}", report(b.as_ref()));'
+    prompt: "This should print `area 9`. Click the line with the bug."
+    why: "&b is a &Box<dyn Shape>, and Rust tries to use the Box itself as the Shape. b.as_ref() (or &*b) passes the shape inside the box."
+
+  - type: bug
+    pre: |
+      trait Notifier {
+          fn send(&self, msg: &str) -> String;
+      }
+
+      struct Email;
+
+      impl Notifier for Email {
+          fn send(&self, msg: &str) -> String {
+              format!("email: {msg}")
+          }
+      }
+
+      struct Hub {
+          list: Vec<Box<dyn Notifier>>,
+      }
+
+      impl Hub {
+          fn add(&mut self, n: impl Notifier) { // BUG
+              self.list.push(Box::new(n));
+          }
+      }
+    body: |
+      let mut hub = Hub { list: Vec::new() };
+      hub.add(Email);
+      println!("{}", hub.list[0].send("hi"));
+    fix: "fn add(&mut self, n: impl Notifier + 'static) {"
+    prompt: "This should print `email: hi`. Click the line with the bug."
+    why: "A Box<dyn Notifier> field means Box<dyn Notifier + 'static>, so the value put in it must not hold short-lived references (E0310)."
+
+  - type: bug
+    pre: |
+      trait Plugin {
+          fn handle(&mut self, e: &str);
+          fn seen(&self) -> usize;
+      }
+
+      struct Log(Vec<String>);
+
+      impl Plugin for Log {
+          fn handle(&mut self, e: &str) {
+              self.0.push(e.to_string());
+          }
+          fn seen(&self) -> usize {
+              self.0.len()
+          }
+      }
+    body: |
+      let mut plugins: Vec<Box<dyn Plugin>> = vec![Box::new(Log(Vec::new()))];
+      for p in &plugins { // BUG
+          p.handle("start");
+      }
+      println!("{}", plugins[0].seen());
+    fix: "for p in &mut plugins {"
+    prompt: "This should print `1`. Click the line with the bug."
+    why: handle takes &mut self, so the loop must borrow the boxes mutably with &mut plugins.
+
+  - type: compiles
+    answer: no
+    pre: |
+      trait Shape {
+          fn area(&self) -> f64;
+      }
+
+      struct Sq(f64);
+
+      impl Shape for Sq {
+          fn area(&self) -> f64 {
+              self.0 * self.0
+          }
+      }
+    body: |
+      let v: Vec<Box<Shape>> = vec![Box::new(Sq(1.0))];
+      println!("{}", v[0].area());
+    why: "A trait used as a type needs the dyn keyword: Box<dyn Shape> (E0782 in edition 2021 and later)."
+
+  - type: compiles
+    answer: yes
+    pre: |
+      trait Shape {
+          fn area(&self) -> f64;
+      }
+
+      struct Sq(f64);
+      struct Circle(f64);
+
+      impl Shape for Sq {
+          fn area(&self) -> f64 {
+              self.0 * self.0
+          }
+      }
+
+      impl Shape for Circle {
+          fn area(&self) -> f64 {
+              3.0 * self.0 * self.0
+          }
+      }
+    body: |
+      let v: Vec<Box<dyn Shape>> = vec![Box::new(Sq(1.0)), Box::new(Circle(1.0))];
+      println!("{}", v[0].area() + v[1].area());
+    why: Different types can share one Vec once each is boxed as a dyn Shape.
+
+  - type: compiles
+    answer: no
+    pre: |
+      trait Shape {
+          fn area(&self) -> f64;
+          fn doubled(&self) -> Self;
+      }
+
+      struct Sq(f64);
+
+      impl Shape for Sq {
+          fn area(&self) -> f64 {
+              self.0 * self.0
+          }
+          fn doubled(&self) -> Self {
+              Sq(self.0 * 2.0)
+          }
+      }
+    body: |
+      let v: Vec<Box<dyn Shape>> = vec![Box::new(Sq(1.0))];
+      println!("{}", v[0].area());
+    why: A method returning Self makes the trait not dyn compatible (E0038), because the size of Self is unknown behind dyn.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      trait Shape {
+          fn area(&self) -> f64;
+          fn doubled(&self) -> Self
+          where
+              Self: Sized;
+      }
+
+      struct Sq(f64);
+
+      impl Shape for Sq {
+          fn area(&self) -> f64 {
+              self.0 * self.0
+          }
+          fn doubled(&self) -> Self {
+              Sq(self.0 * 2.0)
+          }
+      }
+    body: |
+      let v: Vec<Box<dyn Shape>> = vec![Box::new(Sq(1.0).doubled())];
+      println!("{}", v[0].area());
+    why: "where Self: Sized takes doubled out of the vtable. The trait is dyn compatible, and doubled still works on the concrete Sq."
+
+  - type: compiles
+    answer: no
+    pre: |
+      trait Shape {
+          fn area(&self) -> f64;
+      }
+
+      struct Circle {
+          r: f64,
+      }
+
+      impl Circle {
+          fn radius(&self) -> f64 {
+              self.r
+          }
+      }
+
+      impl Shape for Circle {
+          fn area(&self) -> f64 {
+              3.0 * self.r * self.r
+          }
+      }
+    body: |
+      let s: Box<dyn Shape> = Box::new(Circle { r: 1.0 });
+      println!("{}", s.radius());
+    why: Through a dyn Shape you can only call the trait's methods. radius belongs to Circle, which the trait object has forgotten (E0599).
+
+  - type: choice
+    prompt: "Your CLI has a fixed set of commands (add, list, remove) that only your team changes. How should you model them?"
+    choices:
+      - "An enum with one variant per command"
+      - "A trait with one struct per command, stored as Box<dyn Command>"
+      - "A HashMap<String, String> of command names"
+    answer: 1
+    why: "A closed set you own fits an enum: no boxes, and the compiler's exhaustiveness check finds every match to update when a command is added. Trait objects pay off when others must add cases without editing your code."
+
+  - type: boss
+    prompt: |
+      Build a tiny drawing canvas.
+
+      - Trait `Shape` with `fn name(&self) -> String`, `fn area(&self) -> f64` and `fn scale(&mut self, k: f64)` (multiplies the sizes by `k`).
+      - `Circle { r }` (name `circle`, area `3.0 * r * r`) and `Rect { w, h }` (name `rect`, area `w * h`).
+      - `struct Canvas { shapes: Vec<Box<dyn Shape>> }` with `fn add(&mut self, s: impl Shape + 'static)`, `fn scale_all(&mut self, k: f64)` and `fn largest(&self) -> Option<String>` (the name of the shape with the largest area, the first one on a tie).
+    seed: |
+      struct Circle {
+          r: f64,
+      }
+
+      struct Rect {
+          w: f64,
+          h: f64,
+      }
+
+      // trait Shape ...
+
+      // struct Canvas ...
+    solution: |
+      struct Circle {
+          r: f64,
+      }
+
+      struct Rect {
+          w: f64,
+          h: f64,
+      }
+
+      trait Shape {
+          fn name(&self) -> String;
+          fn area(&self) -> f64;
+          fn scale(&mut self, k: f64);
+      }
+
+      impl Shape for Circle {
+          fn name(&self) -> String {
+              String::from("circle")
+          }
+          fn area(&self) -> f64 {
+              3.0 * self.r * self.r
+          }
+          fn scale(&mut self, k: f64) {
+              self.r *= k;
+          }
+      }
+
+      impl Shape for Rect {
+          fn name(&self) -> String {
+              String::from("rect")
+          }
+          fn area(&self) -> f64 {
+              self.w * self.h
+          }
+          fn scale(&mut self, k: f64) {
+              self.w *= k;
+              self.h *= k;
+          }
+      }
+
+      struct Canvas {
+          shapes: Vec<Box<dyn Shape>>,
+      }
+
+      impl Canvas {
+          fn add(&mut self, s: impl Shape + 'static) {
+              self.shapes.push(Box::new(s));
+          }
+
+          fn scale_all(&mut self, k: f64) {
+              for s in &mut self.shapes {
+                  s.scale(k);
+              }
+          }
+
+          fn largest(&self) -> Option<String> {
+              let mut best: Option<&dyn Shape> = None;
+              for s in &self.shapes {
+                  match best {
+                      Some(b) if b.area() >= s.area() => {}
+                      _ => best = Some(s.as_ref()),
+                  }
+              }
+              best.map(|b| b.name())
+          }
+      }
+    harness: |
+      fn canvas() -> Canvas {
+          let mut c = Canvas { shapes: Vec::new() };
+          c.add(Rect { w: 2.0, h: 3.0 });
+          c.add(Circle { r: 1.0 });
+          c
+      }
+
+      #[test]
+      fn finds_the_largest_shape() {
+          assert_eq!(canvas().largest(), Some(String::from("rect")), "rect 2x3 (6) vs circle r=1 (3)");
+      }
+
+      #[test]
+      fn scaling_changes_areas() {
+          let mut c = canvas();
+          c.scale_all(2.0);
+          assert_eq!(c.shapes[0].area(), 24.0, "rect area after scaling by 2");
+          assert_eq!(c.shapes[1].area(), 12.0, "circle area after scaling by 2");
+      }
+
+      #[test]
+      fn a_tie_keeps_the_first() {
+          let mut c = Canvas { shapes: Vec::new() };
+          c.add(Circle { r: 2.0 });
+          c.add(Rect { w: 3.0, h: 4.0 });
+          assert_eq!(c.largest(), Some(String::from("circle")), "two shapes with area 12");
+      }
+
+      #[test]
+      fn an_empty_canvas_has_no_largest() {
+          let c = Canvas { shapes: Vec::new() };
+          assert_eq!(c.largest(), None, "largest() of an empty canvas");
+      }
+    hints:
+      - "`scale` takes `&mut self`: `self.r *= k;` for circles, both sides for rects."
+      - "`scale_all` loops `for s in &mut self.shapes { s.scale(k); }`."
+      - "`largest` keeps an `Option<&dyn Shape>` (use `s.as_ref()`), then returns `best.map(|b| b.name())`."
+    why: A Vec<Box<dyn Trait>> in a struct, with both &self and &mut self methods called through the vtable, is the core of every plugin or scene system.

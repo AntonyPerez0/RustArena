@@ -34,7 +34,9 @@ fn main() {
 
     let docs = Arc::new(generate(7, files, lines));
     let megabytes = docs.iter().map(String::len).sum::<usize>() as f64 / 1e6;
-    println!("{files} files x {lines} lines ({megabytes:.0} MB), {threads} threads, best of {rounds}");
+    println!(
+        "{files} files x {lines} lines ({megabytes:.0} MB), {threads} threads, best of {rounds}"
+    );
 
     let expected = index_serial(&docs);
     let serial = best_of(rounds, "serial", &expected, || index_serial(&docs));

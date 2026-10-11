@@ -1,6 +1,7 @@
 topic: testing
 drills:
   - type: predict
+    after: testing-1
     pre: |
       fn double(n: i32) -> i32 {
           n * 2
@@ -21,6 +22,7 @@ drills:
     why: "#[cfg(test)] code is only compiled by cargo test. A normal run (cargo run) leaves the tests module out entirely, so only main's line is printed."
 
   - type: predict
+    after: testing-2
     body: |
       let total: f64 = 0.1 + 0.2;
       println!("{}", total == 0.3);
@@ -28,6 +30,7 @@ drills:
     why: 0.1 and 0.2 can't be stored exactly in binary floating point, so their sum is 0.30000000000000004. Compare floats in tests with a tolerance instead of ==.
 
   - type: predict
+    after: testing-4
     pre: |
       fn check(input: &str) -> Result<u32, String> {
           let n: u32 = input.parse().map_err(|_| format!("bad input: {input}"))?;
@@ -42,6 +45,7 @@ drills:
     why: "\"3\" parses and passes the check, so it's Ok(3). \"7\" parses too, but the early return turns it into Err with the message."
 
   - type: predict
+    after: testing-4
     body: |
       let parsed: Result<u32, String> = Err(String::from("empty"));
       println!("{}", matches!(parsed, Err(_)));
@@ -49,6 +53,7 @@ drills:
     why: matches! checks a value against a pattern (with an optional if guard) and returns a bool. It's handy in tests when you care about the shape of a value.
 
   - type: predict
+    after: testing-6
     pre: |
       fn is_even(n: u32) -> bool {
           n % 2 == 0
@@ -60,6 +65,7 @@ drills:
     why: "A table of cases makes it easy to see exactly which input disagrees. Here the table itself is wrong about 7: is_even(7) is false."
 
   - type: fill
+    after: testing-1
     prompt: Check that the two values are equal (and show both if they're not).
     pre: |
       fn add(a: i32, b: i32) -> i32 {
@@ -71,6 +77,7 @@ drills:
     why: assert_eq!(left, right) panics when the values differ and prints both of them, which makes failures easy to read.
 
   - type: fill
+    after: testing-1
     prompt: Assert that 1900 is NOT a leap year.
     pre: |
       fn is_leap_year(y: u32) -> bool {
@@ -82,6 +89,7 @@ drills:
     why: assert! panics when its condition is false. To check that something is false, negate it with !.
 
   - type: fill
+    after: testing-2
     prompt: Let assert_eq! compare two Points.
     pre: |
       #[derive(Debug, [[PartialEq]])]
@@ -95,6 +103,7 @@ drills:
     why: assert_eq! compares with == (which needs PartialEq) and prints the values when they differ (which needs Debug).
 
   - type: bug
+    after: testing-1
     pre: |
       fn last_index(v: &[i32]) -> usize {
           v.len() // BUG
@@ -107,6 +116,7 @@ drills:
     why: Indexes start at 0, so the last index of a 3-item slice is 2, one less than its length.
 
   - type: bug
+    after: testing-5
     pre: |
       fn cents_to_string(cents: u32) -> String {
           format!("{}.{:02}", cents / 100, cents % 100)
@@ -120,6 +130,7 @@ drills:
     why: "Sometimes the test is what's wrong. {:02} pads the cents to two digits, so 250 cents is \"2.50\", and the expected value has to say so."
 
   - type: bug
+    after: testing-1
     body: |
       let mut queue: Vec<&str> = Vec::new();
       queue.push("job-1");
@@ -130,6 +141,7 @@ drills:
     why: After a push the queue is not empty, so assert!(queue.is_empty()) panics. The check needs a ! to say "not empty".
 
   - type: compiles
+    after: testing-2
     answer: no
     pre: |
       #[derive(PartialEq)]
@@ -141,6 +153,7 @@ drills:
     why: "assert_eq! needs Debug as well as PartialEq, to print the two values when they differ: `Order` doesn't implement `Debug` (E0277)."
 
   - type: compiles
+    after: testing-1
     answer: no
     pre: |
       #[cfg(test)]
@@ -152,6 +165,7 @@ drills:
     why: "#[cfg(test)] items only exist when compiling tests. In a normal build sample_order is removed, so main can't find it (E0425)."
 
   - type: compiles
+    after: testing-4
     answer: yes
     pre: |
       fn parse_qty(s: &str) -> Result<u32, String> {
@@ -168,18 +182,21 @@ drills:
     why: A function returning Result<(), String> can use ? on another Result<_, String>. Test functions can return Result the same way.
 
   - type: choice
+    after: testing-4
     prompt: "What does #[should_panic(expected = \"insufficient funds\")] check?"
     choices: ["That the test function returns an Err", "That the test panics, with a message containing \"insufficient funds\"", "That the test panics with exactly that message and nothing else", "That the code never panics"]
     answer: 2
     why: The test passes only if the code panics and the panic message contains the expected text. Without expected, any panic would do, even an unrelated one.
 
   - type: choice
+    after: testing-6
     prompt: Where do integration tests go, and what can they use?
     choices: ["In a #[cfg(test)] module, and they can use private functions", "In the tests/ folder, and they can only use the crate's public API", "In src/main.rs, after fn main", "In doc comments only"]
     answer: 2
     why: Each file in tests/ is compiled as a separate crate that uses your library from the outside, so only pub items are visible. Unit tests in mod tests can reach private items.
 
   - type: boss
+    after: testing-3
     prompt: |
       `is_palindrome` ignores case and anything that isn't a letter or digit, so `"Race car"` and `"A man, a plan, a canal: Panama"` are palindromes. Write at least **3 tests** that catch every planted bug.
     mode: test

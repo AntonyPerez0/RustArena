@@ -1,6 +1,7 @@
 topic: smart-pointers
 drills:
   - type: predict
+    after: smart-pointers-1
     body: |
       let b = Box::new(5);
       let c = *b + 1;
@@ -8,6 +9,7 @@ drills:
     why: "*b reads the 5 inside the Box, so c is 6. Printing a Box prints the value it points to."
 
   - type: predict
+    after: smart-pointers-4
     pre: |
       use std::rc::Rc;
     body: |
@@ -21,6 +23,7 @@ drills:
     why: Inside the block there are three owners (a, b, _c). When the block ends _c is dropped, leaving two. All of them point at the same String.
 
   - type: predict
+    after: smart-pointers-3
     pre: |
       struct Noisy(&'static str);
 
@@ -36,6 +39,7 @@ drills:
     why: Locals are dropped at the end of the scope in reverse order of declaration, so second goes before first.
 
   - type: predict
+    after: smart-pointers-7
     pre: |
       use std::rc::Rc;
     body: |
@@ -49,6 +53,7 @@ drills:
     why: While team is alive, upgrade() returns Some(Rc). A Weak doesn't keep the value alive, so after the block drops team, upgrade() returns None.
 
   - type: predict
+    after: smart-pointers-5
     pre: |
       use std::cell::Cell;
     body: |
@@ -60,6 +65,7 @@ drills:
     why: Cell allows changes through shared references. Both counter and hits refer to the same Cell, so the value goes 0, 1, 11.
 
   - type: fill
+    after: smart-pointers-1
     prompt: Give the recursive variant a fixed size.
     body: |
       enum Tree {
@@ -77,6 +83,7 @@ drills:
     why: A type that contains itself needs a pointer in the recursive spot. Box<Tree> has a known size (one pointer) no matter how deep the tree is.
 
   - type: fill
+    after: smart-pointers-4
     prompt: Make a second owner of the same list without copying it.
     pre: |
       use std::rc::Rc;
@@ -87,6 +94,7 @@ drills:
     why: Rc::clone copies the pointer and adds 1 to the strong count. The Vec itself is not copied.
 
   - type: fill
+    after: smart-pointers-7
     prompt: Create a non-owning link to the parent.
     pre: |
       use std::rc::{Rc, Weak};
@@ -97,6 +105,7 @@ drills:
     why: Rc::downgrade makes a Weak. It adds to the weak count but leaves the strong count at 1, so it doesn't keep the parent alive.
 
   - type: bug
+    after: smart-pointers-1
     body: |
       let price = Box::new(10);
       let doubled = price * 2; // BUG
@@ -106,6 +115,7 @@ drills:
     why: "A Box<i32> is a pointer, not a number, so Box * i32 doesn't compile. Dereference it with *price to get the i32 inside."
 
   - type: bug
+    after: smart-pointers-3
     pre: |
       struct Guard(&'static str);
 
@@ -122,6 +132,7 @@ drills:
     why: "let _ = ... doesn't bind the value, so the Guard is dropped on the spot and releases before the work. let _guard keeps it alive to the end of the scope."
 
   - type: bug
+    after: smart-pointers-5
     pre: |
       use std::cell::RefCell;
     body: |
@@ -134,6 +145,7 @@ drills:
     why: "The Ref in old stays alive until the end of the scope, so borrow_mut() panics with \"RefCell already borrowed\". Cloning the String out lets the borrow end on the same line."
 
   - type: compiles
+    after: smart-pointers-1
     answer: no
     body: |
       enum List {
@@ -144,6 +156,7 @@ drills:
     why: "Cons contains a whole List directly, so the type would have infinite size (E0072). Use Box<List> for the recursive field."
 
   - type: compiles
+    after: smart-pointers-4
     answer: no
     pre: |
       use std::rc::Rc;
@@ -153,6 +166,7 @@ drills:
     why: "Rc only gives shared (&) access to its value, so you can't push through it (E0596). Use Rc<RefCell<Vec<_>>> to share and mutate."
 
   - type: compiles
+    after: smart-pointers-6
     answer: yes
     pre: |
       use std::cell::RefCell;
@@ -165,6 +179,7 @@ drills:
     why: RefCell provides mutation through a shared reference, checked at run time. Both Rcs point at the same RefCell, so team sees bo too.
 
   - type: compiles
+    after: smart-pointers-3
     answer: no
     pre: |
       struct File(&'static str);
@@ -180,18 +195,21 @@ drills:
     why: "Calling a destructor directly is not allowed (E0040), because it would run again at the end of the scope. Use drop(f), which takes ownership."
 
   - type: choice
+    after: smart-pointers-7
     prompt: A tree node needs a link to its parent, and the parent owns its children through Rc. What type should the parent link be?
     choices: ["Rc<Node>", "Weak<Node>", "Box<Node>", "&Node"]
     answer: 2
     why: An Rc back-link would form a cycle (parent and child keep each other alive forever). Weak doesn't own, so the parent can be dropped; upgrade() tells you if it's still there.
 
   - type: choice
+    after: smart-pointers-5
     prompt: Which statement about RefCell<T> is true?
     choices: ["It lets several threads mutate the value safely", "It checks the borrowing rules at run time and panics if they're broken", "It copies the value on every borrow", "It turns off the borrowing rules completely"]
     answer: 2
     why: RefCell enforces the same many-readers-or-one-writer rule, just at run time. It is single-threaded; Mutex is the thread-safe equivalent.
 
   - type: boss
+    after: smart-pointers-2
     prompt: |
       Build a stack on linked nodes: `struct Stack { head: Option<Box<Node>>, len: usize }` where each `Node` holds a `value: i32` and `next: Option<Box<Node>>`. Implement `Stack::new()`, `push(&mut self, value)`, `pop(&mut self) -> Option<i32>` (last pushed comes out first), `peek(&self) -> Option<i32>` and `len(&self) -> usize`.
     seed: |

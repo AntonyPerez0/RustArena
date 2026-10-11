@@ -18,5 +18,8 @@ use crate::Index;
 // - join() every thread, then take the Index out:
 //   Arc::try_unwrap(total) and then Mutex::into_inner.
 pub fn index_shared(docs: Arc<Vec<String>>, threads: usize) -> Index {
-    todo!("part 1: index {} documents with {threads} threads", docs.len())
+    todo!(
+        "part 1: index {} documents with {threads} threads",
+        docs.len()
+    )
 }

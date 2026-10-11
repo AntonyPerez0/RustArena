@@ -18,7 +18,8 @@ pub fn index_channels(docs: &[String], threads: usize) -> Index {
                 for doc in slice {
                     index.add_document(doc);
                 }
-                tx.send(index).expect("the receiver lives until every worker is done");
+                tx.send(index)
+                    .expect("the receiver lives until every worker is done");
             });
         }
         // The loop below ends when every Sender is dropped. The workers drop

@@ -55,7 +55,10 @@ fn shared_state_version_matches_serial() {
         let got = finishes(&format!("index_shared(docs, {threads})"), move || {
             index_shared(docs, threads)
         });
-        assert!(got == *expected, "index_shared with {threads} threads gave a different index");
+        assert!(
+            got == *expected,
+            "index_shared with {threads} threads gave a different index"
+        );
     }
 }
 
@@ -67,7 +70,10 @@ fn channel_version_matches_serial() {
         let got = finishes(&format!("index_channels(&docs, {threads})"), move || {
             index_channels(&docs, threads)
         });
-        assert!(got == *expected, "index_channels with {threads} threads gave a different index");
+        assert!(
+            got == *expected,
+            "index_channels with {threads} threads gave a different index"
+        );
     }
 }
 
@@ -82,9 +88,15 @@ fn rayon_version_matches_serial() {
 #[test]
 fn rayon_version_works_in_a_small_pool() {
     let (docs, expected) = fixture();
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(2)
+        .build()
+        .unwrap();
     let got = pool.install(|| index_rayon(docs));
-    assert!(got == *expected, "index_rayon in a 2-thread pool gave a different index");
+    assert!(
+        got == *expected,
+        "index_rayon in a 2-thread pool gave a different index"
+    );
 }
 
 #[test]
@@ -93,11 +105,17 @@ fn empty_input_gives_an_empty_index() {
     assert_eq!(index_serial(&empty), Index::default());
     for threads in [1, 4] {
         assert_eq!(
-            finishes("index_shared on no documents", move || index_shared(Arc::new(Vec::new()), threads)),
+            finishes("index_shared on no documents", move || index_shared(
+                Arc::new(Vec::new()),
+                threads
+            )),
             Index::default()
         );
         assert_eq!(
-            finishes("index_channels on no documents", move || index_channels(&[], threads)),
+            finishes("index_channels on no documents", move || index_channels(
+                &[],
+                threads
+            )),
             Index::default()
         );
     }

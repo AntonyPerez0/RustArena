@@ -85,6 +85,14 @@ export const USER_MAIN = "__arena_user_main";
 /** A top-level `fn main(` (optionally pub and/or async), at the start of a line. */
 const MAIN_RE = /^((?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?)fn\s+main\s*(?=\()/m;
 
+/** An `async fn main` without an attribute (such as #[tokio::main]) on the line before it. */
+function bareAsyncMain(code) {
+  const m = MAIN_RE.exec(code);
+  if (!m || !/async/.test(m[1])) return false;
+  const before = code.slice(0, m.index).replace(/\s+$/, "");
+  return !/#\[[^\]]*\]$/.test(before);
+}
+
 export function hasMain(code) {
   return MAIN_RE.test(stripForRules(code));
 }
@@ -254,6 +262,9 @@ export function wrapProgram(code, { cases = [{}], harness = undefined, limitMs =
       `\nfn main() -> std::process::ExitCode {\n    match std::env::var("RUSTARENA_CHILD").as_deref() {\n${dispatch}\n        Ok(_) => std::process::ExitCode::FAILURE,\n        Err(_) => {\n            __arena::run(&[\n${runCases}\n            ]);\n            std::process::ExitCode::SUCCESS\n        }\n    }\n}\n`
     );
   }
+  // `async fn main` with no runtime attribute (like #[tokio::main]) can't work: send the code as it is,
+  // so rustc reports its own error (E0752) on the learner's line instead of in the hidden runner.
+  if (bareAsyncMain(user)) return user;
   const runCases = (cases.length ? cases : [{}]).map((c) => "            " + caseLiteral({ ...c, test: "" }) + ",").join("\n");
   return (
     user.replace(MAIN_RE, `$1fn ${USER_MAIN}`) +

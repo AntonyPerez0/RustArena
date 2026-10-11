@@ -53,6 +53,7 @@ const BY_CODE: Record<string, string> = {
   E0373: "A closure (often one passed to `thread::spawn`) **borrows** a variable that may not live long enough. Add `move` before the closure so it takes ownership.",
   E0282: "Rust **can't infer the type** here. Add a type annotation, like `let v: Vec<i32> = ...` or `.collect::<Vec<_>>()` or `.parse::<i32>()`.",
   E0283: "Rust can't decide which type you mean. Add a type annotation.",
+  E0752: "`main` can't be `async` on its own: something has to run the future it returns. Add `#[tokio::main]` on the line above `async fn main()` (with the tokio crate), or keep `main` synchronous and start a runtime yourself.",
   E0015: "Only `const fn` calls are allowed in a `const` or `static` initializer.",
   E0133: "This operation is **unsafe**: wrap it in an `unsafe { }` block, after making sure it's sound.",
   E0046: "The `impl` is **missing trait methods**. Add every method the trait requires (those without a default body).",

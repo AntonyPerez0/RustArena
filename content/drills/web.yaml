@@ -1,0 +1,316 @@
+topic: web
+drills:
+  - type: predict
+    body: |
+      let path = "/users/42/";
+      let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+      match segments.as_slice() {
+          ["users"] => println!("list"),
+          ["users", id] => println!("user {id}"),
+          _ => println!("not found"),
+      }
+    why: Filtering out empty pieces drops the leading and trailing slash, leaving ["users", "42"], which matches the two-segment pattern.
+
+  - type: predict
+    body: |
+      let raw = "POST /notes HTTP/1.1\r\nHost: x\r\n\r\nbuy milk";
+      let (head, body) = raw.split_once("\r\n\r\n").unwrap();
+      println!("{}", head.lines().count());
+      println!("{body}");
+    why: The blank line (\r\n\r\n) separates the head (request line plus one header, two lines) from the body.
+
+  - type: predict
+    pre: |
+      use serde_json::json;
+    body: |
+      let body = json!({ "status": 404, "error": "item 7 not found" });
+      println!("{body}");
+    why: json! builds a Value whose object keys are kept sorted, so "error" comes before "status".
+
+  - type: predict
+    pre: |
+      fn class(status: u16) -> &'static str {
+          match status {
+              200..=299 => "success",
+              400..=499 => "client error",
+              500..=599 => "server error",
+              _ => "other",
+          }
+      }
+    body: |
+      println!("{} {} {}", class(204), class(422), class(503));
+    why: The first digit tells the class. 2xx is success, 4xx the client's mistake (422 is a rule violation), 5xx the server's fault.
+
+  - type: predict
+    pre: |
+      use std::sync::Mutex;
+      use std::thread;
+    body: |
+      let hits = Mutex::new(0);
+      thread::scope(|s| {
+          for _ in 0..4 {
+              s.spawn(|| {
+                  for _ in 0..10 {
+                      *hits.lock().unwrap() += 1;
+                  }
+              });
+          }
+      });
+      println!("{}", hits.into_inner().unwrap());
+    why: Each of the 4 threads adds 10 while holding the lock, so no update is lost, and the result is always 40.
+
+  - type: predict
+    body: |
+      let body = "\"crème\"";
+      println!("Content-Length: {}", body.len());
+      println!("{} chars", body.chars().count());
+    why: Content-Length counts bytes. è takes 2 bytes in UTF-8, so the 7 characters are 8 bytes.
+
+  - type: fill
+    prompt: Match on the path segments with slice patterns.
+    pre: |
+      #[derive(Clone, Copy)]
+      enum Method {
+          Get,
+          Post,
+      }
+    body: |
+      let method = Method::Get;
+      let segments = vec!["orders", "7"];
+      let status = match (method, segments.[[as_slice()]]) {
+          (Method::Get, ["orders", _]) => 200,
+          (Method::Post, ["orders"]) => 201,
+          _ => 404,
+      };
+      println!("{status}");
+    why: Slice patterns like ["orders", _] match a slice, so the Vec is turned into one with as_slice().
+
+  - type: fill
+    prompt: Give each thread its own handle to the shared state.
+    pre: |
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+    body: |
+      let state = Arc::new(Mutex::new(Vec::new()));
+      let handle = {
+          let state = Arc::[[clone]](&state);
+          thread::spawn(move || state.lock().unwrap().push("hello"))
+      };
+      handle.join().unwrap();
+      println!("{:?}", state.lock().unwrap());
+    why: Arc::clone makes another pointer to the same data (bumping a reference count), which the thread can own.
+
+  - type: fill
+    prompt: Parse the request body into the request type.
+    pre: |
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct NewUser {
+          name: String,
+      }
+    body: |
+      let body = r#"{"name": "Ana"}"#;
+      let status = match serde_json::[[from_str]]::<NewUser>(body) {
+          Ok(u) => format!("201 created {}", u.name),
+          Err(_) => String::from("400 bad request"),
+      };
+      println!("{status}");
+    why: serde_json::from_str parses JSON text into any type that implements Deserialize; a failure becomes a 400.
+
+  - type: bug
+    pre: |
+      use std::collections::BTreeMap;
+
+      fn get_item(items: &BTreeMap<u32, &str>, id: u32) -> (u16, String) {
+          match items.get(&id) {
+              Some(name) => (200, name.to_string()),
+              None => (200, String::from("not found")), // BUG
+          }
+      }
+    body: |
+      let items = BTreeMap::from([(1, "mug")]);
+      let (status, body) = get_item(&items, 9);
+      println!("{status} {body}");
+    fix: 'None => (404, String::from("not found")),'
+    prompt: "A missing item must answer `404 not found`. Click the line with the bug."
+    why: Clients, proxies and monitoring read the status code first. An error answered with 200 looks like success to all of them.
+
+  - type: bug
+    body: |
+      let path = "/users";
+      let segments: Vec<&str> = path.split('/').collect(); // BUG
+      let found = matches!(segments.as_slice(), ["users"]);
+      println!("{found}");
+    fix: 'let segments: Vec<&str> = path.split(''/'').filter(|s| !s.is_empty()).collect();'
+    prompt: "This should print `true`. Click the line with the bug."
+    why: "\"/users\".split('/') yields an empty first piece, giving [\"\", \"users\"]. Filtering out empty pieces leaves [\"users\"]."
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::sync::Mutex;
+      use std::thread;
+    body: |
+      let state = Mutex::new(0);
+      let a = thread::spawn(move || *state.lock().unwrap() += 1);
+      let b = thread::spawn(move || *state.lock().unwrap() += 1);
+      a.join().unwrap();
+      b.join().unwrap();
+    why: The first move closure takes ownership of state, so the second can't use it. Share it with Arc and give each thread an Arc::clone.
+
+  - type: compiles
+    answer: no
+    body: |
+      let segments: Vec<String> = vec![String::from("users"), String::from("7")];
+      match segments.as_slice() {
+          ["users", id] => println!("user {id}"),
+          _ => println!("not found"),
+      }
+    why: The slice holds Strings, but "users" is a &str literal pattern. Collect the segments as Vec<&str> (or match on string slices) to use literal patterns.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      trait IntoResponse {
+          fn into_response(self) -> Response;
+      }
+
+      impl IntoResponse for (u16, &'static str) {
+          fn into_response(self) -> Response {
+              Response { status: self.0, body: self.1.to_string() }
+          }
+      }
+    body: |
+      let r = (404, "not found").into_response();
+      println!("{} {}", r.status, r.body);
+    why: A trait can be implemented for a tuple type like (u16, &'static str). That's how axum lets handlers return (StatusCode, body).
+
+  - type: choice
+    prompt: A POST body is valid JSON with all fields, but the email has no @. Which status code fits best?
+    choices: ["200 OK", "404 Not Found", "422 Unprocessable Content", "500 Internal Server Error"]
+    answer: 3
+    why: The request is well-formed but breaks a rule, which is 422 (some APIs use 400). It's not the server's fault, so not 500.
+
+  - type: choice
+    prompt: "GET /items exists, and a client sends DELETE /items. What should the server answer?"
+    choices: ["404 Not Found", "405 Method Not Allowed", "400 Bad Request", "204 No Content"]
+    answer: 2
+    why: The path exists but not with that method, so the answer is 405. A 404 would wrongly suggest the path doesn't exist at all.
+
+  - type: choice
+    prompt: In an axum handler, why must the Json<T> extractor be the last parameter?
+    choices: ["Rust requires generic parameters to come last", "It reads (consumes) the request body, which can only be read once", "axum sorts parameters alphabetically", "Json is slower than the other extractors"]
+    answer: 2
+    why: Extractors like State and Path only look at parts of the request; Json takes the body itself, so it must come after every other extractor.
+
+  - type: boss
+    prompt: |
+      Write a poll endpoint: `fn vote(poll: &Poll, body: &str) -> Response`. The body is `{"option": "rust"}`. Answer `400` `{"error":"invalid JSON"}` if it doesn't parse, `422` `{"error":"unknown option \"go\""}` (Debug-format the option) if the poll has no such option, otherwise add one vote and answer `200` with all the counts as a JSON object, like `{"rust":3,"zig":1}`. It must count correctly when many threads vote at once.
+    seed: |
+      use serde::Deserialize;
+      use serde_json::json;
+      use std::collections::BTreeMap;
+      use std::sync::Mutex;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      struct Poll {
+          counts: Mutex<BTreeMap<String, u32>>,
+      }
+
+      impl Poll {
+          fn new(options: &[&str]) -> Self {
+              Poll { counts: Mutex::new(options.iter().map(|o| (o.to_string(), 0)).collect()) }
+          }
+      }
+
+      fn vote(poll: &Poll, body: &str) -> Response {
+          todo!()
+      }
+    solution: |
+      use serde::Deserialize;
+      use serde_json::json;
+      use std::collections::BTreeMap;
+      use std::sync::Mutex;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      struct Poll {
+          counts: Mutex<BTreeMap<String, u32>>,
+      }
+
+      impl Poll {
+          fn new(options: &[&str]) -> Self {
+              Poll { counts: Mutex::new(options.iter().map(|o| (o.to_string(), 0)).collect()) }
+          }
+      }
+
+      #[derive(Deserialize)]
+      struct Vote {
+          option: String,
+      }
+
+      fn vote(poll: &Poll, body: &str) -> Response {
+          let Ok(v) = serde_json::from_str::<Vote>(body) else {
+              return Response { status: 400, body: json!({ "error": "invalid JSON" }).to_string() };
+          };
+          let mut counts = poll.counts.lock().unwrap();
+          match counts.get_mut(&v.option) {
+              Some(n) => {
+                  *n += 1;
+                  Response { status: 200, body: json!(*counts).to_string() }
+              }
+              None => Response { status: 422, body: json!({ "error": format!("unknown option {:?}", v.option) }).to_string() },
+          }
+      }
+    harness: |
+      #[test]
+      fn counts_a_vote() {
+          let p = Poll::new(&["rust", "zig"]);
+          assert_eq!(vote(&p, r#"{"option": "rust"}"#), Response { status: 200, body: String::from(r#"{"rust":1,"zig":0}"#) }, "vote rust");
+      }
+
+      #[test]
+      fn unknown_options_are_422() {
+          let p = Poll::new(&["rust"]);
+          assert_eq!(vote(&p, r#"{"option": "go"}"#), Response { status: 422, body: String::from(r#"{"error":"unknown option \"go\""}"#) }, "vote go");
+      }
+
+      #[test]
+      fn bad_json_is_400() {
+          assert_eq!(vote(&Poll::new(&["rust"]), "rust").status, 400, "vote with a plain-text body");
+      }
+
+      #[test]
+      fn concurrent_votes_are_all_counted() {
+          let p = Poll::new(&["rust", "zig"]);
+          std::thread::scope(|s| {
+              for _ in 0..8 {
+                  s.spawn(|| {
+                      for _ in 0..25 {
+                          vote(&p, r#"{"option": "rust"}"#);
+                      }
+                  });
+              }
+          });
+          assert_eq!(vote(&p, r#"{"option": "zig"}"#).body, r#"{"rust":200,"zig":1}"#, "after 200 concurrent votes");
+      }
+    hints:
+      - "Parse the body into a small `#[derive(Deserialize)] struct Vote { option: String }` before locking."
+      - "Under one lock, `counts.get_mut(&v.option)` gives `Some(&mut u32)` for known options; increment it."
+      - "`json!(*counts)` turns the whole BTreeMap into a JSON object."
+    why: A handler parses first, then does its check-and-update under a single lock, so concurrent requests never lose a vote.

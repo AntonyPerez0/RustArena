@@ -1,12 +1,14 @@
 topic: tooling
 drills:
   - type: predict
+    after: tooling-1
     body: |
       let x = dbg!(2 * 3) + 1;
       println!("{x}");
     why: "dbg! prints [src/main.rs:..] 2 * 3 = 6 to stderr and returns the 6, so x is 7. Only stdout is shown here."
 
   - type: predict
+    after: tooling-1
     body: |
       eprintln!("debug: starting");
       println!("result: 42");
@@ -14,6 +16,7 @@ drills:
     why: eprintln! writes to stderr, a separate stream. The program's real output (stdout) is just the println! line.
 
   - type: predict
+    after: tooling-1
     body: |
       let v = vec![3, 1, 2];
       let total: i32 = dbg!(&v).iter().sum();
@@ -21,6 +24,7 @@ drills:
     why: dbg!(&v) prints the vector and returns the reference unchanged, so you can keep chaining. Because it only got a reference, v is still usable afterwards.
 
   - type: predict
+    after: tooling-3
     pre: |
       #[derive(Debug, PartialEq, PartialOrd)]
       enum Level {
@@ -35,12 +39,14 @@ drills:
     why: Deriving PartialOrd orders enum variants in the order they're declared, which is how log levels are compared against a minimum.
 
   - type: predict
+    after: tooling-2
     body: |
       let stock: u32 = 3;
       println!("{:?} {:?}", stock.checked_sub(5), stock.checked_sub(1));
     why: checked_sub returns None instead of overflowing (which would panic in a debug build), and Some(result) when the subtraction fits.
 
   - type: fill
+    after: tooling-5
     prompt: Write the check the way clippy's len_zero lint wants.
     body: |
       let queue: Vec<u32> = Vec::new();
@@ -50,6 +56,7 @@ drills:
     why: "v.is_empty() says what you mean, and works for every collection; clippy flags len() == 0."
 
   - type: fill
+    after: tooling-5
     prompt: Get each name's position without indexing (no needless_range_loop).
     body: |
       let names = ["ana", "bo"];
@@ -59,6 +66,7 @@ drills:
     why: enumerate() pairs each item with its index, so you never need names[i].
 
   - type: fill
+    after: tooling-1
     prompt: Send the diagnostic to stderr, so stdout holds only the result.
     body: |
       let readings = [4, -1, 6];
@@ -74,6 +82,7 @@ drills:
     why: Warnings and debug messages belong on stderr (eprintln!), so anything reading the program's output only sees the result.
 
   - type: bug
+    after: tooling-2
     body: |
       let temps = [18, 21, 19];
       let mut rises = 0;
@@ -88,6 +97,7 @@ drills:
     why: "The body reads temps[i + 1], so the last i must be len - 2. Looping to len() reads one past the end on the final pass."
 
   - type: bug
+    after: tooling-2
     body: |
       let stock: u32 = 2;
       let ordered: u32 = 5;
@@ -98,6 +108,7 @@ drills:
     why: A u32 can't be negative, so 2 - 5 overflows (a panic in debug builds). saturating_sub stops at 0 instead.
 
   - type: bug
+    after: tooling-1
     body: |
       let name = String::from("ferris");
       dbg!(name); // BUG
@@ -107,6 +118,7 @@ drills:
     why: dbg! takes ownership of what you pass it, so dbg!(name) moves the String away. Pass a reference to look without moving.
 
   - type: compiles
+    after: tooling-4
     answer: no
     pre: |
       #![deny(missing_docs)]
@@ -125,6 +137,7 @@ drills:
     why: "With #![deny(missing_docs)], every public item needs a doc comment. triple has none, so it's an error: missing documentation for a function."
 
   - type: compiles
+    after: tooling-6
     answer: yes
     pre: |
       #[allow(clippy::needless_return)]
@@ -136,6 +149,7 @@ drills:
     why: "rustc knows clippy's lint names, so #[allow(clippy::...)] compiles fine even when clippy isn't running. The return is just a style issue, not an error."
 
   - type: compiles
+    after: tooling-4
     answer: no
     pre: |
       fn helper() -> u32 {
@@ -148,18 +162,21 @@ drills:
     why: "An inner doc comment (//!) documents the item it's inside, so it must come before any items. After fn helper it's error E0753: expected outer doc comment."
 
   - type: choice
+    after: tooling-7
     prompt: "A CI step runs `cargo clippy --all-targets -- -D warnings`. What does `-D warnings` do?"
     choices: ["Downloads the latest warnings list", "Turns every warning into an error, so any clippy warning fails the job", "Hides warnings from the log", "Only lints debug builds"]
     answer: 2
     why: -D means deny. Without it clippy prints warnings but exits successfully, so CI would stay green with warnings in the code.
 
   - type: choice
+    after: tooling-2
     prompt: A program panics deep inside a helper function. What does running it with RUST_BACKTRACE=1 add to the panic output?
     choices: ["The values of all local variables", "The chain of function calls that led to the panic, with file and line for each", "A suggested fix", "A core dump file for the debugger"]
     answer: 2
     why: The backtrace lists the stack of calls. Skip the std and core frames at the top; the first frame from your crate is where it broke, and the next one is who called it.
 
   - type: boss
+    after: tooling-5
     prompt: |
       Clippy has five complaints about `summarize`: `&Vec` parameter, `len() == 0`, indexing in a range loop, needless `.clone()`s and a needless `return`. Rewrite it clippy-clean with the same behavior: `None` for no orders, otherwise `Some("N orders, T items, biggest: NAME")` where T is the total quantity and NAME is the order with the largest quantity.
     seed: |

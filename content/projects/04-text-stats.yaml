@@ -1,0 +1,544 @@
+id: text-stats
+title: A text statistics report
+level: Intermediate
+after: strings
+summary: Build a tool that reads any text and reports lines, words and characters, word frequencies, the most common and longest words, and averages, in a tidy, deterministic report.
+seed: |
+  use std::io;
+  use std::io::Read;
+
+  fn main() {
+      let mut text = String::new();
+      io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+      // Count and print: lines, words, characters, bytes
+
+  }
+milestones:
+  - title: Count like wc
+    text: |
+      Unix systems ship a tiny tool called `wc` ("word count") that has been counting lines and words since 1971. Editors show the same numbers in their status bar, and every writing app has a word counter. In this project you'll build a richer version: a text statistics report.
+
+      Start with the basics. Read the whole input (the starter code does this with `read_to_string`) and print:
+
+      ```
+      lines: 2
+      words: 11
+      characters: 47
+      bytes: 47
+      ```
+
+      - **lines**: how many lines the text has. `text.lines()` splits at line endings (and doesn't count an empty piece after the final newline).
+      - **words**: pieces separated by whitespace, exactly what `split_whitespace()` gives.
+      - **characters**: Unicode characters, newlines included: `text.chars().count()`.
+      - **bytes**: the size in UTF-8 bytes: `text.len()`.
+
+      `lines()` and `split_whitespace()` don't build a list; they hand out pieces one at a time. `.count()` counts the pieces without storing any of them.
+
+      ### Why characters and bytes differ
+
+      For plain English text the last two numbers are equal. For anything else they aren't: `é` is 2 bytes, `🦀` is 4. Rust's `String` is always UTF-8, and `len()` reports bytes because that's what the string actually stores. Whenever a number is shown to a person ("this tweet has 280 characters"), you almost always want characters, not bytes.
+
+      ```rust run
+      fn main() {
+          let s = "crab 🦀";
+          println!("{} chars, {} bytes", s.chars().count(), s.len());
+      }
+      ```
+
+      ```output
+      6 chars, 9 bytes
+      ```
+    solution: |
+      use std::io;
+      use std::io::Read;
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          // Count and print: lines, words, characters, bytes
+          println!("lines: {}", text.lines().count());
+          println!("words: {}", text.split_whitespace().count());
+          println!("characters: {}", text.chars().count());
+          println!("bytes: {}", text.len());
+      }
+    tests:
+      - stdin: "The crab sat on the rock.\nThe crab ate a fish!\n"
+      - stdin: "héllo wörld 🦀\n"
+      - stdin: "one\n\nthree   four\n  five"
+        hidden: true
+      - stdin: ""
+        hidden: true
+    hints:
+      - "Each number is one expression: `text.lines().count()`, `text.split_whitespace().count()`, `text.chars().count()` and `text.len()`."
+      - "Print them as `println!(\"lines: {}\", text.lines().count());` and so on, in the order lines, words, characters, bytes."
+
+  - title: Word frequencies
+    text: |
+      Counting *how often* each word appears is the first step of search engines, spam filters and plagiarism checkers. But first you have to decide what "the same word" means. In `The crab, the CRAB!`, a person sees `the` twice and `crab` twice. `split_whitespace` sees four different pieces: `The`, `crab,`, `the`, `CRAB!`.
+
+      So each piece needs **normalizing** before counting:
+
+      1. Strip punctuation from both ends (but keep it inside, so `don't` and `well-known` survive).
+      2. Lowercase it.
+      3. If nothing is left (a piece like `--` or `...`), it isn't a word: skip it.
+
+      ```rust run
+      fn normalize(raw: &str) -> String {
+          raw.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+      }
+
+      fn main() {
+          for raw in ["Crab,", "\"Hello!\"", "don't", "--", "ÉLAN"] {
+              println!("{raw} -> {:?}", normalize(raw));
+          }
+      }
+      ```
+
+      ```output
+      Crab, -> "crab"
+      "Hello!" -> "hello"
+      don't -> "don't"
+      -- -> ""
+      ÉLAN -> "élan"
+      ```
+
+      `trim_matches` removes characters from both ends for as long as a test says yes. The test here is a **closure**, `|c: char| !c.is_alphanumeric()`: a small unnamed function that takes a `char` and returns `true` for anything that isn't a letter or digit. You'll study closures properly later; for now read `|c| ...` as "given `c`, compute ...". `to_lowercase` works on all of Unicode (`É` becomes `é`), which is why it returns a new `String` rather than changing letters in place.
+
+      ### Counting
+
+      Count the normalized words in a `BTreeMap<String, usize>` with the entry API you met in the hashmaps module:
+
+      ```rust
+      *counts.entry(word).or_insert(0) += 1;
+      ```
+
+      After the four lines from milestone 1, print how many different words there are, then every word with its count, in alphabetical order:
+
+      ```
+      unique words: 8
+        a: 1
+        ate: 1
+        crab: 2
+        fish: 1
+        ...
+      ```
+
+      A `BTreeMap` iterates in key order, so the alphabetical list costs nothing extra. With a `HashMap` the order would change from run to run, which makes output impossible to compare or test. (The `words:` line keeps counting raw pieces like `wc` does, so `--` still counts there.)
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::Read;
+
+      /// "Crab," -> "crab". Returns an empty string for pieces with no letters or digits.
+      fn normalize(raw: &str) -> String {
+          raw.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          // Count and print: lines, words, characters, bytes
+          println!("lines: {}", text.lines().count());
+          println!("words: {}", text.split_whitespace().count());
+          println!("characters: {}", text.chars().count());
+          println!("bytes: {}", text.len());
+
+          let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+          for raw in text.split_whitespace() {
+              let word = normalize(raw);
+              if word.is_empty() {
+                  continue;
+              }
+              *counts.entry(word).or_insert(0) += 1;
+          }
+
+          println!("unique words: {}", counts.len());
+          for (word, count) in &counts {
+              println!("  {word}: {count}");
+          }
+      }
+    tests:
+      - stdin: "The crab sat on the rock.\nThe crab ate a fish!\n"
+      - stdin: "Don't panic! DON'T... panic -- \"really\" don't.\n"
+      - stdin: "Élan vital, ÉLAN! (élan)\n"
+        hidden: true
+    hints:
+      - "`fn normalize(raw: &str) -> String { raw.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase() }`"
+      - "Loop over `text.split_whitespace()`, normalize each piece, `continue` if it's empty, and count it with `*counts.entry(word).or_insert(0) += 1;`."
+      - "Print `unique words: {}` with `counts.len()`, then `for (word, count) in &counts` prints them in alphabetical order."
+
+  - title: The top five
+    text: |
+      A full word list is fine for a sentence but useless for a book. What people actually want is the **most common** words. Replace the full list with the top five:
+
+      ```
+      unique words: 8
+      top words:
+        1. the              3
+        2. crab             2
+        3. a                1
+        4. ate              1
+        5. fish             1
+      ```
+
+      Each line is two spaces, the rank, a period and a space, then the word left-aligned in 15 characters and the count right-aligned in 3: `println!("  {}. {word:<15}{count:>3}", i + 1)`. If there are fewer than five words, show them all.
+
+      ### Sorting by count, then by word
+
+      A map is sorted by its keys, but now you need to sort by the *values*. The usual approach: copy the entries into a `Vec` and sort that.
+
+      ```rust run
+      use std::collections::BTreeMap;
+
+      fn main() {
+          let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+          for word in ["rust", "crab", "rust", "fast", "crab", "safe"] {
+              *counts.entry(word.to_string()).or_insert(0) += 1;
+          }
+          let mut ranked: Vec<(&String, &usize)> = counts.iter().collect();
+          ranked.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+          println!("{ranked:?}");
+      }
+      ```
+
+      ```output
+      [("crab", 2), ("rust", 2), ("fast", 1), ("safe", 1)]
+      ```
+
+      - `counts.iter().collect()` makes a vector of `(&String, &usize)` pairs. They borrow from the map, so no strings are copied.
+      - `sort_by` takes a closure that compares two elements and returns an `Ordering` (`Less`, `Equal` or `Greater`).
+      - `b.1.cmp(a.1)` compares the counts **backwards** (b before a), which sorts from most to least common.
+      - `.then(a.0.cmp(b.0))` breaks ties alphabetically. Without a tie-breaker, words with equal counts could come out in any order the sort likes, and "any order" is the enemy of reproducible output.
+
+      After sorting, `ranked.truncate(5)` keeps the first five (and does nothing if there are fewer).
+
+      ### Width and alignment
+
+      `{word:<15}` pads the word with spaces on the right to 15 characters; `{count:>3}` pads the number on the left to 3. That's how command-line tools print tidy columns without any table library. (A word longer than 15 characters simply pushes its count to the right; widths are minimums, nothing is ever cut.)
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::Read;
+
+      /// "Crab," -> "crab". Returns an empty string for pieces with no letters or digits.
+      fn normalize(raw: &str) -> String {
+          raw.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          // Count and print: lines, words, characters, bytes
+          println!("lines: {}", text.lines().count());
+          println!("words: {}", text.split_whitespace().count());
+          println!("characters: {}", text.chars().count());
+          println!("bytes: {}", text.len());
+
+          let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+          for raw in text.split_whitespace() {
+              let word = normalize(raw);
+              if word.is_empty() {
+                  continue;
+              }
+              *counts.entry(word).or_insert(0) += 1;
+          }
+          println!("unique words: {}", counts.len());
+
+          // Most common first; equal counts in alphabetical order.
+          let mut ranked: Vec<(&String, &usize)> = counts.iter().collect();
+          ranked.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+          ranked.truncate(5);
+
+          println!("top words:");
+          for (i, (word, count)) in ranked.iter().enumerate() {
+              println!("  {}. {word:<15}{count:>3}", i + 1);
+          }
+      }
+    tests:
+      - stdin: "The crab sat on the rock.\nThe crab ate a fish!\n"
+      - stdin: "Rust is fast. Rust is safe. Rust is fun, and the crab says rust is here to stay!\n"
+      - stdin: "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness...\n"
+        hidden: true
+      - stdin: "Hi hi HI.\n"
+        hidden: true
+    hints:
+      - "`let mut ranked: Vec<(&String, &usize)> = counts.iter().collect();` gives you something you can sort."
+      - "`ranked.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));` sorts by count (most first), then alphabetically. Then `ranked.truncate(5);`."
+      - "Print with `for (i, (word, count)) in ranked.iter().enumerate()` and `println!(\"  {}. {word:<15}{count:>3}\", i + 1);`."
+
+  - title: Longest words and averages
+    text: |
+      Readability formulas (the ones that tell you a text reads at a "grade 8 level") are built from exactly two kinds of numbers: how long the words are, and how long the sentences are. Add the word side. After `unique words:`, print the average word length, and after the top words, the three longest words:
+
+      ```
+      unique words: 8
+      average word length: 3.09
+      top words:
+        ...
+      longest words:
+        1. crab (4)
+        2. fish (4)
+        3. rock (4)
+      ```
+
+      - **Average word length**: the total number of characters in all normalized words (counting every occurrence, so `the` used 3 times adds 9) divided by the number of normalized words, with 2 decimals (`{:.2}`).
+      - **Longest words**: distinct words (each listed once), longest first, ties in alphabetical order, at most three. Length means characters, not bytes, so `élan` has length 4.
+
+      ### Reuse what you have
+
+      Both numbers can be computed from the `counts` map; there's no need to read the text again. Each entry already tells you a word and how many times it occurs.
+
+      For the average, convert to `f64` before dividing: `letters as f64 / total as f64`. Dividing two integers would throw away the fraction (`47 / 14` is `3`).
+
+      For the longest words, sort the map's keys with the same two-level comparison as before: by length (backwards), then alphabetically:
+
+      ```rust
+      let mut words: Vec<&String> = counts.keys().collect();
+      words.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+      ```
+
+      (`cmp` takes its argument by reference, hence the `&` in `cmp(&a.chars().count())`: the counts are fresh numbers, not references into the map like before.)
+
+      One surprise to know about: comparing strings with `cmp` orders them by Unicode code point, so `zeal` sorts *before* `élan` (`é` comes after every ASCII letter). For a report that's fine and, more importantly, deterministic. Sorting the way a dictionary in a given language does is called **collation**, and it needs a dedicated library.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::Read;
+
+      /// "Crab," -> "crab". Returns an empty string for pieces with no letters or digits.
+      fn normalize(raw: &str) -> String {
+          raw.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+
+          // Count and print: lines, words, characters, bytes
+          println!("lines: {}", text.lines().count());
+          println!("words: {}", text.split_whitespace().count());
+          println!("characters: {}", text.chars().count());
+          println!("bytes: {}", text.len());
+
+          let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+          for raw in text.split_whitespace() {
+              let word = normalize(raw);
+              if word.is_empty() {
+                  continue;
+              }
+              *counts.entry(word).or_insert(0) += 1;
+          }
+          println!("unique words: {}", counts.len());
+
+          let mut letters = 0;
+          let mut total = 0;
+          for (word, count) in &counts {
+              letters += word.chars().count() * count;
+              total += count;
+          }
+          println!("average word length: {:.2}", letters as f64 / total as f64);
+
+          // Most common first; equal counts in alphabetical order.
+          let mut ranked: Vec<(&String, &usize)> = counts.iter().collect();
+          ranked.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+          ranked.truncate(5);
+
+          println!("top words:");
+          for (i, (word, count)) in ranked.iter().enumerate() {
+              println!("  {}. {word:<15}{count:>3}", i + 1);
+          }
+
+          // Longest first; equal lengths in alphabetical order.
+          let mut words: Vec<&String> = counts.keys().collect();
+          words.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+          words.truncate(3);
+
+          println!("longest words:");
+          for (i, word) in words.iter().enumerate() {
+              println!("  {}. {word} ({})", i + 1, word.chars().count());
+          }
+      }
+    tests:
+      - stdin: "The crab sat on the rock.\nThe crab ate a fish!\n"
+      - stdin: "Ferris the crab loves Rust.\nFerris writes Rust every day; Rust loves Ferris back!\nExtraordinary.\n"
+      - stdin: "Élan vital: élan, ÉLAN... and zeal!\n"
+        hidden: true
+      - stdin: "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness...\n"
+        hidden: true
+    hints:
+      - "Loop over `&counts` once, adding `word.chars().count() * count` to `letters` and `count` to `total`; print `letters as f64 / total as f64` with `{:.2}`."
+      - "`let mut words: Vec<&String> = counts.keys().collect();` then sort by `b.chars().count().cmp(&a.chars().count()).then(a.cmp(b))` and `truncate(3)`."
+      - "Print the average right after `unique words:`, and the longest words after the top words."
+
+  - title: "Polish: a report you could ship"
+    text: |
+      Your `main` now reads input, counts, ranks and prints, all in one long function. Before adding the last feature, give the program the shape real tools have: **compute first, print last**.
+
+      - `struct Stats` holds every number the report needs: `lines`, `words`, `chars`, `bytes`, `sentences` and the `counts` map.
+      - `fn analyze(text: &str) -> Stats` does all the counting and doesn't print anything.
+      - Small helpers answer one question each: `fn top_words(counts: &BTreeMap<String, usize>, n: usize) -> Vec<(&String, &usize)>`, `fn longest_words(...)`, `fn average_length(...) -> f64`.
+      - `fn print_report(stats: &Stats)` only formats and prints.
+
+      Why bother? Because now each piece can be used and tested on its own. A web version of this tool would call `analyze` and render HTML instead of calling `print_report`. A test can check `analyze("a b a").counts` without capturing any output. Separating computation from presentation is one of the most useful habits in software.
+
+      ### New: sentences, and empty input
+
+      Add a `sentences:` line after `bytes:`. A sentence ends at `.`, `!` or `?`, but only if some text came before it, so `Wait... what?!` is 2 sentences, not 5. Text after the last end mark (no final period) counts as one more sentence. A simple way: walk the characters with a flag that says "we're inside a sentence".
+
+      ```rust
+      let mut sentences = 0;
+      let mut in_sentence = false;
+      for c in text.chars() {
+          if c == '.' || c == '!' || c == '?' {
+              if in_sentence {
+                  sentences += 1;
+                  in_sentence = false;
+              }
+          } else if c.is_alphanumeric() {
+              in_sentence = true;
+          }
+      }
+      ```
+
+      (and one more if `in_sentence` is still true at the end).
+
+      Finally, handle text with no words at all. Right now the average divides 0 by 0 and prints `NaN`, which is the kind of output that makes users stop trusting a tool. If there are no words, print the five count lines and then `no words found` instead of the rest. For the input `...!` that's:
+
+      ```
+      lines: 1
+      words: 1
+      characters: 5
+      bytes: 5
+      sentences: 0
+      no words found
+      ```
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::Read;
+
+      /// Everything the report needs, computed in one place.
+      struct Stats {
+          lines: usize,
+          words: usize,
+          chars: usize,
+          bytes: usize,
+          sentences: usize,
+          counts: BTreeMap<String, usize>,
+      }
+
+      /// "Crab," -> "crab". Returns an empty string for pieces with no letters or digits.
+      fn normalize(raw: &str) -> String {
+          raw.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+      }
+
+      /// A sentence ends at . ! or ? after some text; trailing text counts as one more.
+      fn count_sentences(text: &str) -> usize {
+          let mut sentences = 0;
+          let mut in_sentence = false;
+          for c in text.chars() {
+              if c == '.' || c == '!' || c == '?' {
+                  if in_sentence {
+                      sentences += 1;
+                      in_sentence = false;
+                  }
+              } else if c.is_alphanumeric() {
+                  in_sentence = true;
+              }
+          }
+          if in_sentence {
+              sentences += 1;
+          }
+          sentences
+      }
+
+      fn analyze(text: &str) -> Stats {
+          let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+          for raw in text.split_whitespace() {
+              let word = normalize(raw);
+              if word.is_empty() {
+                  continue;
+              }
+              *counts.entry(word).or_insert(0) += 1;
+          }
+          Stats {
+              lines: text.lines().count(),
+              words: text.split_whitespace().count(),
+              chars: text.chars().count(),
+              bytes: text.len(),
+              sentences: count_sentences(text),
+              counts,
+          }
+      }
+
+      /// Most common first; equal counts in alphabetical order.
+      fn top_words(counts: &BTreeMap<String, usize>, n: usize) -> Vec<(&String, &usize)> {
+          let mut ranked: Vec<(&String, &usize)> = counts.iter().collect();
+          ranked.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+          ranked.truncate(n);
+          ranked
+      }
+
+      /// Longest first; equal lengths in alphabetical order.
+      fn longest_words(counts: &BTreeMap<String, usize>, n: usize) -> Vec<&String> {
+          let mut words: Vec<&String> = counts.keys().collect();
+          words.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+          words.truncate(n);
+          words
+      }
+
+      /// Average length in characters over every occurrence of every word.
+      fn average_length(counts: &BTreeMap<String, usize>) -> f64 {
+          let mut letters = 0;
+          let mut total = 0;
+          for (word, count) in counts {
+              letters += word.chars().count() * count;
+              total += count;
+          }
+          letters as f64 / total as f64
+      }
+
+      fn print_report(stats: &Stats) {
+          println!("lines: {}", stats.lines);
+          println!("words: {}", stats.words);
+          println!("characters: {}", stats.chars);
+          println!("bytes: {}", stats.bytes);
+          println!("sentences: {}", stats.sentences);
+          if stats.counts.is_empty() {
+              println!("no words found");
+              return;
+          }
+          println!("unique words: {}", stats.counts.len());
+          println!("average word length: {:.2}", average_length(&stats.counts));
+          println!("top words:");
+          for (i, (word, count)) in top_words(&stats.counts, 5).iter().enumerate() {
+              println!("  {}. {word:<15}{count:>3}", i + 1);
+          }
+          println!("longest words:");
+          for (i, word) in longest_words(&stats.counts, 3).iter().enumerate() {
+              println!("  {}. {word} ({})", i + 1, word.chars().count());
+          }
+      }
+
+      fn main() {
+          let mut text = String::new();
+          io::stdin().read_to_string(&mut text).expect("failed to read input");
+          let stats = analyze(&text);
+          print_report(&stats);
+      }
+    tests:
+      - stdin: "The crab sat on the rock.\nThe crab ate a fish!\n"
+      - stdin: "Wait... what?! Ferris writes Rust every day; Rust loves Ferris back\n"
+      - stdin: "...!\n"
+      - stdin: ""
+        hidden: true
+      - stdin: "Ferris the crab loves Rust.\nFerris writes Rust every day; Rust loves Ferris back!\nExtraordinary.\n"
+        hidden: true
+    hints:
+      - "Start with `struct Stats { lines: usize, words: usize, chars: usize, bytes: usize, sentences: usize, counts: BTreeMap<String, usize> }` and move the counting into `fn analyze(text: &str) -> Stats`."
+      - "`count_sentences` walks `text.chars()` with an `in_sentence` flag: an end mark counts only if the flag is set, and a letter or digit sets it."
+      - "In `print_report`, after the `sentences:` line, `if stats.counts.is_empty() { println!(\"no words found\"); return; }`."

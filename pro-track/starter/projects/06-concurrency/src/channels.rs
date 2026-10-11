@@ -13,5 +13,8 @@ use crate::Index;
 //   That loop ends only when every Sender is gone, so drop the original one
 //   after spawning, or this function deadlocks.
 pub fn index_channels(docs: &[String], threads: usize) -> Index {
-    todo!("part 2: index {} documents with {threads} threads", docs.len())
+    todo!(
+        "part 2: index {} documents with {threads} threads",
+        docs.len()
+    )
 }

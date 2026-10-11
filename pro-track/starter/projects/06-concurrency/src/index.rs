@@ -72,7 +72,8 @@ impl Index {
 
     /// The `n` most frequent words, most frequent first (ties: alphabetical).
     pub fn top_words(&self, n: usize) -> Vec<(&str, u64)> {
-        let mut words: Vec<(&str, u64)> = self.words.iter().map(|(w, c)| (w.as_str(), *c)).collect();
+        let mut words: Vec<(&str, u64)> =
+            self.words.iter().map(|(w, c)| (w.as_str(), *c)).collect();
         words.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
         words.truncate(n);
         words

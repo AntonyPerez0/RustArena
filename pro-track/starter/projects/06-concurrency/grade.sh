@@ -6,19 +6,21 @@ source "$HERE/../../tools/lib.sh"
 SRC="$HERE/src"
 
 provided_files_unchanged() {
-  unchanged "$HERE/tests/parallel.rs" SHA_TESTS &&
-    unchanged "$SRC/main.rs" SHA_MAIN &&
-    unchanged "$SRC/lib.rs" SHA_LIB
+  unchanged "$HERE/tests/parallel.rs" 27051c048605d25cd70cc847ee1ea952247cc4fea23c5a0df06f7f7419a26790 &&
+    unchanged "$SRC/main.rs" 2ea70bc3430b7e21cab9b7238bf24457fff06d995436bbeede0ee2daf1b2b3b9 &&
+    unchanged "$SRC/lib.rs" 85e5d854680a73edbbad84c17cd0b3c834d5b7b24332a62280001abd997ae92a
 }
 
-# uses <file> <what> <regex>...: every regex must appear in the file.
+# uses <file> <what> <regex>...: every regex must appear in the file's code
+# (comments are ignored).
 uses() {
-  local file="$1" what="$2"
+  local file="$1" what="$2" code
   shift 2
+  code=$(sed 's://.*$::' "$SRC/$file")
   for pattern in "$@"; do
-    grep -Eq "$pattern" "$SRC/$file" || { echo "src/$file should use $what (looked for: $pattern)"; return 1; }
+    grep -Eq "$pattern" <<<"$code" || { echo "src/$file should use $what (looked for: $pattern)"; return 1; }
   done
-  if grep -q 'index_serial' "$SRC/$file"; then
+  if grep -q 'index_serial' <<<"$code"; then
     echo "src/$file calls index_serial: do the work in parallel instead"
     return 1
   fi
