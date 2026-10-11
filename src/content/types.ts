@@ -1,5 +1,5 @@
 export type TestCase = { name: string; stdin: string; expect: string; hidden?: boolean; files?: Record<string, string>; args?: string[]; exit?: number };
-export type Rule = { pattern: string; flags?: string; message: string; strings?: boolean };
+export type Rule = { pattern: string; flags?: string; message: string; strings?: boolean; raw?: boolean };
 
 /**
  * stdout: a whole program; each test runs it with some input and compares what it prints.
@@ -18,6 +18,8 @@ export type Exercise = {
   checks?: number;
   /** Harness exercises: the name of each check, shown as "what the tests check". */
   checkNames?: string[];
+  /** Harness exercises: for each check that must panic (#[should_panic]), the text its message must contain ("" for any panic); null otherwise. */
+  checkPanics?: (string | null)[];
   /** Test exercises: how many #[test] functions the learner must write. */
   minTests?: number;
   /** Test exercises: broken copies of the code (find/replace) that the learner's tests must catch. */

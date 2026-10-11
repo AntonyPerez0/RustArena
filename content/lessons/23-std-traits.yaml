@@ -1290,6 +1290,12 @@ steps:
 
       Use `times.sort_by(|a, b| a.total_cmp(b));`. `total_cmp` gives every float (even NaN) a fixed place in the order.
 
+      ### Common mistakes
+
+      - **`Ord` without its companions.** `impl Ord` needs `PartialOrd`, `Eq` and `PartialEq` too; leaving out `PartialOrd` gives ``error[E0277]: can't compare `Player` with `Player` ``. Derive `PartialEq, Eq` and write `partial_cmp` as `Some(self.cmp(other))`.
+      - **Deriving `PartialOrd` but writing `Ord` by hand** (or the other way round). Then `<` uses the field order and `sort()` uses your logic, and they disagree. Clippy flags it (`derive_ord_xor_partial_ord`). Write both by hand, with `partial_cmp` calling `cmp`.
+      - **Reversing the wrong way.** `self.score.cmp(&other.score)` puts the **lowest** score first. For "highest first", swap `self` and `other`, or add `.reverse()`.
+
       **Your turn:** implement `Ord` and `PartialOrd` for `Task` so that sorting puts the **highest priority first**, then the **earliest due day**, then the title alphabetically.
     seed: |
       use std::cmp::Ordering;
@@ -1788,11 +1794,9 @@ steps:
 
       - `fn drop(&mut self)` runs automatically. `_b` is dropped when the inner block ends; `_a` when `main` ends.
       - Values in the same scope are dropped in **reverse** order of creation (last in, first out), so things created later, which may depend on earlier ones, go away first.
-      - `drop(c)` drops a value early. It's an ordinary function (`std::mem::drop`) that takes ownership and lets the value go out of scope. You can't call `c.drop()` yourself: ``error[E0040]: explicit use of destructor method``.
+      - `drop(c)` drops a value early. It's an ordinary function (`std::mem::drop`) that takes ownership and lets the value go out of scope.
 
       This pattern is called **RAII** ("resource acquisition is initialization"): a value owns a resource and releases it in `Drop`, so you can't forget. Files close themselves, `MutexGuard`s unlock their mutex, network connections hang up. You rarely write `Drop` for plain data; you write it for types that own something outside your program's memory.
-
-      A type can't be both `Copy` and `Drop` (``error[E0184]: the trait `Copy` cannot be implemented for this type; the type has a destructor``): if copies existed, the cleanup would run several times.
 
       ### Deref (briefly): `*` and automatic method calls
 
@@ -1831,7 +1835,14 @@ steps:
       - `u.len()`: `Username` has no `len` method, so Rust derefs and finds `str::len`.
       - `greet(&u)`: a `&Username` turns into a `&str` automatically. This is **deref coercion**.
 
-      Use `Deref` for smart pointers and thin wrappers like this one. Don't use it to fake inheritance ("my `Admin` derefs to `User` so it gets all of `User`'s methods"): it confuses readers and the Rust API guidelines advise against it. The smart pointers module comes back to `Deref` and `Drop` in depth.
+      Use `Deref` for smart pointers and thin wrappers like this one. The smart pointers module comes back to `Deref` and `Drop` in depth.
+
+      ### Common mistakes
+
+      - **Calling `.drop()` yourself.** `c.drop()` gives ``error[E0040]: explicit use of destructor method``, because Rust would then run it a second time at the end of the scope. Call `drop(c)`, which takes ownership.
+      - **Expecting creation order.** Values in one scope are dropped last-created first, so the output of `Drop` impls can surprise you.
+      - **`Copy` and `Drop` together.** ``error[E0184]: the trait `Copy` cannot be implemented for this type; the type has a destructor``: with copies around, the cleanup would run several times.
+      - **`Deref` to fake inheritance.** "My `Admin` derefs to `User`, so it gets all of `User`'s methods" confuses readers, and the Rust API guidelines advise against it. Use a field and forward the methods you need, or a shared trait.
 
       **Your turn:** implement `Drop` for `Connection` so it prints `close <id>` when it's dropped. Don't change `main`. The program must print exactly:
 

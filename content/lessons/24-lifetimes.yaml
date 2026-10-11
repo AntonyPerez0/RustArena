@@ -98,6 +98,12 @@ steps:
       [10, 20, 30]
       ```
 
+      ### Common mistakes
+
+      - **Reading only the first line of the error.** The labels below it say which value, where it's dropped, and where it's used too late: that's the whole diagnosis.
+      - **Expecting a reference to keep its value alive.** In garbage-collected languages it would. In Rust the **owner** decides when a value is dropped, and every reference has to fit inside that.
+      - **Cloning by reflex.** `.clone()` makes the error go away, but often the real fix is putting the owner in the right scope. Clone when you actually want an independent copy.
+
       **Your turn:** this program doesn't compile: `longest_name` borrows from `names`, which is dropped at the end of the inner block. Fix it by making `names` live long enough (don't copy the string). It should print `Longest: Corro the Unsafe`.
     seed: |
       fn main() {
@@ -537,6 +543,12 @@ steps:
 
       Sometimes a type has a lifetime parameter but you don't need to name it. Write `'_`, "some lifetime, figured out by elision". You've seen it in `fmt::Formatter<'_>`, and you'll use it for structs with references in the next step.
 
+      ### Common mistakes
+
+      - **Expecting the compiler to look at the body.** `fn pick(a: &str, b: &str) -> &str` needs annotations even if the body only ever returns `a`: elision works from the signature alone. Write `fn pick<'a>(a: &'a str, b: &str) -> &'a str` to say so.
+      - **Trusting rule 3 for every method.** It's right for getters, wrong when the result can come from another argument (the `label_for` error above).
+      - **Annotating everything.** See the note below.
+
       ### Workplace note
 
       Don't write lifetimes the rules already cover. Clippy's `needless_lifetimes` lint flags `fn first<'a>(v: &'a [i32]) -> &'a i32` and suggests the shorter form. Real Rust code has far fewer `'a`s than beginners expect.
@@ -809,6 +821,12 @@ steps:
       fn parse<'a>(line: &'a str) -> Entry<'a> { ... }   // the same thing, spelled out
       ```
 
+      ### Common mistakes
+
+      - **Forgetting `<'a>` after `impl`.** `impl Tokenizer<'a>` gives ``error[E0261]: use of undeclared lifetime name `'a` ``: a lifetime must be declared before it's used, so write `impl<'a> Tokenizer<'a>`.
+      - **Returning slices tied to `&self` or `&mut self`** when they really come from the input. The signature compiles, but callers hit E0499 or "does not live long enough" later. Return `&'a str`.
+      - **Using a borrowing struct for long-lived data.** See the note below.
+
       ### Workplace note
 
       Borrowing structs are fast, but their lifetime spreads: anything that holds an `Entry<'a>` needs a `'a` too. Teams typically use them for short-lived **views** (parsers, iterators, a function that analyzes a buffer) and use owned `String` fields for data that's stored, returned through many layers, or sent to other threads. The last steps of this module come back to that choice.
@@ -1028,9 +1046,9 @@ steps:
       - Constants and statics are always `'static`, so `const APP: &str` doesn't need the annotation.
       - A struct field can also be `&'static str` with no lifetime parameter on the struct: `struct HttpError { code: u16, reason: &'static str }`. That's common for fixed messages and lookup tables.
 
-      ### `'static` doesn't fix lifetime errors
+      ### Common mistakes
 
-      When the compiler complains about lifetimes, adding `'static` is tempting. It never works for data created while the program runs, because that data really is dropped:
+      - **Adding `'static` to make an error go away.** When the compiler complains about lifetimes, it's tempting. It never works for data created while the program runs, because that data really is dropped:
 
       ```rust compile_fail
       fn make_label(id: u32) -> &'static str {
@@ -1049,9 +1067,7 @@ steps:
 
       `s` is a `String` built at run time and dropped at the end of `make_label`. The real fix, returning a `String`, is the next step. Read the help on E0106 carefully too: it suggests `'static`, but adds "this is uncommon unless you're returning a borrowed value from a `const` or a `static`".
 
-      ### `T: 'static` as a bound
-
-      You'll also meet `'static` as a **bound** on a type, for example in `std::thread::spawn`. `T: 'static` doesn't mean "lives forever"; it means "contains no borrowed references that could expire". Every owned type qualifies: `String`, `Vec<u32>`, `i32`, your structs without references. The threads module explains why spawn needs it.
+      - **Reading `T: 'static` as "lives forever".** You'll meet `'static` as a **bound** on a type, for example in `std::thread::spawn`. `T: 'static` means "contains no borrowed references that could expire". Every owned type qualifies: `String`, `Vec<u32>`, `i32`, your structs without references. The threads module explains why spawn needs it.
 
       **Your turn:** write `status_text`, which turns an HTTP status code into its reason phrase: `200` is `OK`, `404` is `Not Found`, `500` is `Internal Server Error`, anything else `Unknown`. Fix the return type so it compiles.
     seed: |
@@ -1489,7 +1505,19 @@ steps:
         = note: consider using a `let` binding to create a longer lived value
       ```
 
-      The `String` from `format!` has no owner variable, so it's dropped at the `;`. The fix is in the note: `let owned = format!("v{}", 2); let label = owned.as_str();` (or just use the `String`).
+      The `String` from `format!` has no owner variable, so it's dropped at the `;`. The fix is in the note: give it an owner first (or just use the `String`).
+
+      ```rust run
+      fn main() {
+          let owned = format!("v{}", 2);
+          let label = owned.as_str();
+          println!("{label}");
+      }
+      ```
+
+      ```output
+      v2
+      ```
 
       ### A method for any lifetime error
 

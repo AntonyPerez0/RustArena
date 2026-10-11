@@ -1,0 +1,1521 @@
+# Reference pages at /topics/<slug>: the Errors and abstraction phase (Result, errors, generics, traits, lifetimes, conversions).
+topics:
+  - slug: result-and-question-mark
+    title: "Result and the ? operator in Rust"
+    description: "How Rust handles errors with Result<T, E>: Ok and Err, match, the ? operator for early returns, main returning Result, and map_err."
+    modules: [errors]
+    body: |
+      Rust has no exceptions. A function that can fail returns **`Result<T, E>`**, an enum with two variants:
+
+      ```rust
+      enum Result<T, E> {
+          Ok(T),   // success, holding the value
+          Err(E),  // failure, holding the error
+      }
+      ```
+
+      The failure is part of the function's type, so callers can see it in the signature and the compiler makes sure they deal with it. Ignoring a `Result` entirely gives the warning `unused Result that must be used`.
+
+      ## Handling a Result with match
+
+      ```rust run
+      fn main() {
+          for input in ["42", "forty-two"] {
+              match input.parse::<i32>() {
+                  Ok(n) => println!("{input:?} -> {n}"),
+                  Err(e) => println!("{input:?} -> error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      "42" -> 42
+      "forty-two" -> error: invalid digit found in string
+      ```
+
+      ## The ? operator
+
+      Most of the time a function can't fix an error itself and should pass it to its caller. Writing a `match` for that each time is noisy, so Rust has `?`:
+
+      ```rust
+      let port: u16 = text.parse()?;
+      ```
+
+      means: if `parse` returned `Ok(v)`, give me `v`; if it returned `Err(e)`, **return `Err(e)` from this function right now**. Before returning, `?` converts the error with `From::from`, so a function returning `Result<T, MyError>` can use `?` on any error that converts into `MyError`.
+
+      `?` only works inside a function that returns `Result` (or `Option`):
+
+      ```rust compile_fail
+      use std::fs::File;
+
+      fn main() {
+          let f = File::open("config.toml")?;
+          println!("{f:?}");
+      }
+      ```
+
+      ```error
+      error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+      ```
+
+      ## main can return a Result
+
+      Change `main`'s signature and `?` works there too:
+
+      ```rust
+      fn main() -> Result<(), Box<dyn std::error::Error>> {
+          let config = std::fs::read_to_string("config.toml")?;
+          println!("{} bytes", config.len());
+          Ok(())
+      }
+      ```
+
+      If `main` returns `Err`, Rust prints the error (in its `Debug` form) and exits with a non-zero code. `Box<dyn Error>` accepts any error type, which is convenient in small programs; applications at work often use `anyhow::Result` for the same purpose.
+
+      ## Combinators
+
+      | Method | Use |
+      |---|---|
+      | `map(\|v\| ...)` | transform the success value |
+      | `map_err(\|e\| ...)` | transform the error, e.g. into your own type or a message |
+      | `and_then(\|v\| ...)` | chain another fallible step |
+      | `unwrap_or(default)`, `unwrap_or_else(\|e\| ...)` | fall back to a value |
+      | `ok()` | turn it into an `Option`, dropping the error |
+      | `is_ok()`, `is_err()` | test without taking it apart |
+      | `expect("why")` | panic with a message on `Err` |
+
+      ## When to panic instead
+
+      `panic!`, `unwrap()` and `expect()` stop the program (or thread). Use them for **bugs** (a broken invariant, an index you just checked) and in tests and prototypes. Use `Result` for anything that can go wrong in normal operation: missing files, bad input, network failures.
+
+      ## Common mistakes
+
+      - **`unwrap()` everywhere in real code.** One bad input line crashes the whole program. Propagate with `?` and decide at the top what to do.
+      - **Using `?` on an `Option` in a function returning `Result`:** E0277, "the `?` operator can only be used on `Result`s, not `Option`s". Convert with `.ok_or(...)` or `.ok_or_else(...)`.
+      - **Error types that don't convert:** "`?` couldn't convert the error to `MyError`". Implement `From<TheirError> for MyError`, or use `map_err`.
+    example: |
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      struct Order {
+          item: String,
+          qty: u32,
+      }
+
+      fn parse_qty(text: &str) -> Result<u32, ParseIntError> {
+          let qty = text.trim().parse::<u32>()?;
+          Ok(qty)
+      }
+
+      fn parse_order(line: &str) -> Result<Order, String> {
+          let (item, qty) = line.split_once(',').ok_or(format!("missing comma in {line:?}"))?;
+          let qty = parse_qty(qty).map_err(|e| format!("bad quantity in {line:?}: {e}"))?;
+          if qty == 0 {
+              return Err(format!("zero quantity in {line:?}"));
+          }
+          Ok(Order { item: item.trim().to_string(), qty })
+      }
+
+      fn total_qty(lines: &[&str]) -> Result<u32, String> {
+          let mut total = 0;
+          for line in lines {
+              total += parse_order(line)?.qty;
+          }
+          Ok(total)
+      }
+
+      fn main() {
+          for line in ["potion, 3", "sword 1", "shield, two", "arrow, 0"] {
+              match parse_order(line) {
+                  Ok(order) => println!("ok: {} x{}", order.item, order.qty),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+          println!("{:?}", total_qty(&["a, 1", "b, 2"]));
+          println!("{:?}", total_qty(&["a, 1", "b, x"]));
+          println!("default: {}", parse_qty("oops").unwrap_or(1));
+      }
+
+  - slug: option-vs-result
+    title: "Option vs Result in Rust: which one should you return?"
+    description: "When to return Option<T> and when to return Result<T, E> in Rust, how to convert between them with ok_or and ok(), and using ? with each."
+    modules: [errors, enums]
+    body: |
+      Both types say "you might not get a value", but they mean different things:
+
+      | | `Option<T>` | `Result<T, E>` |
+      |---|---|---|
+      | Variants | `Some(T)` / `None` | `Ok(T)` / `Err(E)` |
+      | Means | the value may be **absent**, and that's normal | the operation may **fail**, and here's why |
+      | Carries a reason | no | yes, the `E` value |
+      | Typical std examples | `v.get(i)`, `map.get(k)`, `s.find(c)`, `iter.max()` | `s.parse()`, `File::open`, `fs::read_to_string` |
+      | Ignoring it | allowed | warns `unused Result that must be used` |
+
+      ## The rule of thumb
+
+      Ask: **if there's no value, would the caller want to know why?**
+
+      - Looking up a user by id, the first element of a list, the position of a character: absence is an ordinary answer, and there's only one way to be absent. Return `Option`.
+      - Parsing input, reading a file, calling an API, validating a form: there are several ways to fail and the caller (or the user) needs to know which. Return `Result`.
+
+      A function that returns `Result<T, ()>` or `Option` for something that can fail in several ways is a design smell; one returning `Result<T, String>` just to say "not found" is the opposite smell.
+
+      Sometimes you need both: `Result<Option<User>, DbError>` means "the query might fail, and if it worked, the user might not exist". That's a perfectly good type.
+
+      ## Converting between them
+
+      ```rust run
+      fn main() {
+          let maybe_port: Option<&str> = Some("8080");
+          let missing: Option<&str> = None;
+
+          let a: Result<&str, String> = maybe_port.ok_or("no port".to_string());
+          let b: Result<&str, String> = missing.ok_or_else(|| "no port".to_string());
+          println!("{a:?} {b:?}");
+
+          let parsed: Option<u16> = "8080".parse().ok();
+          let failed: Option<u16> = "http".parse().ok();
+          println!("{parsed:?} {failed:?}");
+      }
+      ```
+
+      ```output
+      Ok("8080") Err("no port")
+      Some(8080) None
+      ```
+
+      - `option.ok_or(err)` / `option.ok_or_else(|| err)`: `None` becomes `Err(err)`.
+      - `result.ok()`: keep the value, drop the error. `result.err()` does the opposite.
+      - `transpose()` swaps `Option<Result<T, E>>` and `Result<Option<T>, E>`, handy when parsing an optional field.
+
+      ## The ? operator works on both, but not mixed
+
+      In a function returning `Option`, `?` on an `Option` returns `None` early. In a function returning `Result`, `?` on a `Result` returns the error early. Using `?` on an `Option` inside a function returning `Result` doesn't compile:
+
+      ```rust compile_fail
+      fn first_even(v: &[i32]) -> Result<i32, String> {
+          let x = v.iter().find(|n| *n % 2 == 0)?;
+          Ok(*x)
+      }
+
+      fn main() {
+          println!("{:?}", first_even(&[1, 2]));
+      }
+      ```
+
+      ```error
+      error[E0277]: the `?` operator can only be used on `Result`s, not `Option`s, in a function that returns `Result`
+      ```
+
+      Convert first, adding the reason the `Option` couldn't: `.find(...).ok_or("no even number")?`.
+
+      ## Common mistakes
+
+      - **Using sentinel values** like `-1` or `""` for "not found". That's what `Option` is for.
+      - **`unwrap()` on either one in library code.** Return it to the caller and let them decide.
+      - **Losing information with `.ok()`.** Turning a parse error into `None` is fine for "use a default if invalid"; it's bad when the user needs to see the error.
+    example: |
+      use std::collections::HashMap;
+
+      #[derive(Debug)]
+      enum LoginError {
+          UnknownUser(String),
+          WrongPassword,
+      }
+
+      // Absence is normal here: Option.
+      fn find_email(users: &HashMap<&str, (&str, &str)>, name: &str) -> Option<String> {
+          users.get(name).map(|(email, _)| email.to_string())
+      }
+
+      // Failure needs a reason: Result.
+      fn login(users: &HashMap<&str, (&str, &str)>, name: &str, password: &str) -> Result<String, LoginError> {
+          let (_, stored) = users.get(name).ok_or_else(|| LoginError::UnknownUser(name.to_string()))?;
+          if *stored != password {
+              return Err(LoginError::WrongPassword);
+          }
+          Ok(format!("welcome back, {name}"))
+      }
+
+      fn main() {
+          let mut users = HashMap::new();
+          users.insert("ferris", ("ferris@example.com", "crab123"));
+
+          println!("{:?}", find_email(&users, "ferris"));
+          println!("{:?}", find_email(&users, "gopher"));
+
+          for (name, password) in [("ferris", "crab123"), ("ferris", "hunter2"), ("gopher", "go")] {
+              match login(&users, name, password) {
+                  Ok(greeting) => println!("{greeting}"),
+                  Err(LoginError::UnknownUser(who)) => println!("no user named {who}"),
+                  Err(e) => println!("login failed: {e:?}"),
+              }
+          }
+
+          let port: u16 = "80a".parse().ok().unwrap_or(8080);
+          println!("port {port}");
+      }
+
+  - slug: custom-error-types
+    title: "Custom error types in Rust: enums, Display and From"
+    description: "How to write your own error type in Rust: an error enum, impl Display and std::error::Error, From conversions for ?, and the thiserror shortcut."
+    modules: [custom-errors]
+    body: |
+      `Result<T, String>` works for small programs, but callers can't do much with a string except print it. A **custom error type** lets them react to specific failures (retry on a timeout, show a form error for bad input) and keeps the original cause around.
+
+      ## Step 1: an enum of everything that can go wrong
+
+      ```rust
+      #[derive(Debug)]
+      enum ConfigError {
+          Missing(String),               // which key was missing
+          BadNumber { key: String, source: std::num::ParseIntError },
+          OutOfRange(u32),
+      }
+      ```
+
+      Each variant carries the details needed to explain or handle it.
+
+      ## Step 2: implement Display and Error
+
+      `Display` is the message for humans; `std::error::Error` marks it as a proper error type, so it works with `Box<dyn Error>`, `anyhow`, and error-reporting tools. `source()` returns the underlying cause, if any:
+
+      ```rust
+      impl fmt::Display for ConfigError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ConfigError::Missing(key) => write!(f, "missing key `{key}`"),
+                  ConfigError::BadNumber { key, .. } => write!(f, "`{key}` is not a number"),
+                  ConfigError::OutOfRange(n) => write!(f, "{n} is out of range"),
+              }
+          }
+      }
+
+      impl std::error::Error for ConfigError {
+          fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+              match self {
+                  ConfigError::BadNumber { source, .. } => Some(source),
+                  _ => None,
+              }
+          }
+      }
+      ```
+
+      Convention: messages are lowercase with no trailing period, and don't repeat the source's message (reporters print the chain).
+
+      ## Step 3: From, so ? converts for you
+
+      The `?` operator calls `From::from` on the error. Implement `From<OtherError> for ConfigError` and `?` turns that error into yours automatically. Without it:
+
+      ```rust compile_fail
+      #[derive(Debug)]
+      enum ConfigError {
+          Missing,
+      }
+
+      fn port(s: &str) -> Result<u16, ConfigError> {
+          let p = s.parse::<u16>()?;
+          Ok(p)
+      }
+
+      fn main() {
+          println!("{:?} {:?}", port("80"), ConfigError::Missing);
+      }
+      ```
+
+      ```error
+      error[E0277]: `?` couldn't convert the error to `ConfigError`
+      ```
+
+      When a variant needs extra context (like which key failed), use `map_err` at the call site instead of a blanket `From`.
+
+      ## Box<dyn Error>: the quick alternative
+
+      For scripts and `main`, `Result<T, Box<dyn std::error::Error>>` accepts any error type through `?` with no boilerplate. The cost: callers can't easily match on specific errors.
+
+      ## thiserror: the same thing, less typing
+
+      In real projects, the `thiserror` crate generates the `Display`, `Error` and `From` impls from attributes:
+
+      ```rust
+      #[derive(Debug, thiserror::Error)]
+      enum ConfigError {
+          #[error("missing key `{0}`")]
+          Missing(String),
+          #[error("not a number")]
+          BadNumber(#[from] std::num::ParseIntError),
+      }
+      ```
+
+      Libraries typically expose `thiserror` enums; applications often wrap everything in `anyhow::Error` at the top.
+
+      ## Common mistakes
+
+      - **One giant error enum for the whole program.** Give each module or layer its own, and convert at the boundaries.
+      - **Losing the cause:** mapping errors to strings drops the source chain. Keep the original error in a field.
+      - **Forgetting `Debug`:** the `Error` trait requires both `Debug` and `Display`.
+    example: |
+      use std::error::Error;
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum ConfigError {
+          Missing(String),
+          BadNumber { key: String, source: ParseIntError },
+          OutOfRange(u32),
+      }
+
+      impl fmt::Display for ConfigError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ConfigError::Missing(key) => write!(f, "missing key `{key}`"),
+                  ConfigError::BadNumber { key, .. } => write!(f, "`{key}` is not a number"),
+                  ConfigError::OutOfRange(n) => write!(f, "{n} is out of range 1-65535"),
+              }
+          }
+      }
+
+      impl Error for ConfigError {
+          fn source(&self) -> Option<&(dyn Error + 'static)> {
+              match self {
+                  ConfigError::BadNumber { source, .. } => Some(source),
+                  _ => None,
+              }
+          }
+      }
+
+      fn get<'a>(pairs: &[(&str, &'a str)], key: &str) -> Result<&'a str, ConfigError> {
+          pairs.iter().find(|(k, _)| *k == key).map(|(_, v)| *v).ok_or_else(|| ConfigError::Missing(key.to_string()))
+      }
+
+      fn port(pairs: &[(&str, &str)]) -> Result<u16, ConfigError> {
+          let raw = get(pairs, "port")?;
+          let n: u32 = raw.parse().map_err(|e| ConfigError::BadNumber { key: "port".to_string(), source: e })?;
+          u16::try_from(n).ok().filter(|p| *p > 0).ok_or(ConfigError::OutOfRange(n))
+      }
+
+      fn main() {
+          let configs = [vec![("port", "8080")], vec![("host", "arena")], vec![("port", "eighty")], vec![("port", "70000")]];
+          for c in &configs {
+              match port(c) {
+                  Ok(p) => println!("port {p}"),
+                  Err(e) => {
+                      print!("error: {e}");
+                      if let Some(cause) = e.source() {
+                          print!(" (caused by: {cause})");
+                      }
+                      println!();
+                  }
+              }
+          }
+      }
+
+  - slug: generics
+    title: "Generics in Rust: generic functions, structs and trait bounds"
+    description: "How to write generic functions and structs in Rust, add trait bounds like T: PartialOrd, use where clauses, and why generics cost nothing at run time."
+    modules: [generics]
+    body: |
+      **Generics** let you write one function or type that works for many types. Instead of `largest_i32`, `largest_f64` and `largest_char`, you write `largest<T>` once.
+
+      ## Generic functions and trait bounds
+
+      ```rust run
+      fn largest<T: PartialOrd>(items: &[T]) -> &T {
+          let mut best = &items[0];
+          for item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+
+      fn main() {
+          println!("{}", largest(&[3, 9, 2]));
+          println!("{}", largest(&[1.5, 0.2]));
+          println!("{}", largest(&["kiwi", "apple", "pear"]));
+      }
+      ```
+
+      ```output
+      9
+      1.5
+      pear
+      ```
+
+      `<T>` declares a **type parameter**. `T: PartialOrd` is a **trait bound**: "`T` can be any type that supports comparison with `<` and `>`". Without the bound, the compiler refuses to compare two `T`s, because it can't assume every type can be compared:
+
+      ```rust compile_fail
+      fn largest<T>(items: &[T]) -> &T {
+          let mut best = &items[0];
+          for item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+
+      fn main() {
+          println!("{}", largest(&[1, 5, 2]));
+      }
+      ```
+
+      ```error
+      error[E0369]: binary operation `>` cannot be applied to type `&T`
+      ```
+
+      rustc's help line suggests the fix: "consider restricting type parameter `T` with trait `PartialOrd`". This is the core idea: inside a generic function you can only use what the bounds promise.
+
+      Several bounds combine with `+` (`T: Display + Clone`). When they get long, move them to a **where clause**:
+
+      ```rust
+      fn report<T, U>(item: &T, extra: U) -> String
+      where
+          T: std::fmt::Display + Clone,
+          U: Into<String>,
+      { ... }
+      ```
+
+      ## Generic structs and enums
+
+      ```rust
+      struct Pair<T> {
+          left: T,
+          right: T,
+      }
+
+      impl<T: PartialOrd + Copy> Pair<T> {
+          fn max(&self) -> T {
+              if self.left > self.right { self.left } else { self.right }
+          }
+      }
+      ```
+
+      `impl<T> Pair<T>` declares `T` again for the impl. You can also write methods for one concrete type only: `impl Pair<f64> { fn distance(&self) -> f64 { ... } }`.
+
+      You already use generic types all the time: `Vec<T>`, `Option<T>`, `Result<T, E>`, `HashMap<K, V>`.
+
+      ## Zero cost: monomorphization
+
+      The compiler generates a separate copy of a generic function for each concrete type it's used with (**monomorphization**). `largest::<i32>` and `largest::<f64>` become two ordinary functions, so generics run exactly as fast as hand-written versions. The trade-off is compile time and binary size.
+
+      ## Const generics
+
+      Types can also be generic over **values**: `fn sum<const N: usize>(arr: [i32; N]) -> i32` works for arrays of any length.
+
+      ## Common mistakes
+
+      - **Too few bounds:** E0369 or E0599 ("method not found... trait bounds were not satisfied"). Add the trait that provides the operation.
+      - **Too many bounds:** only require what the function uses; extra bounds just reject callers.
+      - **Returning `T` by value from a slice of non-`Copy` items:** you can't move out of `&[T]`. Return `&T`, or add a `Clone` bound and clone.
+      - **Making everything generic.** If a function is only ever called with one type, a concrete type is simpler to read.
+    example: |
+      use std::fmt::Display;
+
+      #[derive(Debug)]
+      struct Pair<T> {
+          left: T,
+          right: T,
+      }
+
+      impl<T: PartialOrd + Copy> Pair<T> {
+          fn new(left: T, right: T) -> Self {
+              Self { left, right }
+          }
+
+          fn max(&self) -> T {
+              if self.left > self.right { self.left } else { self.right }
+          }
+      }
+
+      impl Pair<f64> {
+          fn distance(&self) -> f64 {
+              (self.left - self.right).abs()
+          }
+      }
+
+      fn show_all<T>(label: &str, items: &[T]) -> String
+      where
+          T: Display,
+      {
+          let parts: Vec<String> = items.iter().map(|i| i.to_string()).collect();
+          format!("{label}: {}", parts.join(", "))
+      }
+
+      fn sum<const N: usize>(values: [i32; N]) -> i32 {
+          let mut total = 0;
+          for v in values {
+              total += v;
+          }
+          total
+      }
+
+      fn main() {
+          let p = Pair::new(3, 7);
+          let q = Pair::new('x', 'b');
+          let r = Pair::new(1.5, -2.0);
+          println!("{} {} {}", p.max(), q.max(), r.max());
+          println!("distance {}", r.distance());
+          println!("{p:?}");
+          println!("{}", show_all("scores", &[10, 20, 30]));
+          println!("{}", show_all("names", &["Ferris", "Corro"]));
+          println!("{} {}", sum([1, 2, 3]), sum([10; 5]));
+      }
+
+  - slug: traits
+    title: "Traits in Rust: defining shared behavior"
+    description: "How Rust traits work: defining a trait, implementing it for your types, default methods, trait bounds, impl Trait, and deriving standard traits."
+    modules: [traits]
+    body: |
+      A **trait** names a set of methods that types can implement. It's how Rust expresses "anything that can do X", similar to interfaces in Java, C# or Go.
+
+      ## Defining and implementing a trait
+
+      ```rust run
+      trait Describe {
+          fn name(&self) -> String;
+
+          fn describe(&self) -> String {
+              format!("This is {}.", self.name())
+          }
+      }
+
+      struct Sword {
+          damage: u32,
+      }
+
+      struct Potion;
+
+      impl Describe for Sword {
+          fn name(&self) -> String {
+              format!("a sword ({} dmg)", self.damage)
+          }
+      }
+
+      impl Describe for Potion {
+          fn name(&self) -> String {
+              String::from("a potion")
+          }
+
+          fn describe(&self) -> String {
+              String::from("A potion. Drink it.")
+          }
+      }
+
+      fn main() {
+          println!("{}", Sword { damage: 12 }.describe());
+          println!("{}", Potion.describe());
+      }
+      ```
+
+      ```output
+      This is a sword (12 dmg).
+      A potion. Drink it.
+      ```
+
+      - The trait lists method signatures. `name` has no body, so every implementor must write it.
+      - `describe` has a **default implementation**, which implementors get for free or can override (as `Potion` does).
+      - `impl Describe for Sword` implements the trait for one type.
+
+      ## Using traits: bounds and impl Trait
+
+      Write functions that accept any type implementing a trait:
+
+      ```rust
+      fn announce(item: &impl Describe) { println!("{}", item.describe()); }
+      fn announce<T: Describe>(item: &T) { println!("{}", item.describe()); }   // the same, longer form
+      ```
+
+      `impl Trait` in a **return** position means "some type that implements this trait, which I won't name": `fn make_counter() -> impl Iterator<Item = u32>`. It's how you return closures and iterator chains.
+
+      For a list holding **different** types that share a trait, use a **trait object**: `Vec<Box<dyn Describe>>`.
+
+      ## Traits you'll derive or implement constantly
+
+      | Trait | Gives you | How |
+      |---|---|---|
+      | `Debug` | `{:?}` printing | `#[derive(Debug)]` |
+      | `Clone`, `Copy` | `.clone()`, implicit copies | derive |
+      | `PartialEq`, `Eq` | `==`, `!=` | derive |
+      | `PartialOrd`, `Ord` | `<`, `>`, `sort()` | derive (compares fields in order) |
+      | `Hash` | use as a `HashMap` key | derive, with `Eq` |
+      | `Default` | `Type::default()` | derive or implement |
+      | `Display` | `{}` printing, `.to_string()` | implement by hand |
+      | `From` | `Type::from(x)`, `.into()` | implement by hand |
+
+      ## The orphan rule
+
+      You can implement a trait for a type only if **you own the trait or the type** (one of them is defined in your crate). You can implement your `Describe` for `String`, or `Display` for your `Sword`, but not `Display` for `Vec<i32>`. Wrap the foreign type in a **newtype** (`struct Scores(Vec<i32>);`) to get around it.
+
+      ## Common mistakes
+
+      - **Calling a trait method without the trait in scope.** Trait methods are only callable when the trait is imported. The error is E0599, "no method named `area` found", with a help line naming the trait to `use`. This is why you write `use std::io::Write;` before calling `write_all`, or `use std::fmt::Write;` before `write!` into a `String`.
+      - **Missing a required method:** E0046, "not all trait items implemented, missing: `name`".
+      - **Expecting fields in traits.** Traits only have methods (and associated types and constants). Use a getter method.
+    example: |
+      use std::fmt;
+
+      trait Shape {
+          fn area(&self) -> f64;
+          fn name(&self) -> &'static str;
+
+          fn summary(&self) -> String {
+              format!("{} with area {:.2}", self.name(), self.area())
+          }
+      }
+
+      #[derive(Debug, Clone, Copy, PartialEq, Default)]
+      struct Rect {
+          w: f64,
+          h: f64,
+      }
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Circle {
+          r: f64,
+      }
+
+      impl Shape for Rect {
+          fn area(&self) -> f64 {
+              self.w * self.h
+          }
+          fn name(&self) -> &'static str {
+              "rectangle"
+          }
+      }
+
+      impl Shape for Circle {
+          fn area(&self) -> f64 {
+              std::f64::consts::PI * self.r * self.r
+          }
+          fn name(&self) -> &'static str {
+              "circle"
+          }
+          fn summary(&self) -> String {
+              format!("circle of radius {}", self.r)
+          }
+      }
+
+      impl fmt::Display for Rect {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{}x{}", self.w, self.h)
+          }
+      }
+
+      fn print_summary(s: &impl Shape) {
+          println!("{}", s.summary());
+      }
+
+      fn bigger<'a, T: Shape>(a: &'a T, b: &'a T) -> &'a T {
+          if a.area() >= b.area() { a } else { b }
+      }
+
+      fn main() {
+          let r = Rect { w: 3.0, h: 4.0 };
+          let c = Circle { r: 1.0 };
+          print_summary(&r);
+          print_summary(&c);
+          println!("bigger: {}", bigger(&r, &Rect { w: 5.0, h: 1.0 }));
+          println!("default {:?}, equal {}", Rect::default(), r == Rect { w: 3.0, h: 4.0 });
+      }
+
+  - slug: trait-objects-vs-generics
+    title: "Trait objects vs generics in Rust: dyn Trait vs impl Trait"
+    description: "When to use generics (impl Trait, static dispatch) and when to use trait objects (dyn Trait, Box<dyn Trait>, dynamic dispatch) in Rust."
+    modules: [trait-objects, generics]
+    body: |
+      Rust gives you two ways to write code that works with "any type implementing `Shape`":
+
+      ```rust
+      fn print_area(s: &impl Shape)       // generics: static dispatch
+      fn print_area(s: &dyn Shape)        // trait object: dynamic dispatch
+      ```
+
+      Both compile and print the same thing. The difference is **when** the compiler decides which `area` method to call.
+
+      ## Generics: static dispatch
+
+      With `impl Shape` or `<T: Shape>`, the compiler generates a separate copy of the function for each concrete type (**monomorphization**). Calls are direct and can be inlined, so it's as fast as hand-written code. But each use has **one** concrete type: a `Vec<T>` holds only circles, or only squares.
+
+      ## Trait objects: dynamic dispatch
+
+      `dyn Shape` means "some type implementing `Shape`, decided at run time". A trait object is always behind a pointer (`&dyn Shape`, `Box<dyn Shape>`, `Arc<dyn Shape>`), stored as two pointers: one to the data, one to a **vtable**, a table of that type's method addresses. Each call looks up the method in the table, a small cost that prevents inlining.
+
+      What you get in return: **different types in one collection**.
+
+      ```rust compile_fail
+      trait Shape {
+          fn area(&self) -> f64;
+      }
+      struct Circle(f64);
+      struct Square(f64);
+      impl Shape for Circle {
+          fn area(&self) -> f64 { 3.14 * self.0 * self.0 }
+      }
+      impl Shape for Square {
+          fn area(&self) -> f64 { self.0 * self.0 }
+      }
+
+      fn main() {
+          let shapes = vec![Circle(1.0), Square(2.0)];
+          println!("{}", shapes.len());
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      A `Vec` holds one type, so `Circle` and `Square` can't share it. `Vec<Box<dyn Shape>>` can: `vec![Box::new(Circle(1.0)), Box::new(Square(2.0))]`.
+
+      The same applies to return types: `fn make(round: bool) -> impl Shape` must return **one** concrete type on every path (otherwise: "`if` and `else` have incompatible types"). Return `Box<dyn Shape>` to choose at run time.
+
+      ## Choosing
+
+      | | Generics / `impl Trait` | `dyn Trait` |
+      |---|---|---|
+      | Dispatch | compile time, inlinable | run time, via vtable |
+      | Mixed types in one collection | no | yes |
+      | Binary size | grows per type used | one copy |
+      | Trait requirements | any trait | must be **dyn compatible** |
+      | Typical use | utility functions, iterators, closures, hot loops | plugin lists, UI widgets, handlers, `Box<dyn Error>` |
+
+      Default to generics. Reach for `dyn` when you need a heterogeneous collection, want to choose an implementation at run time (from config), or want to keep compile times and binary size down for rarely called code.
+
+      ## The third option: an enum
+
+      If you know every type up front (`Circle`, `Square`, `Triangle`), an `enum Shape { Circle(f64), Square(f64) }` with `match` is often the simplest and fastest choice: no boxing, no vtable, and the compiler checks every case. Trait objects win when other code (or other crates) must be able to add new types.
+
+      ## dyn compatibility
+
+      Not every trait can be a trait object. A trait whose methods are generic, return `Self`, or that requires `Sized` can't work through a vtable:
+
+      ```rust compile_fail
+      fn main() {
+          let items: Vec<Box<dyn Clone>> = Vec::new();
+          println!("{}", items.len());
+      }
+      ```
+
+      ```error
+      error[E0038]: the trait `Clone` is not dyn compatible
+      ```
+
+      (Older compilers call this "object safety".) Add `where Self: Sized` to a problematic method to exclude it from the vtable, or split the trait.
+    example: |
+      trait Shape {
+          fn area(&self) -> f64;
+          fn name(&self) -> String;
+      }
+
+      struct Circle(f64);
+      struct Square(f64);
+
+      impl Shape for Circle {
+          fn area(&self) -> f64 {
+              3.14159 * self.0 * self.0
+          }
+          fn name(&self) -> String {
+              format!("circle r={}", self.0)
+          }
+      }
+
+      impl Shape for Square {
+          fn area(&self) -> f64 {
+              self.0 * self.0
+          }
+          fn name(&self) -> String {
+              format!("square side={}", self.0)
+          }
+      }
+
+      // Static dispatch: one copy per concrete type.
+      fn describe(s: &impl Shape) -> String {
+          format!("{} has area {:.2}", s.name(), s.area())
+      }
+
+      // Dynamic dispatch: one copy, decides at run time.
+      fn total_area(shapes: &[Box<dyn Shape>]) -> f64 {
+          shapes.iter().map(|s| s.area()).sum()
+      }
+
+      fn make(round: bool, size: f64) -> Box<dyn Shape> {
+          if round { Box::new(Circle(size)) } else { Box::new(Square(size)) }
+      }
+
+      fn main() {
+          println!("{}", describe(&Circle(1.0)));
+          println!("{}", describe(&Square(2.0)));
+
+          let shapes: Vec<Box<dyn Shape>> = vec![make(true, 1.0), make(false, 2.0), make(false, 0.5)];
+          for s in &shapes {
+              println!("- {}", s.name());
+          }
+          println!("total area {:.2}", total_area(&shapes));
+      }
+
+  - slug: lifetimes
+    title: "Rust lifetimes explained"
+    description: "What lifetimes are in Rust, why the borrow checker needs them, how to read and write 'a annotations, the elision rules, and structs that hold references."
+    modules: [lifetimes]
+    body: |
+      A **lifetime** is the stretch of code during which a reference is valid. Every reference has one. Most of the time the compiler works lifetimes out by itself and you never write them; you only add **lifetime annotations** when a function or struct connects several references and the compiler can't tell how they relate.
+
+      ## The problem lifetimes solve
+
+      ```rust compile_fail
+      fn main() {
+          let r;
+          {
+              let x = 5;
+              r = &x;
+          }
+          println!("{r}");
+      }
+      ```
+
+      ```error
+      error[E0597]: `x` does not live long enough
+      ```
+
+      `x` is dropped at the inner `}`, but `r` is used after that. The **borrow checker** compares the two regions and rejects the program. In C this would compile and read freed memory.
+
+      ## Annotations describe relationships
+
+      Within one function the compiler can see everything. Across a function call it only sees the **signature**. Consider:
+
+      ```rust
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+      ```
+
+      `'a` (read "lifetime a") is a **lifetime parameter**, declared in `<>` like a generic type. The signature says: "the returned reference is valid for as long as **both** `a` and `b` are". Callers are then checked against that promise:
+
+      ```rust compile_fail
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn main() {
+          let outer = String::from("a long string");
+          let result;
+          {
+              let inner = String::from("short");
+              result = longest(&outer, &inner);
+          }
+          println!("{result}");
+      }
+      ```
+
+      ```error
+      error[E0597]: `inner` does not live long enough
+      ```
+
+      Annotations **never make anything live longer**. They are a contract that lets the compiler check each function on its own, and each call on its own.
+
+      ## Lifetime elision
+
+      You rarely write lifetimes because of three **elision rules**:
+
+      1. Each reference parameter gets its own lifetime.
+      2. If there is exactly one input lifetime, it's used for all outputs: `fn first_word(s: &str) -> &str` needs nothing.
+      3. In methods, if there's `&self` or `&mut self`, outputs get `self`'s lifetime: `fn name(&self) -> &str` needs nothing.
+
+      When the rules can't decide (two reference inputs, a reference output, no `self`), you get **E0106 "missing lifetime specifier"** and must annotate.
+
+      ## Structs that hold references
+
+      A struct with a reference field needs a lifetime parameter, meaning "a `Parser` can't outlive the text it reads":
+
+      ```rust
+      struct Parser<'a> {
+          input: &'a str,
+          pos: usize,
+      }
+      ```
+
+      This is common for short-lived views (parsers, iterators, tokenizers) and avoids copying. For long-lived data (config, records, anything stored in a collection or sent to a thread), make the struct **own** its data (`String`, `Vec<T>`) instead.
+
+      ## 'static
+
+      `'static` is the lifetime of the whole program. String literals are `&'static str`. A bound `T: 'static` (required by `thread::spawn`) means "contains no short-lived references", and owned types like `String` satisfy it.
+
+      ## Practical advice
+
+      - If you're fighting lifetimes in a struct, try owning the data first. A `String` field costs an allocation and saves a lot of complexity.
+      - Return owned values from functions that create new data. Only return references that point into the inputs.
+      - Read lifetime errors as timelines: rustc labels where the value is created, borrowed, dropped and later used.
+      - `'_` is the "anonymous lifetime": `impl Parser<'_>` or `-> Chars<'_>` says "a lifetime is here, inferred as usual".
+    example: |
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      struct Parser<'a> {
+          input: &'a str,
+          pos: usize,
+      }
+
+      impl<'a> Parser<'a> {
+          fn new(input: &'a str) -> Self {
+              Parser { input, pos: 0 }
+          }
+
+          // The returned word borrows from the input text, not from the parser.
+          fn next_word(&mut self) -> Option<&'a str> {
+              let rest = &self.input[self.pos..];
+              let rest_trimmed = rest.trim_start();
+              if rest_trimmed.is_empty() {
+                  return None;
+              }
+              let start = self.pos + (rest.len() - rest_trimmed.len());
+              let end = rest_trimmed.find(' ').map(|i| start + i).unwrap_or(self.input.len());
+              self.pos = end;
+              Some(&self.input[start..end])
+          }
+      }
+
+      fn main() {
+          let outer = String::from("a long string");
+          {
+              let inner = String::from("short");
+              let result = longest(&outer, &inner);
+              println!("longest: {result}");
+          }
+
+          let text = String::from("  move  north then attack ");
+          let mut words = Vec::new();
+          {
+              let mut p = Parser::new(&text);
+              while let Some(w) = p.next_word() {
+                  words.push(w);
+              }
+          } // the parser is gone, but the words still borrow `text`
+          println!("{words:?}");
+      }
+
+  - slug: static-lifetime
+    title: "The 'static lifetime in Rust (&'static str and T: 'static)"
+    description: "What 'static really means in Rust: &'static references vs T: 'static bounds, why thread::spawn needs 'static, and why String is 'static."
+    modules: [lifetimes, threads]
+    body: |
+      `'static` is the longest lifetime: the whole run of the program. It shows up in two forms that mean different things, and mixing them up is a common source of confusion.
+
+      ## 1. `&'static T`: a reference valid forever
+
+      A `&'static` reference points at data that will never be freed:
+
+      - **String literals**: `let s: &'static str = "hello";` The text is stored in the program binary.
+      - **`static` items**: `static GREETING: &str = "hi";` and `static LIMITS: [u32; 3] = [1, 2, 3];`
+      - **Constants** promoted by the compiler: `let r: &'static i32 = &42;`
+      - **Leaked** heap data: `Box::leak(Box::new(value))` returns a `&'static mut T` by never freeing it (occasionally used for global config read once at startup).
+
+      ## 2. `T: 'static`: a type with no short-lived borrows
+
+      As a **bound**, `T: 'static` does **not** mean "lives forever". It means "the type contains no references that could expire", so a value of that type can be kept as long as the holder likes.
+
+      - `String`, `Vec<u8>`, `i32`, `Box<dyn Error + Send + Sync>`, `Arc<Mutex<T>>`: all `'static`, because they **own** their data.
+      - `&'static str`: `'static`.
+      - `&'a str` for some shorter `'a`, or a struct holding one: **not** `'static`.
+
+      A `String` created a moment ago satisfies `T: 'static`, and it's dropped whenever its owner is done with it.
+
+      ## Where you meet T: 'static
+
+      `thread::spawn` requires its closure to be `'static` because the new thread might outlive the function that started it. Borrowing a local fails:
+
+      ```rust compile_fail
+      use std::thread;
+
+      fn main() {
+          let names = vec!["Ferris", "Corro"];
+          let handle = thread::spawn(|| {
+              println!("{}", names.len());
+          });
+          handle.join().unwrap();
+      }
+      ```
+
+      ```error
+      error[E0373]: closure may outlive the current function, but it borrows `names`, which is owned by the current function
+      ```
+
+      Fixes: `move ||` to give the thread ownership, `Arc` to share, or `thread::scope` to borrow safely (scoped threads are guaranteed to finish first). `tokio::spawn`, `Box<dyn Any>` and many callback registries have the same bound.
+
+      The same check applies to any generic function with a `'static` bound:
+
+      ```rust compile_fail
+      fn store<T: 'static>(_value: T) {}
+
+      fn main() {
+          let name = String::from("Ferris");
+          store(&name);
+      }
+      ```
+
+      ```error
+      error[E0597]: `name` does not live long enough
+      ```
+
+      rustc adds "argument requires that `name` is borrowed for `'static`". Passing `name` itself (owned) works.
+
+      ## Common mistakes
+
+      - **Adding `'static` to make an error go away.** Writing `fn parse(input: &'static str)` compiles, but now callers can only pass literals; a line read from a file won't work. Use a normal lifetime, or own the data.
+      - **Thinking `T: 'static` means leaked memory.** It doesn't; owned values satisfy it and are freed normally.
+      - **`static mut` for globals.** Reading or writing it needs `unsafe`, and taking references to it is an error by default in the 2024 edition. Use atomics, `Mutex`, or `OnceLock`/`LazyLock` for global state.
+    example: |
+      use std::sync::OnceLock;
+      use std::thread;
+
+      static VERSION: &str = "1.4.2";
+      static LEVELS: [&str; 3] = ["info", "warn", "error"];
+
+      fn level_name(i: usize) -> &'static str {
+          LEVELS.get(i).copied().unwrap_or("unknown")
+      }
+
+      fn config() -> &'static String {
+          static CONFIG: OnceLock<String> = OnceLock::new();
+          CONFIG.get_or_init(|| format!("arena v{VERSION}"))
+      }
+
+      fn keep<T: 'static + std::fmt::Debug>(value: T) -> String {
+          format!("kept {value:?}")
+      }
+
+      fn main() {
+          let literal: &'static str = "literals are 'static";
+          println!("{literal}");
+          println!("{} {}", level_name(1), level_name(7));
+          println!("{}", config());
+
+          let owned = String::from("a fresh String is 'static too");
+          println!("{}", keep(owned));
+
+          let names = vec![String::from("Ferris"), String::from("Corro")];
+          let handle = thread::spawn(move || names.len());
+          println!("thread counted {}", handle.join().unwrap());
+      }
+
+  - slug: from-and-into
+    title: "From and Into in Rust: converting between types"
+    description: "How From and Into work in Rust: implementing From for your types, calling .into(), TryFrom for fallible conversions, and From for ? errors."
+    modules: [std-traits]
+    body: |
+      `From` and `Into` are the standard traits for **infallible conversions**: turning one type into another when it can't fail.
+
+      ```rust
+      let s = String::from("crab");     // &str -> String
+      let n = i64::from(42_i32);         // i32 -> i64 (always fits)
+      let v: Vec<u8> = "hi".into();      // &str -> Vec<u8>
+      ```
+
+      ## Implement From, get Into for free
+
+      You implement `From<Source> for Target`. The standard library has a **blanket impl** that then gives you `Into<Target> for Source` automatically, so never implement `Into` yourself.
+
+      ```rust run
+      struct Celsius(f64);
+      struct Fahrenheit(f64);
+
+      impl From<Celsius> for Fahrenheit {
+          fn from(c: Celsius) -> Self {
+              Fahrenheit(c.0 * 9.0 / 5.0 + 32.0)
+          }
+      }
+
+      fn main() {
+          let boiling = Fahrenheit::from(Celsius(100.0));
+          let body: Fahrenheit = Celsius(37.0).into();
+          println!("{} {:.1}", boiling.0, body.0);
+      }
+      ```
+
+      ```output
+      212 98.6
+      ```
+
+      `.into()` needs to know the target type, from a `let` annotation, a function parameter, or a return type. Without one:
+
+      ```rust compile_fail
+      fn main() {
+          let x = 5_i32.into();
+          println!("{x}");
+      }
+      ```
+
+      ```error
+      error[E0283]: type annotations needed
+      ```
+
+      ## Where From matters most: errors and ?
+
+      The `?` operator converts errors with `From::from`. If your error type implements `From<std::io::Error>` and `From<ParseIntError>`, one function can use `?` on both kinds of failure and get your error type out. `thiserror`'s `#[from]` attribute writes those impls for you; `anyhow::Error` implements `From` for every standard error.
+
+      ## Flexible parameters with Into
+
+      A constructor that takes `impl Into<String>` accepts both `&str` and `String`, without forcing callers to write `.to_string()`:
+
+      ```rust
+      fn new(name: impl Into<String>) -> Self {
+          Self { name: name.into() }
+      }
+      ```
+
+      Use this for public APIs where it helps callers; don't use it everywhere, since it makes signatures harder to read and every generic parameter adds compile time.
+
+      ## TryFrom and TryInto: conversions that can fail
+
+      When a conversion can fail (an `i64` to a `u8`, a string to an email address, a raw number to an enum), implement **`TryFrom`** instead. It returns a `Result` and has an associated `Error` type:
+
+      ```rust
+      impl TryFrom<u8> for Level {
+          type Error = String;
+          fn try_from(n: u8) -> Result<Self, Self::Error> { ... }
+      }
+      ```
+
+      You then get `try_into()` for free, just like `into()`.
+
+      ## Related traits
+
+      - `FromStr` powers `.parse()`: implement it to parse text into your type.
+      - `AsRef<str>` / `AsRef<Path>`: cheap reference conversions for parameters (`fn open(path: impl AsRef<Path>)`).
+      - `as` handles primitive numeric casts, with truncation; prefer `From`/`TryFrom` when they exist.
+
+      ## Common mistakes
+
+      - **Implementing a lossy conversion as `From`.** `From` should never fail or lose information. Use `TryFrom`, or a named method.
+      - **Expecting `From` in both directions.** Each direction is a separate impl.
+      - **Implementing `Into` directly.** Implement `From` and let the blanket impl do the rest.
+      - **An enum with a variant named `Error` implementing `TryFrom`.** Inside the impl, `Self::Error` becomes ambiguous (the variant or the associated type?) and rustc rejects it. Write the concrete type instead: `-> Result<Self, String>`.
+    example: |
+      use std::fmt;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Level {
+          Info,
+          Warn,
+          Critical,
+      }
+
+      impl TryFrom<u8> for Level {
+          type Error = String;
+
+          fn try_from(n: u8) -> Result<Self, Self::Error> {
+              match n {
+                  0 => Ok(Level::Info),
+                  1 => Ok(Level::Warn),
+                  2 => Ok(Level::Critical),
+                  other => Err(format!("no level {other}")),
+              }
+          }
+      }
+
+      struct LogLine {
+          level: Level,
+          message: String,
+      }
+
+      impl LogLine {
+          fn new(level: Level, message: impl Into<String>) -> Self {
+              Self { level, message: message.into() }
+          }
+      }
+
+      impl From<LogLine> for String {
+          fn from(line: LogLine) -> Self {
+              format!("[{:?}] {}", line.level, line.message)
+          }
+      }
+
+      impl fmt::Display for Level {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{}", format!("{self:?}").to_uppercase())
+          }
+      }
+
+      fn main() {
+          let a = LogLine::new(Level::Info, "server started");
+          let b = LogLine::new(Level::Warn, String::from("disk at 91%"));
+          let rendered: Vec<String> = vec![a.into(), String::from(b)];
+          println!("{rendered:?}");
+
+          for raw in [1_u8, 2, 9] {
+              let parsed: Result<Level, _> = raw.try_into();
+              match parsed {
+                  Ok(level) => println!("{raw} -> {level}"),
+                  Err(e) => println!("{raw} -> error: {e}"),
+              }
+          }
+
+          let big: i64 = 300_i32.into();
+          println!("{big} {:?}", u8::try_from(big));
+      }
+
+  - slug: display-vs-debug
+    title: "Display vs Debug in Rust ({} vs {:?})"
+    description: "The difference between Display and Debug in Rust, when to derive Debug, how to implement Display for your own types, and the E0277 errors."
+    modules: [traits, strings]
+    body: |
+      Rust has two main ways to turn a value into text, chosen by the placeholder:
+
+      | | `Display` | `Debug` |
+      |---|---|---|
+      | Placeholder | `{}` | `{:?}` (or `{:#?}` pretty) |
+      | Audience | end users | programmers |
+      | How you get it | implement by hand | `#[derive(Debug)]` |
+      | Strings print as | `hello` | `"hello"` (quoted, escaped) |
+      | Also gives | `.to_string()` | `dbg!`, `assert_eq!` messages |
+      | Implemented by std for | numbers, `char`, `str`, `String`, errors | almost everything, including `Vec`, `Option`, `HashMap` |
+
+      ## Debug: derive it on nearly everything
+
+      `#[derive(Debug)]` writes an implementation that prints the type name and every field. Derive it on all your structs and enums: tests, `dbg!`, `unwrap` failures and logs depend on it, and it costs nothing if unused. `{:#?}` prints one field per line, which helps with nested data.
+
+      ## Display: you decide the format
+
+      `Display` has no derive, because only you know how a `Money` or `Ticket` should look to a user. Implement `fmt` and write into the formatter with `write!`:
+
+      ```rust run
+      use std::fmt;
+
+      struct Money {
+          cents: i64,
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "${}.{:02}", self.cents / 100, self.cents % 100)
+          }
+      }
+
+      fn main() {
+          let price = Money { cents: 1999 };
+          println!("{price}");
+          let label = price.to_string();
+          println!("{} chars", label.len());
+      }
+      ```
+
+      ```output
+      $19.99
+      6 chars
+      ```
+
+      Implementing `Display` gives you `.to_string()` for free (through a blanket impl of `ToString`), so don't implement `ToString` directly.
+
+      ## Errors need both
+
+      The `std::error::Error` trait requires `Debug + Display`. `Display` is the message shown to users ("config file not found"), `Debug` is for developers. When `main` returns `Err`, Rust prints the `Debug` form.
+
+      ## Respecting width and alignment
+
+      `write!(f, ...)` ignores the caller's format spec, so `{:>10}` won't pad your type. To support it, build the text and call `f.pad(&text)`, which applies width, alignment and fill.
+
+      ## Common mistakes
+
+      Printing a type with `{}` that only has `Debug` (or neither):
+
+      ```rust compile_fail
+      #[derive(Debug)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      fn main() {
+          let p = Point { x: 1, y: 2 };
+          println!("{}", p);
+      }
+      ```
+
+      ```error
+      error[E0277]: `Point` doesn't implement `std::fmt::Display`
+      ```
+
+      Use `{:?}` or implement `Display`. Without `#[derive(Debug)]`, `{:?}` fails too: "`Point` doesn't implement `Debug`".
+
+      - **`Vec` and `Option` have no `Display`.** Print them with `{:?}`, or join the items yourself: `names.join(", ")`.
+      - **Using `Debug` output for users.** It's not stable across versions and shows quotes and type names. Write `Display` for anything user-facing.
+      - **Calling `to_string()` inside `fmt`.** It allocates; write directly with `write!(f, ...)`.
+    example: |
+      use std::fmt;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Status {
+          Open,
+          Closed,
+      }
+
+      #[derive(Debug)]
+      struct Ticket {
+          id: u32,
+          title: String,
+          status: Status,
+          tags: Vec<&'static str>,
+      }
+
+      impl fmt::Display for Status {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let text = match self {
+                  Status::Open => "open",
+                  Status::Closed => "closed",
+              };
+              f.pad(text) // respects width and alignment like {:>8}
+          }
+      }
+
+      impl fmt::Display for Ticket {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "#{} {} [{}]", self.id, self.title, self.status)
+          }
+      }
+
+      fn main() {
+          let t = Ticket { id: 42, title: String::from("Fix login"), status: Status::Open, tags: vec!["auth", "urgent"] };
+
+          println!("{t}");
+          println!("{t:?}");
+          println!("{t:#?}");
+          println!("[{:>8}] [{:<8}]", Status::Closed, t.status);
+          println!("{:?} vs {}", "quoted", "plain");
+          println!("tags: {}", t.tags.join(", "));
+          let line: String = t.to_string();
+          println!("{} chars", line.len());
+      }
+
+  - slug: e0277-trait-bound-not-satisfied
+    title: "Rust error E0277: the trait bound is not satisfied"
+    description: "What Rust's E0277 error means (a type doesn't implement a required trait) and how to fix its most common forms: Display, Ord, Send, ? and collect."
+    modules: [traits, generics]
+    body: |
+      **E0277** means some code requires a type to implement a trait, and it doesn't. It's the error behind many differently worded messages, so it helps to recognize the pattern: **which type**, **which trait**, and **who requires it**.
+
+      The classic form names the trait directly:
+
+      ```rust compile_fail
+      #[derive(Debug)]
+      struct Item {
+          name: String,
+      }
+
+      fn duplicate<T: Clone>(x: &T) -> T {
+          x.clone()
+      }
+
+      fn main() {
+          let sword = Item { name: String::from("sword") };
+          println!("{:?}", duplicate(&sword).name);
+      }
+      ```
+
+      ```error
+      error[E0277]: the trait bound `Item: Clone` is not satisfied
+      ```
+
+      `duplicate` requires `T: Clone`, and `Item` doesn't implement `Clone`. Fix: `#[derive(Debug, Clone)]`.
+
+      ## The common forms, and their fixes
+
+      | Message | Cause | Fix |
+      |---|---|---|
+      | `` `Point` doesn't implement `std::fmt::Display` `` | `{}` on your type | use `{:?}` or implement `Display` |
+      | `` `Point` doesn't implement `Debug` `` | `{:?}` without derive | `#[derive(Debug)]` |
+      | `` the trait bound `{float}: Ord` is not satisfied `` | `sort()`, `max()`, `BTreeMap` key on floats | `sort_by(\|a, b\| a.total_cmp(b))` |
+      | `` `T` doesn't implement `std::fmt::Display` `` | generic function uses a trait it didn't ask for | add the bound: `T: Display` |
+      | `` cannot add `i64` to `i32` `` | mixed number types | convert one side |
+      | `` the type `[i32]` cannot be indexed by `i32` `` | index isn't `usize` | `v[i as usize]` or use `usize` |
+      | `` the `?` operator can only be used in a function that returns `Result` or `Option` `` | `?` in `main` or a `()` function | return a `Result` |
+      | `` `?` couldn't convert the error to `MyError` `` | no `From` impl for the error | implement `From`, or `map_err` |
+      | `` a value of type `Vec<i32>` cannot be built from an iterator over elements of type `&i32` `` | collecting references | `.copied()` or `.cloned()` before `collect` |
+      | `` `Rc<i32>` cannot be sent between threads safely `` | `Rc` moved into a thread | use `Arc` |
+
+      ## Generic code: add the bound
+
+      Inside a generic function you may only use what the bounds promise:
+
+      ```rust compile_fail
+      fn print_all<T>(items: &[T]) {
+          for item in items {
+              println!("{item}");
+          }
+      }
+
+      fn main() {
+          print_all(&[1, 2, 3]);
+      }
+      ```
+
+      ```error
+      error[E0277]: `T` doesn't implement `std::fmt::Display`
+      ```
+
+      rustc suggests the fix: "consider restricting type parameter `T` with trait `Display`", meaning `fn print_all<T: std::fmt::Display>(items: &[T])`.
+
+      ## Sorting floats
+
+      ```rust compile_fail
+      fn main() {
+          let mut temps = vec![21.5, 19.0, 23.25];
+          temps.sort();
+          println!("{temps:?}");
+      }
+      ```
+
+      ```error
+      error[E0277]: the trait bound `{float}: Ord` is not satisfied
+      ```
+
+      `sort` needs a **total order** (`Ord`), and floats only have a partial one because `NaN` isn't comparable. `temps.sort_by(|a, b| a.total_cmp(b))` sorts with IEEE 754's total order.
+
+      ## How to read a long E0277
+
+      1. Find the **type** and **trait** in the first line.
+      2. Look for `required by a bound in ...`: it names the function or impl that demands the trait.
+      3. Look at the `help:` lines: rustc lists types that do implement the trait, and often the exact `derive` or bound to add.
+      4. If the type is foreign and the trait is foreign (say `Display` for `Vec<T>`), the **orphan rule** stops you implementing it directly; wrap the type in a newtype.
+    example: |
+      use std::fmt::Display;
+
+      #[derive(Debug, Clone, PartialEq)]
+      struct Item {
+          name: String,
+          price: f64,
+      }
+
+      fn duplicate<T: Clone>(x: &T) -> T {
+          x.clone()
+      }
+
+      fn print_all<T: Display>(items: &[T]) {
+          let parts: Vec<String> = items.iter().map(|i| i.to_string()).collect();
+          println!("{}", parts.join(" | "));
+      }
+
+      fn main() {
+          let sword = Item { name: String::from("sword"), price: 12.5 };
+          let copy = duplicate(&sword);
+          println!("{copy:?} equal: {}", copy == sword);
+
+          print_all(&[1, 2, 3]);
+          print_all(&["a", "b"]);
+
+          let mut temps = vec![21.5, 19.0, 23.25];
+          temps.sort_by(|a: &f64, b| a.total_cmp(b));
+          println!("{temps:?}");
+
+          let mut items = vec![copy, Item { name: String::from("potion"), price: 3.0 }];
+          items.sort_by(|a, b| a.price.total_cmp(&b.price));
+          println!("cheapest: {}", items[0].name);
+
+          let v = vec![1, 2, 3];
+          let owned: Vec<i32> = v.iter().copied().collect();
+          let idx: i32 = 1;
+          println!("{owned:?} {}", owned[idx as usize]);
+      }

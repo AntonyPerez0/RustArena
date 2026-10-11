@@ -99,5 +99,7 @@ pub fn rows(n: usize, seed: u64) -> Vec<Row> {
 /// `n` scores between 0 and `max`, inclusive (so there are ties when `n` is large).
 pub fn scores(n: usize, max: u32, seed: u64) -> Vec<u32> {
     let mut rng = Rng::new(seed);
-    (0..n).map(|_| rng.below(u64::from(max) + 1) as u32).collect()
+    (0..n)
+        .map(|_| rng.below(u64::from(max) + 1) as u32)
+        .collect()
 }

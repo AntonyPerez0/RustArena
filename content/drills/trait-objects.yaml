@@ -1,6 +1,7 @@
 topic: trait-objects
 drills:
   - type: predict
+    after: trait-objects-1
     pre: |
       trait Animal {
           fn sound(&self) -> String;
@@ -29,12 +30,14 @@ drills:
     why: Each box holds a different type, and each call runs that type's sound method, chosen at run time.
 
   - type: predict
+    after: trait-objects-3
     body: |
       use std::mem::size_of;
       println!("{} {}", size_of::<&u8>(), size_of::<&dyn std::fmt::Display>());
     why: "A &dyn Trait is a fat pointer: the address of the data plus the address of its vtable, so 16 bytes instead of 8 on a 64-bit machine."
 
   - type: predict
+    after: trait-objects-4
     pre: |
       trait Plugin {
           fn handle(&mut self);
@@ -64,6 +67,7 @@ drills:
     why: Trait objects can have &mut self methods. Each counter keeps its own state and is incremented three times.
 
   - type: predict
+    after: trait-objects-7
     body: |
       use std::any::Any;
       let v: Box<dyn Any> = Box::new(3u8);
@@ -71,6 +75,7 @@ drills:
     why: downcast_ref::<T>() returns Some only if the value really is a T. The value is a u8, so asking for an i32 gives None.
 
   - type: predict
+    after: trait-objects-1
     pre: |
       trait Greeter {
           fn name(&self) -> String;
@@ -102,6 +107,7 @@ drills:
     why: Default and overridden methods both go through the vtable, so each value uses its own type's version.
 
   - type: fill
+    after: trait-objects-1
     prompt: A vector of boxed trait objects.
     pre: |
       trait Shape {
@@ -121,6 +127,7 @@ drills:
     why: "dyn Shape names the trait object type; since the 2021 edition the dyn keyword is required."
 
   - type: fill
+    after: trait-objects-2
     prompt: Return a different shape type depending on the input.
     pre: |
       trait Shape {
@@ -150,6 +157,7 @@ drills:
     why: impl Shape can only stand for one concrete type. A Box<dyn Shape> can hold either, chosen at run time.
 
   - type: fill
+    after: trait-objects-5
     prompt: Keep the trait dyn compatible while still offering a constructor.
     pre: |
       trait Store {
@@ -175,6 +183,7 @@ drills:
     why: "where Self: Sized removes new from the vtable: it can still be called on concrete types like Mem, and the trait can be used as dyn Store."
 
   - type: bug
+    after: trait-objects-2
     pre: |
       trait Shape {
           fn area(&self) -> f64;
@@ -199,6 +208,7 @@ drills:
     why: "&b is a &Box<dyn Shape>, and Rust tries to use the Box itself as the Shape. b.as_ref() (or &*b) passes the shape inside the box."
 
   - type: bug
+    after: trait-objects-4
     pre: |
       trait Notifier {
           fn send(&self, msg: &str) -> String;
@@ -230,6 +240,7 @@ drills:
     why: "A Box<dyn Notifier> field means Box<dyn Notifier + 'static>, so the value put in it must not hold short-lived references (E0310)."
 
   - type: bug
+    after: trait-objects-4
     pre: |
       trait Plugin {
           fn handle(&mut self, e: &str);
@@ -257,6 +268,7 @@ drills:
     why: handle takes &mut self, so the loop must borrow the boxes mutably with &mut plugins.
 
   - type: compiles
+    after: trait-objects-1
     answer: no
     pre: |
       trait Shape {
@@ -276,6 +288,7 @@ drills:
     why: "A trait used as a type needs the dyn keyword: Box<dyn Shape> (E0782 in edition 2021 and later)."
 
   - type: compiles
+    after: trait-objects-1
     answer: yes
     pre: |
       trait Shape {
@@ -302,6 +315,7 @@ drills:
     why: Different types can share one Vec once each is boxed as a dyn Shape.
 
   - type: compiles
+    after: trait-objects-5
     answer: no
     pre: |
       trait Shape {
@@ -325,6 +339,7 @@ drills:
     why: A method returning Self makes the trait not dyn compatible (E0038), because the size of Self is unknown behind dyn.
 
   - type: compiles
+    after: trait-objects-5
     answer: yes
     pre: |
       trait Shape {
@@ -350,6 +365,7 @@ drills:
     why: "where Self: Sized takes doubled out of the vtable. The trait is dyn compatible, and doubled still works on the concrete Sq."
 
   - type: compiles
+    after: trait-objects-1
     answer: no
     pre: |
       trait Shape {
@@ -377,6 +393,7 @@ drills:
     why: Through a dyn Shape you can only call the trait's methods. radius belongs to Circle, which the trait object has forgotten (E0599).
 
   - type: choice
+    after: trait-objects-6
     prompt: "Your CLI has a fixed set of commands (add, list, remove) that only your team changes. How should you model them?"
     choices:
       - "An enum with one variant per command"
@@ -386,6 +403,7 @@ drills:
     why: "A closed set you own fits an enum: no boxes, and the compiler's exhaustiveness check finds every match to update when a command is added. Trait objects pay off when others must add cases without editing your code."
 
   - type: boss
+    after: trait-objects-4
     prompt: |
       Build a tiny drawing canvas.
 

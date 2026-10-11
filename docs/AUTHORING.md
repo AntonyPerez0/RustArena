@@ -129,6 +129,8 @@ harness: |
 - Seeds that return `-> SomeType` need a body that compiles: `todo!()` works everywhere.
 - Unused parameters in a seed are fine (seeds may have warnings); solutions may not.
 - 3 to 6 tests per exercise, covering edge cases (empty input, zero, negatives, unicode).
+- A hidden test that must panic: put `#[should_panic]` or `#[should_panic(expected = "text")]` between
+  `#[test]` and `fn`. It passes only if the code panics (with a message containing the text).
 - The message in `assert_eq!(a, b, "...")` is a format string: write braces as `{{` and `}}`
   (`"Point {{ x: 1 }}"`).
 - A struct field that is only ever printed with `{:?}` still counts as "never read" for the
@@ -146,7 +148,8 @@ harness is plain `#[test]` functions too).
 
 Regexes tested against the learner's code with comments removed and string/char literals blanked
 to `""`/`''` (so `"for"` in a message doesn't count as a `for` loop). Add `strings: true` to test
-against the code with strings kept (for rules about format strings).
+against the code with strings kept (for rules about format strings), or `raw: true` to test the code
+exactly as written, comments included (for rules about `///` doc comments).
 
 ```yaml
 require:

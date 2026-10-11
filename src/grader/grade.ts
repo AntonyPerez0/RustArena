@@ -78,6 +78,16 @@ export async function grade(ex: Exercise, code: string): Promise<GradeResult> {
     const names = ex.checkNames ?? [];
     tests = names.map((name, i) => {
       const r = res.runs[i];
+      // A #[should_panic] test passes only when the code panics (with the expected message, if any).
+      const mustPanic = ex.checkPanics?.[i];
+      if (mustPanic != null) {
+        const msg = r ? parsePanic(r.stderr)?.message ?? "" : "";
+        const ok = !!r && !r.timedOut && r.exitCode === 101 && msg.includes(mustPanic);
+        if (ok) return { name, pass: true };
+        if (r && r.exitCode === 0) return { name, pass: false, note: `This should panic${mustPanic ? ` with a message containing "${mustPanic}"` : ""}, but it finished normally.` };
+        if (r && r.exitCode === 101) return { name, pass: false, note: `It panicked with "${msg.split("\n")[0]}", but the message should contain "${mustPanic}".` };
+        return { name, pass: false, note: describeRun(r, userLines) };
+      }
       const pass = !!r && !r.timedOut && !r.crash && r.exitCode === 0;
       if (pass) return { name, pass };
       const p = r ? parsePanic(r.stderr) : null;

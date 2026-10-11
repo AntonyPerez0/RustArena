@@ -29,6 +29,7 @@ import {
   withHiddenTests,
   applyMutant,
   harnessTests,
+  harnessTestInfo,
   testLabel,
   normalizeOutput,
   looseOutput,
@@ -93,6 +94,13 @@ async function play(code, { tests = false } = {}) {
 const firstError = (diag) => diag.split("\n").find((l) => /^error/.test(l)) ?? diag.split("\n")[0] ?? "";
 
 /** Warnings rustc reports in the learner-visible part of the code (the first `lines` lines). */
+/** Whether one hidden test passed: it finished cleanly, or (for #[should_panic]) panicked with the expected text. */
+function harnessPassed(r, info) {
+  if (!r || r.timedOut) return false;
+  if (!info?.shouldPanic) return r.exitCode === 0;
+  return r.exitCode === 101 && (parsePanic(r.stderr)?.message ?? "").includes(info.expected ?? "");
+}
+
 function userWarnings(diag, lines) {
   const out = [];
   const blocks = diag.split(/\n(?=warning|error)/);
@@ -221,15 +229,18 @@ async function buildExercise(where, raw, prevSolution) {
       return null;
     }
     for (const w of userWarnings(res.diagnostics, lines)) errors.push(`${where}: reference solution has a compiler warning:\n${w}`);
+    const info = harnessTestInfo(harness);
     names.forEach((n, i) => {
       const r = res.runs[i];
-      if (!r || r.exitCode !== 0) {
+      if (!harnessPassed(r, info[i])) {
         const p = r ? parsePanic(r.stderr) : null;
-        errors.push(`${where}: solution fails hidden test ${n}: ${r?.timedOut ? "timeout" : p ? p.message : r?.stderr ?? "did not run"}`);
+        const why = r?.timedOut ? "timeout" : info[i]?.shouldPanic && r?.exitCode === 0 ? "it should panic but finishes normally" : p ? p.message : r?.stderr ?? "did not run";
+        errors.push(`${where}: solution fails hidden test ${n}: ${why}`);
       }
     });
     out.checks = names.length;
     out.checkNames = names.map(testLabel);
+    if (info.some((t) => t.shouldPanic)) out.checkPanics = info.map((t) => (t.shouldPanic ? t.expected ?? "" : null));
     out.tests = [{ name: "tests", stdin: c.stdin ?? "", expect: "" }];
     if (c.files) out.tests[0].files = c.files;
     if (c.args) out.tests[0].args = c.args;
@@ -268,7 +279,8 @@ async function buildExercise(where, raw, prevSolution) {
     let passes = false;
     if (mode === "harness") {
       const sr = await runHarness(seed, harness, runCase(testsRaw[0]));
-      passes = sr.compiled && out.checks > 0 && sr.runs.length === out.checks && sr.runs.every((r) => r && r.exitCode === 0);
+      const info = harnessTestInfo(harness);
+      passes = sr.compiled && out.checks > 0 && sr.runs.length === out.checks && sr.runs.every((r, i) => harnessPassed(r, info[i]));
     } else {
       const sr = await runProgram(seed, testsRaw.map(runCase));
       passes = sr.compiled && out.tests.every((t, i) => sr.runs[i] && normalizeOutput(sr.runs[i].stdout) === t.expect && sr.runs[i].exitCode === (t.exit ?? 0));

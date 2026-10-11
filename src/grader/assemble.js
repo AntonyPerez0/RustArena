@@ -218,7 +218,19 @@ function caseLiteral(c) {
 
 /** The hidden tests of a harness exercise: their function names, in order. */
 export function harnessTests(harness) {
-  return [...String(harness).matchAll(/#\[test\]\s*(?:\/\/[^\n]*\n\s*)*fn\s+([A-Za-z_]\w*)\s*\(/g)].map((m) => m[1]);
+  return harnessTestInfo(harness).map((t) => t.name);
+}
+
+/**
+ * Each hidden test with whether it must panic: `#[should_panic]` (optionally with
+ * `expected = "text"`) between `#[test]` and `fn` means the test passes only if it panics,
+ * with a message containing the expected text.
+ */
+export function harnessTestInfo(harness) {
+  return [...String(harness).matchAll(/#\[test\]((?:\s*#\[[^\]]*\]|\s*\/\/[^\n]*)*)\s*fn\s+([A-Za-z_]\w*)\s*\(/g)].map((m) => {
+    const sp = m[1].match(/#\[should_panic(?:\s*\(\s*expected\s*=\s*"((?:[^"\\]|\\.)*)"\s*\))?\s*\]/);
+    return { name: m[2], shouldPanic: !!sp, expected: sp?.[1] ? sp[1].replace(/\\(.)/g, "$1") : undefined };
+  });
 }
 
 /** "adds_two_numbers" -> "adds two numbers": how a hidden test is named on screen. */
@@ -248,6 +260,7 @@ export function wrapProgram(code, { cases = [{}], harness = undefined, limitMs =
   if (harness != null) {
     const tests = harnessTests(harness);
     const body = String(harness)
+      .replace(/#\[should_panic[^\]]*\]/g, "")
       .replace(/#\[test\]\s*\n?(\s*)fn\s+/g, "$1pub fn ")
       .replace(/\s*$/, "")
       .split("\n")
@@ -405,14 +418,16 @@ export function stripForRules(src, { keepStrings = false } = {}) {
 /**
  * require/forbid rules are regexes tested against the code with comments removed. String and
  * char literals are blanked out too (so "for" in a message doesn't count as a loop), unless the
- * rule says `strings: true` (for rules about format strings, like "use {:?}").
+ * rule says `strings: true` (for rules about format strings, like "use {:?}"). `raw: true` tests the
+ * code exactly as written, comments included (for rules about doc comments).
  */
 export function checkRules(src, require = [], forbid = []) {
   const code = stripForRules(src);
   const withStrings = stripForRules(src, { keepStrings: true });
+  const pick = (r) => (r.raw ? String(src) : r.strings ? withStrings : code);
   const problems = [];
-  for (const r of require) if (!new RegExp(r.pattern, r.flags || "").test(r.strings ? withStrings : code)) problems.push(r.message);
-  for (const r of forbid) if (new RegExp(r.pattern, r.flags || "").test(r.strings ? withStrings : code)) problems.push(r.message);
+  for (const r of require) if (!new RegExp(r.pattern, r.flags || "").test(pick(r))) problems.push(r.message);
+  for (const r of forbid) if (new RegExp(r.pattern, r.flags || "").test(pick(r))) problems.push(r.message);
   return problems;
 }
 
@@ -470,7 +485,8 @@ export function cleanCompilerOutput(stderr) {
 export function parseLibtest(stdout) {
   const text = String(stdout);
   const tests = [];
-  for (const m of text.matchAll(/^test (\S+) \.\.\. (ok|FAILED|ignored)/gm)) tests.push({ name: m[1], status: m[2] === "ok" ? "ok" : m[2] === "FAILED" ? "failed" : "ignored", output: "" });
+  // `test name ... ok`, `test name - should panic ... ok`, `test name ... ignored, reason`
+  for (const m of text.matchAll(/^test (\S+)(?: - should panic)? \.\.\. (ok|FAILED|ignored)/gm)) tests.push({ name: m[1], status: m[2] === "ok" ? "ok" : m[2] === "FAILED" ? "failed" : "ignored", output: "" });
   for (const m of text.matchAll(/^---- (\S+) stdout ----\n([\s\S]*?)(?=^---- \S+ stdout ----|^failures:|^test result:)/gm)) {
     const t = tests.find((x) => x.name === m[1]);
     if (t) t.output = m[2].trim();

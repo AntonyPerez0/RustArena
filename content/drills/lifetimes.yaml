@@ -1,6 +1,7 @@
 topic: lifetimes
 drills:
   - type: predict
+    after: lifetimes-2
     pre: |
       fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
           if a.len() >= b.len() { a } else { b }
@@ -13,6 +14,7 @@ drills:
     why: longest returns the longer string, and the first one on a tie. The annotations only describe lifetimes; they don't change what the function does.
 
   - type: predict
+    after: lifetimes-4
     pre: |
       struct Words<'a> {
           rest: &'a str,
@@ -38,6 +40,7 @@ drills:
     why: Each call skips spaces, returns the next word and moves rest past it. After two words nothing is left, so the third call returns None.
 
   - type: predict
+    after: lifetimes-5
     pre: |
       fn kind(code: u8) -> &'static str {
           match code {
@@ -56,6 +59,7 @@ drills:
     why: "String literals are &'static str, so the result can be kept after code is gone. 9 hits the _ arm."
 
   - type: fill
+    after: lifetimes-2
     prompt: The result lives as long as both inputs.
     pre: |
       fn longer<'a>(a: &'a str, b: &'a str) -> &[['a]] str {
@@ -66,6 +70,7 @@ drills:
     why: The output gets the same lifetime name as the inputs it may come from.
 
   - type: fill
+    after: lifetimes-4
     prompt: A struct holding a reference needs a lifetime on the field.
     pre: |
       struct Excerpt<'a> {
@@ -79,6 +84,7 @@ drills:
     why: "Every reference field must name a lifetime, here the struct's own 'a: the Excerpt can't outlive text."
 
   - type: fill
+    after: lifetimes-4
     prompt: Declare the lifetime for the impl block.
     pre: |
       struct Cursor<'a> {
@@ -97,6 +103,7 @@ drills:
     why: "Like impl<T> for generic types, impl<'a> declares the lifetime before Cursor<'a> uses it."
 
   - type: bug
+    after: lifetimes-2
     pre: |
       fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
           if a.len() >= b.len() { a } else { b }
@@ -114,6 +121,7 @@ drills:
     why: winner may borrow from b, which is dropped at the end of the block. Turning the result into an owned String (or moving b out of the block) fixes it.
 
   - type: bug
+    after: lifetimes-6
     pre: |
       fn tag(name: &str) -> &str { &format!("#{name}") } // BUG
     body: |
@@ -122,6 +130,7 @@ drills:
     why: The String made by format! is dropped when tag returns, so a reference to it would dangle (E0515). Return the String itself.
 
   - type: bug
+    after: lifetimes-2
     pre: |
       fn after<'a>(line: &'a str, prefix: &'a str) -> &'a str { // BUG
           line.strip_prefix(prefix).unwrap_or(line)
@@ -139,6 +148,7 @@ drills:
     why: The result only borrows from line, but the signature ties it to prefix too, so prefix would have to outlive msg. Give prefix its own lifetime.
 
   - type: compiles
+    after: lifetimes-1
     answer: no
     body: |
       let r;
@@ -150,6 +160,7 @@ drills:
     why: s is dropped at the end of the block while r still refers to it and is used later (E0597).
 
   - type: compiles
+    after: lifetimes-2
     answer: no
     pre: |
       fn longest(a: &str, b: &str) -> &str {
@@ -160,6 +171,7 @@ drills:
     why: Two input references and no self, so elision can't tell which one the result borrows from (E0106).
 
   - type: compiles
+    after: lifetimes-3
     answer: yes
     pre: |
       fn first_word(s: &str) -> &str {
@@ -171,6 +183,7 @@ drills:
     why: With exactly one input reference, elision gives the result its lifetime, so no annotation is needed.
 
   - type: compiles
+    after: lifetimes-5
     answer: no
     pre: |
       fn make() -> &'static str {
@@ -182,6 +195,7 @@ drills:
     why: "'static can't make a local String live longer. It's dropped when make returns (E0515); return the String instead."
 
   - type: compiles
+    after: lifetimes-4
     answer: no
     pre: |
       struct Player {
@@ -193,6 +207,7 @@ drills:
     why: "A reference field needs a lifetime (E0106): struct Player<'a> { name: &'a str }, or own the data with String."
 
   - type: compiles
+    after: lifetimes-2
     answer: yes
     pre: |
       fn after_prefix<'a>(line: &'a str, prefix: &str) -> &'a str {
@@ -209,6 +224,7 @@ drills:
     why: The result is tied only to line, so p may be dropped before msg is used.
 
   - type: compiles
+    after: lifetimes-7
     answer: no
     body: |
       let s = format!("id-{}", 7).as_str();
@@ -216,6 +232,7 @@ drills:
     why: The String from format! is a temporary that's dropped at the end of the statement, while s still borrows it (E0716). Store it in a variable first.
 
   - type: choice
+    after: lifetimes-6
     prompt: "A function builds a brand-new string with format! and gives it to the caller. What should it return?"
     choices:
       - "&str, annotated with 'a"
@@ -226,6 +243,7 @@ drills:
     why: The new string is owned by the function and would be dropped at its end, so any reference to it would dangle. Returning the String gives ownership to the caller.
 
   - type: boss
+    after: lifetimes-6
     prompt: |
       Parse URL query strings like `name=ana&lang=rust` without copying any text.
 

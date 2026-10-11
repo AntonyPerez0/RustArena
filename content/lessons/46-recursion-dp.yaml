@@ -1,0 +1,1503 @@
+id: recursion-dp
+title: Recursion and Dynamic Programming
+phase: "Algorithms and data structures"
+summary: "Functions that call themselves, backtracking through choices, and dynamic programming (memoization with HashMap and bottom-up tables) for the classic problems: coin change, longest common subsequence, edit distance, grid paths and knapsack."
+roadmap: [Recursion, Dynamic Programming, Backtracking]
+steps:
+  - title: "Recursion: a function that calls itself"
+    id: recursion-dp-1
+    text: |
+      A **recursive** function solves a problem by calling itself on a **smaller** version of the same problem. Every recursive function has two parts:
+
+      - a **base case**: an input small enough to answer directly, without recursing;
+      - a **recursive case**: shrink the problem, call yourself, and build the answer from the result.
+
+      ```rust run
+      fn factorial(n: u64) -> u64 {
+          if n <= 1 {
+              1 // base case
+          } else {
+              n * factorial(n - 1) // recursive case: a smaller problem
+          }
+      }
+
+      fn countdown(n: u32) {
+          if n == 0 {
+              println!("liftoff!");
+              return;
+          }
+          println!("{n}...");
+          countdown(n - 1);
+      }
+
+      fn main() {
+          println!("5! = {}", factorial(5));
+          println!("20! = {}", factorial(20));
+          countdown(3);
+      }
+      ```
+
+      ```output
+      5! = 120
+      20! = 2432902008176640000
+      3...
+      2...
+      1...
+      liftoff!
+      ```
+
+      ### The call stack
+
+      Each call gets its own **stack frame** holding its parameters and local variables. `factorial(5)` can't finish until `factorial(4)` returns, which waits for `factorial(3)`, and so on: five frames stacked up, then unwinding as each returns its answer to the one below. The depth of recursion is how many frames pile up at once.
+
+      The stack is small (8 MB for the main thread on Linux) and Rust doesn't promise **tail-call optimization** (reusing the frame when the recursive call is the last thing a function does). Recursing a few hundred thousand levels deep crashes the program with `thread 'main' has overflowed its stack`. That's an abort, not a panic you can recover from. So:
+
+      - Recursion is a great fit when the depth stays small: halving problems (depth log n), trees, nested folders, parsing nested expressions, trying choices.
+      - For simple "do this for each of n items" work, use a loop or an iterator.
+
+      ### Recursion on slices
+
+      Slice patterns (from the patterns module) make recursive code on lists read like its definition: "the total of an empty list is 0; otherwise it's the first price plus the total of the rest":
+
+      ```rust run
+      fn total(prices: &[u32]) -> u32 {
+          match prices {
+              [] => 0,
+              [first, rest @ ..] => first + total(rest),
+          }
+      }
+
+      fn main() {
+          println!("{}", total(&[250, 199, 1200]));
+      }
+      ```
+
+      ```output
+      1649
+      ```
+
+      (This one is just for illustration: `prices.iter().sum()` is the idiomatic way, and doesn't use one stack frame per item.)
+
+      ### Common mistakes
+
+      - **No base case, or one the recursion never reaches.** The calls never stop and the stack overflows. Rust even warns about some of these: `function cannot return without recursing`.
+      - **Not shrinking the problem.** `f(n)` calling `f(n)` (or `f(n + 1)`) never reaches the base case.
+      - **Unsigned underflow.** With `u32`/`u64`, a base case of `n == 1` lets `f(0)` compute `0 - 1`, which panics with `attempt to subtract with overflow`. Make the base case cover the smallest inputs.
+
+      **Your turn:** write `fn sum_digits(n: u64) -> u64` recursively, without loops: the sum of the decimal digits of `n` (`sum_digits(1234)` is 10). The last digit is `n % 10` and the rest of the number is `n / 10`; the sum of the digits of 0 is 0.
+    seed: |
+      fn sum_digits(n: u64) -> u64 {
+          todo!()
+      }
+    solution: |
+      fn sum_digits(n: u64) -> u64 {
+          if n == 0 {
+              0
+          } else {
+              n % 10 + sum_digits(n / 10)
+          }
+      }
+    require:
+      - pattern: 'fn sum_digits[\s\S]*sum_digits\s*\('
+        message: "`sum_digits` should call itself."
+    forbid:
+      - pattern: '\bwhile\b|\bfor\b|\bloop\b|chars|to_string'
+        message: Use recursion and arithmetic (`% 10`, `/ 10`), not a loop or a string.
+    hints:
+      - "The base case is `n == 0`, whose digit sum is 0."
+      - "Otherwise the answer is the last digit plus the digit sum of the rest: `n % 10 + sum_digits(n / 10)`."
+    harness: |
+      #[test]
+      fn adds_the_digits() {
+          assert_eq!(sum_digits(1234), 10, "sum_digits(1234)");
+      }
+
+      #[test]
+      fn zero_has_digit_sum_zero() {
+          assert_eq!(sum_digits(0), 0, "sum_digits(0)");
+      }
+
+      #[test]
+      fn a_single_digit_is_itself() {
+          assert_eq!(sum_digits(7), 7, "sum_digits(7)");
+      }
+
+      #[test]
+      fn zeros_inside_the_number_count_as_zero() {
+          assert_eq!(sum_digits(90_000_501), 15, "sum_digits(90000501)");
+      }
+
+      #[test]
+      fn handles_the_largest_u64() {
+          assert_eq!(sum_digits(u64::MAX), 87, "sum_digits(u64::MAX)");
+      }
+    more:
+      - task: |
+          Write `fn is_palindrome(chars: &[char]) -> bool` recursively with slice patterns, no loops: a slice with zero or one characters is a palindrome; a longer one is a palindrome if its first and last characters are equal **and** the middle part is a palindrome. The pattern `[first, middle @ .., last]` splits off both ends at once.
+        seed: |
+          fn is_palindrome(chars: &[char]) -> bool {
+              todo!()
+          }
+        solution: |
+          fn is_palindrome(chars: &[char]) -> bool {
+              match chars {
+                  [] | [_] => true,
+                  [first, middle @ .., last] => first == last && is_palindrome(middle),
+              }
+          }
+        require:
+          - pattern: 'fn is_palindrome[\s\S]*is_palindrome\s*\('
+            message: "`is_palindrome` should call itself on the middle part."
+        forbid:
+          - pattern: '\bwhile\b|\bfor\b|\bloop\b|\.rev\(|\.iter\('
+            message: Solve it with recursion and slice patterns, no loops or iterators.
+        harness: |
+          fn check(word: &str) -> bool {
+              let chars: Vec<char> = word.chars().collect();
+              is_palindrome(&chars)
+          }
+
+          #[test]
+          fn accepts_odd_length_palindromes() {
+              assert_eq!(check("racecar"), true, "is_palindrome(\"racecar\")");
+          }
+
+          #[test]
+          fn accepts_even_length_palindromes() {
+              assert_eq!(check("abba"), true, "is_palindrome(\"abba\")");
+          }
+
+          #[test]
+          fn rejects_non_palindromes() {
+              assert_eq!(check("abca"), false, "is_palindrome(\"abca\")");
+              assert_eq!(check("rust"), false, "is_palindrome(\"rust\")");
+          }
+
+          #[test]
+          fn empty_and_single_are_palindromes() {
+              assert_eq!(check(""), true, "is_palindrome(\"\")");
+              assert_eq!(check("x"), true, "is_palindrome(\"x\")");
+          }
+
+          #[test]
+          fn works_with_accented_letters() {
+              assert_eq!(check("ñañ"), true, "is_palindrome(\"ñañ\")");
+          }
+        hints:
+          - "`match chars { [] | [_] => true, ... }` covers the base cases."
+          - "`[first, middle @ .., last] => first == last && is_palindrome(middle)`"
+      - task: |
+          **Fast exponentiation.** Hashing and cryptography need `base` to the power `exp`, modulo `m`, for exponents like 10^18. Multiplying `exp` times would take centuries. Recursion halves the exponent instead:
+
+          - `exp == 0`: the answer is `1 % m`
+          - otherwise compute `half = pow_mod(base, exp / 2, m)`; the answer is `half * half % m`, times one more `base % m` (then `% m`) if `exp` is odd
+
+          That's O(log exp) multiplications: about 60 for 10^18. Write `fn pow_mod(base: u64, exp: u64, m: u64) -> u64`. The modulus is between 1 and 1,000,000,007, so the product of two numbers below `m` fits in a `u64`. Reduce `base` with `% m` before multiplying, since it can be bigger than `m`.
+        seed: |
+          fn pow_mod(base: u64, exp: u64, m: u64) -> u64 {
+              todo!()
+          }
+        solution: |
+          fn pow_mod(base: u64, exp: u64, m: u64) -> u64 {
+              if exp == 0 {
+                  return 1 % m;
+              }
+              let half = pow_mod(base, exp / 2, m);
+              let square = half * half % m;
+              if exp % 2 == 1 { square * (base % m) % m } else { square }
+          }
+        forbid:
+          - pattern: '\.pow\(|\bfor\b|\bwhile\b|\bloop\b'
+            message: "Halve the exponent recursively: no loops and no `.pow()`."
+        harness: |
+          #[test]
+          fn computes_a_small_power() {
+              assert_eq!(pow_mod(2, 10, 1000), 24, "pow_mod(2, 10, 1000)");
+          }
+
+          #[test]
+          fn anything_to_the_zero_is_one() {
+              assert_eq!(pow_mod(5, 0, 13), 1, "pow_mod(5, 0, 13)");
+          }
+
+          #[test]
+          fn modulo_one_is_always_zero() {
+              assert_eq!(pow_mod(5, 0, 1), 0, "pow_mod(5, 0, 1)");
+              assert_eq!(pow_mod(5, 3, 1), 0, "pow_mod(5, 3, 1)");
+          }
+
+          #[test]
+          fn handles_a_large_base() {
+              assert_eq!(pow_mod(u64::MAX, 2, 1_000_000_007), 114_944_269, "pow_mod(u64::MAX, 2, 1000000007)");
+          }
+
+          #[test]
+          fn handles_large_exponents_quickly() {
+              assert_eq!(pow_mod(3, 200, 1_000_000_007), 136_318_165, "pow_mod(3, 200, 1000000007)");
+              assert_eq!(pow_mod(7, 1_000_000_000_000_000_000, 1_000_000_007), 259_616_729, "pow_mod(7, 10^18, 1000000007)");
+          }
+        hints:
+          - "Base case: `if exp == 0 { return 1 % m; }` (`1 % m` makes the `m == 1` case come out as 0)."
+          - "`let half = pow_mod(base, exp / 2, m); let square = half * half % m;`"
+          - "If `exp % 2 == 1`, return `square * (base % m) % m`; otherwise `square`."
+
+  - title: Branching recursion and backtracking
+    id: recursion-dp-2
+    text: |
+      When a function calls itself **more than once**, the calls branch out into a **recursion tree**. The classic example is Fibonacci: `fib(n) = fib(n - 1) + fib(n - 2)`. Written directly, it's a beautiful one-liner and a terrible program. Count the calls:
+
+      ```rust run
+      fn fib(n: u32, calls: &mut u64) -> u64 {
+          *calls += 1;
+          if n < 2 {
+              return n as u64;
+          }
+          fib(n - 1, calls) + fib(n - 2, calls)
+      }
+
+      fn main() {
+          for n in [10, 20, 30] {
+              let mut calls = 0;
+              let value = fib(n, &mut calls);
+              println!("fib({n}) = {value} after {calls} calls");
+          }
+      }
+      ```
+
+      ```output
+      fib(10) = 55 after 177 calls
+      fib(20) = 6765 after 21891 calls
+      fib(30) = 832040 after 2692537 calls
+      ```
+
+      Each extra n multiplies the work by about 1.6: that's **exponential**, O(1.6ⁿ). `fib(60)` this way would take longer than you want to wait. The cause is that the same values are computed over and over (`fib(28)` is computed twice for `fib(30)`, `fib(27)` three times...). The next step fixes that.
+
+      ### Backtracking: exploring every choice
+
+      Sometimes branching is the point: you really do want to try every combination of choices, like every set of toppings, every team, every move. **Backtracking** does it with one shared, growing "path":
+
+      1. **choose**: add an option to the path,
+      2. **explore**: recurse to make the remaining choices,
+      3. **un-choose**: remove it again, so the next branch starts clean.
+
+      ```rust run
+      fn explore<'a>(toppings: &[&'a str], i: usize, chosen: &mut Vec<&'a str>) {
+          if i == toppings.len() {
+              println!("{{{}}}", chosen.join(", "));
+              return;
+          }
+          chosen.push(toppings[i]); // choose: take toppings[i]
+          explore(toppings, i + 1, chosen); // explore with it
+          chosen.pop(); // un-choose
+          explore(toppings, i + 1, chosen); // explore without it
+      }
+
+      fn main() {
+          explore(&["cheese", "olives", "basil"], 0, &mut Vec::new());
+      }
+      ```
+
+      ```output
+      {cheese, olives, basil}
+      {cheese, olives}
+      {cheese, basil}
+      {cheese}
+      {olives, basil}
+      {olives}
+      {basil}
+      {}
+      ```
+
+      Each item is either taken or not, so n items give 2ⁿ subsets: fine for 20 items (a million), hopeless for 60. The `'a` lifetime says the chosen names borrow from the same place as `toppings`, so the path can hold `&str` without copying any strings.
+
+      **Pruning** makes backtracking practical: stop exploring a branch as soon as it can't lead to an answer (the budget is already exceeded, not enough items remain to fill a team). A pruned search can be thousands of times faster than the full tree.
+
+      ### Common mistakes
+
+      - **Forgetting to un-choose.** Without the `pop()`, later branches see leftovers from earlier ones.
+      - **Copying the whole path at every step.** Clone the path only when you record a finished answer.
+      - **Branching recursion on big inputs.** 2ⁿ or n! grows absurdly fast. If the same subproblems repeat, you need memoization (next step), not a faster computer.
+
+      **Your turn:** a customer has gift cards with the given values and wants to spend exactly `target`. Write `fn count_subsets_with_sum(cards: &[u32], target: u32) -> usize`: the number of different sets of cards (each card used at most once; equal values on different cards count as different cards) whose values add up to exactly `target`. The empty set adds up to 0. Use recursion that, for each card, counts the ways **with** it and **without** it, and prune: never take a card bigger than what's left. The tests go up to 20 cards.
+    seed: |
+      fn count_subsets_with_sum(cards: &[u32], target: u32) -> usize {
+          todo!()
+      }
+    solution: |
+      fn count_subsets_with_sum(cards: &[u32], target: u32) -> usize {
+          match cards {
+              [] => usize::from(target == 0),
+              [first, rest @ ..] => {
+                  let without = count_subsets_with_sum(rest, target);
+                  let with = if *first <= target { count_subsets_with_sum(rest, target - first) } else { 0 };
+                  without + with
+              }
+          }
+      }
+    hints:
+      - "With no cards left, there's exactly one way if `target == 0` (take nothing more) and none otherwise."
+      - "Otherwise split off the first card (`[first, rest @ ..]` or an index): count the sets without it, `count_subsets_with_sum(rest, target)`, plus the sets with it."
+      - "Only take the card when `*first <= target`, then recurse with `target - first`. Add the two counts."
+    harness: |
+      #[test]
+      fn counts_three_ways_to_spend_30() {
+          assert_eq!(count_subsets_with_sum(&[5, 10, 15, 20, 25], 30), 3, "count_subsets_with_sum(&[5, 10, 15, 20, 25], 30)");
+      }
+
+      #[test]
+      fn equal_cards_are_different_cards() {
+          assert_eq!(count_subsets_with_sum(&[1, 1, 1], 2), 3, "count_subsets_with_sum(&[1, 1, 1], 2)");
+      }
+
+      #[test]
+      fn a_target_of_zero_has_one_way() {
+          assert_eq!(count_subsets_with_sum(&[4, 9], 0), 1, "count_subsets_with_sum(&[4, 9], 0)");
+          assert_eq!(count_subsets_with_sum(&[], 0), 1, "count_subsets_with_sum(&[], 0)");
+      }
+
+      #[test]
+      fn unreachable_targets_have_no_ways() {
+          assert_eq!(count_subsets_with_sum(&[], 5), 0, "count_subsets_with_sum(&[], 5)");
+          assert_eq!(count_subsets_with_sum(&[2, 4], 5), 0, "count_subsets_with_sum(&[2, 4], 5)");
+      }
+
+      #[test]
+      fn searches_twenty_cards() {
+          let cards: Vec<u32> = (1..=20).collect();
+          assert_eq!(count_subsets_with_sum(&cards, 105), 15_272, "count_subsets_with_sum(1..=20, 105)");
+      }
+    more:
+      - task: |
+          The coach picks teams of exactly `k` players. Write `fn team_options(players: &[&str], k: usize) -> Vec<String>` that lists every team, each written as the names joined with `+` in the players' order, with the teams in order too: for `["ana", "ben", "cy"]` and `k = 2` that's `["ana+ben", "ana+cy", "ben+cy"]`. `k` is at least 1; if it's bigger than the number of players, there are no teams.
+
+          Use backtracking with a `Vec<&str>` path: for each player from a start position, choose them, explore the rest, un-choose. Prune when there aren't enough players left to fill the team.
+        seed: |
+          fn team_options(players: &[&str], k: usize) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          fn pick<'a>(players: &[&'a str], start: usize, k: usize, team: &mut Vec<&'a str>, out: &mut Vec<String>) {
+              if team.len() == k {
+                  out.push(team.join("+"));
+                  return;
+              }
+              let still_needed = k - team.len();
+              for i in start..players.len() {
+                  if players.len() - i < still_needed {
+                      break;
+                  }
+                  team.push(players[i]);
+                  pick(players, i + 1, k, team, out);
+                  team.pop();
+              }
+          }
+
+          fn team_options(players: &[&str], k: usize) -> Vec<String> {
+              let mut out = Vec::new();
+              pick(players, 0, k, &mut Vec::new(), &mut out);
+              out
+          }
+        harness: |
+          #[test]
+          fn lists_all_pairs_in_order() {
+              assert_eq!(team_options(&["ana", "ben", "cy"], 2), vec!["ana+ben", "ana+cy", "ben+cy"], "team_options([ana, ben, cy], 2)");
+          }
+
+          #[test]
+          fn lists_teams_of_three() {
+              assert_eq!(team_options(&["a", "b", "c", "d"], 3), vec!["a+b+c", "a+b+d", "a+c+d", "b+c+d"], "team_options([a, b, c, d], 3)");
+          }
+
+          #[test]
+          fn a_team_of_everyone_has_one_option() {
+              assert_eq!(team_options(&["x", "y"], 2), vec!["x+y"], "team_options([x, y], 2)");
+          }
+
+          #[test]
+          fn too_few_players_means_no_teams() {
+              assert_eq!(team_options(&["solo"], 2), Vec::<String>::new(), "team_options([solo], 2)");
+          }
+
+          #[test]
+          fn counts_teams_of_three_from_twenty() {
+              let names: Vec<String> = (0..20).map(|i| format!("p{i}")).collect();
+              let players: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+              let teams = team_options(&players, 3);
+              assert_eq!(teams.len(), 1140, "number of teams of 3 from 20 players");
+              assert_eq!(teams[0], "p0+p1+p2", "first team");
+              assert_eq!(teams[1139], "p17+p18+p19", "last team");
+          }
+        hints:
+          - "Write a helper `fn pick<'a>(players: &[&'a str], start: usize, k: usize, team: &mut Vec<&'a str>, out: &mut Vec<String>)`."
+          - "When `team.len() == k`, push `team.join(\"+\")` and return. Otherwise loop `i` from `start`: push `players[i]`, recurse with `i + 1`, pop."
+          - "Prune with `if players.len() - i < k - team.len() { break; }`: not enough players remain."
+      - task: |
+          **The N-Queens puzzle**, a backtracking classic: place `n` queens on an `n` by `n` chessboard so that no two attack each other (no two share a row, a column or a diagonal). Write `fn n_queens(n: usize) -> usize` that counts the solutions. There are 92 for the standard 8 by 8 board.
+
+          Place one queen per row, recursively. Keep three `Vec<bool>` of "taken" markers: columns (`n`), diagonals going one way (`row + col`, `2n` of them) and the other way (`row + n - 1 - col`). For each column of the current row that is free on all three, mark, recurse into the next row, unmark. Reaching row `n` means you found a solution.
+        seed: |
+          fn n_queens(n: usize) -> usize {
+              todo!()
+          }
+        solution: |
+          fn place(n: usize, row: usize, cols: &mut [bool], diag: &mut [bool], anti: &mut [bool]) -> usize {
+              if row == n {
+                  return 1;
+              }
+              let mut count = 0;
+              for col in 0..n {
+                  let (d, a) = (row + col, row + n - 1 - col);
+                  if cols[col] || diag[d] || anti[a] {
+                      continue;
+                  }
+                  cols[col] = true;
+                  diag[d] = true;
+                  anti[a] = true;
+                  count += place(n, row + 1, cols, diag, anti);
+                  cols[col] = false;
+                  diag[d] = false;
+                  anti[a] = false;
+              }
+              count
+          }
+
+          fn n_queens(n: usize) -> usize {
+              place(n, 0, &mut vec![false; n], &mut vec![false; 2 * n], &mut vec![false; 2 * n])
+          }
+        harness: |
+          #[test]
+          fn the_standard_board_has_92() {
+              assert_eq!(n_queens(8), 92, "n_queens(8)");
+          }
+
+          #[test]
+          fn small_boards() {
+              assert_eq!(n_queens(1), 1, "n_queens(1)");
+              assert_eq!(n_queens(4), 2, "n_queens(4)");
+              assert_eq!(n_queens(6), 4, "n_queens(6)");
+          }
+
+          #[test]
+          fn two_and_three_have_no_solution() {
+              assert_eq!(n_queens(2), 0, "n_queens(2)");
+              assert_eq!(n_queens(3), 0, "n_queens(3)");
+          }
+
+          #[test]
+          fn ten_by_ten_has_724() {
+              assert_eq!(n_queens(10), 724, "n_queens(10)");
+          }
+        hints:
+          - "Write a helper `place(n, row, cols, diag, anti) -> usize` that returns 1 when `row == n`."
+          - "In row `row`, a queen in column `col` uses diagonal `row + col` and anti-diagonal `row + n - 1 - col`. Skip the column if any of the three is taken."
+          - "Otherwise mark all three, add `place(n, row + 1, ...)` to the count, then unmark them (that's the un-choose)."
+
+  - title: Memoization with a HashMap
+    id: recursion-dp-3
+    text: |
+      The slow Fibonacci recomputes the same values again and again. **Memoization** fixes that: the first time you compute an answer for some input, store it in a HashMap (the **memo**); every later call with that input just looks it up. Now each different input is computed only once.
+
+      ```rust run
+      use std::collections::HashMap;
+
+      fn fib(n: u64, memo: &mut HashMap<u64, u64>) -> u64 {
+          if n < 2 {
+              return n;
+          }
+          if let Some(&known) = memo.get(&n) {
+              return known;
+          }
+          let value = fib(n - 1, memo) + fib(n - 2, memo);
+          memo.insert(n, value);
+          value
+      }
+
+      fn main() {
+          let mut memo = HashMap::new();
+          println!("fib(50) = {}", fib(50, &mut memo));
+          println!("fib(90) = {}", fib(90, &mut memo));
+          println!("memo holds {} answers", memo.len());
+      }
+      ```
+
+      ```output
+      fib(50) = 12586269025
+      fib(90) = 2880067194370816120
+      memo holds 89 answers
+      ```
+
+      `fib(90)` the slow way would take about 10¹⁹ calls. With the memo it's 89 entries and a couple of hundred calls: O(n).
+
+      This is **dynamic programming** (DP), top-down style. It applies when a problem has:
+
+      - **overlapping subproblems**: the same smaller questions come up many times, and
+      - **optimal substructure**: the answer can be built from the answers to smaller questions.
+
+      ### Passing the memo around
+
+      Rust has no convenient global mutable variables, and that's fine: pass the memo down as `&mut HashMap`. A common shape is a public function that creates the memo and a helper that does the work:
+
+      ```rust
+      fn count(n: u64) -> u64 {
+          count_with(n, &mut HashMap::new())
+      }
+      ```
+
+      The key must describe the **whole** subproblem. If the answer depends on a position in a grid, the key is the position: `HashMap<(usize, usize), u64>`. Tuples of `Hash + Eq` types work as keys.
+
+      ### Common mistakes
+
+      - **Checking the memo after recursing.** Look up first, compute only on a miss, store before returning.
+      - **A new HashMap inside the recursive function.** Each call gets an empty memo and nothing is ever reused.
+      - **`entry().or_insert_with` with a recursive closure.** It looks neat but can't compile: the entry holds a mutable borrow of the map while the closure needs another one.
+
+      ```rust compile_fail
+      use std::collections::HashMap;
+
+      fn fib(n: u64, memo: &mut HashMap<u64, u64>) -> u64 {
+          if n < 2 {
+              return n;
+          }
+          *memo.entry(n).or_insert_with(|| fib(n - 1, memo) + fib(n - 2, memo))
+      }
+
+      fn main() {
+          println!("{}", fib(10, &mut HashMap::new()));
+      }
+      ```
+
+      ```error
+      error[E0500]: closure requires unique access to `*memo` but it is already borrowed
+      ```
+
+      Use `get`, compute, then `insert`, as in the example.
+
+      **Your turn:** a crab climbs a staircase of `n` steps, taking 1, 2 or 3 steps at a time. In how many different ways can it reach the top? `count_ways(4)` is 7 (1+1+1+1, 1+1+2, 1+2+1, 2+1+1, 2+2, 1+3, 3+1). There's 1 way to climb 0 steps (do nothing). The number of ways for `n` is the sum of the ways for `n - 1`, `n - 2` and `n - 3` (whichever exist). Write the memoized helper `ways_from`. The tests ask for `n = 70`, which takes about 10¹⁸ calls without the memo.
+    seed: |
+      use std::collections::HashMap;
+
+      fn ways_from(n: u64, memo: &mut HashMap<u64, u64>) -> u64 {
+          todo!()
+      }
+
+      fn count_ways(n: u64) -> u64 {
+          ways_from(n, &mut HashMap::new())
+      }
+    solution: |
+      use std::collections::HashMap;
+
+      fn ways_from(n: u64, memo: &mut HashMap<u64, u64>) -> u64 {
+          if n == 0 {
+              return 1;
+          }
+          if let Some(&known) = memo.get(&n) {
+              return known;
+          }
+          let mut total = 0;
+          for step in 1..=3 {
+              if step <= n {
+                  total += ways_from(n - step, memo);
+              }
+          }
+          memo.insert(n, total);
+          total
+      }
+
+      fn count_ways(n: u64) -> u64 {
+          ways_from(n, &mut HashMap::new())
+      }
+    require:
+      - pattern: 'memo\.(get|insert|contains_key|entry)'
+        message: Store and look up answers in the memo.
+    hints:
+      - "Base case: `if n == 0 { return 1; }`. Then `if let Some(&known) = memo.get(&n) { return known; }`."
+      - "Add up `ways_from(n - step, memo)` for each `step` in `1..=3` with `step <= n`."
+      - "`memo.insert(n, total);` before returning `total`."
+    harness: |
+      #[test]
+      fn four_steps_have_seven_ways() {
+          assert_eq!(count_ways(4), 7, "count_ways(4)");
+      }
+
+      #[test]
+      fn small_staircases() {
+          assert_eq!(count_ways(0), 1, "count_ways(0)");
+          assert_eq!(count_ways(1), 1, "count_ways(1)");
+          assert_eq!(count_ways(2), 2, "count_ways(2)");
+          assert_eq!(count_ways(3), 4, "count_ways(3)");
+      }
+
+      #[test]
+      fn ten_steps() {
+          assert_eq!(count_ways(10), 274, "count_ways(10)");
+      }
+
+      #[test]
+      fn seventy_steps_quickly() {
+          assert_eq!(count_ways(70), 2_073_693_258_389_777_176, "count_ways(70)");
+      }
+    more:
+      - task: |
+          A delivery robot moves through a warehouse grid from the top-left cell to the bottom-right cell, only ever moving **right** or **down**. `#` cells are shelves it can't enter. Write `fn count_paths(grid: &[&str]) -> u64`: the number of different routes (0 if the start or the end is a shelf, or the grid is empty).
+
+          Recursively, the number of routes from cell `(r, c)` is the routes from the cell below plus the routes from the cell to the right; from the bottom-right cell it's 1. Memoize on the position with a `HashMap<(usize, usize), u64>`. The tests include an empty 18 by 18 grid, which has over two billion routes.
+        seed: |
+          use std::collections::HashMap;
+
+          fn count_paths(grid: &[&str]) -> u64 {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn routes(grid: &[Vec<u8>], r: usize, c: usize, memo: &mut HashMap<(usize, usize), u64>) -> u64 {
+              let (rows, cols) = (grid.len(), grid[0].len());
+              if r >= rows || c >= cols || grid[r][c] == b'#' {
+                  return 0;
+              }
+              if r == rows - 1 && c == cols - 1 {
+                  return 1;
+              }
+              if let Some(&known) = memo.get(&(r, c)) {
+                  return known;
+              }
+              let total = routes(grid, r + 1, c, memo) + routes(grid, r, c + 1, memo);
+              memo.insert((r, c), total);
+              total
+          }
+
+          fn count_paths(grid: &[&str]) -> u64 {
+              let cells: Vec<Vec<u8>> = grid.iter().map(|row| row.bytes().collect()).collect();
+              if cells.is_empty() || cells[0].is_empty() {
+                  return 0;
+              }
+              routes(&cells, 0, 0, &mut HashMap::new())
+          }
+        harness: |
+          #[test]
+          fn goes_around_a_shelf() {
+              assert_eq!(count_paths(&["...", ".#.", "..."]), 2, "count_paths([\"...\", \".#.\", \"...\"])");
+          }
+
+          #[test]
+          fn counts_routes_in_an_open_grid() {
+              assert_eq!(count_paths(&["...", "..."]), 3, "count_paths([\"...\", \"...\"])");
+          }
+
+          #[test]
+          fn a_blocked_start_or_end_has_no_routes() {
+              assert_eq!(count_paths(&["#.", ".."]), 0, "count_paths([\"#.\", \"..\"])");
+              assert_eq!(count_paths(&["..", ".#"]), 0, "count_paths([\"..\", \".#\"])");
+          }
+
+          #[test]
+          fn a_single_cell_has_one_route() {
+              assert_eq!(count_paths(&["."]), 1, "count_paths([\".\"])");
+          }
+
+          #[test]
+          fn an_empty_grid_has_no_routes() {
+              assert_eq!(count_paths(&[]), 0, "count_paths([])");
+          }
+
+          #[test]
+          fn counts_an_18_by_18_grid_quickly() {
+              let row = ".".repeat(18);
+              let grid: Vec<&str> = (0..18).map(|_| row.as_str()).collect();
+              assert_eq!(count_paths(&grid), 2_333_606_220, "count_paths(18 by 18 open grid)");
+          }
+        hints:
+          - "Convert the rows to bytes first (`row.bytes().collect::<Vec<u8>>()`), so you can index `grid[r][c]`."
+          - "In a helper `routes(grid, r, c, memo)`: off the grid or on a `#` gives 0; the bottom-right cell gives 1; otherwise check the memo."
+          - "On a miss: `routes(grid, r + 1, c, memo) + routes(grid, r, c + 1, memo)`, insert it under `(r, c)`, return it."
+      - task: |
+          A search engine splits hashtags into words: can `"applepenapple"` be written as a sequence of dictionary words? Yes: apple + pen + apple. Write `fn can_segment(text: &str, words: &[&str]) -> bool` (words may be reused; an empty text can always be segmented).
+
+          Recursively: the text from position `start` can be segmented if some dictionary word matches at `start` and the rest (from `start + word.len()`) can be segmented. Without a memo, a text like `"aaaa...ab"` with the words `a`, `aa`, `aaa`, `aaaa` makes the recursion try an astronomical number of splits. Memoize on `start` with a `HashMap<usize, bool>`. Use `text[start..].starts_with(word)`. (The tests use ASCII text, so byte positions are fine.)
+        seed: |
+          use std::collections::HashMap;
+
+          fn can_segment(text: &str, words: &[&str]) -> bool {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn from(text: &str, start: usize, words: &[&str], memo: &mut HashMap<usize, bool>) -> bool {
+              if start == text.len() {
+                  return true;
+              }
+              if let Some(&known) = memo.get(&start) {
+                  return known;
+              }
+              let ok = words
+                  .iter()
+                  .any(|w| !w.is_empty() && text[start..].starts_with(w) && from(text, start + w.len(), words, memo));
+              memo.insert(start, ok);
+              ok
+          }
+
+          fn can_segment(text: &str, words: &[&str]) -> bool {
+              from(text, 0, words, &mut HashMap::new())
+          }
+        harness: |
+          #[test]
+          fn reuses_words() {
+              assert_eq!(can_segment("applepenapple", &["apple", "pen"]), true, "can_segment(\"applepenapple\", [apple, pen])");
+          }
+
+          #[test]
+          fn rejects_a_text_with_a_leftover() {
+              assert_eq!(can_segment("catsandog", &["cats", "dog", "sand", "and", "cat"]), false, "can_segment(\"catsandog\", [cats, dog, sand, and, cat])");
+          }
+
+          #[test]
+          fn tries_more_than_the_first_match() {
+              assert_eq!(can_segment("carsparks", &["car", "cars", "parks"]), true, "can_segment(\"carsparks\", [car, cars, parks])");
+          }
+
+          #[test]
+          fn empty_text_can_always_be_segmented() {
+              assert_eq!(can_segment("", &["a"]), true, "can_segment(\"\", [a])");
+          }
+
+          #[test]
+          fn handles_a_long_unsplittable_text_quickly() {
+              let text = "a".repeat(200) + "b";
+              assert_eq!(can_segment(&text, &["a", "aa", "aaa", "aaaa"]), false, "can_segment(\"a\" * 200 + \"b\", [a, aa, aaa, aaaa])");
+              assert_eq!(can_segment(&"a".repeat(200), &["aaa", "aaaa"]), true, "can_segment(\"a\" * 200, [aaa, aaaa])");
+          }
+        hints:
+          - "Write a helper `from(text, start, words, memo) -> bool`: `start == text.len()` means everything was split, so `true`."
+          - "Check the memo for `start`. On a miss, try every word: if `text[start..].starts_with(w)` and `from(text, start + w.len(), words, memo)`, the answer is `true`."
+          - "Store the answer for `start` before returning it, whether it's `true` or `false` (remembering failures is what saves the time)."
+
+  - title: "Bottom-up DP: filling a table"
+    id: recursion-dp-4
+    text: |
+      Memoization works top-down: start from the big question and recurse. The other way is **bottom-up** (also called **tabulation**): fill a table starting from the smallest subproblems, so that every entry you compute only needs entries you've already filled. No recursion at all, which means no stack depth limit, and a `Vec` index is cheaper than hashing a key.
+
+      ```rust run
+      fn fib(n: usize) -> u64 {
+          let mut table = vec![0u64; n + 1];
+          if n >= 1 {
+              table[1] = 1;
+          }
+          for i in 2..=n {
+              table[i] = table[i - 1] + table[i - 2];
+          }
+          table[n]
+      }
+
+      fn min_cost(cost: &[u32]) -> u32 {
+          // best[i] = the cheapest way to stand on step i; the top is step cost.len().
+          // You may start on step 0 or 1 for free; leaving step j costs cost[j].
+          let n = cost.len();
+          let mut best = vec![0; n + 1];
+          for i in 2..=n {
+              best[i] = (best[i - 1] + cost[i - 1]).min(best[i - 2] + cost[i - 2]);
+          }
+          best[n]
+      }
+
+      fn main() {
+          println!("fib(90) = {}", fib(90));
+          println!("{}", min_cost(&[10, 15, 20]));
+          println!("{}", min_cost(&[1, 100, 1, 1, 1, 100, 1, 1, 100, 1]));
+      }
+      ```
+
+      ```output
+      fib(90) = 2880067194370816120
+      15
+      6
+      ```
+
+      ### A recipe for DP problems
+
+      1. **State**: say in words what one table entry means. "`best[i]` is the cheapest cost to stand on step i."
+      2. **Recurrence**: how an entry is built from smaller ones. "`best[i]` is the cheaper of arriving from step i-1 or from step i-2."
+      3. **Base cases**: the entries you know without computing. "`best[0] = best[1] = 0`."
+      4. **Order**: fill the table so dependencies are ready (here: increasing i).
+      5. **Answer**: which entry holds it ("`best[n]`").
+
+      Writing the state down in a comment, as above, is the single most useful habit for DP.
+
+      ### Saving memory
+
+      When an entry only depends on the last few entries, you don't need the whole table. Fibonacci only needs the previous two values:
+
+      ```rust
+      let (mut a, mut b) = (0u64, 1u64);
+      for _ in 0..n {
+          (a, b) = (b, a + b); // destructuring assignment: both update at once
+      }
+      // a is now fib(n)
+      ```
+
+      ### Common mistakes
+
+      - **A table one too short.** If the answer is `table[n]`, the table needs `n + 1` entries.
+      - **Filling in the wrong order**, reading an entry that's still the initial 0.
+      - **"Impossible" values.** For a minimum, initialize entries to a marker like `u32::MAX` (or use `Option<u32>`), and never add 1 to the marker: `u32::MAX + 1` overflows.
+      - **Trusting greed.** For coins `[1, 3, 4]` and amount 6, "always take the biggest coin" gives 4 + 1 + 1 (three coins), but 3 + 3 is two. DP checks every option.
+
+      **Your turn:** the classic **coin change**. Write `fn min_coins(coins: &[u32], amount: u32) -> Option<u32>`: the fewest coins (each coin value can be used any number of times) that add up to exactly `amount`, or `None` if it's impossible. Make amount 0 need 0 coins. State: `best[a]` is the fewest coins for amount `a`; for each coin `c <= a`, `best[a]` could be `best[a - c] + 1`. The tests include amounts up to 100,000.
+    seed: |
+      fn min_coins(coins: &[u32], amount: u32) -> Option<u32> {
+          todo!()
+      }
+    solution: |
+      fn min_coins(coins: &[u32], amount: u32) -> Option<u32> {
+          let amount = amount as usize;
+          // best[a] = fewest coins that make exactly a (u32::MAX: impossible)
+          let mut best = vec![u32::MAX; amount + 1];
+          best[0] = 0;
+          for a in 1..=amount {
+              for &c in coins {
+                  let c = c as usize;
+                  if c <= a && best[a - c] != u32::MAX {
+                      best[a] = best[a].min(best[a - c] + 1);
+                  }
+              }
+          }
+          if best[amount] == u32::MAX { None } else { Some(best[amount]) }
+      }
+    hints:
+      - "Make a table `let mut best = vec![u32::MAX; amount + 1];` where `u32::MAX` means impossible, and set `best[0] = 0`."
+      - "For each amount `a` from 1 up, and each coin `c` with `c <= a`: if `best[a - c]` is possible, `best[a] = best[a].min(best[a - c] + 1)`."
+      - "At the end, `u32::MAX` means `None`; anything else is `Some(best[amount])`."
+    harness: |
+      #[test]
+      fn makes_63_cents_with_six_coins() {
+          assert_eq!(min_coins(&[1, 5, 10, 25], 63), Some(6), "min_coins(&[1, 5, 10, 25], 63)");
+      }
+
+      #[test]
+      fn beats_the_greedy_choice() {
+          assert_eq!(min_coins(&[1, 3, 4], 6), Some(2), "min_coins(&[1, 3, 4], 6)");
+      }
+
+      #[test]
+      fn impossible_amounts_give_none() {
+          assert_eq!(min_coins(&[2], 3), None, "min_coins(&[2], 3)");
+          assert_eq!(min_coins(&[], 7), None, "min_coins(&[], 7)");
+      }
+
+      #[test]
+      fn zero_needs_no_coins() {
+          assert_eq!(min_coins(&[5], 0), Some(0), "min_coins(&[5], 0)");
+      }
+
+      #[test]
+      fn handles_awkward_coins() {
+          assert_eq!(min_coins(&[186, 419, 83, 408], 6249), Some(20), "min_coins(&[186, 419, 83, 408], 6249)");
+      }
+
+      #[test]
+      fn handles_a_large_amount_quickly() {
+          assert_eq!(min_coins(&[7, 13, 29, 31], 100_000), Some(3226), "min_coins(&[7, 13, 29, 31], 100000)");
+      }
+    more:
+      - task: |
+          The vending machine team wants to know in how many **different ways** an amount can be paid (order doesn't matter: 1 + 2 and 2 + 1 are the same way). Write `fn ways_to_pay(coins: &[u32], amount: u32) -> u64`. There's 1 way to pay 0.
+
+          State: `ways[a]` = number of ways to pay `a` with the coins considered so far. Loop over the **coins on the outside** and the amounts on the inside: `ways[a] += ways[a - coin]`. (With the amounts outside you'd count 1 + 2 and 2 + 1 separately.) The tests include paying 10,000 with eight coin values.
+        seed: |
+          fn ways_to_pay(coins: &[u32], amount: u32) -> u64 {
+              todo!()
+          }
+        solution: |
+          fn ways_to_pay(coins: &[u32], amount: u32) -> u64 {
+              let amount = amount as usize;
+              // ways[a] = number of ways to pay a with the coins seen so far
+              let mut ways = vec![0u64; amount + 1];
+              ways[0] = 1;
+              for &coin in coins {
+                  let coin = coin as usize;
+                  for a in coin..=amount {
+                      ways[a] += ways[a - coin];
+                  }
+              }
+              ways[amount]
+          }
+        harness: |
+          #[test]
+          fn pays_five_four_ways() {
+              assert_eq!(ways_to_pay(&[1, 2, 5], 5), 4, "ways_to_pay(&[1, 2, 5], 5)");
+          }
+
+          #[test]
+          fn order_does_not_matter() {
+              assert_eq!(ways_to_pay(&[1, 2], 3), 2, "ways_to_pay(&[1, 2], 3)");
+          }
+
+          #[test]
+          fn impossible_amounts_have_no_ways() {
+              assert_eq!(ways_to_pay(&[2], 3), 0, "ways_to_pay(&[2], 3)");
+          }
+
+          #[test]
+          fn zero_has_one_way() {
+              assert_eq!(ways_to_pay(&[7, 3], 0), 1, "ways_to_pay(&[7, 3], 0)");
+              assert_eq!(ways_to_pay(&[], 0), 1, "ways_to_pay(&[], 0)");
+          }
+
+          #[test]
+          fn pays_10000_with_eight_coins_quickly() {
+              assert_eq!(ways_to_pay(&[1, 2, 5, 10, 20, 50, 100, 200], 10_000), 1_133_873_304_647_601, "ways_to_pay(UK coins, 10000)");
+          }
+        hints:
+          - "`let mut ways = vec![0u64; amount + 1]; ways[0] = 1;`"
+          - "Outer loop over the coins, inner loop over `a` from `coin` up to `amount`."
+          - "`ways[a] += ways[a - coin];` then return `ways[amount]`."
+      - task: |
+          A delivery drone flies along a street where each house offers a tip, but noise rules forbid stopping at **two neighboring houses** on the same run. Write `fn max_tips(tips: &[u32]) -> u64`: the largest total it can collect.
+
+          State: the best total using the houses up to `i`. At house `i` you either skip it (keep the best up to `i - 1`) or take it (its tip plus the best up to `i - 2`). You only ever need the last two values, so use two variables instead of a table. The tests include a street of 200,000 houses.
+        seed: |
+          fn max_tips(tips: &[u32]) -> u64 {
+              todo!()
+          }
+        solution: |
+          fn max_tips(tips: &[u32]) -> u64 {
+              // two_back = best up to house i - 2, one_back = best up to house i - 1
+              let (mut two_back, mut one_back) = (0u64, 0u64);
+              for &tip in tips {
+                  let best = one_back.max(two_back + tip as u64);
+                  two_back = one_back;
+                  one_back = best;
+              }
+              one_back
+          }
+        forbid:
+          - pattern: 'vec!|Vec::|HashMap'
+            message: Keep just the last two best totals in two variables.
+        harness: |
+          #[test]
+          fn skips_neighbors() {
+              assert_eq!(max_tips(&[2, 7, 9, 3, 1]), 12, "max_tips(&[2, 7, 9, 3, 1])");
+          }
+
+          #[test]
+          fn may_skip_two_in_a_row() {
+              assert_eq!(max_tips(&[2, 1, 1, 2]), 4, "max_tips(&[2, 1, 1, 2])");
+          }
+
+          #[test]
+          fn handles_empty_and_single_streets() {
+              assert_eq!(max_tips(&[]), 0, "max_tips(&[])");
+              assert_eq!(max_tips(&[5]), 5, "max_tips(&[5])");
+          }
+
+          #[test]
+          fn handles_200000_houses_quickly() {
+              let tips: Vec<u32> = (0..200_000u32).map(|i| i * 37 % 100).collect();
+              assert_eq!(max_tips(&tips), 5_994_000, "max_tips(200,000 houses)");
+          }
+        hints:
+          - "Keep `two_back` and `one_back`, both starting at 0."
+          - "For each tip: `let best = one_back.max(two_back + tip as u64);`"
+          - "Then shift: `two_back = one_back; one_back = best;`. The answer is `one_back`."
+
+  - title: "Two-dimensional DP: grids and strings"
+    id: recursion-dp-5
+    text: |
+      When a subproblem is described by **two** numbers (a row and a column, a position in each of two strings), the table becomes 2D: a `Vec<Vec<T>>`, created with `vec![vec![0; cols]; rows]`.
+
+      Counting routes through a grid moving only right or down: every cell can be reached from the cell above or the cell to the left, so its count is the sum of theirs. The first row and column have exactly one route each.
+
+      ```rust run
+      fn count_paths(rows: usize, cols: usize) -> u64 {
+          // paths[r][c] = number of ways to reach cell (r, c)
+          let mut paths = vec![vec![0u64; cols]; rows];
+          for r in 0..rows {
+              for c in 0..cols {
+                  paths[r][c] = if r == 0 || c == 0 {
+                      1
+                  } else {
+                      paths[r - 1][c] + paths[r][c - 1]
+                  };
+              }
+          }
+          paths[rows - 1][cols - 1]
+      }
+
+      fn main() {
+          println!("{}", count_paths(3, 3));
+          println!("{}", count_paths(3, 7));
+          println!("{}", count_paths(18, 18));
+      }
+      ```
+
+      ```output
+      6
+      28
+      2333606220
+      ```
+
+      Filling row by row, left to right, guarantees the cell above and the cell to the left are ready. It's O(rows × cols) time and memory.
+
+      ### Longest common subsequence
+
+      A **subsequence** keeps some characters in their order, possibly skipping others: `"RST"` is a subsequence of `"RUST"`. The **longest common subsequence** (LCS) of two texts is at the heart of `diff` tools and of `git`'s line-by-line comparisons.
+
+      State: `dp[i][j]` = the LCS length of the first `i` characters of `a` and the first `j` characters of `b`. Row 0 and column 0 are all 0 (an empty text has nothing in common with anything). Then:
+
+      - if `a[i - 1] == b[j - 1]`, that character extends the LCS of both shorter prefixes: `dp[i][j] = dp[i - 1][j - 1] + 1`;
+      - otherwise drop the last character of one of them, whichever is better: `dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])`.
+
+      For `"CAT"` and `"CUT"`:
+
+      ```text
+             ""  C  U  T
+         ""   0  0  0  0
+         C    0  1  1  1
+         A    0  1  1  1
+         T    0  1  1  2
+      ```
+
+      The answer, 2 (`"CT"`), is in the bottom-right corner. The table is `(len(a) + 1) × (len(b) + 1)`: O(n·m) time and memory. Note the `- 1`s: table index `i` means "the first i characters", so the character itself is at string position `i - 1`.
+
+      ### Common mistakes
+
+      - **Indexing a `&str`.** `a[i]` doesn't compile; collect the characters first: `let a: Vec<char> = a.chars().collect();`.
+      - **Swapped dimensions.** `vec![vec![0; cols]; rows]` is indexed `[row][col]`. Mixing them up panics with `index out of bounds` on non-square tables.
+      - **Memory.** A table for two 100,000-character texts has 10 billion cells. When each row only needs the previous row, keep just two rows.
+
+      **Your turn:** write `fn lcs_len(a: &str, b: &str) -> usize`, the length of the longest common subsequence of two texts (counting characters). The tests include two texts of 2,000 characters each, which plain recursion could never finish.
+    seed: |
+      fn lcs_len(a: &str, b: &str) -> usize {
+          todo!()
+      }
+    solution: |
+      fn lcs_len(a: &str, b: &str) -> usize {
+          let a: Vec<char> = a.chars().collect();
+          let b: Vec<char> = b.chars().collect();
+          // dp[i][j] = LCS length of the first i chars of a and the first j chars of b
+          let mut dp = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+          for i in 1..=a.len() {
+              for j in 1..=b.len() {
+                  dp[i][j] = if a[i - 1] == b[j - 1] {
+                      dp[i - 1][j - 1] + 1
+                  } else {
+                      dp[i - 1][j].max(dp[i][j - 1])
+                  };
+              }
+          }
+          dp[a.len()][b.len()]
+      }
+    hints:
+      - "Collect both texts into `Vec<char>` and make `vec![vec![0usize; b.len() + 1]; a.len() + 1]`."
+      - "For `i` in `1..=a.len()` and `j` in `1..=b.len()`: if `a[i - 1] == b[j - 1]`, take `dp[i - 1][j - 1] + 1`; otherwise the larger of `dp[i - 1][j]` and `dp[i][j - 1]`."
+      - "The answer is `dp[a.len()][b.len()]`."
+    harness: |
+      #[test]
+      fn finds_the_classic_example() {
+          assert_eq!(lcs_len("ABCBDAB", "BDCABA"), 4, "lcs_len(\"ABCBDAB\", \"BDCABA\")");
+      }
+
+      #[test]
+      fn identical_texts_share_everything() {
+          assert_eq!(lcs_len("crab", "crab"), 4, "lcs_len(\"crab\", \"crab\")");
+      }
+
+      #[test]
+      fn nothing_in_common_gives_zero() {
+          assert_eq!(lcs_len("abc", "xyz"), 0, "lcs_len(\"abc\", \"xyz\")");
+          assert_eq!(lcs_len("", "abc"), 0, "lcs_len(\"\", \"abc\")");
+      }
+
+      #[test]
+      fn counts_characters_not_bytes() {
+          assert_eq!(lcs_len("añob", "año"), 3, "lcs_len(\"añob\", \"año\")");
+      }
+
+      #[test]
+      fn compares_two_2000_character_texts_quickly() {
+          let a: String = (0..2000).map(|i| (b'a' + (i * 7 % 26) as u8) as char).collect();
+          let b: String = (0..2000).map(|i| (b'a' + (i * 11 % 26) as u8) as char).collect();
+          assert_eq!(lcs_len(&a, &b), 769, "lcs_len(two 2,000-character texts)");
+      }
+    more:
+      - task: |
+          A robot crosses a field from the top-left to the bottom-right cell, moving only right or down. Each cell has an energy cost, and the robot pays for every cell it visits, including the first and the last. Write `fn min_path_cost(grid: &[Vec<u32>]) -> u32`: the cheapest total (0 for an empty grid).
+
+          State: `cost[r][c]` = the cheapest way to reach cell `(r, c)`, which is the cell's own cost plus the cheaper of the cell above and the cell to the left (only one of those exists on the first row and column). The tests include a 300 by 300 field.
+        seed: |
+          fn min_path_cost(grid: &[Vec<u32>]) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn min_path_cost(grid: &[Vec<u32>]) -> u32 {
+              if grid.is_empty() || grid[0].is_empty() {
+                  return 0;
+              }
+              let (rows, cols) = (grid.len(), grid[0].len());
+              // cost[r][c] = cheapest total to reach (r, c), including both ends
+              let mut cost = vec![vec![0u32; cols]; rows];
+              for r in 0..rows {
+                  for c in 0..cols {
+                      let before = match (r, c) {
+                          (0, 0) => 0,
+                          (0, _) => cost[r][c - 1],
+                          (_, 0) => cost[r - 1][c],
+                          _ => cost[r - 1][c].min(cost[r][c - 1]),
+                      };
+                      cost[r][c] = grid[r][c] + before;
+                  }
+              }
+              cost[rows - 1][cols - 1]
+          }
+        harness: |
+          #[test]
+          fn finds_the_cheapest_route() {
+              let grid = vec![vec![1, 3, 1], vec![1, 5, 1], vec![4, 2, 1]];
+              assert_eq!(min_path_cost(&grid), 7, "min_path_cost([[1, 3, 1], [1, 5, 1], [4, 2, 1]])");
+          }
+
+          #[test]
+          fn a_single_row_visits_every_cell() {
+              assert_eq!(min_path_cost(&[vec![2, 4, 6]]), 12, "min_path_cost([[2, 4, 6]])");
+          }
+
+          #[test]
+          fn a_single_column_visits_every_cell() {
+              assert_eq!(min_path_cost(&[vec![3], vec![1], vec![2]]), 6, "min_path_cost([[3], [1], [2]])");
+          }
+
+          #[test]
+          fn an_empty_grid_costs_nothing() {
+              assert_eq!(min_path_cost(&[]), 0, "min_path_cost([])");
+          }
+
+          #[test]
+          fn crosses_a_300_by_300_field_quickly() {
+              let grid: Vec<Vec<u32>> = (0..300).map(|r| (0..300).map(|c| ((r * 31 + c * 17) % 10) as u32).collect()).collect();
+              assert_eq!(min_path_cost(&grid), 1377, "min_path_cost(300 by 300 field)");
+          }
+        hints:
+          - "Make `cost` the same size as the grid. The top-left cell costs just `grid[0][0]`."
+          - "First row: add the cell to the left. First column: add the cell above. Elsewhere: add the smaller of the two."
+          - "A `match (r, c)` with arms `(0, 0)`, `(0, _)`, `(_, 0)` and `_` keeps the four cases readable."
+      - task: |
+          Command-line tools suggest "did you mean `status`?" when you type `stauts`. They measure the **edit distance** (Levenshtein distance): the fewest single-character insertions, deletions and replacements that turn one word into the other. `kitten` to `sitting` is 3.
+
+          Write `fn edit_distance(a: &str, b: &str) -> usize` (counting characters). State: `d[i][j]` = the distance between the first `i` characters of `a` and the first `j` of `b`. Turning `i` characters into nothing takes `i` deletions (`d[i][0] = i`), and nothing into `j` characters takes `j` insertions (`d[0][j] = j`). Then if `a[i - 1] == b[j - 1]` it's `d[i - 1][j - 1]`; otherwise 1 plus the smallest of `d[i - 1][j - 1]` (replace), `d[i - 1][j]` (delete) and `d[i][j - 1]` (insert). The tests compare two 1,500-character texts.
+        seed: |
+          fn edit_distance(a: &str, b: &str) -> usize {
+              todo!()
+          }
+        solution: |
+          fn edit_distance(a: &str, b: &str) -> usize {
+              let a: Vec<char> = a.chars().collect();
+              let b: Vec<char> = b.chars().collect();
+              // d[i][j] = edits to turn the first i chars of a into the first j chars of b
+              let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+              for (i, row) in d.iter_mut().enumerate() {
+                  row[0] = i;
+              }
+              for j in 0..=b.len() {
+                  d[0][j] = j;
+              }
+              for i in 1..=a.len() {
+                  for j in 1..=b.len() {
+                      d[i][j] = if a[i - 1] == b[j - 1] {
+                          d[i - 1][j - 1]
+                      } else {
+                          1 + d[i - 1][j - 1].min(d[i - 1][j]).min(d[i][j - 1])
+                      };
+                  }
+              }
+              d[a.len()][b.len()]
+          }
+        harness: |
+          #[test]
+          fn kitten_to_sitting_is_three() {
+              assert_eq!(edit_distance("kitten", "sitting"), 3, "edit_distance(\"kitten\", \"sitting\")");
+          }
+
+          #[test]
+          fn suggests_a_typo_fix() {
+              assert_eq!(edit_distance("stauts", "status"), 2, "edit_distance(\"stauts\", \"status\")");
+              assert_eq!(edit_distance("flaw", "lawn"), 2, "edit_distance(\"flaw\", \"lawn\")");
+          }
+
+          #[test]
+          fn empty_text_needs_one_edit_per_character() {
+              assert_eq!(edit_distance("", "abc"), 3, "edit_distance(\"\", \"abc\")");
+              assert_eq!(edit_distance("abc", ""), 3, "edit_distance(\"abc\", \"\")");
+          }
+
+          #[test]
+          fn identical_texts_need_nothing() {
+              assert_eq!(edit_distance("cargo", "cargo"), 0, "edit_distance(\"cargo\", \"cargo\")");
+          }
+
+          #[test]
+          fn counts_characters_not_bytes() {
+              assert_eq!(edit_distance("café", "cafe"), 1, "edit_distance(\"café\", \"cafe\")");
+          }
+
+          #[test]
+          fn compares_two_1500_character_texts_quickly() {
+              let a: String = (0..1500).map(|i| (b'a' + (i * 7 % 26) as u8) as char).collect();
+              let b: String = (0..1500).map(|i| (b'a' + (i * 5 % 26) as u8) as char).collect();
+              assert_eq!(edit_distance(&a, &b), 1384, "edit_distance(two 1,500-character texts)");
+          }
+        hints:
+          - "Collect both into `Vec<char>`, make the table `(a.len() + 1) x (b.len() + 1)`, and fill row 0 with `j` and column 0 with `i`."
+          - "Equal characters cost nothing: `d[i][j] = d[i - 1][j - 1]`."
+          - "Otherwise `d[i][j] = 1 + d[i - 1][j - 1].min(d[i - 1][j]).min(d[i][j - 1])`."
+
+  - title: The knapsack problem
+    id: recursion-dp-6
+    text: |
+      You're packing for a hike. Each item has a **weight** and a **value**, your backpack holds at most `capacity`, and each item can be taken once or not at all. Which items give the most value? This is the **0/1 knapsack** problem, and it shows up at work as budget allocation, choosing which features fit in a release, or picking ads for a time slot.
+
+      **Greedy fails.** "Take the best value per kilo first" sounds right: with capacity 10 and items tent (6 kg, 30), stove (5 kg, 20) and camera (5 kg, 20), the tent has the best ratio (5 per kilo), but after taking it nothing else fits: 30. The stove and camera together give 40.
+
+      **Brute force** tries all 2ⁿ subsets. **DP** does better. State: `best[i][w]` = the most value using only the first `i` items with capacity `w`. For item `i - 1` (with weight `wt` and value `val`), either skip it, or (if it fits) take it and add its value to the best you could do with the remaining capacity:
+
+      `best[i][w] = max(best[i - 1][w], best[i - 1][w - wt] + val)`
+
+      ```rust run
+      fn knapsack(items: &[(&str, usize, u32)], capacity: usize) -> u32 {
+          let n = items.len();
+          // best[i][w] = the most value using only the first i items with capacity w
+          let mut best = vec![vec![0u32; capacity + 1]; n + 1];
+          for i in 1..=n {
+              let (_, weight, value) = items[i - 1];
+              for w in 0..=capacity {
+                  best[i][w] = best[i - 1][w]; // skip item i - 1
+                  if weight <= w {
+                      best[i][w] = best[i][w].max(best[i - 1][w - weight] + value); // take it
+                  }
+              }
+          }
+          best[n][capacity]
+      }
+
+      fn main() {
+          let items = [("tent", 6, 30), ("stove", 5, 20), ("camera", 5, 20)];
+          println!("best value: {}", knapsack(&items, 10));
+      }
+      ```
+
+      ```output
+      best value: 40
+      ```
+
+      That's O(n × capacity) time and memory. It's called **pseudo-polynomial**: it depends on the *numeric value* of the capacity, so a capacity of a billion grams needs a different approach (or coarser units).
+
+      ### One row is enough
+
+      Row `i` only reads row `i - 1`. So keep a single `Vec` of `capacity + 1` entries and update it in place for each item, going through the capacities **from high to low**: then `best[w - weight]` still holds the value from *before* this item was considered, so each item is used at most once. Going from low to high would let an item be added again and again (that's the "unbounded" knapsack, where you can take as many copies as you like).
+
+      ```rust
+      for &(weight, value) in items {
+          for w in (weight..=capacity).rev() {
+              best[w] = best[w].max(best[w - weight] + value);
+          }
+      }
+      ```
+
+      ### Common mistakes
+
+      - **Iterating capacities upward** in the one-row version: items get reused.
+      - **Forgetting the "skip" option**, so every item that fits is forced in.
+      - **Assuming the backpack must be full.** `best[capacity]` is the best value with *at most* that weight.
+
+      **Your turn:** write `fn best_value(items: &[(usize, u32)], capacity: usize) -> u32` where each item is `(weight, value)`, using a **single** `Vec` of `capacity + 1` entries (no 2D table). The tests include 200 items and a capacity of 50,000.
+    seed: |
+      fn best_value(items: &[(usize, u32)], capacity: usize) -> u32 {
+          todo!()
+      }
+    solution: |
+      fn best_value(items: &[(usize, u32)], capacity: usize) -> u32 {
+          // best[w] = the most value with capacity w, using the items seen so far
+          let mut best = vec![0u32; capacity + 1];
+          for &(weight, value) in items {
+              if weight > capacity {
+                  continue;
+              }
+              for w in (weight..=capacity).rev() {
+                  best[w] = best[w].max(best[w - weight] + value);
+              }
+          }
+          best[capacity]
+      }
+    forbid:
+      - pattern: 'vec!\[\s*vec!|Vec<\s*Vec'
+        message: Use a single Vec of capacity + 1 entries, not a 2D table.
+    hints:
+      - "`let mut best = vec![0u32; capacity + 1];` where `best[w]` is the most value with capacity `w`."
+      - "For each item, loop `w` over `(weight..=capacity).rev()`: high to low, so the item is used at most once. Skip items heavier than the capacity."
+      - "`best[w] = best[w].max(best[w - weight] + value);` and return `best[capacity]`."
+    harness: |
+      #[test]
+      fn packs_the_hiking_example() {
+          assert_eq!(best_value(&[(6, 30), (5, 20), (5, 20)], 10), 40, "best_value([(6, 30), (5, 20), (5, 20)], 10)");
+      }
+
+      #[test]
+      fn uses_each_item_at_most_once() {
+          assert_eq!(best_value(&[(1, 10)], 5), 10, "best_value([(1, 10)], 5)");
+      }
+
+      #[test]
+      fn skips_items_that_are_too_heavy() {
+          assert_eq!(best_value(&[(20, 500), (3, 4)], 10), 4, "best_value([(20, 500), (3, 4)], 10)");
+      }
+
+      #[test]
+      fn nothing_fits_in_an_empty_backpack() {
+          assert_eq!(best_value(&[(1, 5)], 0), 0, "best_value([(1, 5)], 0)");
+          assert_eq!(best_value(&[], 10), 0, "best_value([], 10)");
+      }
+
+      #[test]
+      fn packs_200_items_quickly() {
+          let items: Vec<(usize, u32)> = (0..200).map(|i| (i * 37 % 1000 + 50, (i * 53 % 500 + 1) as u32)).collect();
+          assert_eq!(best_value(&items, 50_000), 38_468, "best_value(200 items, 50000)");
+      }
+    more:
+      - task: |
+          Two delivery vans must carry exactly the same total weight. Given the parcel weights, can they be split into two groups of equal total? Write `fn can_split_evenly(weights: &[u32]) -> bool` (no parcels: yes, two empty vans).
+
+          If the total is odd, it's impossible. Otherwise it's a knapsack question with booleans: can some subset reach exactly half the total? Keep `can[s]` for every sum `s` up to half, start with `can[0] = true`, and for each weight go through the sums **from high to low**: `can[s] = can[s] || can[s - w]`. The tests include over 100 parcels.
+        seed: |
+          fn can_split_evenly(weights: &[u32]) -> bool {
+              todo!()
+          }
+        solution: |
+          fn can_split_evenly(weights: &[u32]) -> bool {
+              let total: u32 = weights.iter().sum();
+              if total % 2 == 1 {
+                  return false;
+              }
+              let half = (total / 2) as usize;
+              // can[s] = some of the parcels seen so far add up to exactly s
+              let mut can = vec![false; half + 1];
+              can[0] = true;
+              for &w in weights {
+                  let w = w as usize;
+                  for s in (w..=half).rev() {
+                      if can[s - w] {
+                          can[s] = true;
+                      }
+                  }
+              }
+              can[half]
+          }
+        harness: |
+          #[test]
+          fn splits_when_possible() {
+              assert_eq!(can_split_evenly(&[1, 5, 11, 5]), true, "can_split_evenly(&[1, 5, 11, 5])");
+              assert_eq!(can_split_evenly(&[3, 3, 3, 4, 5]), true, "can_split_evenly(&[3, 3, 3, 4, 5])");
+          }
+
+          #[test]
+          fn an_odd_total_cannot_split() {
+              assert_eq!(can_split_evenly(&[1, 2, 3, 5]), false, "can_split_evenly(&[1, 2, 3, 5])");
+          }
+
+          #[test]
+          fn an_even_total_is_not_always_enough() {
+              assert_eq!(can_split_evenly(&[2, 2, 3, 5]), false, "can_split_evenly(&[2, 2, 3, 5])");
+          }
+
+          #[test]
+          fn no_parcels_split_evenly() {
+              assert_eq!(can_split_evenly(&[]), true, "can_split_evenly(&[])");
+          }
+
+          #[test]
+          fn handles_many_parcels_quickly() {
+              let weights: Vec<u32> = (0..100u32).map(|i| i * 37 % 1000 + 1).collect();
+              assert_eq!(can_split_evenly(&weights), true, "can_split_evenly(100 parcels)");
+              let mut lopsided = vec![2u32; 100];
+              lopsided.push(100_000);
+              assert_eq!(can_split_evenly(&lopsided), false, "can_split_evenly(100 small parcels and one huge one)");
+          }
+        hints:
+          - "Return `false` for an odd total. Otherwise `half = total / 2`, `let mut can = vec![false; half + 1]; can[0] = true;`"
+          - "For each weight `w`, loop `s` over `(w..=half).rev()` and set `can[s] = true` when `can[s - w]` is true."
+          - "The answer is `can[half]`."
+      - task: |
+          Now the hiker wants to know **which** items to pack. Standard input has the capacity on the first line, then one item per line: `name weight value`. Print the chosen items in input order, the total weight and the total value:
+
+          ```
+          take: stove, camera
+          weight: 10/10
+          value: 40
+          ```
+
+          If nothing fits, print `take: nothing`. The tests always have exactly one best choice.
+
+          Build the full 2D table from the lesson, then walk it backwards: starting at `i = n` and `w = capacity`, if `best[i][w]` differs from `best[i - 1][w]`, item `i - 1` was taken (subtract its weight from `w`). Reverse the list you collect to get input order.
+        seed: |
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let mut lines = input.lines();
+              let capacity: usize = lines.next().unwrap_or("0").trim().parse().expect("capacity");
+          }
+        solution: |
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let mut lines = input.lines();
+              let capacity: usize = lines.next().unwrap_or("0").trim().parse().expect("capacity");
+              let mut items: Vec<(&str, usize, u32)> = Vec::new();
+              for line in lines {
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  if let [name, weight, value] = parts[..] {
+                      items.push((name, weight.parse().expect("weight"), value.parse().expect("value")));
+                  }
+              }
+              let n = items.len();
+              let mut best = vec![vec![0u32; capacity + 1]; n + 1];
+              for i in 1..=n {
+                  let (_, weight, value) = items[i - 1];
+                  for w in 0..=capacity {
+                      best[i][w] = best[i - 1][w];
+                      if weight <= w {
+                          best[i][w] = best[i][w].max(best[i - 1][w - weight] + value);
+                      }
+                  }
+              }
+              let mut chosen = Vec::new();
+              let mut w = capacity;
+              for i in (1..=n).rev() {
+                  if best[i][w] != best[i - 1][w] {
+                      chosen.push(i - 1);
+                      w -= items[i - 1].1;
+                  }
+              }
+              chosen.reverse();
+              let names: Vec<&str> = chosen.iter().map(|&i| items[i].0).collect();
+              let weight: usize = chosen.iter().map(|&i| items[i].1).sum();
+              if names.is_empty() {
+                  println!("take: nothing");
+              } else {
+                  println!("take: {}", names.join(", "));
+              }
+              println!("weight: {weight}/{capacity}");
+              println!("value: {}", best[n][capacity]);
+          }
+        hints:
+          - "Parse each item line into `(name, weight, value)` and build the 2D table exactly as in the lesson's example."
+          - "Walk back with `for i in (1..=n).rev()`: when `best[i][w] != best[i - 1][w]`, item `i - 1` is in the backpack, so record it and do `w -= its weight`."
+          - "Reverse the chosen indices, join their names with `\", \"`, and sum their weights for the `weight:` line."
+        tests:
+          - stdin: "10\ntent 6 30\nstove 5 20\ncamera 5 20\n"
+            expect: "take: stove, camera\nweight: 10/10\nvalue: 40"
+          - stdin: "15\nmap 1 15\nwater 8 40\nfood 6 35\nrope 4 10\nknife 1 12\n"
+            hidden: true
+          - stdin: "3\nanvil 10 100\n"
+            hidden: true

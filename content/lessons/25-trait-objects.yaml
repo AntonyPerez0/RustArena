@@ -896,6 +896,12 @@ steps:
 
       In practice: use generics by default for functions, especially in libraries and hot loops. Use `dyn Trait` when you need different types together or a choice made at run time, and don't worry about the cost: an indirect call takes a few nanoseconds and only matters in very tight loops. Some teams also switch to `dyn` to cut compile times and binary size when a generic is instantiated for many types.
 
+      ### Common mistakes
+
+      - **`dyn` everywhere "to be flexible".** Every value needs a `Box` (a heap allocation) and the compiler can't inline the calls. If a function only ever gets one type at a time, a generic is simpler and faster.
+      - **Generics for a mixed collection.** `fn total<T: Shape>(shapes: &[T])` can't take circles and squares together; that's the E0308 from step 1. Mixing needs `dyn`.
+      - **Optimizing the vtable call before measuring.** It's almost never the bottleneck; allocations and algorithms usually are (the performance module shows how to measure).
+
       **Your turn:** an adventurer's backpack. Write both versions:
 
       - `fn backpack_weight(items: &[Box<dyn Item>]) -> u32`: the total weight of a **mixed** backpack (dynamic dispatch).
@@ -2103,6 +2109,12 @@ steps:
       - **You know all the cases and you own the code**: use an enum. Commands in a CLI, messages in a protocol, tokens in a parser, states of an order, events in your app. This covers most application code, and the compiler's exhaustiveness check is a huge help when the cases change.
       - **Other people (or other crates) need to add cases without editing your code**: use a trait. Plugins, middleware, storage backends, notification channels, a library's extension points.
       - Not sure? Start with the enum. It's simpler, and switching later is straightforward.
+
+      ### Common mistakes
+
+      - **A catch-all `_ =>` arm in a `match` on your own enum.** It switches off the exhaustiveness check: add a variant later and that `match` silently takes the default branch. List the variants instead.
+      - **Trait objects for a fixed set, out of habit from other languages.** One struct and one impl per case, a `Box` per value, and no pattern matching, for no gain.
+      - **An enum as a library's extension point.** Users of your crate can't add variants, and adding one yourself breaks every `match` they wrote. That's what traits are for.
 
       **Your turn:** a checkout used to model payment methods as three structs behind a `Payment` trait. The set of methods is fixed and owned by the team, so it's being rewritten as an **enum**. Implement `label` and `fee_cents` with one `match` each:
 

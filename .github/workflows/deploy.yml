@@ -1,5 +1,8 @@
 name: Build, verify and deploy to GitHub Pages
 
+# Every push to main is built, verified (every lesson compiled and run with the real Rust compiler,
+# then browser and accessibility tests) and published to the gh-pages branch, which GitHub Pages
+# serves. Pull requests get the same checks without publishing.
 on:
   push:
     branches: [main]
@@ -7,9 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -96,20 +97,19 @@ jobs:
           path: lhci
           if-no-files-found: ignore
 
-      - name: Upload the site
+      # GitHub Pages serves the gh-pages branch (Settings > Pages > Deploy from a branch > gh-pages).
+      # .nojekyll tells Pages to serve the files as they are.
+      - name: Publish to GitHub Pages (the gh-pages branch)
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/configure-pages@v5
-      - id: deployment
-        uses: actions/deploy-pages@v4
+        run: |
+          touch dist/.nojekyll
+          if [ -n "$CUSTOM_DOMAIN" ]; then echo "$CUSTOM_DOMAIN" > dist/CNAME; fi
+          cd dist
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
