@@ -354,7 +354,6 @@ async function buildLessons() {
         // YAML reads bare words like true or 42 as non-strings, which would render as an empty heading.
         if (typeof s.title !== "string" || !s.title) errors.push(`${where}: title must be a non-empty string (quote it)`);
         const ex = await buildExercise(where, s, null);
-        if (!ex) return null;
         if (!s.text) errors.push(`${where}: missing text`);
         // The "**Your turn:**" paragraph (and anything after it) is the task: the app shows it in
         // its own card above the editor, so it's obvious what the exercise asks for.
@@ -373,6 +372,8 @@ async function buildLessons() {
           const cx = await buildExercise(w, c, null);
           if (cx) more.push({ task: await checkExamples(w, String(c.task ?? "").trim() + "\n"), ...cx });
         }
+        // The challenges are checked even when the main exercise failed, so one run reports every error.
+        if (!ex) return null;
         const step = { id: s.id ?? `${m.id}-${i + 1}`, title: s.title, text, task, ...ex };
         if (more.length) step.more = more;
         return step;

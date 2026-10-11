@@ -1,0 +1,228 @@
+topic: unsafe
+drills:
+  - type: predict
+    after: unsafe-1
+    body: |
+      let mut x = 5;
+      let p = &raw mut x;
+      unsafe {
+          *p *= 3;
+      }
+      println!("{x}");
+    why: p points at x, so writing through it changes x itself. The unsafe block is only needed for the dereference.
+  - type: predict
+    after: unsafe-1
+    body: |
+      let a = [10, 20, 30];
+      let p = a.as_ptr();
+      let last = unsafe { *p.add(2) };
+      println!("{}", last - unsafe { *p });
+    why: "p.add(2) moves two elements forward (not two bytes), so it points at 30. 30 - 10 = 20."
+  - type: predict
+    after: unsafe-2
+    body: |
+      let mut v = [1, 2, 3, 4];
+      let (a, b) = v.split_at_mut(1);
+      a[0] += b[2];
+      println!("{:?}", v);
+    why: "split_at_mut(1) gives [1] and [2, 3, 4] as two non-overlapping &mut slices. b[2] is 4, so v[0] becomes 5."
+  - type: predict
+    after: unsafe-3
+    body: |
+      use std::ffi::CString;
+      let c = CString::new("crab").unwrap();
+      println!("{} {}", c.as_bytes().len(), c.as_bytes_with_nul().len());
+    why: A CString stores the text plus one NUL byte at the end for C. as_bytes leaves the NUL out; as_bytes_with_nul includes it.
+  - type: predict
+    after: unsafe-4
+    body: |
+      use std::sync::atomic::{AtomicU32, Ordering};
+      let a = AtomicU32::new(5);
+      let old = a.fetch_add(2, Ordering::Relaxed);
+      println!("{old} {}", a.load(Ordering::Relaxed));
+    why: fetch_add adds atomically and returns the value from before the addition.
+  - type: fill
+    after: unsafe-1
+    prompt: Dereference the raw pointer.
+    body: |
+      let x = 41;
+      let p = &raw const x;
+      let y = [[unsafe]] { *p } + 1;
+      println!("{y}");
+    why: Creating a raw pointer is safe, but reading through one needs an unsafe block.
+  - type: fill
+    after: unsafe-3
+    prompt: Make a NUL-terminated copy of the string for C.
+    pre: |
+      use std::ffi::{c_char, CString};
+
+      unsafe extern "C" {
+          fn strlen(s: *const c_char) -> usize;
+      }
+    body: |
+      let s = [[CString]]::new("arena").unwrap();
+      println!("{}", unsafe { strlen(s.as_ptr()) });
+    why: CString owns a copy of the text with a NUL byte at the end, which is what C's strlen needs to know where the string stops.
+  - type: fill
+    after: unsafe-4
+    prompt: Use a type that is safe to change from any thread.
+    pre: |
+      use std::sync::atomic::{AtomicU32, Ordering};
+
+      static HITS: [[AtomicU32]] = AtomicU32::new(0);
+    body: |
+      HITS.fetch_add(2, Ordering::Relaxed);
+      HITS.fetch_add(3, Ordering::Relaxed);
+      println!("{}", HITS.load(Ordering::Relaxed));
+    why: An atomic in a plain static can be updated through &self from any thread, with no static mut and no unsafe.
+  - type: bug
+    after: unsafe-5
+    pre: |
+      fn get_or_default(v: &[i32], i: usize) -> i32 {
+          if i <= v.len() { // BUG
+              // SAFETY: i is in bounds
+              unsafe { *v.get_unchecked(i) }
+          } else {
+              -1
+          }
+      }
+    body: |
+      let v = [10, 20, 30];
+      println!("{} {}", get_or_default(&v, 2), get_or_default(&v, 3));
+    fix: 'if i < v.len() {'
+    prompt: This should print `30 -1`. Click the line with the bug.
+    why: Index len is one past the end. With <=, get_unchecked(3) reads out of bounds, which is UB (a debug build aborts). The check must be i < v.len().
+  - type: bug
+    after: unsafe-4
+    pre: |
+      use std::sync::atomic::{AtomicU32, Ordering};
+
+      static VISITS: AtomicU32 = AtomicU32::new(0);
+
+      fn visit() {
+          VISITS.store(1, Ordering::Relaxed); // BUG
+      }
+    body: |
+      for _ in 0..3 {
+          visit();
+      }
+      println!("{}", VISITS.load(Ordering::Relaxed));
+    fix: 'VISITS.fetch_add(1, Ordering::Relaxed);'
+    prompt: This should count the visits and print 3. Click the line with the bug.
+    why: store overwrites the value with 1 every time. fetch_add adds 1 atomically, so the count goes up.
+  - type: bug
+    after: unsafe-3
+    pre: |
+      extern "C" { // BUG
+          fn abs(x: i32) -> i32;
+      }
+    body: |
+      println!("{}", unsafe { abs(-9) });
+    fix: 'unsafe extern "C" {'
+    prompt: This should print 9, but it doesn't compile in edition 2024. Click the line with the bug.
+    why: The compiler can't check foreign signatures, so since edition 2024 an extern block must be written unsafe extern, marking that you vouch for them.
+  - type: compiles
+    after: unsafe-1
+    answer: no
+    body: |
+      let x = 7;
+      let p = &raw const x;
+      println!("{}", *p);
+    why: Dereferencing a raw pointer is one of the operations that needs an unsafe block (E0133).
+  - type: compiles
+    after: unsafe-1
+    answer: yes
+    body: |
+      let x = 7;
+      let p = &raw const x;
+      let q: *const i32 = std::ptr::null();
+      println!("{} {}", p.is_null(), q.is_null());
+    why: Creating, comparing and checking raw pointers is safe. Only dereferencing them (and a few other operations) needs unsafe.
+  - type: compiles
+    after: unsafe-2
+    answer: no
+    pre: |
+      /// # Safety
+      /// `i` must be less than `v.len()`.
+      unsafe fn at(v: &[u8], i: usize) -> u8 {
+          unsafe { *v.get_unchecked(i) }
+      }
+    body: |
+      let v = [1, 2, 3];
+      println!("{}", at(&v, 1));
+    why: Calling an unsafe fn requires an unsafe block at the call site, where the caller states it has checked the function's Safety contract.
+  - type: compiles
+    after: unsafe-6
+    answer: no
+    pre: |
+      #![forbid(unsafe_code)]
+    body: |
+      let x = 1;
+      let p = &raw const x;
+      println!("{}", unsafe { *p });
+    why: "#![forbid(unsafe_code)] makes any unsafe block in the crate a compile error, and it can't be overridden further down."
+  - type: choice
+    after: unsafe-1
+    prompt: Which of these does an unsafe block NOT do?
+    choices: ["Let you dereference raw pointers", "Let you call unsafe functions", "Turn off the borrow checker for the code inside it"]
+    answer: 3
+    why: unsafe only unlocks five extra operations. Borrow checking, type checking and normal bounds checks still apply inside the block.
+  - type: choice
+    after: unsafe-6
+    prompt: A teammate wants to replace indexing with get_unchecked in a loop "for speed". What should happen first?
+    choices: ["Benchmark it, and check whether iterators or an assert! already remove the bounds checks", "Merge it: unchecked access is always faster", "Mark the whole module unsafe so the compiler stops checking it"]
+    answer: 1
+    why: Unsafe for performance needs proof from a measurement. Often the compiler already removes the checks when you use iterators or assert the length up front, and then unsafe buys nothing but risk.
+  - type: boss
+    after: unsafe-2
+    prompt: |
+      Write `copy_prefix(dst, src)`, which copies as many bytes as fit from `src` into the start of `dst` and returns how many it copied. Do the copy with `std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, count)` inside an unsafe block, and write a `// SAFETY:` comment explaining why both ranges are valid and can't overlap. (In real code, `dst[..n].copy_from_slice(&src[..n])` is the safe way to do this.)
+    seed: |
+      /// Copies as many bytes as fit from src into the start of dst; returns how many were copied.
+      fn copy_prefix(dst: &mut [u8], src: &[u8]) -> usize {
+          todo!()
+      }
+    solution: |
+      /// Copies as many bytes as fit from src into the start of dst; returns how many were copied.
+      fn copy_prefix(dst: &mut [u8], src: &[u8]) -> usize {
+          let n = dst.len().min(src.len());
+          // SAFETY: n is at most both lengths, so both ranges are in bounds. dst is a
+          // &mut borrow, so no other reference (like src) can point into its memory.
+          unsafe {
+              std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), n);
+          }
+          n
+      }
+    harness: |
+      #[test]
+      fn copies_everything_when_dst_is_bigger() {
+          let mut dst = [0u8; 5];
+          assert_eq!(copy_prefix(&mut dst, &[1, 2, 3]), 3, "bytes copied");
+          assert_eq!(dst, [1, 2, 3, 0, 0], "dst after the copy");
+      }
+
+      #[test]
+      fn stops_when_dst_is_full() {
+          let mut dst = [0u8; 2];
+          assert_eq!(copy_prefix(&mut dst, &[9, 8, 7, 6]), 2, "bytes copied");
+          assert_eq!(dst, [9, 8], "dst after the copy");
+      }
+
+      #[test]
+      fn copying_nothing_is_fine() {
+          let mut dst = [5u8; 3];
+          assert_eq!(copy_prefix(&mut dst, &[]), 0, "bytes copied from an empty src");
+          assert_eq!(dst, [5, 5, 5], "dst is unchanged");
+          let mut empty: [u8; 0] = [];
+          assert_eq!(copy_prefix(&mut empty, &[1, 2]), 0, "bytes copied into an empty dst");
+      }
+    require:
+      - pattern: 'copy_nonoverlapping'
+        message: Do the copy with `std::ptr::copy_nonoverlapping`.
+    forbid:
+      - pattern: 'copy_from_slice|clone_from_slice'
+        message: This one is practice for raw-pointer copying, so use `copy_nonoverlapping`.
+    hints:
+      - "The count is `dst.len().min(src.len())`."
+      - "`std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), n)`: source first, then destination, then the number of elements."
+    why: Computing n from both lengths is what makes the raw copy sound, and the &mut borrow guarantees the two ranges can't overlap.

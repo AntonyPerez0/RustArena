@@ -1,0 +1,222 @@
+topic: tooling
+drills:
+  - type: predict
+    body: |
+      let x = dbg!(2 * 3) + 1;
+      println!("{x}");
+    why: "dbg! prints [src/main.rs:..] 2 * 3 = 6 to stderr and returns the 6, so x is 7. Only stdout is shown here."
+
+  - type: predict
+    body: |
+      eprintln!("debug: starting");
+      println!("result: 42");
+      eprintln!("debug: done");
+    why: eprintln! writes to stderr, a separate stream. The program's real output (stdout) is just the println! line.
+
+  - type: predict
+    body: |
+      let v = vec![3, 1, 2];
+      let total: i32 = dbg!(&v).iter().sum();
+      println!("{total} {}", v.len());
+    why: dbg!(&v) prints the vector and returns the reference unchanged, so you can keep chaining. Because it only got a reference, v is still usable afterwards.
+
+  - type: predict
+    pre: |
+      #[derive(Debug, PartialEq, PartialOrd)]
+      enum Level {
+          Debug,
+          Info,
+          Warn,
+          Error,
+      }
+    body: |
+      println!("{}", Level::Warn > Level::Info);
+      println!("{}", Level::Debug >= Level::Error);
+    why: Deriving PartialOrd orders enum variants in the order they're declared, which is how log levels are compared against a minimum.
+
+  - type: predict
+    body: |
+      let stock: u32 = 3;
+      println!("{:?} {:?}", stock.checked_sub(5), stock.checked_sub(1));
+    why: checked_sub returns None instead of overflowing (which would panic in a debug build), and Some(result) when the subtraction fits.
+
+  - type: fill
+    prompt: Write the check the way clippy's len_zero lint wants.
+    body: |
+      let queue: Vec<u32> = Vec::new();
+      if queue.is_[[empty]]() {
+          println!("nothing to ship");
+      }
+    why: "v.is_empty() says what you mean, and works for every collection; clippy flags len() == 0."
+
+  - type: fill
+    prompt: Get each name's position without indexing (no needless_range_loop).
+    body: |
+      let names = ["ana", "bo"];
+      for (i, name) in names.iter().[[enumerate]]() {
+          println!("{}. {}", i + 1, name);
+      }
+    why: enumerate() pairs each item with its index, so you never need names[i].
+
+  - type: fill
+    prompt: Send the diagnostic to stderr, so stdout holds only the result.
+    body: |
+      let readings = [4, -1, 6];
+      let mut sum = 0;
+      for r in readings {
+          if r < 0 {
+              [[eprintln!]]("warning: ignoring negative reading {r}");
+              continue;
+          }
+          sum += r;
+      }
+      println!("{sum}");
+    why: Warnings and debug messages belong on stderr (eprintln!), so anything reading the program's output only sees the result.
+
+  - type: bug
+    body: |
+      let temps = [18, 21, 19];
+      let mut rises = 0;
+      for i in 0..temps.len() { // BUG
+          if temps[i + 1] > temps[i] {
+              rises += 1;
+          }
+      }
+      println!("{rises} rise(s)");
+    fix: 'for i in 0..temps.len() - 1 {'
+    prompt: "This panics with `index out of bounds: the len is 3 but the index is 3`. It should print `1 rise(s)`. Click the line with the bug."
+    why: "The body reads temps[i + 1], so the last i must be len - 2. Looping to len() reads one past the end on the final pass."
+
+  - type: bug
+    body: |
+      let stock: u32 = 2;
+      let ordered: u32 = 5;
+      let left = stock - ordered; // BUG
+      println!("left: {left}");
+    fix: 'let left = stock.saturating_sub(ordered);'
+    prompt: "This panics with `attempt to subtract with overflow`. Stock can't go below 0, so it should print `left: 0`. Click the line with the bug."
+    why: A u32 can't be negative, so 2 - 5 overflows (a panic in debug builds). saturating_sub stops at 0 instead.
+
+  - type: bug
+    body: |
+      let name = String::from("ferris");
+      dbg!(name); // BUG
+      println!("hello {name}");
+    fix: 'dbg!(&name);'
+    prompt: "This should print `hello ferris`. Click the line with the bug."
+    why: dbg! takes ownership of what you pass it, so dbg!(name) moves the String away. Pass a reference to look without moving.
+
+  - type: compiles
+    answer: no
+    pre: |
+      #![deny(missing_docs)]
+      //! Math helpers.
+
+      /// Doubles a number.
+      pub fn double(n: i32) -> i32 {
+          n * 2
+      }
+
+      pub fn triple(n: i32) -> i32 {
+          n * 3
+      }
+    body: |
+      println!("{}", double(triple(2)));
+    why: "With #![deny(missing_docs)], every public item needs a doc comment. triple has none, so it's an error: missing documentation for a function."
+
+  - type: compiles
+    answer: yes
+    pre: |
+      #[allow(clippy::needless_return)]
+      fn answer() -> i32 {
+          return 42;
+      }
+    body: |
+      println!("{}", answer());
+    why: "rustc knows clippy's lint names, so #[allow(clippy::...)] compiles fine even when clippy isn't running. The return is just a style issue, not an error."
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn helper() -> u32 {
+          7
+      }
+
+      //! Docs for this crate.
+    body: |
+      println!("{}", helper());
+    why: "An inner doc comment (//!) documents the item it's inside, so it must come before any items. After fn helper it's error E0753: expected outer doc comment."
+
+  - type: choice
+    prompt: "A CI step runs `cargo clippy --all-targets -- -D warnings`. What does `-D warnings` do?"
+    choices: ["Downloads the latest warnings list", "Turns every warning into an error, so any clippy warning fails the job", "Hides warnings from the log", "Only lints debug builds"]
+    answer: 2
+    why: -D means deny. Without it clippy prints warnings but exits successfully, so CI would stay green with warnings in the code.
+
+  - type: choice
+    prompt: A program panics deep inside a helper function. What does running it with RUST_BACKTRACE=1 add to the panic output?
+    choices: ["The values of all local variables", "The chain of function calls that led to the panic, with file and line for each", "A suggested fix", "A core dump file for the debugger"]
+    answer: 2
+    why: The backtrace lists the stack of calls. Skip the std and core frames at the top; the first frame from your crate is where it broke, and the next one is who called it.
+
+  - type: boss
+    prompt: |
+      Clippy has five complaints about `summarize`: `&Vec` parameter, `len() == 0`, indexing in a range loop, needless `.clone()`s and a needless `return`. Rewrite it clippy-clean with the same behavior: `None` for no orders, otherwise `Some("N orders, T items, biggest: NAME")` where T is the total quantity and NAME is the order with the largest quantity.
+    seed: |
+      fn summarize(orders: &Vec<(String, u32)>) -> Option<String> {
+          if orders.len() == 0 {
+              return None;
+          }
+          let mut total = 0;
+          let mut biggest = orders[0].clone();
+          for i in 0..orders.len() {
+              total += orders[i].1;
+              if orders[i].1 > biggest.1 {
+                  biggest = orders[i].clone();
+              }
+          }
+          return Some(format!("{} orders, {} items, biggest: {}", orders.len(), total, biggest.0));
+      }
+    solution: |
+      fn summarize(orders: &[(String, u32)]) -> Option<String> {
+          let (name, _) = orders.iter().max_by_key(|(_, qty)| *qty)?;
+          let total: u32 = orders.iter().map(|(_, qty)| qty).sum();
+          Some(format!("{} orders, {} items, biggest: {}", orders.len(), total, name))
+      }
+    forbid:
+      - pattern: '&\s*Vec\s*<'
+        message: "Take a slice: `&[(String, u32)]`."
+      - pattern: 'len\(\)\s*==\s*0'
+        message: "Use `.is_empty()` (or let an iterator method return None for you)."
+      - pattern: '\[\s*i\s*\]'
+        message: "Don't index with `i`: iterate over the orders."
+      - pattern: '\.clone\(\)'
+        message: "No clones needed: keep a reference to the biggest order."
+      - pattern: 'return\s+Some'
+        message: "End the function with `Some(...)`, without `return`."
+    harness: |
+      fn orders(list: &[(&str, u32)]) -> Vec<(String, u32)> {
+          list.iter().map(|(n, q)| (n.to_string(), *q)).collect()
+      }
+
+      #[test]
+      fn summarizes_several_orders() {
+          let o = orders(&[("ana", 3), ("bo", 7), ("cy", 2)]);
+          assert_eq!(summarize(&o), Some("3 orders, 12 items, biggest: bo".to_string()), "summarize(ana 3, bo 7, cy 2)");
+      }
+
+      #[test]
+      fn a_single_order() {
+          let o = orders(&[("dee", 5)]);
+          assert_eq!(summarize(&o), Some("1 orders, 5 items, biggest: dee".to_string()), "summarize(dee 5)");
+      }
+
+      #[test]
+      fn no_orders_is_none() {
+          let o: Vec<(String, u32)> = Vec::new();
+          assert_eq!(summarize(&o), None, "summarize([])");
+      }
+    hints:
+      - "`orders.iter().max_by_key(|(_, qty)| *qty)` finds the biggest order (as a reference) and returns `None` for an empty slice, so `?` handles the empty case."
+      - "The total is `orders.iter().map(|(_, qty)| qty).sum::<u32>()`."
+    why: Iterator methods like max_by_key and sum replace the index loop, return None for empty input, and hand out references, so the clones and the length check disappear.

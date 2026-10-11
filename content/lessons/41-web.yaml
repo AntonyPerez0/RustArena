@@ -1,0 +1,2951 @@
+id: web
+title: Web Services and JSON APIs
+phase: "Rust at work"
+summary: How HTTP APIs work and how to build one in Rust. Requests and responses, routing, JSON with serde, errors as status codes, shared state, and testing handlers, then the same API in axum.
+roadmap: [Web Development, Axum, Networking]
+steps:
+  - title: HTTP in one page
+    id: web-1
+    text: |
+      A **web API** is a program that waits for **requests** over the network and sends back **responses**, using the **HTTP** protocol. Your browser, a phone app, `curl` and other services are the **clients**; your program is the **server**. Underneath every framework, HTTP/1.1 is just text. A client that creates a score sends:
+
+      ```text
+      POST /scores HTTP/1.1                 <- request line: method, path, version
+      Host: arena.dev                       <- headers, one "Name: value" per line
+      Content-Type: application/json
+      Content-Length: 26
+                                            <- an empty line ends the headers
+      {"player":"ana","score":7}            <- the body (optional)
+      ```
+
+      and the server answers:
+
+      ```text
+      HTTP/1.1 201 Created                  <- status line: version, status code, reason
+      Content-Type: application/json
+      Content-Length: 34
+
+      {"id":12,"player":"ana","score":7}
+      ```
+
+      Lines end with `\r\n` (carriage return + newline), and the blank line is `\r\n\r\n`.
+
+      ### Methods say what to do
+
+      | Method | Meaning | Body? |
+      |---|---|---|
+      | `GET` | read a resource; never changes anything | no |
+      | `POST` | create something new (or trigger an action) | yes |
+      | `PUT` | replace a resource completely | yes |
+      | `PATCH` | change some fields of a resource | yes |
+      | `DELETE` | remove a resource | no |
+
+      The **path** names the resource: `/scores` is the collection, `/scores/12` one item in it.
+
+      ### Status codes say how it went
+
+      | Code | Name | When |
+      |---|---|---|
+      | 200 | OK | it worked, here's the result |
+      | 201 | Created | a POST created something |
+      | 204 | No Content | it worked, nothing to send back (typical for DELETE) |
+      | 400 | Bad Request | the request is malformed (bad JSON, bad id) |
+      | 404 | Not Found | no such resource or path |
+      | 405 | Method Not Allowed | the path exists, but not with that method |
+      | 409 | Conflict | clashes with current state (duplicate name, not enough money) |
+      | 422 | Unprocessable Content | well-formed, but the data breaks a rule |
+      | 500 | Internal Server Error | the server's fault |
+
+      The first digit is what clients check first: **2xx** success, **4xx** the client's mistake, **5xx** the server's.
+
+      ### Modeling it in Rust
+
+      Frameworks (like axum, at the end of this module) parse the text for you, but knowing what's underneath makes you much better at debugging (`curl -v` shows exactly this text). Here is the core of a request parser:
+
+      ```rust run
+      #[derive(Debug, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+      }
+
+      struct Request {
+          method: Method,
+          path: String,
+          body: String,
+      }
+
+      fn parse_request(raw: &str) -> Option<Request> {
+          let (head, body) = raw.split_once("\r\n\r\n")?;
+          let request_line = head.split("\r\n").next()?;
+          let mut parts = request_line.split(' ');
+          let method = match parts.next()? {
+              "GET" => Method::Get,
+              "POST" => Method::Post,
+              _ => return None,
+          };
+          let path = parts.next()?.to_string();
+          Some(Request { method, path, body: body.to_string() })
+      }
+
+      fn main() {
+          let raw = "POST /scores HTTP/1.1\r\nHost: arena.dev\r\nContent-Type: application/json\r\n\r\n{\"player\":\"ana\",\"score\":7}";
+          if let Some(req) = parse_request(raw) {
+              println!("{:?} {} body={}", req.method, req.path, req.body);
+          }
+          let get = parse_request("GET /scores/12 HTTP/1.1\r\nHost: arena.dev\r\n\r\n").unwrap();
+          println!("{:?} {} body is empty: {}", get.method, get.path, get.body.is_empty());
+          println!("{}", parse_request("BREW /coffee HTTP/1.1\r\n\r\n").is_none());
+      }
+      ```
+
+      ```output
+      Post /scores body={"player":"ana","score":7}
+      Get /scores/12 body is empty: true
+      true
+      ```
+
+      - `split_once("\r\n\r\n")` separates the head from the body at the first blank line; `?` returns `None` if there isn't one.
+      - The first line of the head is the request line; the rest are headers (ignored here).
+      - An **enum for the method** means the rest of the program can't see a misspelled `"GETT"`: invalid methods are rejected at the edge, once.
+
+      ### Common mistakes
+
+      - **Splitting on `\n` only.** HTTP uses `\r\n`; splitting on `\n` leaves a `\r` at the end of every line and `"HTTP/1.1\r" != "HTTP/1.1"`.
+      - **Treating methods as case-insensitive.** `get` is not a valid method; methods are case-sensitive (header *names*, on the other hand, are case-insensitive).
+      - **Counting characters for `Content-Length`.** It's the number of **bytes** of the body: `"é"` is 2 bytes, so use `.len()`, not `.chars().count()`.
+
+      **Your turn:** write `parse_request` for all four methods `GET`, `POST`, `PUT` and `DELETE`. Return `None` unless: there's a `\r\n\r\n` separator, the request line has exactly three parts separated by spaces, the method is one of the four (uppercase), the path starts with `/`, and the version is `HTTP/1.1`. The body is everything after the separator (possibly empty).
+    seed: |
+      #[derive(Debug, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Request {
+          method: Method,
+          path: String,
+          body: String,
+      }
+
+      fn parse_request(raw: &str) -> Option<Request> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Request {
+          method: Method,
+          path: String,
+          body: String,
+      }
+
+      fn parse_request(raw: &str) -> Option<Request> {
+          let (head, body) = raw.split_once("\r\n\r\n")?;
+          let request_line = head.split("\r\n").next()?;
+          let parts: Vec<&str> = request_line.split(' ').collect();
+          let [method, path, version] = parts[..] else {
+              return None;
+          };
+          let method = match method {
+              "GET" => Method::Get,
+              "POST" => Method::Post,
+              "PUT" => Method::Put,
+              "DELETE" => Method::Delete,
+              _ => return None,
+          };
+          if !path.starts_with('/') || version != "HTTP/1.1" {
+              return None;
+          }
+          Some(Request { method, path: path.to_string(), body: body.to_string() })
+      }
+    harness: |
+      fn req(method: Method, path: &str, body: &str) -> Option<Request> {
+          Some(Request { method, path: path.to_string(), body: body.to_string() })
+      }
+
+      #[test]
+      fn parses_a_get_with_headers() {
+          let raw = "GET /items/7 HTTP/1.1\r\nHost: shop.dev\r\nAccept: */*\r\n\r\n";
+          assert_eq!(parse_request(raw), req(Method::Get, "/items/7", ""), "parse_request(GET /items/7)");
+      }
+
+      #[test]
+      fn keeps_the_body() {
+          let raw = "POST /items HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"name\":\"mug\"}";
+          assert_eq!(parse_request(raw), req(Method::Post, "/items", "{\"name\":\"mug\"}"), "parse_request(POST with body)");
+      }
+
+      #[test]
+      fn handles_put_and_delete() {
+          assert_eq!(parse_request("PUT /a HTTP/1.1\r\n\r\nx"), req(Method::Put, "/a", "x"), "PUT");
+          assert_eq!(parse_request("DELETE /a/1 HTTP/1.1\r\n\r\n"), req(Method::Delete, "/a/1", ""), "DELETE");
+      }
+
+      #[test]
+      fn rejects_unknown_or_lowercase_methods() {
+          assert_eq!(parse_request("BREW /pot HTTP/1.1\r\n\r\n"), None, "BREW");
+          assert_eq!(parse_request("get / HTTP/1.1\r\n\r\n"), None, "lowercase get");
+      }
+
+      #[test]
+      fn rejects_malformed_request_lines() {
+          assert_eq!(parse_request("GET /a HTTP/1.1\r\nHost: x\r\n"), None, "no blank line");
+          assert_eq!(parse_request("GET /a\r\n\r\n"), None, "no version");
+          assert_eq!(parse_request("GET a HTTP/1.1\r\n\r\n"), None, "path without /");
+          assert_eq!(parse_request("GET /a HTTP/2\r\n\r\n"), None, "wrong version");
+          assert_eq!(parse_request("GET /a b HTTP/1.1\r\n\r\n"), None, "four parts");
+      }
+    hints:
+      - "`raw.split_once(\"\\r\\n\\r\\n\")?` gives `(head, body)`; the request line is `head.split(\"\\r\\n\").next()?`."
+      - "Collect the request line's parts into a `Vec<&str>` and use `let [method, path, version] = parts[..] else { return None; };`."
+      - "Map the method with `match`, then check `path.starts_with('/')` and `version == \"HTTP/1.1\"`."
+    more:
+      - task: |
+          Write `fn parse_headers(head: &str) -> BTreeMap<String, String>`. `head` is the request line followed by header lines, separated by `\r\n`. Skip the request line; for each `Name: value` line, store the name **lowercased** (header names are case-insensitive) and the value trimmed. Split at the **first** colon only (`Host: localhost:8080` has a colon in the value). Ignore lines without a colon.
+        seed: |
+          use std::collections::BTreeMap;
+
+          fn parse_headers(head: &str) -> BTreeMap<String, String> {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeMap;
+
+          fn parse_headers(head: &str) -> BTreeMap<String, String> {
+              head.split("\r\n")
+                  .skip(1)
+                  .filter_map(|line| line.split_once(':'))
+                  .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_string()))
+                  .collect()
+          }
+        harness: |
+          #[test]
+          fn lowercases_names_and_trims_values() {
+              let h = parse_headers("GET / HTTP/1.1\r\nContent-Type:  application/json \r\nX-Request-ID: abc");
+              assert_eq!(h.get("content-type").map(String::as_str), Some("application/json"), "content-type");
+              assert_eq!(h.get("x-request-id").map(String::as_str), Some("abc"), "x-request-id");
+          }
+
+          #[test]
+          fn splits_at_the_first_colon_only() {
+              let h = parse_headers("GET / HTTP/1.1\r\nHost: localhost:8080");
+              assert_eq!(h.get("host").map(String::as_str), Some("localhost:8080"), "host");
+          }
+
+          #[test]
+          fn skips_the_request_line_and_lines_without_colons() {
+              let h = parse_headers("GET http://x/ HTTP/1.1\r\ngarbage\r\nAccept: */*");
+              assert_eq!(h.len(), 1, "number of headers");
+          }
+
+          #[test]
+          fn no_headers_gives_an_empty_map() {
+              assert!(parse_headers("GET / HTTP/1.1").is_empty(), "parse_headers(request line only)");
+          }
+        hints:
+          - "`head.split(\"\\r\\n\").skip(1)` walks the header lines."
+          - "`line.split_once(':')` splits at the first colon; `filter_map` drops lines without one."
+          - "Collect `(name.trim().to_ascii_lowercase(), value.trim().to_string())` pairs into the BTreeMap."
+      - task: |
+          Write the other direction: `fn to_http(status: u16, body: &str) -> String` builds a full HTTP response: the status line `HTTP/1.1 <code> <reason>`, a `Content-Type: application/json` header, a `Content-Length` header with the body's length **in bytes**, a blank line, then the body. Lines end with `\r\n`. Reasons: 200 `OK`, 201 `Created`, 204 `No Content`, 400 `Bad Request`, 404 `Not Found`, 405 `Method Not Allowed`, 409 `Conflict`, 500 `Internal Server Error`, anything else `Unknown`.
+        seed: |
+          fn to_http(status: u16, body: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn reason(status: u16) -> &'static str {
+              match status {
+                  200 => "OK",
+                  201 => "Created",
+                  204 => "No Content",
+                  400 => "Bad Request",
+                  404 => "Not Found",
+                  405 => "Method Not Allowed",
+                  409 => "Conflict",
+                  500 => "Internal Server Error",
+                  _ => "Unknown",
+              }
+          }
+
+          fn to_http(status: u16, body: &str) -> String {
+              format!(
+                  "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                  reason(status),
+                  body.len()
+              )
+          }
+        harness: |
+          #[test]
+          fn builds_a_created_response() {
+              assert_eq!(to_http(201, "{\"id\":1}"), "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 8\r\n\r\n{\"id\":1}", "to_http(201, {\"id\":1})");
+          }
+
+          #[test]
+          fn empty_body_has_length_zero() {
+              assert_eq!(to_http(204, ""), "HTTP/1.1 204 No Content\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n", "to_http(204, \"\")");
+          }
+
+          #[test]
+          fn content_length_counts_bytes() {
+              assert!(to_http(200, "\"café\"").contains("Content-Length: 7\r\n"), "\"café\" is 7 bytes");
+          }
+
+          #[test]
+          fn knows_the_common_reasons() {
+              assert!(to_http(404, "").starts_with("HTTP/1.1 404 Not Found\r\n"), "404");
+              assert!(to_http(405, "").starts_with("HTTP/1.1 405 Method Not Allowed\r\n"), "405");
+              assert!(to_http(500, "").starts_with("HTTP/1.1 500 Internal Server Error\r\n"), "500");
+              assert!(to_http(418, "").starts_with("HTTP/1.1 418 Unknown\r\n"), "418");
+          }
+        hints:
+          - "A helper `fn reason(status: u16) -> &'static str` with a `match` keeps `to_http` short."
+          - "`body.len()` is the length in bytes, exactly what Content-Length needs."
+          - "One `format!` with `\\r\\n` between the lines and `\\r\\n\\r\\n` before the body."
+
+  - title: Routing by method and path
+    id: web-2
+    text: |
+      A server receives every request in one place and must decide which code handles it. That's **routing**: look at the method and the path, and pick a **handler**. In Rust, a `match` on a tuple of the method and the **path segments** does it beautifully, thanks to slice patterns:
+
+      ```rust run
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+          Delete,
+      }
+
+      fn route(method: Method, path: &str) -> (u16, String) {
+          let path = path.split('?').next().unwrap_or("");
+          let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+          match (method, segments.as_slice()) {
+              (Method::Get, ["health"]) => (200, String::from("ok")),
+              (Method::Get, ["players"]) => (200, String::from("list players")),
+              (Method::Post, ["players"]) => (201, String::from("create a player")),
+              (Method::Get, ["players", id]) => match id.parse::<u32>() {
+                  Ok(id) => (200, format!("show player {id}")),
+                  Err(_) => (400, format!("bad id {id:?}")),
+              },
+              (Method::Delete, ["players", id]) => (204, format!("delete player {id}")),
+              (_, ["health"] | ["players"] | ["players", _]) => (405, String::from("method not allowed")),
+              _ => (404, String::from("not found")),
+          }
+      }
+
+      fn main() {
+          let tries = [
+              (Method::Get, "/players"),
+              (Method::Get, "/players/42?fields=name"),
+              (Method::Get, "/players/ferris"),
+              (Method::Post, "/players/"),
+              (Method::Delete, "/players/7"),
+              (Method::Delete, "/health"),
+              (Method::Get, "/teams"),
+          ];
+          for (method, path) in tries {
+              let (status, body) = route(method, path);
+              println!("{method:?} {path} -> {status} {body}");
+          }
+      }
+      ```
+
+      ```output
+      Get /players -> 200 list players
+      Get /players/42?fields=name -> 200 show player 42
+      Get /players/ferris -> 400 bad id "ferris"
+      Post /players/ -> 201 create a player
+      Delete /players/7 -> 204 delete player 7
+      Delete /health -> 405 method not allowed
+      Get /teams -> 404 not found
+      ```
+
+      Piece by piece:
+
+      - Everything after `?` is the **query string** (`?fields=name`), which isn't part of the route, so we cut it off first.
+      - `split('/')` on `/players/42` gives `""`, `"players"`, `"42"`; filtering out empty pieces also makes a trailing slash (`/players/`) harmless.
+      - `segments.as_slice()` lets us match with **slice patterns**: `["players", id]` matches exactly two segments, the first being `"players"`, and binds the second to `id`.
+      - A **path parameter** like `id` is still text. Parse it, and answer `400` when it isn't a valid id: a bad id is the client's mistake, not a missing resource.
+      - The second-to-last arm catches known paths with the wrong method (`405`); the last catches everything else (`404`). Arm order matters: `match` takes the first that fits.
+
+      ### Common mistakes
+
+      - **Putting the catch-all `_` arm first**: every request hits it. The compiler warns `unreachable pattern` for the arms after it.
+      - **Answering 404 for a wrong method.** Clients and API tools rely on 405 to tell "this path doesn't exist" from "use another method".
+      - **Comparing whole path strings** (`path == "/players"`): then `/players/` and `/players?x=1` fail, and ids need manual slicing. Segments and slice patterns handle both.
+
+      **Your turn:** write the router for a books API. `route(method, path)` returns a `Route`: `GET /books` is `ListBooks`, `POST /books` is `CreateBook`, `GET /books/{id}` is `GetBook(id)`, `DELETE /books/{id}` is `DeleteBook(id)`, `GET /books/{id}/reviews` is `ListReviews(id)`. An id that isn't a `u32` gives `BadRequest`; one of those paths with another method gives `MethodNotAllowed` (whatever the id); everything else is `NotFound`. Ignore query strings and trailing slashes.
+    seed: |
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      #[derive(Debug, PartialEq)]
+      enum Route {
+          ListBooks,
+          CreateBook,
+          GetBook(u32),
+          DeleteBook(u32),
+          ListReviews(u32),
+          BadRequest,
+          NotFound,
+          MethodNotAllowed,
+      }
+
+      fn route(method: Method, path: &str) -> Route {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      #[derive(Debug, PartialEq)]
+      enum Route {
+          ListBooks,
+          CreateBook,
+          GetBook(u32),
+          DeleteBook(u32),
+          ListReviews(u32),
+          BadRequest,
+          NotFound,
+          MethodNotAllowed,
+      }
+
+      fn route(method: Method, path: &str) -> Route {
+          let path = path.split('?').next().unwrap_or("");
+          let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+          match (method, segments.as_slice()) {
+              (Method::Get, ["books"]) => Route::ListBooks,
+              (Method::Post, ["books"]) => Route::CreateBook,
+              (Method::Get, ["books", id]) => id.parse().map_or(Route::BadRequest, Route::GetBook),
+              (Method::Delete, ["books", id]) => id.parse().map_or(Route::BadRequest, Route::DeleteBook),
+              (Method::Get, ["books", id, "reviews"]) => id.parse().map_or(Route::BadRequest, Route::ListReviews),
+              (_, ["books"] | ["books", _] | ["books", _, "reviews"]) => Route::MethodNotAllowed,
+              _ => Route::NotFound,
+          }
+      }
+    harness: |
+      #[test]
+      fn routes_the_collection() {
+          assert_eq!(route(Method::Get, "/books"), Route::ListBooks, "GET /books");
+          assert_eq!(route(Method::Post, "/books"), Route::CreateBook, "POST /books");
+      }
+
+      #[test]
+      fn routes_single_books_with_ids() {
+          assert_eq!(route(Method::Get, "/books/12"), Route::GetBook(12), "GET /books/12");
+          assert_eq!(route(Method::Delete, "/books/3"), Route::DeleteBook(3), "DELETE /books/3");
+          assert_eq!(route(Method::Get, "/books/5/reviews"), Route::ListReviews(5), "GET /books/5/reviews");
+      }
+
+      #[test]
+      fn ignores_query_strings_and_trailing_slashes() {
+          assert_eq!(route(Method::Get, "/books/?sort=title"), Route::ListBooks, "GET /books/?sort=title");
+          assert_eq!(route(Method::Get, "/books/9/reviews/"), Route::ListReviews(9), "GET /books/9/reviews/");
+      }
+
+      #[test]
+      fn bad_ids_are_bad_requests() {
+          assert_eq!(route(Method::Get, "/books/abc"), Route::BadRequest, "GET /books/abc");
+          assert_eq!(route(Method::Delete, "/books/-1"), Route::BadRequest, "DELETE /books/-1");
+      }
+
+      #[test]
+      fn wrong_methods_are_not_allowed() {
+          assert_eq!(route(Method::Put, "/books"), Route::MethodNotAllowed, "PUT /books");
+          assert_eq!(route(Method::Post, "/books/abc"), Route::MethodNotAllowed, "POST /books/abc");
+          assert_eq!(route(Method::Delete, "/books/1/reviews"), Route::MethodNotAllowed, "DELETE /books/1/reviews");
+      }
+
+      #[test]
+      fn unknown_paths_are_not_found() {
+          assert_eq!(route(Method::Get, "/"), Route::NotFound, "GET /");
+          assert_eq!(route(Method::Get, "/authors"), Route::NotFound, "GET /authors");
+          assert_eq!(route(Method::Get, "/books/1/likes"), Route::NotFound, "GET /books/1/likes");
+      }
+    hints:
+      - "Cut the query string with `path.split('?').next()`, then collect the non-empty `split('/')` pieces into a `Vec<&str>`."
+      - "`match (method, segments.as_slice())` with arms like `(Method::Get, [\"books\", id]) => ...`."
+      - "`id.parse().map_or(Route::BadRequest, Route::GetBook)` gives the route or BadRequest. Put the 405 arm `(_, [\"books\"] | [\"books\", _] | [\"books\", _, \"reviews\"])` after the specific ones."
+    more:
+      - task: |
+          Query strings carry options like filters and pages: `/search?q=crab&page=2`. Write `fn parse_query(target: &str) -> (&str, BTreeMap<String, String>)` returning the path and the parameters. Parameters are separated by `&`; each is `key=value` (split at the first `=`), and a `+` in a value means a space. A key without `=` maps to an empty string; empty pieces (`a=1&&b=2`) are skipped.
+        seed: |
+          use std::collections::BTreeMap;
+
+          fn parse_query(target: &str) -> (&str, BTreeMap<String, String>) {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeMap;
+
+          fn parse_query(target: &str) -> (&str, BTreeMap<String, String>) {
+              let (path, query) = target.split_once('?').unwrap_or((target, ""));
+              let params = query
+                  .split('&')
+                  .filter(|piece| !piece.is_empty())
+                  .map(|piece| match piece.split_once('=') {
+                      Some((key, value)) => (key.to_string(), value.replace('+', " ")),
+                      None => (piece.to_string(), String::new()),
+                  })
+                  .collect();
+              (path, params)
+          }
+        harness: |
+          fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+              pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+          }
+
+          #[test]
+          fn splits_path_and_parameters() {
+              assert_eq!(parse_query("/search?q=crab&page=2"), ("/search", map(&[("q", "crab"), ("page", "2")])), "parse_query(/search?q=crab&page=2)");
+          }
+
+          #[test]
+          fn no_query_gives_no_parameters() {
+              assert_eq!(parse_query("/books"), ("/books", map(&[])), "parse_query(/books)");
+          }
+
+          #[test]
+          fn plus_means_space() {
+              assert_eq!(parse_query("/s?q=hermit+crab"), ("/s", map(&[("q", "hermit crab")])), "parse_query(q=hermit+crab)");
+          }
+
+          #[test]
+          fn keys_without_values_and_empty_pieces() {
+              assert_eq!(parse_query("/s?debug&&x=1=2"), ("/s", map(&[("debug", ""), ("x", "1=2")])), "parse_query(debug&&x=1=2)");
+          }
+        hints:
+          - "`target.split_once('?').unwrap_or((target, \"\"))` gives the path and the query."
+          - "Split the query on `&`, skip empty pieces, and `split_once('=')` each piece."
+      - task: |
+          List endpoints take paging options. Write `fn page_params(query: &BTreeMap<String, String>) -> Result<(usize, usize), String>` that reads `page` (default 1, must be at least 1) and `per_page` (default 20, must be 1 to 100) and returns `(offset, limit)` for a database query, where offset is `(page - 1) * per_page`. Errors: `invalid page "x"` and `per_page must be 1 to 100`.
+        seed: |
+          use std::collections::BTreeMap;
+
+          fn page_params(query: &BTreeMap<String, String>) -> Result<(usize, usize), String> {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeMap;
+
+          fn page_params(query: &BTreeMap<String, String>) -> Result<(usize, usize), String> {
+              let page = match query.get("page") {
+                  Some(p) => p.parse::<usize>().ok().filter(|&n| n >= 1).ok_or(format!("invalid page {p:?}"))?,
+                  None => 1,
+              };
+              let per_page = match query.get("per_page") {
+                  Some(p) => p
+                      .parse::<usize>()
+                      .ok()
+                      .filter(|n| (1..=100).contains(n))
+                      .ok_or(String::from("per_page must be 1 to 100"))?,
+                  None => 20,
+              };
+              Ok(((page - 1) * per_page, per_page))
+          }
+        harness: |
+          fn q(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+              pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+          }
+
+          #[test]
+          fn defaults_to_the_first_page_of_20() {
+              assert_eq!(page_params(&q(&[])), Ok((0, 20)), "page_params({{}})");
+          }
+
+          #[test]
+          fn computes_the_offset() {
+              assert_eq!(page_params(&q(&[("page", "3"), ("per_page", "50")])), Ok((100, 50)), "page=3, per_page=50");
+              assert_eq!(page_params(&q(&[("page", "2")])), Ok((20, 20)), "page=2");
+          }
+
+          #[test]
+          fn rejects_bad_pages() {
+              assert_eq!(page_params(&q(&[("page", "0")])), Err(String::from("invalid page \"0\"")), "page=0");
+              assert_eq!(page_params(&q(&[("page", "two")])), Err(String::from("invalid page \"two\"")), "page=two");
+          }
+
+          #[test]
+          fn rejects_per_page_out_of_range() {
+              assert_eq!(page_params(&q(&[("per_page", "500")])), Err(String::from("per_page must be 1 to 100")), "per_page=500");
+              assert_eq!(page_params(&q(&[("per_page", "0")])), Err(String::from("per_page must be 1 to 100")), "per_page=0");
+          }
+        hints:
+          - "`match query.get(\"page\")`: `None` means the default, `Some(p)` must parse and pass the check."
+          - "`p.parse::<usize>().ok().filter(|&n| n >= 1).ok_or(...)?` parses, checks and errors in one chain."
+
+  - title: JSON in, JSON out
+    id: web-3
+    text: |
+      JSON APIs send JSON in request bodies and get JSON back. With serde from two modules ago, a handler is three moves: **deserialize** the body into a request type, **check** it, **serialize** the result.
+
+      ```rust run
+      use serde::{Deserialize, Serialize};
+      use serde_json::json;
+
+      #[derive(Deserialize)]
+      struct CreateUser {
+          name: String,
+          email: String,
+      }
+
+      #[derive(Serialize)]
+      struct User {
+          id: u32,
+          name: String,
+          email: String,
+      }
+
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      fn json_response<T: Serialize>(status: u16, value: &T) -> Response {
+          Response { status, body: serde_json::to_string(value).expect("response types always serialize") }
+      }
+
+      fn create_user(body: &str, next_id: u32) -> Response {
+          let input: CreateUser = match serde_json::from_str(body) {
+              Ok(input) => input,
+              Err(e) => return json_response(400, &json!({ "error": format!("invalid JSON: {e}") })),
+          };
+          if !input.email.contains('@') {
+              return json_response(422, &json!({ "error": "email must contain @" }));
+          }
+          let user = User { id: next_id, name: input.name, email: input.email };
+          json_response(201, &user)
+      }
+
+      fn main() {
+          for body in [r#"{"name": "Ana", "email": "ana@arena.dev"}"#, r#"{"name": "Bo", "email": "bo"}"#, r#"{"name": "Cy"}"#] {
+              let r = create_user(body, 7);
+              println!("{} {}", r.status, r.body);
+          }
+      }
+      ```
+
+      ```output
+      201 {"id":7,"name":"Ana","email":"ana@arena.dev"}
+      422 {"error":"email must contain @"}
+      400 {"error":"invalid JSON: missing field `email` at line 1 column 14"}
+      ```
+
+      Piece by piece:
+
+      - `CreateUser` and `User` are separate types on purpose. These **DTOs** (data transfer objects) describe exactly what crosses the wire: the client doesn't send an `id` (the server assigns it), and a response type is where you leave out fields that must never leave the server (a password hash, internal flags). Changing your internal model then doesn't silently change your API.
+      - `json_response` is a generic helper: any `T: Serialize` becomes a response with a status. Errors use the same shape every time, `{"error": "..."}`, so clients can handle them in one place.
+      - **400 vs 422**: 400 when the body isn't valid JSON or has the wrong shape; 422 when it parses fine but breaks a business rule. (Some APIs use 400 for both; pick one convention and stick to it.)
+      - Real responses also carry a `Content-Type: application/json` header; frameworks set it for you when you return JSON.
+
+      ### Common mistakes
+
+      - **Deserializing straight into your database model**: a client could then send `"id": 1` or `"is_admin": true` and have it accepted. Request DTOs list only what clients may set.
+      - **`unwrap()` on the request body.** One malformed request would crash the handler (in a server, the framework catches the panic and answers 500, but the request is lost and logs fill with panics). Bad input is a 400, not a crash.
+      - **Building JSON by hand** with `format!("{{\"name\":\"{}\"}}", name)`: a name containing `"` produces broken JSON (and an injection risk). Let serde escape it.
+
+      **Your turn:** write `create_ticket`. The body looks like `{"title": "Printer on fire", "priority": "high"}`; `priority` is optional and defaults to `normal`. Respond with:
+      - `400` and `{"error":"invalid request body"}` if the body doesn't parse (including an unknown priority),
+      - `422` and `{"error":"title must not be empty"}` if the title is empty after trimming,
+      - otherwise `201` with the ticket: `{"id":<next_id>,"title":"<trimmed title>","priority":"high","status":"open"}`.
+    seed: |
+      use serde::{Deserialize, Serialize};
+      use serde_json::json;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+      #[serde(rename_all = "lowercase")]
+      enum Priority {
+          Low,
+          #[default] // the variant Default::default() returns
+          Normal,
+          High,
+      }
+
+      struct NewTicket {
+          title: String,
+          priority: Priority,
+      }
+
+      struct Ticket {
+          id: u32,
+          title: String,
+          priority: Priority,
+          status: &'static str,
+      }
+
+      fn create_ticket(body: &str, next_id: u32) -> Response {
+          todo!()
+      }
+    solution: |
+      use serde::{Deserialize, Serialize};
+      use serde_json::json;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+      #[serde(rename_all = "lowercase")]
+      enum Priority {
+          Low,
+          #[default] // the variant Default::default() returns
+          Normal,
+          High,
+      }
+
+      #[derive(Deserialize)]
+      struct NewTicket {
+          title: String,
+          #[serde(default)]
+          priority: Priority,
+      }
+
+      #[derive(Serialize)]
+      struct Ticket {
+          id: u32,
+          title: String,
+          priority: Priority,
+          status: &'static str,
+      }
+
+      fn create_ticket(body: &str, next_id: u32) -> Response {
+          let Ok(input) = serde_json::from_str::<NewTicket>(body) else {
+              return Response { status: 400, body: json!({ "error": "invalid request body" }).to_string() };
+          };
+          let title = input.title.trim();
+          if title.is_empty() {
+              return Response { status: 422, body: json!({ "error": "title must not be empty" }).to_string() };
+          }
+          let ticket = Ticket { id: next_id, title: title.to_string(), priority: input.priority, status: "open" };
+          Response { status: 201, body: serde_json::to_string(&ticket).expect("tickets always serialize") }
+      }
+    harness: |
+      #[test]
+      fn creates_a_ticket() {
+          let r = create_ticket(r#"{"title": "Printer on fire", "priority": "high"}"#, 12);
+          assert_eq!(r, Response { status: 201, body: String::from(r#"{"id":12,"title":"Printer on fire","priority":"high","status":"open"}"#) }, "create_ticket(high priority)");
+      }
+
+      #[test]
+      fn priority_defaults_to_normal() {
+          let r = create_ticket(r#"{"title": "  Coffee machine  "}"#, 1);
+          assert_eq!(r.body, r#"{"id":1,"title":"Coffee machine","priority":"normal","status":"open"}"#, "create_ticket(no priority)");
+      }
+
+      #[test]
+      fn empty_titles_are_422() {
+          let r = create_ticket(r#"{"title": "   "}"#, 1);
+          assert_eq!(r, Response { status: 422, body: String::from(r#"{"error":"title must not be empty"}"#) }, "create_ticket(blank title)");
+      }
+
+      #[test]
+      fn unparseable_bodies_are_400() {
+          let want = Response { status: 400, body: String::from(r#"{"error":"invalid request body"}"#) };
+          assert_eq!(create_ticket("{oops", 1), want, "create_ticket(broken JSON)");
+          assert_eq!(create_ticket(r#"{"priority": "low"}"#, 1), want, "create_ticket(no title)");
+          assert_eq!(create_ticket(r#"{"title": "x", "priority": "urgent"}"#, 1), want, "create_ticket(unknown priority)");
+      }
+    hints:
+      - "`NewTicket` needs `#[derive(Deserialize)]` and `#[serde(default)]` on `priority`; `Ticket` needs `#[derive(Serialize)]`."
+      - "`let Ok(input) = serde_json::from_str::<NewTicket>(body) else { return ... 400 ... };`"
+      - "Trim the title, check `is_empty()`, then serialize a `Ticket` with `status: \"open\"`."
+    more:
+      - task: |
+          Write the two helpers every handler uses: `fn json_response<T: Serialize>(status: u16, value: &T) -> Response` (the value serialized as compact JSON) and `fn error_response(status: u16, message: &str) -> Response` (the body `{"error":"<message>"}`, built with `json!` so quotes in the message are escaped).
+        seed: |
+          use serde::Serialize;
+          use serde_json::json;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          fn json_response<T: Serialize>(status: u16, value: &T) -> Response {
+              todo!()
+          }
+
+          fn error_response(status: u16, message: &str) -> Response {
+              todo!()
+          }
+        solution: |
+          use serde::Serialize;
+          use serde_json::json;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          fn json_response<T: Serialize>(status: u16, value: &T) -> Response {
+              Response { status, body: serde_json::to_string(value).expect("response types always serialize") }
+          }
+
+          fn error_response(status: u16, message: &str) -> Response {
+              json_response(status, &json!({ "error": message }))
+          }
+        harness: |
+          #[derive(Serialize)]
+          struct Score {
+              player: String,
+              points: u32,
+          }
+
+          #[test]
+          fn serializes_any_serializable_value() {
+              let r = json_response(200, &Score { player: String::from("ana"), points: 7 });
+              assert_eq!(r, Response { status: 200, body: String::from(r#"{"player":"ana","points":7}"#) }, "json_response(200, score)");
+              assert_eq!(json_response(200, &vec![1, 2, 3]).body, "[1,2,3]", "json_response(200, vec)");
+          }
+
+          #[test]
+          fn errors_have_one_shape() {
+              assert_eq!(error_response(404, "player 7 not found"), Response { status: 404, body: String::from(r#"{"error":"player 7 not found"}"#) }, "error_response(404, ..)");
+          }
+
+          #[test]
+          fn quotes_in_messages_are_escaped() {
+              assert_eq!(error_response(400, "bad name \"x\"").body, r#"{"error":"bad name \"x\""}"#, "error_response with quotes");
+          }
+        hints:
+          - "`serde_json::to_string(value)` works for any `T: Serialize`; `expect` with a reason is fine for your own response types."
+          - "`error_response` can call `json_response(status, &json!({ \"error\": message }))`."
+      - task: |
+          **PATCH** updates only the fields the client sends. Write `fn patch_task(task: &mut Task, body: &str) -> Response` where the body may contain `title` and/or `done`. Answer `400` + `{"error":"invalid request body"}` if it doesn't parse, `422` + `{"error":"title must not be empty"}` for a blank title (and then change **nothing**, not even `done`), otherwise apply the present fields (trim the title) and answer `200` with the whole task as JSON.
+        seed: |
+          use serde::{Deserialize, Serialize};
+          use serde_json::json;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Debug, Serialize)]
+          struct Task {
+              id: u32,
+              title: String,
+              done: bool,
+          }
+
+          fn patch_task(task: &mut Task, body: &str) -> Response {
+              todo!()
+          }
+        solution: |
+          use serde::{Deserialize, Serialize};
+          use serde_json::json;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Debug, Serialize)]
+          struct Task {
+              id: u32,
+              title: String,
+              done: bool,
+          }
+
+          #[derive(Deserialize)]
+          struct PatchTask {
+              title: Option<String>,
+              done: Option<bool>,
+          }
+
+          fn patch_task(task: &mut Task, body: &str) -> Response {
+              let Ok(patch) = serde_json::from_str::<PatchTask>(body) else {
+                  return Response { status: 400, body: json!({ "error": "invalid request body" }).to_string() };
+              };
+              if let Some(title) = &patch.title
+                  && title.trim().is_empty()
+              {
+                  return Response { status: 422, body: json!({ "error": "title must not be empty" }).to_string() };
+              }
+              if let Some(title) = patch.title {
+                  task.title = title.trim().to_string();
+              }
+              if let Some(done) = patch.done {
+                  task.done = done;
+              }
+              Response { status: 200, body: serde_json::to_string(task).expect("tasks always serialize") }
+          }
+        harness: |
+          fn task() -> Task {
+              Task { id: 3, title: String::from("water plants"), done: false }
+          }
+
+          #[test]
+          fn changes_only_the_fields_sent() {
+              let mut t = task();
+              let r = patch_task(&mut t, r#"{"done": true}"#);
+              assert_eq!(r, Response { status: 200, body: String::from(r#"{"id":3,"title":"water plants","done":true}"#) }, "patch done only");
+          }
+
+          #[test]
+          fn can_change_both_fields() {
+              let mut t = task();
+              patch_task(&mut t, r#"{"title": " feed crab ", "done": true}"#);
+              assert_eq!((t.title.as_str(), t.done), ("feed crab", true), "task after patch");
+          }
+
+          #[test]
+          fn an_empty_patch_changes_nothing() {
+              let mut t = task();
+              assert_eq!(patch_task(&mut t, "{}").status, 200, "status for {{}}");
+              assert_eq!((t.title.as_str(), t.done), ("water plants", false), "task after {{}}");
+          }
+
+          #[test]
+          fn a_blank_title_is_rejected_without_changes() {
+              let mut t = task();
+              let r = patch_task(&mut t, r#"{"title": "  ", "done": true}"#);
+              assert_eq!(r.status, 422, "status");
+              assert_eq!((t.title.as_str(), t.done), ("water plants", false), "task must be unchanged");
+          }
+
+          #[test]
+          fn bad_bodies_are_400() {
+              let mut t = task();
+              assert_eq!(patch_task(&mut t, r#"{"done": "yes"}"#).status, 400, "done is a string");
+          }
+        hints:
+          - "A request type with `Option` fields: missing keys become `None`. `#[derive(Deserialize)] struct PatchTask { title: Option<String>, done: Option<bool> }`."
+          - "Validate everything first, then change the task. That way a rejected request never leaves a half-applied update."
+
+  - title: Errors become status codes
+    id: web-4
+    text: |
+      Handlers fail in a handful of ways: not found, bad input, conflict, a bug. Writing `return Response { status: 404, body: json!(...)... }` in every handler gets repetitive and inconsistent. The pattern every Rust web codebase converges on: **handlers return `Result<Response, ApiError>`**, and `ApiError` knows how to turn itself into a response. Then `?` works inside handlers, just like in the error modules.
+
+      ```rust run
+      use serde::Deserialize;
+      use serde_json::json;
+      use std::collections::BTreeMap;
+      use thiserror::Error;
+
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Debug, Error)]
+      enum ApiError {
+          #[error("{0} not found")]
+          NotFound(String),
+          #[error("invalid JSON: {0}")]
+          BadJson(String),
+          #[error("{0}")]
+          Conflict(String),
+      }
+
+      impl From<serde_json::Error> for ApiError {
+          fn from(e: serde_json::Error) -> Self {
+              ApiError::BadJson(e.to_string())
+          }
+      }
+
+      impl ApiError {
+          fn status(&self) -> u16 {
+              match self {
+                  ApiError::NotFound(_) => 404,
+                  ApiError::BadJson(_) => 400,
+                  ApiError::Conflict(_) => 409,
+              }
+          }
+
+          fn into_response(self) -> Response {
+              Response { status: self.status(), body: json!({ "error": self.to_string() }).to_string() }
+          }
+      }
+
+      #[derive(Deserialize)]
+      struct NewScore {
+          player: String,
+          points: u32,
+      }
+
+      fn add_score(scores: &mut BTreeMap<String, u32>, body: &str) -> Result<Response, ApiError> {
+          let input: NewScore = serde_json::from_str(body)?;
+          if scores.contains_key(&input.player) {
+              return Err(ApiError::Conflict(format!("{} already has a score", input.player)));
+          }
+          scores.insert(input.player.clone(), input.points);
+          Ok(Response { status: 201, body: json!({ "player": input.player, "points": input.points }).to_string() })
+      }
+
+      fn get_score(scores: &BTreeMap<String, u32>, player: &str) -> Result<Response, ApiError> {
+          let points = scores.get(player).ok_or_else(|| ApiError::NotFound(format!("player {player}")))?;
+          Ok(Response { status: 200, body: json!({ "player": player, "points": points }).to_string() })
+      }
+
+      fn respond(result: Result<Response, ApiError>) -> Response {
+          result.unwrap_or_else(ApiError::into_response)
+      }
+
+      fn main() {
+          let mut scores = BTreeMap::new();
+          let responses = [
+              respond(add_score(&mut scores, r#"{"player": "ana", "points": 40}"#)),
+              respond(add_score(&mut scores, r#"{"player": "ana", "points": 99}"#)),
+              respond(add_score(&mut scores, r#"{"player": "bo"}"#)),
+              respond(get_score(&scores, "ana")),
+              respond(get_score(&scores, "cy")),
+          ];
+          for r in responses {
+              println!("{} {}", r.status, r.body);
+          }
+      }
+      ```
+
+      ```output
+      201 {"player":"ana","points":40}
+      409 {"error":"ana already has a score"}
+      400 {"error":"invalid JSON: missing field `points` at line 1 column 17"}
+      200 {"player":"ana","points":40}
+      404 {"error":"player cy not found"}
+      ```
+
+      Piece by piece:
+
+      - `ApiError` is an ordinary thiserror enum: its `Display` messages become the `error` field of the JSON.
+      - `status()` maps each variant to its status code in **one place**. Add a variant and the compiler makes you pick its code (the `match` must be exhaustive).
+      - `impl From<serde_json::Error> for ApiError` makes `?` work on `serde_json::from_str`. (It's written by hand here, storing the message, so the message isn't repeated in a source chain; `#[from]` would work too.)
+      - Handlers now read like the happy path, with `?` and `ok_or_else` for the failures. `respond` turns the `Result` into a `Response` at the boundary: `unwrap_or_else(ApiError::into_response)` passes the method as the closure.
+      - Notice `json!` printed `{"player":...,"points":...}` in sorted key order, as you saw in the serde module.
+
+      ### 500s: log the details, hide them from the client
+
+      When something breaks on the server (the database is down, a file is missing), the client gets `500` and a **generic** message. The details go to your logs. Error messages can contain file paths, SQL, or internal hostnames, and attackers read error responses carefully. A typical variant: `Internal(String)`, whose response body is always `{"error":"internal server error"}`, while the `String` is written to the log.
+
+      ### Common mistakes
+
+      - **Status codes scattered across handlers**: two handlers answer "not found" with different codes or shapes. Keep the mapping in `ApiError`.
+      - **Returning 200 with `{"error": ...}`**: clients, proxies, monitoring and retry logic all look at the status code first.
+      - **A catch-all `_ => 500` in `status()`**: new variants silently become server errors. List every variant.
+
+      **Your turn:** build the error type and handler for a bank API's withdraw endpoint. Complete `ApiError` with thiserror messages: `NotFound(id)`: `account 7 not found` (404); `InsufficientFunds { balance, amount }`: `insufficient funds: balance 50, need 80` (409); `BadRequest(msg)`: the message itself (400). Add `From<serde_json::Error>` producing `BadRequest("invalid JSON")`, write `status` and `into_response` (body `{"error":"<message>"}`), and `withdraw`: parse `{"amount": 80}` with `?`, reject an amount of 0 with `BadRequest("amount must be positive")`, find the account, check the balance, subtract, and answer `200` with `{"balance":<new balance>,"id":<id>}`.
+    seed: |
+      use serde::Deserialize;
+      use serde_json::json;
+      use std::collections::BTreeMap;
+      use thiserror::Error;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Debug)]
+      enum ApiError {
+          NotFound(u32),
+          InsufficientFunds { balance: u64, amount: u64 },
+          BadRequest(String),
+      }
+
+      impl ApiError {
+          fn status(&self) -> u16 {
+              todo!()
+          }
+
+          fn into_response(self) -> Response {
+              todo!()
+          }
+      }
+
+      #[derive(Deserialize)]
+      struct Withdraw {
+          amount: u64,
+      }
+
+      fn withdraw(accounts: &mut BTreeMap<u32, u64>, id: u32, body: &str) -> Result<Response, ApiError> {
+          todo!()
+      }
+    solution: |
+      use serde::Deserialize;
+      use serde_json::json;
+      use std::collections::BTreeMap;
+      use thiserror::Error;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Debug, Error)]
+      enum ApiError {
+          #[error("account {0} not found")]
+          NotFound(u32),
+          #[error("insufficient funds: balance {balance}, need {amount}")]
+          InsufficientFunds { balance: u64, amount: u64 },
+          #[error("{0}")]
+          BadRequest(String),
+      }
+
+      impl From<serde_json::Error> for ApiError {
+          fn from(_: serde_json::Error) -> Self {
+              ApiError::BadRequest(String::from("invalid JSON"))
+          }
+      }
+
+      impl ApiError {
+          fn status(&self) -> u16 {
+              match self {
+                  ApiError::NotFound(_) => 404,
+                  ApiError::InsufficientFunds { .. } => 409,
+                  ApiError::BadRequest(_) => 400,
+              }
+          }
+
+          fn into_response(self) -> Response {
+              Response { status: self.status(), body: json!({ "error": self.to_string() }).to_string() }
+          }
+      }
+
+      #[derive(Deserialize)]
+      struct Withdraw {
+          amount: u64,
+      }
+
+      fn withdraw(accounts: &mut BTreeMap<u32, u64>, id: u32, body: &str) -> Result<Response, ApiError> {
+          let req: Withdraw = serde_json::from_str(body)?;
+          if req.amount == 0 {
+              return Err(ApiError::BadRequest(String::from("amount must be positive")));
+          }
+          let balance = accounts.get_mut(&id).ok_or(ApiError::NotFound(id))?;
+          if *balance < req.amount {
+              return Err(ApiError::InsufficientFunds { balance: *balance, amount: req.amount });
+          }
+          *balance -= req.amount;
+          Ok(Response { status: 200, body: json!({ "id": id, "balance": *balance }).to_string() })
+      }
+    harness: |
+      fn accounts() -> BTreeMap<u32, u64> {
+          BTreeMap::from([(1, 100), (2, 50)])
+      }
+
+      fn run(accounts: &mut BTreeMap<u32, u64>, id: u32, body: &str) -> Response {
+          withdraw(accounts, id, body).unwrap_or_else(ApiError::into_response)
+      }
+
+      #[test]
+      fn a_valid_withdrawal_returns_the_new_balance() {
+          let mut a = accounts();
+          assert_eq!(run(&mut a, 1, r#"{"amount": 80}"#), Response { status: 200, body: String::from(r#"{"balance":20,"id":1}"#) }, "withdraw 80 from account 1");
+          assert_eq!(a[&1], 20, "balance stored");
+      }
+
+      #[test]
+      fn not_enough_money_is_409() {
+          let mut a = accounts();
+          assert_eq!(run(&mut a, 2, r#"{"amount": 80}"#), Response { status: 409, body: String::from(r#"{"error":"insufficient funds: balance 50, need 80"}"#) }, "withdraw 80 from account 2");
+          assert_eq!(a[&2], 50, "balance unchanged");
+      }
+
+      #[test]
+      fn unknown_accounts_are_404() {
+          let mut a = accounts();
+          assert_eq!(run(&mut a, 7, r#"{"amount": 1}"#), Response { status: 404, body: String::from(r#"{"error":"account 7 not found"}"#) }, "account 7");
+      }
+
+      #[test]
+      fn bad_bodies_and_zero_are_400() {
+          let mut a = accounts();
+          assert_eq!(run(&mut a, 1, "{amount: 5}"), Response { status: 400, body: String::from(r#"{"error":"invalid JSON"}"#) }, "broken JSON");
+          assert_eq!(run(&mut a, 1, r#"{"amount": 0}"#), Response { status: 400, body: String::from(r#"{"error":"amount must be positive"}"#) }, "amount 0");
+      }
+
+      #[test]
+      fn status_codes_live_on_the_error() {
+          assert_eq!(ApiError::NotFound(1).status(), 404, "NotFound");
+          assert_eq!(ApiError::InsufficientFunds { balance: 1, amount: 2 }.status(), 409, "InsufficientFunds");
+          assert_eq!(ApiError::BadRequest(String::new()).status(), 400, "BadRequest");
+      }
+    hints:
+      - "Derive `Error` on `ApiError` and add `#[error(...)]` messages; `impl From<serde_json::Error> for ApiError { fn from(_: serde_json::Error) -> Self { ApiError::BadRequest(String::from(\"invalid JSON\")) } }`."
+      - "`status` is a `match self` with one arm per variant; `into_response` builds `json!({ \"error\": self.to_string() })` with `self.status()`."
+      - "In `withdraw`: `serde_json::from_str(body)?`, the zero check, `accounts.get_mut(&id).ok_or(ApiError::NotFound(id))?`, the balance check, then subtract through the `&mut`."
+    more:
+      - task: |
+          Hide server errors. `ApiError` has `NotFound(String)` (404) and `Internal(String)` (500). Write `into_response`: for `NotFound`, the body is `{"error":"<message>"}`; for `Internal`, log the details with `eprintln!("internal error: {detail}")` and send only `{"error":"internal server error"}`. Then write `fn respond(result: Result<Response, ApiError>) -> Response`.
+        seed: |
+          use serde_json::json;
+          use thiserror::Error;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Debug, Error)]
+          enum ApiError {
+              #[error("{0} not found")]
+              NotFound(String),
+              #[error("internal error: {0}")]
+              Internal(String),
+          }
+
+          impl ApiError {
+              fn into_response(self) -> Response {
+                  todo!()
+              }
+          }
+
+          fn respond(result: Result<Response, ApiError>) -> Response {
+              todo!()
+          }
+        solution: |
+          use serde_json::json;
+          use thiserror::Error;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Debug, Error)]
+          enum ApiError {
+              #[error("{0} not found")]
+              NotFound(String),
+              #[error("internal error: {0}")]
+              Internal(String),
+          }
+
+          impl ApiError {
+              fn into_response(self) -> Response {
+                  match self {
+                      ApiError::NotFound(_) => Response { status: 404, body: json!({ "error": self.to_string() }).to_string() },
+                      ApiError::Internal(detail) => {
+                          eprintln!("internal error: {detail}");
+                          Response { status: 500, body: json!({ "error": "internal server error" }).to_string() }
+                      }
+                  }
+              }
+          }
+
+          fn respond(result: Result<Response, ApiError>) -> Response {
+              result.unwrap_or_else(ApiError::into_response)
+          }
+        harness: |
+          #[test]
+          fn ok_results_pass_through() {
+              let ok = Response { status: 200, body: String::from("{}") };
+              assert_eq!(respond(Ok(Response { status: 200, body: String::from("{}") })), ok, "respond(Ok(..))");
+          }
+
+          #[test]
+          fn not_found_shows_its_message() {
+              assert_eq!(respond(Err(ApiError::NotFound(String::from("user 4")))), Response { status: 404, body: String::from(r#"{"error":"user 4 not found"}"#) }, "respond(NotFound)");
+          }
+
+          #[test]
+          fn internal_errors_hide_the_details() {
+              let r = respond(Err(ApiError::Internal(String::from("connection to db-7.internal:5432 refused"))));
+              assert_eq!(r, Response { status: 500, body: String::from(r#"{"error":"internal server error"}"#) }, "respond(Internal)");
+              assert!(!r.body.contains("db-7"), "the body must not leak the hostname");
+          }
+        hints:
+          - "`match self` with one arm per variant. For `Internal(detail)`, `eprintln!` the detail and build a fixed body."
+          - "`respond` is `result.unwrap_or_else(ApiError::into_response)`."
+      - task: |
+          Validation errors should list **every** problem at once, so a form can highlight all bad fields. Write `fn validate_signup(s: &Signup) -> Result<(), ApiError>` checking: `name` not empty after trimming (`"required"`), `email` contains `@` (`"must contain @"`), `age` at least 13 (`"must be at least 13"`). If any check fails, return `ApiError::Validation(map)` with one entry per bad field. Then write `into_response`: `Validation` gives `422` and `{"error":"validation failed","fields":{...}}`.
+        seed: |
+          use serde_json::json;
+          use std::collections::BTreeMap;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Debug)]
+          enum ApiError {
+              Validation(BTreeMap<String, String>),
+          }
+
+          impl ApiError {
+              fn into_response(self) -> Response {
+                  todo!()
+              }
+          }
+
+          struct Signup {
+              name: String,
+              email: String,
+              age: u32,
+          }
+
+          fn validate_signup(s: &Signup) -> Result<(), ApiError> {
+              todo!()
+          }
+        solution: |
+          use serde_json::json;
+          use std::collections::BTreeMap;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Debug)]
+          enum ApiError {
+              Validation(BTreeMap<String, String>),
+          }
+
+          impl ApiError {
+              fn into_response(self) -> Response {
+                  match self {
+                      ApiError::Validation(fields) => Response {
+                          status: 422,
+                          body: json!({ "error": "validation failed", "fields": fields }).to_string(),
+                      },
+                  }
+              }
+          }
+
+          struct Signup {
+              name: String,
+              email: String,
+              age: u32,
+          }
+
+          fn validate_signup(s: &Signup) -> Result<(), ApiError> {
+              let mut fields = BTreeMap::new();
+              if s.name.trim().is_empty() {
+                  fields.insert(String::from("name"), String::from("required"));
+              }
+              if !s.email.contains('@') {
+                  fields.insert(String::from("email"), String::from("must contain @"));
+              }
+              if s.age < 13 {
+                  fields.insert(String::from("age"), String::from("must be at least 13"));
+              }
+              if fields.is_empty() { Ok(()) } else { Err(ApiError::Validation(fields)) }
+          }
+        harness: |
+          fn signup(name: &str, email: &str, age: u32) -> Signup {
+              Signup { name: name.to_string(), email: email.to_string(), age }
+          }
+
+          fn check(s: &Signup) -> Option<Response> {
+              validate_signup(s).err().map(ApiError::into_response)
+          }
+
+          #[test]
+          fn a_valid_signup_passes() {
+              assert!(validate_signup(&signup("Ana", "ana@arena.dev", 30)).is_ok(), "valid signup");
+          }
+
+          #[test]
+          fn one_bad_field_is_reported() {
+              assert_eq!(check(&signup("Ana", "ana", 30)), Some(Response { status: 422, body: String::from(r#"{"error":"validation failed","fields":{"email":"must contain @"}}"#) }), "bad email");
+          }
+
+          #[test]
+          fn all_bad_fields_are_reported_together() {
+              assert_eq!(check(&signup("  ", "x", 9)), Some(Response { status: 422, body: String::from(r#"{"error":"validation failed","fields":{"age":"must be at least 13","email":"must contain @","name":"required"}}"#) }), "everything wrong");
+          }
+
+          #[test]
+          fn thirteen_is_old_enough() {
+              assert!(validate_signup(&signup("Bo", "bo@x.io", 13)).is_ok(), "age 13");
+          }
+        hints:
+          - "Collect problems in a `BTreeMap<String, String>`, one `if` per rule; return `Err(ApiError::Validation(fields))` only if it isn't empty."
+          - "`json!` accepts the map directly: `json!({ \"error\": \"validation failed\", \"fields\": fields })`."
+
+  - title: "Shared state: an in-memory store"
+    id: web-5
+    text: |
+      A real server handles many requests **at the same time**, on several threads (or async tasks), and they all need the same data: the users, the items, the counters. That's the shared state problem from the concurrency modules, and the solution is the same: wrap the data in a `Mutex` and share it with an `Arc`.
+
+      ```rust run
+      use std::collections::BTreeMap;
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      #[derive(Default)]
+      struct Store {
+          notes: BTreeMap<u32, String>,
+          next_id: u32,
+      }
+
+      #[derive(Default)]
+      struct AppState {
+          store: Mutex<Store>,
+      }
+
+      fn create_note(state: &AppState, text: &str) -> u32 {
+          let mut store = state.store.lock().unwrap();
+          store.next_id += 1;
+          let id = store.next_id;
+          store.notes.insert(id, text.to_string());
+          id
+      }
+
+      fn count_notes(state: &AppState) -> usize {
+          state.store.lock().unwrap().notes.len()
+      }
+
+      fn main() {
+          let state = Arc::new(AppState::default());
+          let mut clients = Vec::new();
+          for client in 0..4 {
+              let state = Arc::clone(&state);
+              clients.push(thread::spawn(move || {
+                  for i in 0..25 {
+                      create_note(&state, &format!("note {i} from client {client}"));
+                  }
+              }));
+          }
+          for c in clients {
+              c.join().unwrap();
+          }
+          println!("{} notes", count_notes(&state));
+          let store = state.store.lock().unwrap();
+          println!("ids {} to {}", store.notes.keys().next().unwrap(), store.notes.keys().last().unwrap());
+      }
+      ```
+
+      ```output
+      100 notes
+      ids 1 to 100
+      ```
+
+      Piece by piece:
+
+      - `Store` holds the data **and** the id counter, behind **one** `Mutex`. Taking the next id and inserting happen under the same lock, so two requests can never get the same id. (With two separate locks, another thread could slip in between.)
+      - Handlers take `&AppState`. They don't care that it lives in an `Arc`; the server (here, our four threads standing in for clients) owns the `Arc` and hands out references. Web frameworks do exactly this.
+      - `lock().unwrap()` is accepted practice: `lock` only fails if another thread **panicked** while holding the lock ("poisoning"), and then crashing loudly is reasonable.
+      - Keep the lock for as short a time as possible: do the parsing and validation **before** locking, and don't do slow work (network calls, big computations) while holding it. Every other request waits meanwhile.
+      - Lots of reads and few writes? `RwLock` lets many readers in at once. In production, this in-memory `Store` becomes a database connection pool (like `sqlx::PgPool`), which is already safe to share; the handlers keep the same shape.
+
+      ### Common mistakes
+
+      - **Two locks for one operation** (check-then-act): `if !store.lock().unwrap().contains(..) { store.lock().unwrap().insert(..) }` lets another thread insert in between. Lock once, do both.
+      - **Locking the same `Mutex` twice in one call**, for example calling a helper that locks while you still hold the guard: the thread waits for itself forever (a **deadlock**). `std::sync::Mutex` isn't reentrant.
+      - **Forgetting `Arc`** and trying to move the state into several threads: ``error[E0382]: use of moved value: `state` ``.
+
+      **Your turn:** write `handle` for an inventory API. The types and helpers are ready; the routes are:
+      - `GET /items`: `200`, a JSON array of all items in id order
+      - `POST /items` with `{"name": "mug", "qty": 3}`: `201` and the new item (ids start at 1); a body that doesn't parse: `400` `{"error":"invalid JSON"}`
+      - `GET /items/{id}`: `200` and the item, or `404` `{"error":"item 7 not found"}`
+      - `DELETE /items/{id}`: `204` with an empty body, or the same `404`
+      - an id that isn't a number: `400` `{"error":"bad id"}`; a known path with another method: `405` `{"error":"method not allowed"}`; anything else: `404` `{"error":"not found"}`
+    seed: |
+      use serde::{Deserialize, Serialize};
+      use serde_json::json;
+      use std::collections::BTreeMap;
+      use std::sync::Mutex;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+          Delete,
+      }
+
+      struct Request {
+          method: Method,
+          path: String,
+          body: String,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Clone, Serialize)]
+      struct Item {
+          id: u32,
+          name: String,
+          qty: u32,
+      }
+
+      #[derive(Deserialize)]
+      struct NewItem {
+          name: String,
+          qty: u32,
+      }
+
+      #[derive(Default)]
+      struct Store {
+          items: BTreeMap<u32, Item>,
+          next_id: u32,
+      }
+
+      #[derive(Default)]
+      struct AppState {
+          store: Mutex<Store>,
+      }
+
+      fn json_response<T: Serialize>(status: u16, value: &T) -> Response {
+          Response { status, body: serde_json::to_string(value).expect("response types always serialize") }
+      }
+
+      fn error_response(status: u16, message: &str) -> Response {
+          json_response(status, &json!({ "error": message }))
+      }
+
+      fn handle(state: &AppState, req: &Request) -> Response {
+          todo!()
+      }
+    solution: |
+      use serde::{Deserialize, Serialize};
+      use serde_json::json;
+      use std::collections::BTreeMap;
+      use std::sync::Mutex;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+          Delete,
+      }
+
+      struct Request {
+          method: Method,
+          path: String,
+          body: String,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Clone, Serialize)]
+      struct Item {
+          id: u32,
+          name: String,
+          qty: u32,
+      }
+
+      #[derive(Deserialize)]
+      struct NewItem {
+          name: String,
+          qty: u32,
+      }
+
+      #[derive(Default)]
+      struct Store {
+          items: BTreeMap<u32, Item>,
+          next_id: u32,
+      }
+
+      #[derive(Default)]
+      struct AppState {
+          store: Mutex<Store>,
+      }
+
+      fn json_response<T: Serialize>(status: u16, value: &T) -> Response {
+          Response { status, body: serde_json::to_string(value).expect("response types always serialize") }
+      }
+
+      fn error_response(status: u16, message: &str) -> Response {
+          json_response(status, &json!({ "error": message }))
+      }
+
+      fn list_items(state: &AppState) -> Response {
+          let store = state.store.lock().unwrap();
+          let items: Vec<&Item> = store.items.values().collect();
+          json_response(200, &items)
+      }
+
+      fn create_item(state: &AppState, body: &str) -> Response {
+          let Ok(new) = serde_json::from_str::<NewItem>(body) else {
+              return error_response(400, "invalid JSON");
+          };
+          let mut store = state.store.lock().unwrap();
+          store.next_id += 1;
+          let item = Item { id: store.next_id, name: new.name, qty: new.qty };
+          store.items.insert(item.id, item.clone());
+          json_response(201, &item)
+      }
+
+      fn get_item(state: &AppState, id: u32) -> Response {
+          match state.store.lock().unwrap().items.get(&id) {
+              Some(item) => json_response(200, item),
+              None => error_response(404, &format!("item {id} not found")),
+          }
+      }
+
+      fn delete_item(state: &AppState, id: u32) -> Response {
+          match state.store.lock().unwrap().items.remove(&id) {
+              Some(_) => Response { status: 204, body: String::new() },
+              None => error_response(404, &format!("item {id} not found")),
+          }
+      }
+
+      fn handle(state: &AppState, req: &Request) -> Response {
+          let segments: Vec<&str> = req.path.split('/').filter(|s| !s.is_empty()).collect();
+          match (req.method, segments.as_slice()) {
+              (Method::Get, ["items"]) => list_items(state),
+              (Method::Post, ["items"]) => create_item(state, &req.body),
+              (Method::Get | Method::Delete, ["items", id]) => {
+                  let Ok(id) = id.parse::<u32>() else {
+                      return error_response(400, "bad id");
+                  };
+                  if req.method == Method::Get { get_item(state, id) } else { delete_item(state, id) }
+              }
+              (_, ["items"] | ["items", _]) => error_response(405, "method not allowed"),
+              _ => error_response(404, "not found"),
+          }
+      }
+    harness: |
+      fn req(method: Method, path: &str, body: &str) -> Request {
+          Request { method, path: path.to_string(), body: body.to_string() }
+      }
+
+      fn r(status: u16, body: &str) -> Response {
+          Response { status, body: body.to_string() }
+      }
+
+      #[test]
+      fn creates_and_lists_items() {
+          let state = AppState::default();
+          assert_eq!(handle(&state, &req(Method::Post, "/items", r#"{"name": "mug", "qty": 3}"#)), r(201, r#"{"id":1,"name":"mug","qty":3}"#), "POST mug");
+          assert_eq!(handle(&state, &req(Method::Post, "/items", r#"{"name": "tea", "qty": 10}"#)), r(201, r#"{"id":2,"name":"tea","qty":10}"#), "POST tea");
+          assert_eq!(handle(&state, &req(Method::Get, "/items", "")), r(200, r#"[{"id":1,"name":"mug","qty":3},{"id":2,"name":"tea","qty":10}]"#), "GET /items");
+      }
+
+      #[test]
+      fn gets_and_deletes_one_item() {
+          let state = AppState::default();
+          handle(&state, &req(Method::Post, "/items", r#"{"name": "lamp", "qty": 1}"#));
+          assert_eq!(handle(&state, &req(Method::Get, "/items/1", "")), r(200, r#"{"id":1,"name":"lamp","qty":1}"#), "GET /items/1");
+          assert_eq!(handle(&state, &req(Method::Delete, "/items/1", "")), r(204, ""), "DELETE /items/1");
+          assert_eq!(handle(&state, &req(Method::Get, "/items/1", "")), r(404, r#"{"error":"item 1 not found"}"#), "GET /items/1 after delete");
+          assert_eq!(handle(&state, &req(Method::Delete, "/items/1", "")), r(404, r#"{"error":"item 1 not found"}"#), "DELETE /items/1 again");
+      }
+
+      #[test]
+      fn empty_store_lists_nothing() {
+          assert_eq!(handle(&AppState::default(), &req(Method::Get, "/items", "")), r(200, "[]"), "GET /items on an empty store");
+      }
+
+      #[test]
+      fn bad_input_is_400() {
+          let state = AppState::default();
+          assert_eq!(handle(&state, &req(Method::Post, "/items", r#"{"name": "mug"}"#)), r(400, r#"{"error":"invalid JSON"}"#), "POST without qty");
+          assert_eq!(handle(&state, &req(Method::Get, "/items/abc", "")), r(400, r#"{"error":"bad id"}"#), "GET /items/abc");
+      }
+
+      #[test]
+      fn wrong_methods_and_paths() {
+          let state = AppState::default();
+          assert_eq!(handle(&state, &req(Method::Delete, "/items", "")), r(405, r#"{"error":"method not allowed"}"#), "DELETE /items");
+          assert_eq!(handle(&state, &req(Method::Post, "/items/3", "{}")), r(405, r#"{"error":"method not allowed"}"#), "POST /items/3");
+          assert_eq!(handle(&state, &req(Method::Get, "/orders", "")), r(404, r#"{"error":"not found"}"#), "GET /orders");
+      }
+
+      #[test]
+      fn concurrent_requests_get_unique_ids() {
+          let state = AppState::default();
+          std::thread::scope(|s| {
+              for t in 0..4 {
+                  let state = &state;
+                  s.spawn(move || {
+                      for i in 0..25 {
+                          let body = format!(r#"{{"name": "t{t}-{i}", "qty": 1}}"#);
+                          assert_eq!(handle(state, &req(Method::Post, "/items", &body)).status, 201);
+                      }
+                  });
+              }
+          });
+          let list: serde_json::Value = serde_json::from_str(&handle(&state, &req(Method::Get, "/items", "")).body).unwrap();
+          let ids: Vec<u64> = list.as_array().unwrap().iter().map(|i| i["id"].as_u64().unwrap()).collect();
+          assert_eq!(ids, (1..=100).collect::<Vec<u64>>(), "ids after 100 concurrent creates");
+      }
+    hints:
+      - "Write one small function per route (`list_items`, `create_item`, `get_item`, `delete_item`) and route to them with `match (req.method, segments.as_slice())`."
+      - "In `create_item`, parse the body **before** locking. Then, under one lock: bump `next_id`, build the Item, insert a clone, return it with 201."
+      - "`store.items.values().collect::<Vec<&Item>>()` serializes as a JSON array in id order (BTreeMap). `items.remove(&id)` returns `Some` if it existed."
+    more:
+      - task: |
+          Add replacement: write `fn update_item(state: &AppState, id: u32, body: &str) -> Response` for `PUT /items/{id}`. The body is a full item without id (`{"name": "big mug", "qty": 2}`). Answer `400` `{"error":"invalid JSON"}` if it doesn't parse, `404` `{"error":"item 7 not found"}` if there's no such item, otherwise replace its name and qty and answer `200` with the updated item.
+        seed: |
+          use serde::{Deserialize, Serialize};
+          use serde_json::json;
+          use std::collections::BTreeMap;
+          use std::sync::Mutex;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Clone, Serialize)]
+          struct Item {
+              id: u32,
+              name: String,
+              qty: u32,
+          }
+
+          #[derive(Deserialize)]
+          struct NewItem {
+              name: String,
+              qty: u32,
+          }
+
+          #[derive(Default)]
+          struct AppState {
+              items: Mutex<BTreeMap<u32, Item>>,
+          }
+
+          fn json_response<T: Serialize>(status: u16, value: &T) -> Response {
+              Response { status, body: serde_json::to_string(value).expect("response types always serialize") }
+          }
+
+          fn error_response(status: u16, message: &str) -> Response {
+              json_response(status, &json!({ "error": message }))
+          }
+
+          fn update_item(state: &AppState, id: u32, body: &str) -> Response {
+              todo!()
+          }
+        solution: |
+          use serde::{Deserialize, Serialize};
+          use serde_json::json;
+          use std::collections::BTreeMap;
+          use std::sync::Mutex;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Clone, Serialize)]
+          struct Item {
+              id: u32,
+              name: String,
+              qty: u32,
+          }
+
+          #[derive(Deserialize)]
+          struct NewItem {
+              name: String,
+              qty: u32,
+          }
+
+          #[derive(Default)]
+          struct AppState {
+              items: Mutex<BTreeMap<u32, Item>>,
+          }
+
+          fn json_response<T: Serialize>(status: u16, value: &T) -> Response {
+              Response { status, body: serde_json::to_string(value).expect("response types always serialize") }
+          }
+
+          fn error_response(status: u16, message: &str) -> Response {
+              json_response(status, &json!({ "error": message }))
+          }
+
+          fn update_item(state: &AppState, id: u32, body: &str) -> Response {
+              let Ok(new) = serde_json::from_str::<NewItem>(body) else {
+                  return error_response(400, "invalid JSON");
+              };
+              let mut items = state.items.lock().unwrap();
+              match items.get_mut(&id) {
+                  Some(item) => {
+                      item.name = new.name;
+                      item.qty = new.qty;
+                      json_response(200, item)
+                  }
+                  None => error_response(404, &format!("item {id} not found")),
+              }
+          }
+        harness: |
+          fn state() -> AppState {
+              let s = AppState::default();
+              s.items.lock().unwrap().insert(1, Item { id: 1, name: String::from("mug"), qty: 3 });
+              s
+          }
+
+          #[test]
+          fn replaces_an_existing_item() {
+              let s = state();
+              let r = update_item(&s, 1, r#"{"name": "big mug", "qty": 2}"#);
+              assert_eq!(r, Response { status: 200, body: String::from(r#"{"id":1,"name":"big mug","qty":2}"#) }, "PUT /items/1");
+              assert_eq!(s.items.lock().unwrap()[&1].name, "big mug", "stored name");
+          }
+
+          #[test]
+          fn unknown_items_are_404() {
+              assert_eq!(update_item(&state(), 7, r#"{"name": "x", "qty": 1}"#), Response { status: 404, body: String::from(r#"{"error":"item 7 not found"}"#) }, "PUT /items/7");
+          }
+
+          #[test]
+          fn bad_bodies_are_400_and_change_nothing() {
+              let s = state();
+              assert_eq!(update_item(&s, 1, r#"{"name": "x"}"#).status, 400, "PUT without qty");
+              assert_eq!(s.items.lock().unwrap()[&1].qty, 3, "qty unchanged");
+          }
+        hints:
+          - "Parse the body first; on error return 400 before touching the store."
+          - "`items.get_mut(&id)` gives `Option<&mut Item>`: assign the new fields and serialize the item."
+      - task: |
+          Protect the API with a **rate limiter**: each client may make `limit` requests. Write `fn check(&self, client: &str) -> Response` on `Limiter`: count the request; while the client's count is within the limit answer `200` with `{"remaining":<requests left>}`, after that `429` with `{"error":"too many requests"}`. It must be correct when many threads call it at once.
+        seed: |
+          use serde_json::json;
+          use std::collections::HashMap;
+          use std::sync::Mutex;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          struct Limiter {
+              limit: u32,
+              hits: Mutex<HashMap<String, u32>>,
+          }
+
+          impl Limiter {
+              fn new(limit: u32) -> Self {
+                  Limiter { limit, hits: Mutex::new(HashMap::new()) }
+              }
+
+              fn check(&self, client: &str) -> Response {
+                  todo!()
+              }
+          }
+        solution: |
+          use serde_json::json;
+          use std::collections::HashMap;
+          use std::sync::Mutex;
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          struct Limiter {
+              limit: u32,
+              hits: Mutex<HashMap<String, u32>>,
+          }
+
+          impl Limiter {
+              fn new(limit: u32) -> Self {
+                  Limiter { limit, hits: Mutex::new(HashMap::new()) }
+              }
+
+              fn check(&self, client: &str) -> Response {
+                  let mut hits = self.hits.lock().unwrap();
+                  let count = hits.entry(client.to_string()).or_insert(0);
+                  *count += 1;
+                  if *count <= self.limit {
+                      Response { status: 200, body: json!({ "remaining": self.limit - *count }).to_string() }
+                  } else {
+                      Response { status: 429, body: json!({ "error": "too many requests" }).to_string() }
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn counts_down_then_refuses() {
+              let l = Limiter::new(2);
+              assert_eq!(l.check("ana"), Response { status: 200, body: String::from(r#"{"remaining":1}"#) }, "1st request");
+              assert_eq!(l.check("ana"), Response { status: 200, body: String::from(r#"{"remaining":0}"#) }, "2nd request");
+              assert_eq!(l.check("ana"), Response { status: 429, body: String::from(r#"{"error":"too many requests"}"#) }, "3rd request");
+          }
+
+          #[test]
+          fn clients_are_counted_separately() {
+              let l = Limiter::new(1);
+              assert_eq!(l.check("ana").status, 200, "ana");
+              assert_eq!(l.check("bo").status, 200, "bo");
+              assert_eq!(l.check("ana").status, 429, "ana again");
+          }
+
+          #[test]
+          fn exactly_limit_requests_succeed_under_concurrency() {
+              let l = Limiter::new(50);
+              let ok = std::sync::atomic::AtomicU32::new(0);
+              std::thread::scope(|s| {
+                  for _ in 0..8 {
+                      s.spawn(|| {
+                          for _ in 0..20 {
+                              if l.check("bot").status == 200 {
+                                  ok.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                              }
+                          }
+                      });
+                  }
+              });
+              assert_eq!(ok.into_inner(), 50, "successful requests out of 160");
+          }
+        hints:
+          - "Lock once, then `hits.entry(client.to_string()).or_insert(0)` gives a `&mut u32` to bump."
+          - "Compare the new count with `self.limit` while still holding the lock, so two threads can't both take the last slot."
+
+  - title: Testing handlers
+    id: web-6
+    text: |
+      Here's the payoff of handlers being plain functions: **testing them is just calling them**. No server, no network, no ports. Build a request, call the handler, check the status and the body. Teams write dozens of these per endpoint, and they run in milliseconds.
+
+      ```rust
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+          use serde_json::{json, Value};
+
+          fn post(path: &str, body: &str) -> Response {
+              handle(&Request { method: Method::Post, path: path.to_string(), body: body.to_string() })
+          }
+
+          fn body_json(r: &Response) -> Value {
+              serde_json::from_str(&r.body).expect("response body is JSON")
+          }
+
+          #[test]
+          fn creating_a_user_returns_201_and_the_user() {
+              let r = post("/users", r#"{"name": "Ana", "email": "ana@arena.dev"}"#);
+              assert_eq!(r.status, 201);
+              assert_eq!(body_json(&r), json!({ "id": 1, "name": "Ana", "email": "ana@arena.dev" }));
+          }
+
+          #[test]
+          fn invalid_email_is_422() {
+              let r = post("/users", r#"{"name": "Bo", "email": "bo"}"#);
+              assert_eq!(r.status, 422);
+              assert_eq!(body_json(&r)["error"], "email must contain @");
+          }
+      }
+      ```
+
+      What good handler tests do:
+
+      - **Compare JSON as values, not strings.** Parsing the body into a `serde_json::Value` and comparing with `json!` ignores key order and spacing, so a harmless serializer change doesn't break every test. `value["error"] == "..."` checks one field.
+      - **Use small helpers** (`post`, `get`, `body_json`) so each test reads like a sentence about one behavior.
+      - **Test the unhappy paths at least as much as the happy one**: bad JSON, missing fields, wrong method, unknown ids, and **boundaries** (exactly at a limit, one below it). Most production bugs live at the edges.
+      - **Name tests after behavior**: `half_needs_2000_cents`, not `test3`. When it fails in CI, the name is the first clue.
+      - **Table-driven tests** cover many routes compactly:
+
+      ```rust
+      #[test]
+      fn routes_answer_with_the_right_status() {
+          let cases = [
+              (Method::Get, "/items", 200),
+              (Method::Delete, "/items", 405),
+              (Method::Get, "/nope", 404),
+          ];
+          for (method, path, want) in cases {
+              let r = handle(&Request { method, path: path.to_string(), body: String::new() });
+              assert_eq!(r.status, want, "{method:?} {path}");
+          }
+      }
+      ```
+
+      The message argument (`"{method:?} {path}"`) tells you **which** case failed.
+
+      With axum (next step), the same tests send a request through the whole router with `tower::ServiceExt::oneshot`, still without opening a port.
+
+      **Your turn:** this time you write the tests. The handler below quotes a price for a shopping cart. Its rules: only `POST /quote` exists (another method on `/quote` is `405`, other paths `404`); the body is `{"cents": <cart total>, "code": <optional discount code>}`, and one that doesn't parse is `400`; no code means the full price; `CRAB10` takes 10% off; `HALF` halves the price but only for carts of **at least** 2000 cents (below that: `422`); any other code is `422`. Success is `200` with `{"total": <cents>}`. Write at least 4 tests that pin down these rules. Hidden broken versions of the handler (a wrong discount, an off-by-one boundary, wrong status codes) must each make at least one of your tests fail.
+    mode: test
+    minTests: 4
+    seed: |
+      use serde::Deserialize;
+      use serde_json::json;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+      }
+
+      struct Request {
+          method: Method,
+          path: &'static str,
+          body: &'static str,
+      }
+
+      #[derive(Debug)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Deserialize)]
+      struct Quote {
+          cents: u64,
+          code: Option<String>,
+      }
+
+      fn error(status: u16, message: &str) -> Response {
+          Response { status, body: json!({ "error": message }).to_string() }
+      }
+
+      fn handle(req: &Request) -> Response {
+          if req.path != "/quote" {
+              return error(404, "not found");
+          }
+          if req.method != Method::Post {
+              return error(405, "method not allowed");
+          }
+          let Ok(q) = serde_json::from_str::<Quote>(req.body) else {
+              return error(400, "invalid JSON");
+          };
+          let total = match q.code.as_deref() {
+              None => q.cents,
+              Some("CRAB10") => q.cents * 90 / 100,
+              Some("HALF") if q.cents >= 2000 => q.cents / 2,
+              Some("HALF") => return error(422, "HALF needs a cart of at least 2000 cents"),
+              Some(_) => return error(422, "unknown code"),
+          };
+          Response { status: 200, body: json!({ "total": total }).to_string() }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+          use serde_json::Value;
+
+          fn post(body: &'static str) -> Response {
+              handle(&Request { method: Method::Post, path: "/quote", body })
+          }
+
+          fn body_json(r: &Response) -> Value {
+              serde_json::from_str(&r.body).unwrap()
+          }
+
+          // Write your #[test] functions here.
+      }
+    solution: |
+      use serde::Deserialize;
+      use serde_json::json;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Method {
+          Get,
+          Post,
+      }
+
+      struct Request {
+          method: Method,
+          path: &'static str,
+          body: &'static str,
+      }
+
+      #[derive(Debug)]
+      struct Response {
+          status: u16,
+          body: String,
+      }
+
+      #[derive(Deserialize)]
+      struct Quote {
+          cents: u64,
+          code: Option<String>,
+      }
+
+      fn error(status: u16, message: &str) -> Response {
+          Response { status, body: json!({ "error": message }).to_string() }
+      }
+
+      fn handle(req: &Request) -> Response {
+          if req.path != "/quote" {
+              return error(404, "not found");
+          }
+          if req.method != Method::Post {
+              return error(405, "method not allowed");
+          }
+          let Ok(q) = serde_json::from_str::<Quote>(req.body) else {
+              return error(400, "invalid JSON");
+          };
+          let total = match q.code.as_deref() {
+              None => q.cents,
+              Some("CRAB10") => q.cents * 90 / 100,
+              Some("HALF") if q.cents >= 2000 => q.cents / 2,
+              Some("HALF") => return error(422, "HALF needs a cart of at least 2000 cents"),
+              Some(_) => return error(422, "unknown code"),
+          };
+          Response { status: 200, body: json!({ "total": total }).to_string() }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+          use serde_json::Value;
+
+          fn post(body: &'static str) -> Response {
+              handle(&Request { method: Method::Post, path: "/quote", body })
+          }
+
+          fn body_json(r: &Response) -> Value {
+              serde_json::from_str(&r.body).unwrap()
+          }
+
+          #[test]
+          fn no_code_charges_the_full_price() {
+              let r = post(r#"{"cents": 1500}"#);
+              assert_eq!(r.status, 200);
+              assert_eq!(body_json(&r), json!({ "total": 1500 }));
+          }
+
+          #[test]
+          fn crab10_takes_ten_percent_off() {
+              let r = post(r#"{"cents": 1000, "code": "CRAB10"}"#);
+              assert_eq!(r.status, 200);
+              assert_eq!(body_json(&r)["total"], 900);
+          }
+
+          #[test]
+          fn half_applies_from_exactly_2000_cents() {
+              assert_eq!(body_json(&post(r#"{"cents": 2000, "code": "HALF"}"#))["total"], 1000);
+              assert_eq!(post(r#"{"cents": 1999, "code": "HALF"}"#).status, 422);
+          }
+
+          #[test]
+          fn unknown_codes_are_rejected() {
+              assert_eq!(post(r#"{"cents": 500, "code": "FREE"}"#).status, 422);
+          }
+
+          #[test]
+          fn bad_bodies_are_400() {
+              assert_eq!(post("{cents: 5}").status, 400);
+              assert_eq!(post(r#"{"code": "HALF"}"#).status, 400);
+          }
+
+          #[test]
+          fn wrong_methods_and_paths() {
+              assert_eq!(handle(&Request { method: Method::Get, path: "/quote", body: "" }).status, 405);
+              assert_eq!(handle(&Request { method: Method::Post, path: "/quotes", body: "{}" }).status, 404);
+          }
+      }
+    mutants:
+      - name: CRAB10 takes 15% off
+        find: "q.cents * 90 / 100"
+        replace: "q.cents * 85 / 100"
+      - name: HALF needs more than 2000
+        find: "q.cents >= 2000"
+        replace: "q.cents > 2000"
+      - name: bad JSON answers 422
+        find: 'return error(400, "invalid JSON");'
+        replace: 'return error(422, "invalid JSON");'
+      - name: wrong method answers 404
+        find: 'return error(405, "method not allowed");'
+        replace: 'return error(404, "method not allowed");'
+      - name: unknown codes are ignored
+        find: 'Some(_) => return error(422, "unknown code"),'
+        replace: 'Some(_) => q.cents,'
+      - name: no code charges nothing
+        find: "None => q.cents,"
+        replace: "None => 0,"
+    hints:
+      - "Start with the happy paths: `let r = post(r#\"{\"cents\": 1000, \"code\": \"CRAB10\"}\"#);` then check `r.status` and `body_json(&r)[\"total\"]`."
+      - "Boundaries catch off-by-one bugs: test HALF with exactly 2000 cents (works) and 1999 (422)."
+      - "Don't forget the error paths: an unknown code, a body that isn't JSON, `Method::Get` on `/quote`, and another path."
+    more:
+      - task: |
+          Write tests for this router (at least 3). It maps a method and path to a status code: `GET /orders` 200, `POST /orders` 201, `GET /orders/{id}` 200 for a numeric id and 400 otherwise, `DELETE /orders/{id}` 204 (400 for a bad id); other methods on those paths 405; everything else 404; a trailing slash is allowed. A **table-driven** test (an array of `(method, path, expected)` and a loop) is the quickest way to cover it. Hidden broken routers must each fail one of your tests.
+        mode: test
+        minTests: 3
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Method {
+              Get,
+              Post,
+              Put,
+              Delete,
+          }
+
+          fn route(method: Method, path: &str) -> u16 {
+              let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+              match (method, segments.as_slice()) {
+                  (Method::Get, ["orders"]) => 200,
+                  (Method::Post, ["orders"]) => 201,
+                  (Method::Get, ["orders", id]) => if id.parse::<u32>().is_ok() { 200 } else { 400 },
+                  (Method::Delete, ["orders", id]) => if id.parse::<u32>().is_ok() { 204 } else { 400 },
+                  (_, ["orders"] | ["orders", _]) => 405,
+                  _ => 404,
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Method {
+              Get,
+              Post,
+              Put,
+              Delete,
+          }
+
+          fn route(method: Method, path: &str) -> u16 {
+              let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+              match (method, segments.as_slice()) {
+                  (Method::Get, ["orders"]) => 200,
+                  (Method::Post, ["orders"]) => 201,
+                  (Method::Get, ["orders", id]) => if id.parse::<u32>().is_ok() { 200 } else { 400 },
+                  (Method::Delete, ["orders", id]) => if id.parse::<u32>().is_ok() { 204 } else { 400 },
+                  (_, ["orders"] | ["orders", _]) => 405,
+                  _ => 404,
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn known_routes() {
+                  let cases = [
+                      (Method::Get, "/orders", 200),
+                      (Method::Post, "/orders/", 201),
+                      (Method::Get, "/orders/12", 200),
+                      (Method::Delete, "/orders/3", 204),
+                  ];
+                  for (method, path, want) in cases {
+                      assert_eq!(route(method, path), want, "{method:?} {path}");
+                  }
+              }
+
+              #[test]
+              fn bad_ids_are_400() {
+                  assert_eq!(route(Method::Get, "/orders/abc"), 400);
+                  assert_eq!(route(Method::Delete, "/orders/x"), 400);
+              }
+
+              #[test]
+              fn wrong_methods_are_405_and_unknown_paths_404() {
+                  assert_eq!(route(Method::Put, "/orders"), 405);
+                  assert_eq!(route(Method::Post, "/orders/1"), 405);
+                  assert_eq!(route(Method::Get, "/customers"), 404);
+                  assert_eq!(route(Method::Get, "/orders/1/items"), 404);
+              }
+          }
+        mutants:
+          - name: POST answers 200
+            find: "(Method::Post, [\"orders\"]) => 201,"
+            replace: "(Method::Post, [\"orders\"]) => 200,"
+          - name: bad ids are treated as found
+            find: "(Method::Get, [\"orders\", id]) => if id.parse::<u32>().is_ok() { 200 } else { 400 },"
+            replace: "(Method::Get, [\"orders\", _]) => 200,"
+          - name: wrong methods answer 404
+            find: "(_, [\"orders\"] | [\"orders\", _]) => 405,"
+            replace: "(_, [\"orders\"] | [\"orders\", _]) => 404,"
+          - name: delete answers 200
+            find: "if id.parse::<u32>().is_ok() { 204 } else { 400 }"
+            replace: "if id.parse::<u32>().is_ok() { 200 } else { 400 }"
+          - name: trailing slash breaks routing
+            find: "path.split('/').filter(|s| !s.is_empty()).collect()"
+            replace: "path.trim_start_matches('/').split('/').collect()"
+        hints:
+          - "An array of `(Method::Get, \"/orders\", 200)` tuples and a `for` loop with `assert_eq!(route(method, path), want, \"{method:?} {path}\")`."
+          - "Include a trailing slash, a bad id, a wrong method and an unknown path in your cases."
+      - task: |
+          Tests read better with a **test client**. Write `TestClient`, whose `get(path)` and `post(path, body)` call the given `handle` and return `(status, Value)`, the status and the body parsed as JSON (an empty body becomes `Value::Null`). `post` takes the body as a `Value` (build it with `json!`) and serializes it.
+        seed: |
+          use serde_json::{json, Value};
+          use std::sync::Mutex;
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Method {
+              Get,
+              Post,
+          }
+
+          struct Request {
+              method: Method,
+              path: String,
+              body: String,
+          }
+
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Default)]
+          struct AppState {
+              counter: Mutex<i64>,
+          }
+
+          fn handle(state: &AppState, req: &Request) -> Response {
+              let mut counter = state.counter.lock().unwrap();
+              match (req.method, req.path.as_str()) {
+                  (Method::Get, "/counter") => Response { status: 200, body: json!({ "value": *counter }).to_string() },
+                  (Method::Post, "/counter/add") => match serde_json::from_str::<Value>(&req.body).ok().and_then(|v| v["by"].as_i64()) {
+                      Some(by) => {
+                          *counter += by;
+                          Response { status: 200, body: json!({ "value": *counter }).to_string() }
+                      }
+                      None => Response { status: 400, body: json!({ "error": "expected {\"by\": <number>}" }).to_string() },
+                  },
+                  (Method::Post, "/counter/reset") => {
+                      *counter = 0;
+                      Response { status: 204, body: String::new() }
+                  }
+                  _ => Response { status: 404, body: json!({ "error": "not found" }).to_string() },
+              }
+          }
+
+          struct TestClient {
+              state: AppState,
+          }
+
+          impl TestClient {
+              fn new() -> Self {
+                  TestClient { state: AppState::default() }
+              }
+
+              fn get(&self, path: &str) -> (u16, Value) {
+                  todo!()
+              }
+
+              fn post(&self, path: &str, body: Value) -> (u16, Value) {
+                  todo!()
+              }
+          }
+        solution: |
+          use serde_json::{json, Value};
+          use std::sync::Mutex;
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Method {
+              Get,
+              Post,
+          }
+
+          struct Request {
+              method: Method,
+              path: String,
+              body: String,
+          }
+
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          #[derive(Default)]
+          struct AppState {
+              counter: Mutex<i64>,
+          }
+
+          fn handle(state: &AppState, req: &Request) -> Response {
+              let mut counter = state.counter.lock().unwrap();
+              match (req.method, req.path.as_str()) {
+                  (Method::Get, "/counter") => Response { status: 200, body: json!({ "value": *counter }).to_string() },
+                  (Method::Post, "/counter/add") => match serde_json::from_str::<Value>(&req.body).ok().and_then(|v| v["by"].as_i64()) {
+                      Some(by) => {
+                          *counter += by;
+                          Response { status: 200, body: json!({ "value": *counter }).to_string() }
+                      }
+                      None => Response { status: 400, body: json!({ "error": "expected {\"by\": <number>}" }).to_string() },
+                  },
+                  (Method::Post, "/counter/reset") => {
+                      *counter = 0;
+                      Response { status: 204, body: String::new() }
+                  }
+                  _ => Response { status: 404, body: json!({ "error": "not found" }).to_string() },
+              }
+          }
+
+          struct TestClient {
+              state: AppState,
+          }
+
+          impl TestClient {
+              fn new() -> Self {
+                  TestClient { state: AppState::default() }
+              }
+
+              fn send(&self, method: Method, path: &str, body: String) -> (u16, Value) {
+                  let r = handle(&self.state, &Request { method, path: path.to_string(), body });
+                  let value = if r.body.is_empty() { Value::Null } else { serde_json::from_str(&r.body).expect("response body is JSON") };
+                  (r.status, value)
+              }
+
+              fn get(&self, path: &str) -> (u16, Value) {
+                  self.send(Method::Get, path, String::new())
+              }
+
+              fn post(&self, path: &str, body: Value) -> (u16, Value) {
+                  self.send(Method::Post, path, body.to_string())
+              }
+          }
+        harness: |
+          #[test]
+          fn get_returns_status_and_json() {
+              let c = TestClient::new();
+              assert_eq!(c.get("/counter"), (200, json!({ "value": 0 })), "GET /counter");
+          }
+
+          #[test]
+          fn post_sends_a_json_body() {
+              let c = TestClient::new();
+              assert_eq!(c.post("/counter/add", json!({ "by": 5 })), (200, json!({ "value": 5 })), "POST add 5");
+              assert_eq!(c.post("/counter/add", json!({ "by": -2 })), (200, json!({ "value": 3 })), "POST add -2");
+              assert_eq!(c.get("/counter"), (200, json!({ "value": 3 })), "GET after adds");
+          }
+
+          #[test]
+          fn empty_bodies_become_null() {
+              let c = TestClient::new();
+              assert_eq!(c.post("/counter/reset", Value::Null), (204, Value::Null), "POST reset");
+          }
+
+          #[test]
+          fn errors_come_back_as_json_too() {
+              let c = TestClient::new();
+              assert_eq!(c.post("/counter/add", json!({ "by": "lots" })).0, 400, "POST add lots");
+              assert_eq!(c.get("/nope"), (404, json!({ "error": "not found" })), "GET /nope");
+          }
+        hints:
+          - "A private helper `fn send(&self, method: Method, path: &str, body: String) -> (u16, Value)` avoids writing the logic twice."
+          - "Build a `Request`, call `handle(&self.state, &req)`, and parse `r.body` with `serde_json::from_str` unless it's empty."
+          - "`post` serializes its `Value` with `body.to_string()`."
+
+  - title: The same API in axum
+    id: web-7
+    text: |
+      Everything so far ran without a network, so you could see every moving part. In production you let a framework do the HTTP work. The most popular one in Rust is **axum**, built by the Tokio team on top of `hyper` (HTTP) and `tower` (middleware). Here's this module's inventory API in axum. It isn't compiled on this site (no network, no axum crate), but read it closely: you already know every idea in it.
+
+      ```toml
+      [dependencies]
+      axum = "0.8"
+      tokio = { version = "1", features = ["full"] }
+      serde = { version = "1", features = ["derive"] }
+      serde_json = "1"
+      ```
+
+      ```rust
+      use axum::{
+          extract::{Path, State},
+          http::StatusCode,
+          response::{IntoResponse, Response},
+          routing::get,
+          Json, Router,
+      };
+      use serde::{Deserialize, Serialize};
+      use std::collections::BTreeMap;
+      use std::sync::{Arc, Mutex};
+
+      #[derive(Clone, Serialize)]
+      struct Item {
+          id: u32,
+          name: String,
+          qty: u32,
+      }
+
+      #[derive(Deserialize)]
+      struct NewItem {
+          name: String,
+          qty: u32,
+      }
+
+      #[derive(Default)]
+      struct Store {
+          items: BTreeMap<u32, Item>,
+          next_id: u32,
+      }
+
+      type AppState = Arc<Mutex<Store>>;
+
+      enum ApiError {
+          NotFound(u32),
+      }
+
+      impl IntoResponse for ApiError {
+          fn into_response(self) -> Response {
+              match self {
+                  ApiError::NotFound(id) => {
+                      let body = Json(serde_json::json!({ "error": format!("item {id} not found") }));
+                      (StatusCode::NOT_FOUND, body).into_response()
+                  }
+              }
+          }
+      }
+
+      async fn list_items(State(state): State<AppState>) -> Json<Vec<Item>> {
+          let store = state.lock().unwrap();
+          Json(store.items.values().cloned().collect())
+      }
+
+      async fn get_item(State(state): State<AppState>, Path(id): Path<u32>) -> Result<Json<Item>, ApiError> {
+          let store = state.lock().unwrap();
+          store.items.get(&id).cloned().map(Json).ok_or(ApiError::NotFound(id))
+      }
+
+      async fn create_item(State(state): State<AppState>, Json(new): Json<NewItem>) -> (StatusCode, Json<Item>) {
+          let mut store = state.lock().unwrap();
+          store.next_id += 1;
+          let item = Item { id: store.next_id, name: new.name, qty: new.qty };
+          store.items.insert(item.id, item.clone());
+          (StatusCode::CREATED, Json(item))
+      }
+
+      async fn delete_item(State(state): State<AppState>, Path(id): Path<u32>) -> Result<StatusCode, ApiError> {
+          let mut store = state.lock().unwrap();
+          store.items.remove(&id).map(|_| StatusCode::NO_CONTENT).ok_or(ApiError::NotFound(id))
+      }
+
+      fn app(state: AppState) -> Router {
+          Router::new()
+              .route("/items", get(list_items).post(create_item))
+              .route("/items/{id}", get(get_item).delete(delete_item))
+              .with_state(state)
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+          axum::serve(listener, app(AppState::default())).await.unwrap();
+      }
+      ```
+
+      ### What maps to what
+
+      | What you built in this module | axum |
+      |---|---|
+      | `match (method, segments.as_slice())` | `Router::new().route("/items/{id}", get(get_item).delete(delete_item))`, with 404 and 405 answered for you |
+      | parsing `id` from a segment, 400 if bad | the **extractor** `Path(id): Path<u32>` (rejects with 400 automatically) |
+      | `serde_json::from_str(&req.body)`, 400 if bad | the extractor `Json(new): Json<NewItem>` (400/422 and a 415 for a wrong `Content-Type`) |
+      | handlers taking `&AppState` | the extractor `State(state): State<AppState>`, given once by `with_state` |
+      | `json_response(201, &item)` | returning `(StatusCode::CREATED, Json(item))`: anything that implements **`IntoResponse`** |
+      | `ApiError::into_response` | `impl IntoResponse for ApiError`, so handlers return `Result<_, ApiError>` and use `?` |
+      | calling `handle(&state, &req)` in tests | `app(state).oneshot(request).await` |
+
+      **Extractors** are axum's big idea: a handler's parameters say what it needs, and axum pulls each one out of the request before calling it (parameters like `State(state)` are patterns destructuring the extractor). If extraction fails, the handler isn't called at all and the client gets the error response. One rule: the body can only be read once, so `Json<T>` must be the **last** parameter.
+
+      ### Testing it
+
+      ```rust
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+          use axum::body::Body;
+          use axum::http::Request;
+          use tower::ServiceExt; // for `oneshot`
+
+          #[tokio::test]
+          async fn missing_item_is_404() {
+              let response = app(AppState::default())
+                  .oneshot(Request::get("/items/7").body(Body::empty()).unwrap())
+                  .await
+                  .unwrap();
+              assert_eq!(response.status(), StatusCode::NOT_FOUND);
+          }
+      }
+      ```
+
+      ### Things that bite in async servers
+
+      - Handlers are `async fn` running on Tokio. A `std::sync::Mutex` is fine **as long as you don't hold the guard across an `.await`**: the handler would block a runtime thread, and axum refuses it at compile time anyway (`future cannot be sent between threads safely`). If you must hold a lock across `.await`, use `tokio::sync::Mutex`.
+      - Production servers add **middleware** with `tower-http` layers: request logging (`TraceLayer`, with the `tracing` crate), timeouts, CORS, compression. A real store is a database pool (`sqlx`) in the state instead of a `Mutex<BTreeMap>`.
+
+      The **Pro Track** builds this service for real: axum, a database, configuration, logging, integration tests and deployment. Your turn first, though: axum's response system is just a trait, and you can build its core yourself.
+
+      **Your turn:** build axum's `IntoResponse` idea. Implement `IntoResponse` for:
+      - `&'static str`: status 200, content type `text/plain`, the text as the body
+      - `(u16, &'static str)`: that status, `text/plain`
+      - `Json<T>` where `T: Serialize`: status 200, `application/json`, the value serialized
+      - `(u16, Json<T>)`: that status, `application/json`
+      - `Result<T, E>` where both `T` and `E` implement `IntoResponse`: whichever one it holds
+
+      Then any handler that returns one of these, like `fn score() -> Result<Json<Score>, (u16, &'static str)>`, can be turned into a `Response`, exactly like in axum.
+    seed: |
+      use serde::Serialize;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          content_type: &'static str,
+          body: String,
+      }
+
+      trait IntoResponse {
+          fn into_response(self) -> Response;
+      }
+
+      struct Json<T>(T);
+
+      // impl IntoResponse for ... { ... }
+    solution: |
+      use serde::Serialize;
+
+      #[derive(Debug, PartialEq)]
+      struct Response {
+          status: u16,
+          content_type: &'static str,
+          body: String,
+      }
+
+      trait IntoResponse {
+          fn into_response(self) -> Response;
+      }
+
+      struct Json<T>(T);
+
+      impl IntoResponse for &'static str {
+          fn into_response(self) -> Response {
+              Response { status: 200, content_type: "text/plain", body: self.to_string() }
+          }
+      }
+
+      impl IntoResponse for (u16, &'static str) {
+          fn into_response(self) -> Response {
+              let mut r = self.1.into_response();
+              r.status = self.0;
+              r
+          }
+      }
+
+      impl<T: Serialize> IntoResponse for Json<T> {
+          fn into_response(self) -> Response {
+              let body = serde_json::to_string(&self.0).expect("response types always serialize");
+              Response { status: 200, content_type: "application/json", body }
+          }
+      }
+
+      impl<T: Serialize> IntoResponse for (u16, Json<T>) {
+          fn into_response(self) -> Response {
+              let mut r = self.1.into_response();
+              r.status = self.0;
+              r
+          }
+      }
+
+      impl<T: IntoResponse, E: IntoResponse> IntoResponse for Result<T, E> {
+          fn into_response(self) -> Response {
+              match self {
+                  Ok(t) => t.into_response(),
+                  Err(e) => e.into_response(),
+              }
+          }
+      }
+    harness: |
+      use serde_json::json;
+
+      #[derive(Serialize)]
+      struct Score {
+          player: &'static str,
+          points: u32,
+      }
+
+      fn score(player: &str) -> Result<Json<Score>, (u16, &'static str)> {
+          match player {
+              "ana" => Ok(Json(Score { player: "ana", points: 40 })),
+              _ => Err((404, "no such player")),
+          }
+      }
+
+      #[test]
+      fn plain_text_is_200() {
+          assert_eq!("pong".into_response(), Response { status: 200, content_type: "text/plain", body: String::from("pong") }, "\"pong\".into_response()");
+      }
+
+      #[test]
+      fn a_status_and_text() {
+          assert_eq!((404, "not found").into_response(), Response { status: 404, content_type: "text/plain", body: String::from("not found") }, "(404, \"not found\")");
+      }
+
+      #[test]
+      fn json_values_are_serialized() {
+          assert_eq!(Json(vec![1, 2, 3]).into_response(), Response { status: 200, content_type: "application/json", body: String::from("[1,2,3]") }, "Json(vec![1, 2, 3])");
+          assert_eq!((201, Json(json!({ "id": 9 }))).into_response(), Response { status: 201, content_type: "application/json", body: String::from(r#"{"id":9}"#) }, "(201, Json(..))");
+      }
+
+      #[test]
+      fn results_use_whichever_side_they_hold() {
+          assert_eq!(score("ana").into_response(), Response { status: 200, content_type: "application/json", body: String::from(r#"{"player":"ana","points":40}"#) }, "score(\"ana\")");
+          assert_eq!(score("bo").into_response(), Response { status: 404, content_type: "text/plain", body: String::from("no such player") }, "score(\"bo\")");
+      }
+    hints:
+      - "Each case is its own impl block: `impl IntoResponse for &'static str { fn into_response(self) -> Response { ... } }`."
+      - "Generic impls carry their bounds: `impl<T: Serialize> IntoResponse for Json<T>` and `impl<T: IntoResponse, E: IntoResponse> IntoResponse for Result<T, E>`."
+      - "The tuple impls can reuse the others: `let mut r = self.1.into_response(); r.status = self.0; r`."
+    more:
+      - task: |
+          Build axum's `Router` idea with closures. `Router::new()` starts empty; `.route(method, path, handler)` adds a route and returns the router (so calls chain); `handle(&self, req)` calls the handler whose method and path match exactly. If some route has that path but none has that method, answer `405` with body `method not allowed`; if no route has the path, `404` with `not found`. Handlers are any `Fn(&Request) -> Response + 'static`, stored as `Box<dyn Fn(&Request) -> Response>`.
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Method {
+              Get,
+              Post,
+          }
+
+          struct Request {
+              method: Method,
+              path: String,
+              body: String,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          type Handler = Box<dyn Fn(&Request) -> Response>;
+
+          struct Router {
+              routes: Vec<(Method, String, Handler)>,
+          }
+
+          impl Router {
+              fn new() -> Self {
+                  todo!()
+              }
+
+              fn route(self, method: Method, path: &str, handler: impl Fn(&Request) -> Response + 'static) -> Self {
+                  todo!()
+              }
+
+              fn handle(&self, req: &Request) -> Response {
+                  todo!()
+              }
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Method {
+              Get,
+              Post,
+          }
+
+          struct Request {
+              method: Method,
+              path: String,
+              body: String,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          type Handler = Box<dyn Fn(&Request) -> Response>;
+
+          struct Router {
+              routes: Vec<(Method, String, Handler)>,
+          }
+
+          impl Router {
+              fn new() -> Self {
+                  Router { routes: Vec::new() }
+              }
+
+              fn route(mut self, method: Method, path: &str, handler: impl Fn(&Request) -> Response + 'static) -> Self {
+                  self.routes.push((method, path.to_string(), Box::new(handler)));
+                  self
+              }
+
+              fn handle(&self, req: &Request) -> Response {
+                  if let Some((_, _, handler)) = self.routes.iter().find(|(m, p, _)| *m == req.method && *p == req.path) {
+                      return handler(req);
+                  }
+                  if self.routes.iter().any(|(_, p, _)| *p == req.path) {
+                      Response { status: 405, body: String::from("method not allowed") }
+                  } else {
+                      Response { status: 404, body: String::from("not found") }
+                  }
+              }
+          }
+        harness: |
+          use std::sync::{Arc, Mutex};
+
+          fn req(method: Method, path: &str, body: &str) -> Request {
+              Request { method, path: path.to_string(), body: body.to_string() }
+          }
+
+          fn app() -> (Router, Arc<Mutex<Vec<String>>>) {
+              let names = Arc::new(Mutex::new(Vec::new()));
+              let for_list = Arc::clone(&names);
+              let for_add = Arc::clone(&names);
+              let router = Router::new()
+                  .route(Method::Get, "/health", |_| Response { status: 200, body: String::from("ok") })
+                  .route(Method::Get, "/names", move |_| Response { status: 200, body: for_list.lock().unwrap().join(",") })
+                  .route(Method::Post, "/names", move |r| {
+                      for_add.lock().unwrap().push(r.body.clone());
+                      Response { status: 201, body: r.body.clone() }
+                  });
+              (router, names)
+          }
+
+          #[test]
+          fn calls_the_matching_handler() {
+              let (router, _) = app();
+              assert_eq!(router.handle(&req(Method::Get, "/health", "")), Response { status: 200, body: String::from("ok") }, "GET /health");
+          }
+
+          #[test]
+          fn handlers_can_share_state() {
+              let (router, names) = app();
+              router.handle(&req(Method::Post, "/names", "ana"));
+              router.handle(&req(Method::Post, "/names", "bo"));
+              assert_eq!(router.handle(&req(Method::Get, "/names", "")).body, "ana,bo", "GET /names");
+              assert_eq!(names.lock().unwrap().len(), 2, "names stored");
+          }
+
+          #[test]
+          fn known_path_wrong_method_is_405() {
+              let (router, _) = app();
+              assert_eq!(router.handle(&req(Method::Post, "/health", "")), Response { status: 405, body: String::from("method not allowed") }, "POST /health");
+          }
+
+          #[test]
+          fn unknown_path_is_404() {
+              let (router, _) = app();
+              assert_eq!(router.handle(&req(Method::Get, "/nope", "")), Response { status: 404, body: String::from("not found") }, "GET /nope");
+              assert_eq!(Router::new().handle(&req(Method::Get, "/", "")).status, 404, "empty router");
+          }
+        hints:
+          - "`route` takes `mut self`, pushes `(method, path.to_string(), Box::new(handler))`, and returns `self`."
+          - "In `handle`, `self.routes.iter().find(|(m, p, _)| *m == req.method && *p == req.path)`; call the handler with `handler(req)`."
+          - "If nothing matched, check whether any route has the path at all to choose between 405 and 404."
+      - task: |
+          Now axum's **extractors**. A type implementing `FromRequest` can be built from a request, or fails with a ready-made error response. Implement it for `Json<T>` where `T: DeserializeOwned` (parse the body; on failure answer `400` with body `invalid JSON`) and for `String` (the raw body, never fails). Then write `fn call<A: FromRequest>(req: &Request, handler: impl Fn(A) -> Response) -> Response`, which extracts the argument and calls the handler, or returns the extractor's error without calling it.
+        seed: |
+          use serde::de::DeserializeOwned;
+          use serde::Deserialize;
+
+          struct Request {
+              body: String,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          struct Json<T>(T);
+
+          trait FromRequest: Sized {
+              fn from_request(req: &Request) -> Result<Self, Response>;
+          }
+
+          fn call<A: FromRequest>(req: &Request, handler: impl Fn(A) -> Response) -> Response {
+              todo!()
+          }
+        solution: |
+          use serde::de::DeserializeOwned;
+          use serde::Deserialize;
+
+          struct Request {
+              body: String,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Response {
+              status: u16,
+              body: String,
+          }
+
+          struct Json<T>(T);
+
+          trait FromRequest: Sized {
+              fn from_request(req: &Request) -> Result<Self, Response>;
+          }
+
+          impl<T: DeserializeOwned> FromRequest for Json<T> {
+              fn from_request(req: &Request) -> Result<Self, Response> {
+                  serde_json::from_str(&req.body)
+                      .map(Json)
+                      .map_err(|_| Response { status: 400, body: String::from("invalid JSON") })
+              }
+          }
+
+          impl FromRequest for String {
+              fn from_request(req: &Request) -> Result<Self, Response> {
+                  Ok(req.body.clone())
+              }
+          }
+
+          fn call<A: FromRequest>(req: &Request, handler: impl Fn(A) -> Response) -> Response {
+              match A::from_request(req) {
+                  Ok(arg) => handler(arg),
+                  Err(response) => response,
+              }
+          }
+        harness: |
+          #[derive(Deserialize)]
+          struct Greeting {
+              name: String,
+          }
+
+          fn greet(Json(g): Json<Greeting>) -> Response {
+              Response { status: 200, body: format!("hello {}", g.name) }
+          }
+
+          fn echo(body: String) -> Response {
+              Response { status: 200, body: body.to_uppercase() }
+          }
+
+          fn req(body: &str) -> Request {
+              Request { body: body.to_string() }
+          }
+
+          #[test]
+          fn json_extractor_parses_the_body() {
+              assert_eq!(call(&req(r#"{"name": "Ferris"}"#), greet), Response { status: 200, body: String::from("hello Ferris") }, "greet(valid JSON)");
+          }
+
+          #[test]
+          fn bad_json_never_reaches_the_handler() {
+              assert_eq!(call(&req("{name"), greet), Response { status: 400, body: String::from("invalid JSON") }, "greet(broken JSON)");
+              assert_eq!(call(&req(r#"{"nom": "x"}"#), greet), Response { status: 400, body: String::from("invalid JSON") }, "greet(missing name)");
+          }
+
+          #[test]
+          fn string_extractor_gets_the_raw_body() {
+              assert_eq!(call(&req("crab"), echo), Response { status: 200, body: String::from("CRAB") }, "echo(\"crab\")");
+          }
+        hints:
+          - "`DeserializeOwned` means \"can be deserialized without borrowing from the input\", which is what `from_str` on a temporary body needs."
+          - "`serde_json::from_str(&req.body).map(Json).map_err(|_| Response { status: 400, ... })`"
+          - "`call` is a `match A::from_request(req)`: `Ok(arg) => handler(arg)`, `Err(response) => response`."
