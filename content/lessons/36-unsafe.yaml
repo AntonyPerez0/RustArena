@@ -1,0 +1,1518 @@
+id: unsafe
+title: Unsafe Rust
+phase: "Advanced Rust"
+summary: What unsafe really allows, how to wrap it in safe APIs with SAFETY comments, calling C through FFI, global state without static mut, finding undefined behavior with Miri, and why most code at work never needs unsafe at all.
+roadmap: ["Unsafe Rust", "FFI", "Undefined Behavior (UB)"]
+steps:
+  - title: What unsafe means, and raw pointers
+    id: unsafe-1
+    text: |
+      Everything you've written so far is **safe Rust**: the compiler proves there are no dangling references, no data races and no out-of-bounds reads. But some correct programs can't be proven by the compiler. Calling a C library, talking to hardware, or implementing `Vec` itself needs operations the compiler can't check. For those, Rust has the **`unsafe`** keyword.
+
+      An `unsafe` block lets you do exactly five extra things:
+
+      1. Dereference a **raw pointer**.
+      2. Call an `unsafe` function (including C functions through FFI).
+      3. Read or write a mutable `static` variable.
+      4. Implement an `unsafe` trait (like `Send`).
+      5. Read a field of a `union`.
+
+      That's the whole list. `unsafe` does **not** turn off the borrow checker, type checking or bounds checks on normal indexing. It marks a spot where **you** promise to uphold rules the compiler can't verify. If you break them, the result is **undefined behavior** (UB): the program may crash, compute garbage or seem to work until it doesn't. Step 5 is all about UB.
+
+      ### Raw pointers
+
+      Rust has two raw pointer types: `*const T` (read) and `*mut T` (read and write). Unlike references, a raw pointer may be null, dangling or unaligned, several `*mut` may point to the same place, and nothing tracks how long the data lives. **Creating** one is safe; **dereferencing** one is not.
+
+      ```rust run
+      fn main() {
+          let mut hp = 100;
+          let read_ptr = &raw const hp; // *const i32
+          let write_ptr = &raw mut hp; // *mut i32
+
+          // SAFETY: both pointers point to `hp`, which is alive for all of main.
+          unsafe {
+              *write_ptr -= 30;
+              println!("hp = {}", *read_ptr);
+          }
+
+          let nothing: *const i32 = std::ptr::null();
+          println!("null? {}", nothing.is_null());
+          println!("same address? {}", read_ptr == write_ptr as *const i32);
+      }
+      ```
+
+      ```output
+      hp = 70
+      null? true
+      same address? true
+      ```
+
+      - `&raw const hp` and `&raw mut hp` create raw pointers directly. Older code writes `&hp as *const i32`; both work.
+      - Having a `*const` and a `*mut` to the same variable at the same time is allowed, unlike `&` and `&mut`. The compiler stops tracking aliasing for raw pointers; that's now your job.
+      - The `// SAFETY:` comment explains why this particular unsafe block is fine. It's the standard convention in Rust codebases (the next step explains it).
+
+      ### Pointer arithmetic
+
+      `ptr.add(i)` moves a pointer forward by `i` **elements** (not bytes). It's an unsafe function itself: the result must stay inside the same array (or point just past its end). Combined with `as_ptr()` on a slice, it walks through the elements:
+
+      ```rust run
+      fn main() {
+          let scores = [10, 20, 30, 40];
+          let p = scores.as_ptr();
+          let mut total = 0;
+          for i in 0..scores.len() {
+              // SAFETY: i < scores.len(), so p.add(i) points inside the array.
+              total += unsafe { *p.add(i) };
+          }
+          println!("{total}");
+      }
+      ```
+
+      ```output
+      100
+      ```
+
+      This is what `scores.iter().sum()` does under the hood, minus all the checks. In real code you'd write the iterator version: it's just as fast and can't go wrong.
+
+      ### Common mistakes
+
+      **Dereferencing outside an unsafe block:**
+
+      ```rust compile_fail
+      fn main() {
+          let x = 5;
+          let p = &raw const x;
+          println!("{}", *p);
+      }
+      ```
+
+      ```error
+      error[E0133]: dereference of raw pointer is unsafe and requires unsafe block
+      ```
+
+      **Keeping a pointer longer than the data.** This compiles, because creating and returning a raw pointer is safe, but `x` is gone when the function returns, so any later dereference is UB:
+
+      ```rust
+      fn dangling() -> *const i32 {
+          let x = 42;
+          &raw const x // x is dropped here; the pointer now points at nothing
+      }
+      ```
+
+      References would never allow this. With raw pointers, lifetimes are your responsibility.
+
+      **Your turn:** fill in the blanks: create a `*mut i32` pointing at `gold`, then add 25 through it inside an unsafe block. The program should print `gold = 75`.
+    fill: |
+      fn main() {
+          let mut gold = 50;
+          let p = [[&raw mut]] gold;
+          // SAFETY: p points to gold, which is alive and not borrowed elsewhere.
+          [[unsafe]] {
+              *p += 25;
+          }
+          println!("gold = {gold}");
+      }
+    hints:
+      - "A mutable raw pointer to a variable is created with `&raw mut`."
+      - "Dereferencing a raw pointer needs an `unsafe` block."
+    tests:
+      - expect: "gold = 75"
+    more:
+      - task: |
+          For practice (real code would use `values.iter().sum()`), write `sum_raw`, which adds up a slice by reading each element through the raw pointer `p = values.as_ptr()` and `p.add(i)`. Don't use iterators or indexing on `values`. Add a `// SAFETY:` comment to your unsafe block.
+        seed: |
+          fn sum_raw(values: &[i32]) -> i32 {
+              let p = values.as_ptr();
+              let mut total = 0;
+              // TODO: add up values.len() elements, reading each one through p.add(i)
+              total
+          }
+        solution: |
+          fn sum_raw(values: &[i32]) -> i32 {
+              let p = values.as_ptr();
+              let mut total = 0;
+              for i in 0..values.len() {
+                  // SAFETY: i < values.len(), so p.add(i) points to an element of the slice.
+                  total += unsafe { *p.add(i) };
+              }
+              total
+          }
+        harness: |
+          #[test]
+          fn adds_up_the_elements() {
+              assert_eq!(sum_raw(&[10, 20, 30, 40]), 100, "sum_raw(&[10, 20, 30, 40])");
+          }
+
+          #[test]
+          fn handles_negatives() {
+              assert_eq!(sum_raw(&[-5, 5, 7]), 7, "sum_raw(&[-5, 5, 7])");
+          }
+
+          #[test]
+          fn a_single_element() {
+              assert_eq!(sum_raw(&[42]), 42, "sum_raw(&[42])");
+          }
+
+          #[test]
+          fn an_empty_slice_is_zero() {
+              assert_eq!(sum_raw(&[]), 0, "sum_raw(&[])");
+          }
+        require:
+          - pattern: '\.add\s*\('
+            message: Move through the slice with `p.add(i)`.
+        forbid:
+          - pattern: '\.iter\(|\.sum\(|values\s*\['
+            message: Read the elements through the raw pointer, not with iterators or indexing.
+        hints:
+          - "Loop with `for i in 0..values.len()`, so `i` is always in bounds."
+          - "`total += unsafe { *p.add(i) };`"
+      - task: |
+          Write `reverse_raw`, which reverses a slice in place using raw pointers: take `p = v.as_mut_ptr()`, keep two indexes `i` (from the front) and `j` (from the back), and swap the elements they point to with `std::ptr::swap(p.add(i), p.add(j))` until they meet. Careful: an empty slice has no last element, so check the length **before** computing `len - 1`.
+        seed: |
+          fn reverse_raw(v: &mut [i32]) {
+              todo!()
+          }
+        solution: |
+          fn reverse_raw(v: &mut [i32]) {
+              let len = v.len();
+              if len < 2 {
+                  return;
+              }
+              let p = v.as_mut_ptr();
+              let mut i = 0;
+              let mut j = len - 1;
+              while i < j {
+                  // SAFETY: i < j < len, so both pointers are inside the slice.
+                  unsafe {
+                      std::ptr::swap(p.add(i), p.add(j));
+                  }
+                  i += 1;
+                  j -= 1;
+              }
+          }
+        harness: |
+          #[test]
+          fn reverses_an_even_length_slice() {
+              let mut v = [1, 2, 3, 4];
+              reverse_raw(&mut v);
+              assert_eq!(v, [4, 3, 2, 1], "reverse of [1, 2, 3, 4]");
+          }
+
+          #[test]
+          fn reverses_an_odd_length_slice() {
+              let mut v = [7, 8, 9, 10, 11];
+              reverse_raw(&mut v);
+              assert_eq!(v, [11, 10, 9, 8, 7], "reverse of [7, 8, 9, 10, 11]");
+          }
+
+          #[test]
+          fn leaves_short_slices_alone() {
+              let mut one = [5];
+              reverse_raw(&mut one);
+              assert_eq!(one, [5], "reverse of [5]");
+              let mut empty: [i32; 0] = [];
+              reverse_raw(&mut empty);
+              assert_eq!(empty, [], "reverse of []");
+          }
+
+          #[test]
+          fn reverses_part_of_a_vec() {
+              let mut v = vec![1, 2, 3, 4, 5, 6];
+              reverse_raw(&mut v[1..4]);
+              assert_eq!(v, vec![1, 4, 3, 2, 5, 6], "reverse of the middle three");
+          }
+        require:
+          - pattern: 'ptr::swap\s*\('
+            message: Swap through the pointers with `std::ptr::swap(p.add(i), p.add(j))`.
+        forbid:
+          - pattern: '\.reverse\(|\.swap\('
+            message: Do the swapping yourself with `std::ptr::swap` (in real code, `v.reverse()` is the right answer).
+        hints:
+          - "Start with `let len = v.len(); if len < 2 { return; }`."
+          - "`let p = v.as_mut_ptr(); let mut i = 0; let mut j = len - 1;` then loop `while i < j`."
+          - "Inside: `unsafe { std::ptr::swap(p.add(i), p.add(j)); }`, then `i += 1; j -= 1;`."
+
+  - title: Unsafe functions and safe abstractions
+    id: unsafe-2
+    text: |
+      ### unsafe fn: a contract the caller must keep
+
+      An **`unsafe fn`** is a function with a precondition the compiler can't check. Calling it is only allowed inside an `unsafe` block, which is the caller saying "I've checked the precondition". std has many: `slice::get_unchecked` (the index must be in bounds), `String::from_utf8_unchecked` (the bytes must be valid UTF-8).
+
+      Every `unsafe fn` documents its contract in a **`# Safety`** section, and every `unsafe` block gets a **`// SAFETY:`** comment explaining why the contract holds right there:
+
+      ```rust run
+      /// Returns the element at `index` without checking bounds.
+      ///
+      /// # Safety
+      ///
+      /// `index` must be less than `values.len()`.
+      unsafe fn get_fast(values: &[u32], index: usize) -> u32 {
+          // SAFETY: the caller promises index < values.len().
+          unsafe { *values.as_ptr().add(index) }
+      }
+
+      fn main() {
+          let v = [7, 8, 9];
+          for i in 0..v.len() {
+              // SAFETY: i < v.len() because of the loop range.
+              print!("{} ", unsafe { get_fast(&v, i) });
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      7 8 9
+      ```
+
+      Notice the `unsafe { }` block **inside** the unsafe fn. Since edition 2024, an `unsafe fn` only means "callers must be careful"; its body is checked like safe code, and each unsafe operation inside still needs its own block. Leave it out and the compiler warns: `dereference of raw pointer is unsafe and requires unsafe block` (lint `unsafe_op_in_unsafe_fn`). That keeps the dangerous lines small and visible.
+
+      Reviewers read `SAFETY` comments carefully, and clippy's `undocumented_unsafe_blocks` lint can require one on every block. A missing or vague comment ("this is fine") is a red flag in code review.
+
+      ### Safe abstractions
+
+      The most important idea in this module: wrap unsafe code in a **safe function** that checks everything the unsafe code relies on. Then no caller, however careless, can cause UB. A function with that property is **sound**.
+
+      The classic example is `split_at_mut`, which turns one mutable slice into two that don't overlap. The borrow checker can't see that the halves are disjoint:
+
+      ```rust compile_fail
+      fn split_at_mut(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+          (&mut values[..mid], &mut values[mid..])
+      }
+
+      fn main() {
+          let mut v = [1, 2, 3];
+          let (a, b) = split_at_mut(&mut v, 1);
+          println!("{a:?} {b:?}");
+      }
+      ```
+
+      ```error
+      error[E0499]: cannot borrow `*values` as mutable more than once at a time
+      ```
+
+      We know the halves don't overlap, so we can build them from raw parts:
+
+      ```rust run
+      use std::slice;
+
+      fn split_at_mut(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+          let len = values.len();
+          let ptr = values.as_mut_ptr();
+          assert!(mid <= len, "mid out of range");
+          // SAFETY: mid <= len, so [0, mid) and [mid, len) are inside the slice and
+          // don't overlap. Both results borrow `values`, so nothing else can use it
+          // while they're alive.
+          unsafe {
+              (
+                  slice::from_raw_parts_mut(ptr, mid),
+                  slice::from_raw_parts_mut(ptr.add(mid), len - mid),
+              )
+          }
+      }
+
+      fn main() {
+          let mut v = [1, 2, 3, 4, 5];
+          let (left, right) = split_at_mut(&mut v, 2);
+          left[0] = 10;
+          right[0] = 30;
+          println!("{:?} {:?}", left, right);
+          println!("{:?}", v);
+      }
+      ```
+
+      ```output
+      [10, 2] [30, 4, 5]
+      [10, 2, 30, 4, 5]
+      ```
+
+      - `slice::from_raw_parts_mut(ptr, len)` is an unsafe fn: it makes a slice from a pointer and a length, trusting you that they describe valid, unaliased memory.
+      - The `assert!` is what makes the function **sound**. Without it, `split_at_mut(&mut v, 99)` would create a slice reaching past the array: UB from a safe call, which is a bug in `split_at_mut`, not in the caller.
+      - The signature ties both output lifetimes to the input, so the borrow checker still protects callers.
+
+      You'll never need to write this one: std's `values.split_at_mut(mid)` is exactly this code. But the pattern (check, then a small commented unsafe block, behind a safe signature) is how all of std, Tokio and other foundation crates use unsafe.
+
+      ### Common mistakes
+
+      - **Trusting input you don't control.** Unsafe code must not rely on safe code behaving well: a caller's `Ord` impl might be inconsistent, a closure might panic halfway. Sound code stays sound even then.
+      - **Making the wrapper `unsafe fn` "to be safe".** If your function checks everything, it should be a normal `fn`. Mark it `unsafe` only if callers must uphold something.
+
+      **Your turn:** write `get_two_mut`, which returns mutable references to two **different** elements of a slice. It must panic if `i == j` or either index is out of range (check with `assert!` before any unsafe code). Then get the two references from `values.as_mut_ptr()` with `&mut *ptr.add(i)` inside an unsafe block with a `// SAFETY:` comment.
+    seed: |
+      fn get_two_mut(values: &mut [i32], i: usize, j: usize) -> (&mut i32, &mut i32) {
+          todo!()
+      }
+    solution: |
+      fn get_two_mut(values: &mut [i32], i: usize, j: usize) -> (&mut i32, &mut i32) {
+          assert!(i != j, "indexes must be different");
+          assert!(i < values.len() && j < values.len(), "index out of range");
+          let ptr = values.as_mut_ptr();
+          // SAFETY: i and j are in bounds and different, so the two references
+          // point to different elements and never overlap.
+          unsafe { (&mut *ptr.add(i), &mut *ptr.add(j)) }
+      }
+    harness: |
+      #[test]
+      fn returns_both_elements() {
+          let mut v = vec![10, 20, 30];
+          let (a, b) = get_two_mut(&mut v, 0, 2);
+          assert_eq!((*a, *b), (10, 30), "get_two_mut(&mut v, 0, 2)");
+      }
+
+      #[test]
+      fn writes_through_both_references() {
+          let mut v = vec![1, 2, 3, 4];
+          let (a, b) = get_two_mut(&mut v, 1, 3);
+          std::mem::swap(a, b);
+          assert_eq!(v, vec![1, 4, 3, 2], "after swapping elements 1 and 3");
+      }
+
+      #[test]
+      fn works_with_the_larger_index_first() {
+          let mut v = vec![5, 6, 7];
+          let (a, b) = get_two_mut(&mut v, 2, 0);
+          *a += 100;
+          *b += 1;
+          assert_eq!(v, vec![6, 6, 107], "get_two_mut(&mut v, 2, 0)");
+      }
+
+      #[test]
+      fn panics_when_the_indexes_are_equal() {
+          let result = std::panic::catch_unwind(|| {
+              let mut v = vec![1, 2, 3];
+              let _ = get_two_mut(&mut v, 1, 1);
+          });
+          assert!(result.is_err(), "get_two_mut(&mut v, 1, 1) should panic");
+      }
+
+      #[test]
+      fn panics_when_an_index_is_out_of_range() {
+          let result = std::panic::catch_unwind(|| {
+              let mut v = vec![1, 2, 3];
+              let _ = get_two_mut(&mut v, 0, 3);
+          });
+          assert!(result.is_err(), "get_two_mut(&mut v, 0, 3) should panic");
+      }
+    require:
+      - pattern: '\bunsafe\b'
+        message: Build the two references from raw pointers inside an `unsafe` block.
+      - pattern: 'assert!'
+        message: Check the indexes with `assert!` before the unsafe block.
+    hints:
+      - "Two checks first: `assert!(i != j, ...)` and `assert!(i < values.len() && j < values.len(), ...)`."
+      - "`let ptr = values.as_mut_ptr();` then `&mut *ptr.add(i)` turns a raw pointer back into a reference."
+      - "`unsafe { (&mut *ptr.add(i), &mut *ptr.add(j)) }`"
+    more:
+      - task: |
+          Before writing unsafe code, always look for a safe API. Write `get_two_mut` again **without** `unsafe`, using the slice method `split_at_mut`: split at the larger index, so one element is in the left half and the other is the first element of the right half. It must still panic if `i == j` or an index is out of range (slice indexing panics for you). The same tests run.
+        seed: |
+          fn get_two_mut(values: &mut [i32], i: usize, j: usize) -> (&mut i32, &mut i32) {
+              todo!()
+          }
+        solution: |
+          fn get_two_mut(values: &mut [i32], i: usize, j: usize) -> (&mut i32, &mut i32) {
+              assert!(i != j, "indexes must be different");
+              if i < j {
+                  let (left, right) = values.split_at_mut(j);
+                  (&mut left[i], &mut right[0])
+              } else {
+                  let (left, right) = values.split_at_mut(i);
+                  (&mut right[0], &mut left[j])
+              }
+          }
+        harness: |
+          #[test]
+          fn returns_both_elements() {
+              let mut v = vec![10, 20, 30];
+              let (a, b) = get_two_mut(&mut v, 0, 2);
+              assert_eq!((*a, *b), (10, 30), "get_two_mut(&mut v, 0, 2)");
+          }
+
+          #[test]
+          fn writes_through_both_references() {
+              let mut v = vec![1, 2, 3, 4];
+              let (a, b) = get_two_mut(&mut v, 1, 3);
+              std::mem::swap(a, b);
+              assert_eq!(v, vec![1, 4, 3, 2], "after swapping elements 1 and 3");
+          }
+
+          #[test]
+          fn works_with_the_larger_index_first() {
+              let mut v = vec![5, 6, 7];
+              let (a, b) = get_two_mut(&mut v, 2, 0);
+              *a += 100;
+              *b += 1;
+              assert_eq!(v, vec![6, 6, 107], "get_two_mut(&mut v, 2, 0)");
+          }
+
+          #[test]
+          fn panics_when_the_indexes_are_equal() {
+              let result = std::panic::catch_unwind(|| {
+                  let mut v = vec![1, 2, 3];
+                  let _ = get_two_mut(&mut v, 1, 1);
+              });
+              assert!(result.is_err(), "get_two_mut(&mut v, 1, 1) should panic");
+          }
+
+          #[test]
+          fn panics_when_an_index_is_out_of_range() {
+              let result = std::panic::catch_unwind(|| {
+                  let mut v = vec![1, 2, 3];
+                  let _ = get_two_mut(&mut v, 0, 3);
+              });
+              assert!(result.is_err(), "get_two_mut(&mut v, 0, 3) should panic");
+          }
+        forbid:
+          - pattern: '\bunsafe\b'
+            message: Solve it without `unsafe` this time.
+        hints:
+          - "If `i < j`, `values.split_at_mut(j)` puts index `i` in the left half and index `j` at `right[0]`."
+          - "`let (left, right) = values.split_at_mut(j); (&mut left[i], &mut right[0])`, and the mirror image when `j < i`."
+          - "Newer Rust also has `values.get_disjoint_mut([i, j])`, which returns a `Result`; either approach is fine."
+      - task: |
+          Write the "unsafe core, safe wrapper" pair that std uses everywhere:
+
+          - `unsafe fn sum_at_unchecked(values: &[i64], indexes: &[usize]) -> i64` adds up `values[i]` for every `i` in `indexes` using `get_unchecked`, with a `# Safety` doc section saying every index must be in bounds.
+          - `fn sum_at(values: &[i64], indexes: &[usize]) -> Option<i64>` is the safe API: it returns `None` if any index is out of range, and otherwise calls `sum_at_unchecked`.
+
+          Remember: inside an `unsafe fn`, the `get_unchecked` call still needs its own `unsafe { }` block.
+        seed: |
+          /// Adds up values[i] for every i in indexes, without bounds checks.
+          unsafe fn sum_at_unchecked(values: &[i64], indexes: &[usize]) -> i64 {
+              todo!()
+          }
+
+          /// Safe wrapper: None if any index is out of range.
+          fn sum_at(values: &[i64], indexes: &[usize]) -> Option<i64> {
+              todo!()
+          }
+        solution: |
+          /// Adds up values[i] for every i in indexes, without bounds checks.
+          ///
+          /// # Safety
+          ///
+          /// Every index in `indexes` must be less than `values.len()`.
+          unsafe fn sum_at_unchecked(values: &[i64], indexes: &[usize]) -> i64 {
+              let mut total = 0;
+              for &i in indexes {
+                  // SAFETY: the caller promises every index is in bounds.
+                  total += unsafe { *values.get_unchecked(i) };
+              }
+              total
+          }
+
+          /// Safe wrapper: None if any index is out of range.
+          fn sum_at(values: &[i64], indexes: &[usize]) -> Option<i64> {
+              if indexes.iter().any(|&i| i >= values.len()) {
+                  return None;
+              }
+              // SAFETY: we just checked that every index is less than values.len().
+              Some(unsafe { sum_at_unchecked(values, indexes) })
+          }
+        harness: |
+          #[test]
+          fn sums_the_chosen_elements() {
+              assert_eq!(sum_at(&[10, 20, 30, 40], &[0, 3]), Some(50), "sum_at(.., &[0, 3])");
+          }
+
+          #[test]
+          fn an_index_can_repeat() {
+              assert_eq!(sum_at(&[5, 6], &[1, 1, 1]), Some(18), "sum_at(&[5, 6], &[1, 1, 1])");
+          }
+
+          #[test]
+          fn no_indexes_sum_to_zero() {
+              assert_eq!(sum_at(&[1, 2, 3], &[]), Some(0), "sum_at(.., &[])");
+          }
+
+          #[test]
+          fn any_out_of_range_index_gives_none() {
+              assert_eq!(sum_at(&[1, 2, 3], &[0, 3]), None, "sum_at(&[1, 2, 3], &[0, 3])");
+              assert_eq!(sum_at(&[], &[0]), None, "sum_at(&[], &[0])");
+          }
+
+          #[test]
+          fn the_unchecked_core_works_with_valid_indexes() {
+              let total = unsafe { sum_at_unchecked(&[-1, -2, 7], &[2, 0]) };
+              assert_eq!(total, 6, "sum_at_unchecked(&[-1, -2, 7], &[2, 0])");
+          }
+        require:
+          - pattern: 'get_unchecked'
+            message: Use `values.get_unchecked(i)` in the unsafe core.
+        hints:
+          - "In the core: `for &i in indexes { total += unsafe { *values.get_unchecked(i) }; }`."
+          - "In the wrapper, check first: `if indexes.iter().any(|&i| i >= values.len()) { return None; }`."
+          - "Then `Some(unsafe { sum_at_unchecked(values, indexes) })`, with a SAFETY comment saying why the indexes are fine."
+
+  - title: Calling C with FFI
+    id: unsafe-3
+    text: |
+      A **foreign function interface** (FFI) lets Rust call functions written in other languages, almost always through the C calling convention (the **C ABI**). It's how Rust uses C libraries like SQLite, OpenSSL or zlib, calls operating system APIs, and how Python or C programs call into Rust.
+
+      On Linux, the C standard library is always linked into Rust programs, so its functions are ready to declare and call:
+
+      ```rust run
+      use std::ffi::{c_char, c_int, CStr, CString};
+
+      unsafe extern "C" {
+          fn abs(x: c_int) -> c_int;
+          fn strlen(s: *const c_char) -> usize;
+      }
+
+      fn main() {
+          // SAFETY: C's abs is defined for every int except INT_MIN; -42 is fine.
+          let a = unsafe { abs(-42) };
+          println!("abs(-42) = {a}");
+
+          let name = CString::new("Ferris").expect("no NUL bytes inside");
+          // SAFETY: name.as_ptr() is a NUL-terminated string that lives until the
+          // end of main, and strlen only reads it.
+          let n = unsafe { strlen(name.as_ptr()) };
+          println!("strlen = {n}");
+
+          // From C to Rust: view NUL-terminated bytes as a CStr, then as a &str.
+          let c = CStr::from_bytes_with_nul(b"crab\0").expect("exactly one NUL, at the end");
+          println!("{:?} -> {}", c, c.to_str().unwrap());
+      }
+      ```
+
+      ```output
+      abs(-42) = 42
+      strlen = 6
+      "crab" -> crab
+      ```
+
+      Piece by piece:
+
+      - `unsafe extern "C" { ... }` declares functions that exist somewhere else and use the C ABI. The compiler can't check these signatures against the C code, so the block itself is `unsafe`: by writing it, **you** vouch that they're right. (Since edition 2024 the `unsafe` is required; plain `extern "C" {` fails with `extern blocks must be unsafe`.)
+      - Calling a foreign function is unsafe too: the compiler can't know what the C code does with your arguments.
+      - C types have Rust names in `std::ffi`: `c_int`, `c_char`, `c_double`, and so on. C's `size_t` is `usize`.
+      - C strings are a pointer to bytes ending in a NUL (`\0`) byte. Rust strings store their length instead and have no NUL. **`CString`** makes an owned, NUL-terminated copy of a Rust string (`CString::new` fails if the text contains a `\0`), and `.as_ptr()` gives C the `*const c_char` it wants. **`CStr`** is the borrowed view in the other direction, for strings C gives you.
+
+      If a foreign function really is safe for **every** possible argument, you can declare it `safe fn` inside the block and call it without `unsafe`. `abs` doesn't qualify: in C, `abs(INT_MIN)` is undefined behavior, because the positive value doesn't fit in an `int`.
+
+      ### Common mistakes
+
+      **Letting the CString die too early.** `.as_ptr()` borrows from the `CString`, but raw pointers don't keep anything alive:
+
+      ```rust
+      let p = CString::new("hi").unwrap().as_ptr(); // the CString is dropped right here
+      let n = unsafe { strlen(p) };                  // reads freed memory: UB
+      ```
+
+      The compiler catches this common case with a warning: ``this creates a dangling pointer because temporary `CString` is dropped at end of statement``. Bind the `CString` to a variable first.
+
+      **Passing a Rust string straight to C.** `"hello".as_ptr()` points to bytes with no NUL at the end, so `strlen` keeps reading past the string into whatever memory follows. Always go through `CString`.
+
+      **Getting the signature wrong.** Declaring `fn abs(x: i64) -> i64` for C's `int abs(int)` compiles fine and then passes the wrong number of bytes. Nothing checks it for you.
+
+      ### FFI at work
+
+      - The **`libc`** crate already declares the whole C library for every platform; use it instead of writing declarations by hand.
+      - **`bindgen`** generates the `extern` declarations from a C header file, and the **`cc`** crate compiles C code from a `build.rs` script. `#[link(name = "z")]` on an extern block links a system library.
+      - Going the other way, `#[unsafe(no_mangle)] pub extern "C" fn add(a: i32, b: i32) -> i32` exports a Rust function C can call. **`cbindgen`** writes the C header, and **PyO3** does the same job for Python.
+      - The usual shape is a small `-sys` crate with the raw declarations, plus a safe wrapper crate on top: exactly the safe-abstraction pattern from the last step.
+
+      **Your turn:** write `c_len`, which measures a Rust string with C's `strlen` (declared for you). Convert it with `CString::new`; if the text contains a NUL byte, return `None`. Don't use Rust's `.len()`.
+    seed: |
+      use std::ffi::{c_char, CString};
+
+      unsafe extern "C" {
+          fn strlen(s: *const c_char) -> usize;
+      }
+
+      /// The length in bytes of s, measured by C's strlen. None if s contains a NUL byte.
+      fn c_len(s: &str) -> Option<usize> {
+          todo!()
+      }
+    solution: |
+      use std::ffi::{c_char, CString};
+
+      unsafe extern "C" {
+          fn strlen(s: *const c_char) -> usize;
+      }
+
+      /// The length in bytes of s, measured by C's strlen. None if s contains a NUL byte.
+      fn c_len(s: &str) -> Option<usize> {
+          let c = CString::new(s).ok()?;
+          // SAFETY: c is a valid NUL-terminated string that lives until the end of this function.
+          Some(unsafe { strlen(c.as_ptr()) })
+      }
+    harness: |
+      #[test]
+      fn measures_a_word() {
+          assert_eq!(c_len("crab"), Some(4), "c_len(\"crab\")");
+      }
+
+      #[test]
+      fn an_empty_string_is_zero() {
+          assert_eq!(c_len(""), Some(0), "c_len(\"\")");
+      }
+
+      #[test]
+      fn counts_bytes_like_c_does() {
+          assert_eq!(c_len("héllo"), Some(6), "c_len(\"héllo\")");
+      }
+
+      #[test]
+      fn a_long_string() {
+          let long = "x".repeat(1000);
+          assert_eq!(c_len(&long), Some(1000), "c_len of 1000 x's");
+      }
+
+      #[test]
+      fn an_inner_nul_byte_gives_none() {
+          assert_eq!(c_len("a\0b"), None, "c_len(\"a\\0b\")");
+      }
+    require:
+      - pattern: 'strlen\s*\('
+        message: Measure the string by calling C's `strlen`.
+    forbid:
+      - pattern: '\.len\s*\('
+        message: "Let C do the measuring: call `strlen`, not `.len()`."
+    hints:
+      - "`CString::new(s)` returns a `Result`; `.ok()?` turns an error into `None` and returns early."
+      - "`unsafe { strlen(c.as_ptr()) }`, with a `// SAFETY:` comment saying why the pointer is valid."
+    more:
+      - task: |
+          Write a **sound** safe wrapper around C's `abs`. As you read above, `abs(INT_MIN)` is undefined behavior in C, so the wrapper must never pass `i32::MIN` to it: return `None` for that input, and `Some(abs(x))` otherwise. Call the C function (no Rust `.abs()` methods).
+        seed: |
+          use std::ffi::c_int;
+
+          unsafe extern "C" {
+              fn abs(x: c_int) -> c_int;
+          }
+
+          fn c_abs(x: i32) -> Option<i32> {
+              // SAFETY: abs is safe to call... is it?
+              Some(unsafe { abs(x) })
+          }
+        solution: |
+          use std::ffi::c_int;
+
+          unsafe extern "C" {
+              fn abs(x: c_int) -> c_int;
+          }
+
+          fn c_abs(x: i32) -> Option<i32> {
+              if x == i32::MIN {
+                  return None;
+              }
+              // SAFETY: abs is defined for every int except INT_MIN, which we excluded.
+              Some(unsafe { abs(x) })
+          }
+        harness: |
+          #[test]
+          fn makes_negatives_positive() {
+              assert_eq!(c_abs(-42), Some(42), "c_abs(-42)");
+          }
+
+          #[test]
+          fn leaves_positives_and_zero_alone() {
+              assert_eq!(c_abs(7), Some(7), "c_abs(7)");
+              assert_eq!(c_abs(0), Some(0), "c_abs(0)");
+          }
+
+          #[test]
+          fn handles_the_largest_values() {
+              assert_eq!(c_abs(i32::MAX), Some(i32::MAX), "c_abs(i32::MAX)");
+              assert_eq!(c_abs(-i32::MAX), Some(i32::MAX), "c_abs(-i32::MAX)");
+          }
+
+          #[test]
+          fn refuses_i32_min() {
+              assert_eq!(c_abs(i32::MIN), None, "c_abs(i32::MIN)");
+          }
+        forbid:
+          - pattern: '\.(abs|checked_abs|unsigned_abs|wrapping_abs|saturating_abs)\s*\('
+            message: Call C's `abs`, not Rust's methods.
+        hints:
+          - "`i32::MIN` is the one value whose absolute value doesn't fit in an `i32`."
+          - "`if x == i32::MIN { return None; }` before the unsafe block, then update the SAFETY comment to say why the call is now fine."
+      - task: |
+          Write the FFI declaration yourself this time. Declare C's `int strcmp(const char *a, const char *b)` in an `unsafe extern "C"` block, then write `c_compare(a, b)`, which compares two Rust strings with it and returns an `Ordering` (`strcmp` returns a negative number, zero or a positive number). Return `None` if either string contains a NUL byte.
+        seed: |
+          use std::cmp::Ordering;
+          use std::ffi::{c_char, c_int, CString};
+
+          // TODO: declare strcmp
+
+          fn c_compare(a: &str, b: &str) -> Option<Ordering> {
+              todo!()
+          }
+        solution: |
+          use std::cmp::Ordering;
+          use std::ffi::{c_char, c_int, CString};
+
+          unsafe extern "C" {
+              fn strcmp(a: *const c_char, b: *const c_char) -> c_int;
+          }
+
+          fn c_compare(a: &str, b: &str) -> Option<Ordering> {
+              let a = CString::new(a).ok()?;
+              let b = CString::new(b).ok()?;
+              // SAFETY: both pointers come from live CStrings, so they're valid and NUL-terminated.
+              let result = unsafe { strcmp(a.as_ptr(), b.as_ptr()) };
+              Some(result.cmp(&0))
+          }
+        harness: |
+          use std::cmp::Ordering;
+
+          #[test]
+          fn earlier_words_are_less() {
+              assert_eq!(c_compare("apple", "banana"), Some(Ordering::Less), "c_compare(\"apple\", \"banana\")");
+          }
+
+          #[test]
+          fn equal_words_are_equal() {
+              assert_eq!(c_compare("crab", "crab"), Some(Ordering::Equal), "c_compare(\"crab\", \"crab\")");
+          }
+
+          #[test]
+          fn later_words_are_greater() {
+              assert_eq!(c_compare("b", "a"), Some(Ordering::Greater), "c_compare(\"b\", \"a\")");
+          }
+
+          #[test]
+          fn compares_bytes_so_capitals_come_first() {
+              assert_eq!(c_compare("Zebra", "apple"), Some(Ordering::Less), "c_compare(\"Zebra\", \"apple\")");
+              assert_eq!(c_compare("", "a"), Some(Ordering::Less), "c_compare(\"\", \"a\")");
+          }
+
+          #[test]
+          fn nul_bytes_give_none() {
+              assert_eq!(c_compare("a\0", "a"), None, "c_compare with a NUL in a");
+              assert_eq!(c_compare("a", "b\0c"), None, "c_compare with a NUL in b");
+          }
+        require:
+          - pattern: 'unsafe\s+extern\s+"C"'
+            strings: true
+            message: "Declare the function in an `unsafe extern \"C\" { ... }` block."
+          - pattern: 'fn\s+strcmp\s*\('
+            message: "Declare `fn strcmp(a: *const c_char, b: *const c_char) -> c_int;`."
+        hints:
+          - "`unsafe extern \"C\" { fn strcmp(a: *const c_char, b: *const c_char) -> c_int; }`"
+          - "Convert both strings with `CString::new(..).ok()?`, then call `strcmp(a.as_ptr(), b.as_ptr())` in an unsafe block."
+          - "`result.cmp(&0)` turns negative, zero and positive into `Less`, `Equal` and `Greater`."
+
+  - title: Global state without static mut
+    id: unsafe-4
+    text: |
+      A **`static`** is a global variable with one fixed address for the whole program. Immutable statics are perfectly safe. A **`static mut`** can be changed, and that's the problem: any thread can reach it at any time, so two threads incrementing it at once is a **data race**, which is UB. The compiler can't prevent that, so every access to a `static mut` is unsafe.
+
+      Edition 2024 goes further and forbids even taking a reference to one:
+
+      ```rust compile_fail
+      static mut COUNTER: u32 = 0;
+
+      fn main() {
+          unsafe {
+              COUNTER += 1;
+              println!("{}", COUNTER);
+          }
+      }
+      ```
+
+      ```error
+      error: creating a shared reference to mutable static
+      ```
+
+      (`println!` takes its arguments by reference.) Reading the value out (`let n = unsafe { COUNTER };`) still compiles, but the race is still there. In modern Rust, `static mut` is almost never the answer.
+
+      ### The safe tools
+
+      - **Atomics** (from the sync module) for counters and flags: `AtomicU64`, `AtomicBool`, ... They can live in a plain `static` because their methods take `&self`.
+      - **`Mutex<T>`** in a `static` for anything bigger. `Mutex::new` is a `const fn`, so `static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());` just works.
+      - **`OnceLock`** and **`LazyLock`** for globals that are built once at runtime (a parsed config, a compiled regex).
+
+      ```rust run
+      use std::sync::Mutex;
+      use std::sync::atomic::{AtomicU64, Ordering};
+      use std::thread;
+
+      static REQUESTS: AtomicU64 = AtomicU64::new(0);
+      static ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+      fn handle(id: u64) {
+          REQUESTS.fetch_add(1, Ordering::Relaxed);
+          if id % 500 == 0 {
+              ERRORS.lock().unwrap().push(format!("request {id} failed"));
+          }
+      }
+
+      fn main() {
+          let workers: Vec<_> = (0..4)
+              .map(|w| {
+                  thread::spawn(move || {
+                      for i in 0..1000 {
+                          handle(w * 1000 + i);
+                      }
+                  })
+              })
+              .collect();
+          for worker in workers {
+              worker.join().unwrap();
+          }
+          println!("requests: {}", REQUESTS.load(Ordering::Relaxed));
+          println!("errors: {}", ERRORS.lock().unwrap().len());
+      }
+      ```
+
+      ```output
+      requests: 4000
+      errors: 8
+      ```
+
+      Four threads, no `unsafe`, and the counts are always right. `fetch_add` returns the **previous** value and adds atomically; `Ordering::Relaxed` is enough for a counter that nothing else depends on. Global state still makes code harder to test (every test shares it), so at work prefer passing state in (`Arc<AppState>`) and keep statics for things like metrics.
+
+      ### Unsafe traits
+
+      A trait can be declared `unsafe trait` when implementing it makes a promise the compiler can't check. The ones you'll meet are **`Send`** and **`Sync`**. The compiler implements them automatically when a type's fields are thread-safe; a struct holding a raw pointer gets neither. If you've made sure such a type really is safe to send between threads, you say so with an unsafe impl:
+
+      ```rust
+      struct DeviceHandle {
+          regs: *mut u32, // raw pointer: not Send by default
+      }
+
+      // SAFETY: the device registers may be used from any thread, and every
+      // access goes through methods that take &mut self.
+      unsafe impl Send for DeviceHandle {}
+      ```
+
+      ### Unions
+
+      A **`union`** looks like a struct, but all fields share the **same memory**, like a C union. The compiler doesn't know which field was written last, so reading one is unsafe:
+
+      ```rust run
+      union Bits {
+          f: f32,
+          u: u32,
+      }
+
+      fn main() {
+          let b = Bits { f: 1.0 };
+          // SAFETY: every bit pattern is a valid u32, so reading `u` is fine.
+          let raw = unsafe { b.u };
+          println!("{raw:#010x}");
+          println!("{:#010x}", 1.0f32.to_bits());
+      }
+      ```
+
+      ```output
+      0x3f800000
+      0x3f800000
+      ```
+
+      Unions exist mainly to match C structs in FFI. For everything else there's a safe method: `f32::to_bits`, `u32::from_le_bytes` and an `enum` (a union with a tag that Rust checks for you).
+
+      **Your turn:** `next_ticket` hands out ticket numbers 1, 2, 3, ... and is called from many threads, but it's built on a `static mut`, which races. Rewrite it with a `static` `AtomicU32` and `fetch_add`, with no `unsafe` and no `static mut`.
+    seed: |
+      static mut NEXT_TICKET: u32 = 0;
+
+      /// Returns 1, then 2, then 3, ... Must be safe to call from many threads.
+      fn next_ticket() -> u32 {
+          unsafe {
+              NEXT_TICKET += 1;
+              NEXT_TICKET
+          }
+      }
+    solution: |
+      use std::sync::atomic::{AtomicU32, Ordering};
+
+      static NEXT_TICKET: AtomicU32 = AtomicU32::new(0);
+
+      /// Returns 1, then 2, then 3, ... Must be safe to call from many threads.
+      fn next_ticket() -> u32 {
+          NEXT_TICKET.fetch_add(1, Ordering::Relaxed) + 1
+      }
+    harness: |
+      #[test]
+      fn tickets_count_up_from_one() {
+          assert_eq!(next_ticket(), 1, "first ticket");
+          assert_eq!(next_ticket(), 2, "second ticket");
+          assert_eq!(next_ticket(), 3, "third ticket");
+      }
+
+      #[test]
+      fn every_thread_gets_unique_tickets() {
+          let handles: Vec<_> = (0..8)
+              .map(|_| std::thread::spawn(|| (0..1000).map(|_| next_ticket()).collect::<Vec<u32>>()))
+              .collect();
+          let mut all: Vec<u32> = handles.into_iter().flat_map(|h| h.join().unwrap()).collect();
+          all.sort();
+          let expected: Vec<u32> = (1..=8000).collect();
+          assert!(all == expected, "8 threads x 1000 tickets should be exactly 1..=8000, each once");
+      }
+    forbid:
+      - pattern: 'static\s+mut'
+        message: Replace the `static mut` with a `static` atomic.
+      - pattern: '\bunsafe\b'
+        message: The atomic version needs no `unsafe` at all.
+    hints:
+      - "`use std::sync::atomic::{AtomicU32, Ordering};` and `static NEXT_TICKET: AtomicU32 = AtomicU32::new(0);`"
+      - "`fetch_add(1, Ordering::Relaxed)` returns the value **before** adding, so add 1 to it."
+    more:
+      - task: |
+          This logger was written for an older edition with a `static mut Vec`, and edition 2024 refuses to compile it (taking `&mut` of a `static mut` is an error). Rewrite it with a `static LOG: Mutex<Vec<String>>`: `log` appends a message, and `take_logs` returns all messages so far (oldest first) and leaves the log empty. No `unsafe`, no `static mut`.
+        seed: |
+          static mut LOG: Vec<String> = Vec::new();
+
+          fn log(msg: &str) {
+              unsafe {
+                  LOG.push(msg.to_string());
+              }
+          }
+
+          fn take_logs() -> Vec<String> {
+              unsafe { std::mem::take(&mut LOG) }
+          }
+        solution: |
+          use std::sync::Mutex;
+
+          static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+          fn log(msg: &str) {
+              LOG.lock().unwrap().push(msg.to_string());
+          }
+
+          fn take_logs() -> Vec<String> {
+              std::mem::take(&mut *LOG.lock().unwrap())
+          }
+        harness: |
+          #[test]
+          fn logs_come_back_in_order() {
+              log("boot");
+              log("ready");
+              assert_eq!(take_logs(), vec!["boot".to_string(), "ready".to_string()], "take_logs()");
+          }
+
+          #[test]
+          fn taking_empties_the_log() {
+              log("once");
+              let _ = take_logs();
+              assert!(take_logs().is_empty(), "a second take_logs() should be empty");
+          }
+
+          #[test]
+          fn messages_from_many_threads_are_all_kept() {
+              let handles: Vec<_> = (0..4)
+                  .map(|t| {
+                      std::thread::spawn(move || {
+                          for i in 0..25 {
+                              log(&format!("thread {t} message {i}"));
+                          }
+                      })
+                  })
+                  .collect();
+              for h in handles {
+                  h.join().unwrap();
+              }
+              assert_eq!(take_logs().len(), 100, "number of messages from 4 threads x 25");
+          }
+        forbid:
+          - pattern: 'static\s+mut'
+            message: Use a `static Mutex` instead of `static mut`.
+          - pattern: '\bunsafe\b'
+            message: The Mutex version needs no `unsafe`.
+        hints:
+          - "`static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());` (with `use std::sync::Mutex;`)."
+          - "`log`: `LOG.lock().unwrap().push(msg.to_string());`"
+          - "`take_logs`: `std::mem::take(&mut *LOG.lock().unwrap())` swaps an empty Vec into the guard and returns the old one."
+      - task: |
+          Fill in the blanks to declare a union and read one of its fields. Both fields share the same 4 bytes, so writing `word` and reading `bytes` shows how the number is laid out in memory. On little-endian CPUs (x86 and most ARM), the lowest byte comes first, which is exactly what the safe `to_le_bytes` gives. The program should print `[4, 3, 2, 1]` twice.
+        fill: |
+          [[union]] Packet {
+              bytes: [u8; 4],
+              word: u32,
+          }
+
+          fn main() {
+              let p = Packet { word: 0x0102_0304 };
+              // SAFETY: any 4 bytes are a valid [u8; 4].
+              let b = [[unsafe]] { p.bytes };
+              println!("{:?}", b);
+              println!("{:?}", 0x0102_0304u32.to_le_bytes());
+          }
+        hints:
+          - "A type whose fields all share the same memory is declared with the `union` keyword."
+          - "Reading a union field needs an `unsafe` block."
+        tests:
+          - expect: "[4, 3, 2, 1]\n[4, 3, 2, 1]"
+
+  - title: Undefined behavior and Miri
+    id: unsafe-5
+    text: |
+      **Undefined behavior** (UB) is what happens when unsafe code breaks one of Rust's rules. The name is literal: the language makes **no promise** about what the program does next. The optimizer assumes UB never happens and rearranges code based on that assumption, so a program with UB can:
+
+      - work perfectly in a debug build and fail in release,
+      - work today and break after a compiler update,
+      - corrupt unrelated data, which then crashes somewhere far away from the bug,
+      - turn into a security hole (most memory-safety CVEs in C and C++ are UB).
+
+      That's why "I ran it and it worked" proves nothing about unsafe code.
+
+      ### The rules unsafe code must keep
+
+      The most common ways to cause UB:
+
+      | UB | Example |
+      |---|---|
+      | dangling, null or misaligned pointer dereference | using a pointer to a dropped local; reading a `u32` from an odd address |
+      | out-of-bounds access | `get_unchecked(len)`, `ptr.add(i)` past the end |
+      | breaking the aliasing rules | two live `&mut` to the same value, or writing through a pointer while a `&` to it is in use |
+      | invalid values | a `bool` that's not 0 or 1, a `char` that isn't a Unicode scalar value, an enum with no matching variant, a null `&T` |
+      | reading uninitialized memory | reading a `MaybeUninit` before writing it |
+      | data races | two threads writing a `static mut` |
+      | wrong FFI signature | declaring a C function with the wrong types |
+
+      ### Debug builds catch a few
+
+      Debug builds (like this site's) check some of std's unsafe preconditions at runtime and **abort** if they're violated:
+
+      ```rust
+      fn main() {
+          let v = vec![1, 2, 3];
+          let x = unsafe { *v.get_unchecked(10) };
+          println!("{x}");
+      }
+      ```
+
+      ```text
+      thread 'main' panicked at src/main.rs:3:24:
+      unsafe precondition(s) violated: slice::get_unchecked requires that the index is within the slice
+
+      This indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.
+      thread caused non-unwinding panic. aborting.
+      ```
+
+      Similar checks catch misaligned pointer reads and invalid `char` and enum values. Read the message's last sentence again: release builds remove these checks, and many kinds of UB are never checked at all. They're a safety net, not a guarantee.
+
+      ### Miri: the UB detector
+
+      **Miri** is an interpreter for Rust's compiled intermediate code that checks **every** memory access against Rust's rules. It catches out-of-bounds and use-after-free accesses, invalid values, aliasing violations, data races and memory leaks, and tells you exactly where:
+
+      ```text
+      $ rustup +nightly component add miri
+      $ cargo +nightly miri test
+      error: Undefined Behavior: constructing invalid value: encountered 0x02, but expected a boolean
+       --> src/lib.rs:8:20
+        |
+      8 |     let b: bool = unsafe { std::mem::transmute::<u8, bool>(raw) };
+        |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+      ```
+
+      Run it on the tests of any module that contains unsafe code, ideally in CI. It's slow (often 100 times slower than a normal run) and can't run calls into C, so keep those tests small. The Rust Playground has it under **Tools > Miri**. For FFI-heavy code, sanitizers like AddressSanitizer fill the gap.
+
+      ### Fixing UB
+
+      The best fix is usually to **remove** the unsafe code: almost every unchecked operation has a checked, safe twin.
+
+      ```rust run
+      fn main() {
+          println!("{:?}", char::from_u32(0x41));
+          println!("{:?}", char::from_u32(0xD800));
+          let v = [1, 2, 3];
+          println!("{:?} {:?}", v.get(1), v.get(10));
+          let raw: Vec<u8> = vec![0xff, 0xfe];
+          println!("{}", String::from_utf8(raw).is_err());
+      }
+      ```
+
+      ```output
+      Some('A')
+      None
+      Some(2) None
+      true
+      ```
+
+      When you must keep the unsafe call (measured performance, FFI), add the check that makes the `SAFETY` comment **true**.
+
+      **Your turn:** `char_from_code` claims to turn any code point into a `char`, but `0xD800` (a UTF-16 surrogate) and anything above `0x10FFFF` aren't valid `char`s, so the unchecked call is UB for them. Rewrite it with no `unsafe`, returning `None` for invalid codes.
+    seed: |
+      /// The char with this Unicode code point, or None if code isn't a valid char.
+      fn char_from_code(code: u32) -> Option<char> {
+          // SAFETY: ??? nothing guarantees code is valid
+          Some(unsafe { char::from_u32_unchecked(code) })
+      }
+    solution: |
+      /// The char with this Unicode code point, or None if code isn't a valid char.
+      fn char_from_code(code: u32) -> Option<char> {
+          char::from_u32(code)
+      }
+    harness: |
+      #[test]
+      fn converts_ascii() {
+          assert_eq!(char_from_code(65), Some('A'), "char_from_code(65)");
+      }
+
+      #[test]
+      fn converts_an_emoji() {
+          assert_eq!(char_from_code(0x1F980), Some('🦀'), "char_from_code(0x1F980)");
+      }
+
+      #[test]
+      fn rejects_a_surrogate() {
+          assert_eq!(char_from_code(0xD800), None, "char_from_code(0xD800)");
+      }
+
+      #[test]
+      fn rejects_codes_above_the_unicode_range() {
+          assert_eq!(char_from_code(0x110000), None, "char_from_code(0x110000)");
+          assert_eq!(char_from_code(u32::MAX), None, "char_from_code(u32::MAX)");
+      }
+    forbid:
+      - pattern: '\bunsafe\b|_unchecked'
+        message: Use the checked conversion; no `unsafe` needed.
+    hints:
+      - "The safe twin of `from_u32_unchecked` is `char::from_u32`, and it already returns an `Option<char>`."
+    more:
+      - task: |
+          This time the unsafe call stays (imagine profiling showed the bounds check matters). `get_or_zero` promises to return 0 for an out-of-range index, but its `SAFETY` comment is a lie: nothing checks the index. Add the check that makes the comment true, and keep using `get_unchecked`.
+        seed: |
+          /// The element at index, or 0 if index is out of range.
+          fn get_or_zero(values: &[i32], index: usize) -> i32 {
+              // SAFETY: index is in bounds.
+              unsafe { *values.get_unchecked(index) }
+          }
+        solution: |
+          /// The element at index, or 0 if index is out of range.
+          fn get_or_zero(values: &[i32], index: usize) -> i32 {
+              if index >= values.len() {
+                  return 0;
+              }
+              // SAFETY: we just checked that index < values.len().
+              unsafe { *values.get_unchecked(index) }
+          }
+        harness: |
+          #[test]
+          fn returns_elements_in_range() {
+              assert_eq!(get_or_zero(&[4, 5, 6], 0), 4, "get_or_zero(&[4, 5, 6], 0)");
+              assert_eq!(get_or_zero(&[4, 5, 6], 2), 6, "get_or_zero(&[4, 5, 6], 2)");
+          }
+
+          #[test]
+          fn returns_zero_just_past_the_end() {
+              assert_eq!(get_or_zero(&[4, 5, 6], 3), 0, "get_or_zero(&[4, 5, 6], 3)");
+          }
+
+          #[test]
+          fn returns_zero_far_past_the_end() {
+              assert_eq!(get_or_zero(&[4, 5, 6], 1000), 0, "get_or_zero(&[4, 5, 6], 1000)");
+          }
+
+          #[test]
+          fn an_empty_slice_always_gives_zero() {
+              assert_eq!(get_or_zero(&[], 0), 0, "get_or_zero(&[], 0)");
+          }
+        require:
+          - pattern: 'get_unchecked'
+            message: Keep the `get_unchecked` call; add the missing check before it.
+        hints:
+          - "The index is valid when `index < values.len()`."
+          - "`if index >= values.len() { return 0; }` before the unsafe block, then fix the SAFETY comment."
+      - task: |
+          `to_level` turns a byte into a `Level` by reinterpreting it with `transmute`. Its range check has an off-by-one bug, so `3` creates an enum value with no matching variant: UB (a debug build aborts). Rewrite it with a `match` and no `unsafe`: `0`, `1` and `2` map to `Low`, `Mid` and `High`; anything else is `None`.
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          #[repr(u8)]
+          enum Level {
+              Low = 0,
+              Mid = 1,
+              High = 2,
+          }
+
+          /// 0, 1 and 2 map to Low, Mid and High; anything else is None.
+          fn to_level(n: u8) -> Option<Level> {
+              if n > 3 {
+                  return None;
+              }
+              // SAFETY: Level is repr(u8) and n is a valid discriminant.
+              Some(unsafe { std::mem::transmute::<u8, Level>(n) })
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          #[repr(u8)]
+          enum Level {
+              Low = 0,
+              Mid = 1,
+              High = 2,
+          }
+
+          /// 0, 1 and 2 map to Low, Mid and High; anything else is None.
+          fn to_level(n: u8) -> Option<Level> {
+              match n {
+                  0 => Some(Level::Low),
+                  1 => Some(Level::Mid),
+                  2 => Some(Level::High),
+                  _ => None,
+              }
+          }
+        harness: |
+          #[test]
+          fn maps_the_three_valid_bytes() {
+              assert_eq!(to_level(0), Some(Level::Low), "to_level(0)");
+              assert_eq!(to_level(1), Some(Level::Mid), "to_level(1)");
+              assert_eq!(to_level(2), Some(Level::High), "to_level(2)");
+          }
+
+          #[test]
+          fn rejects_three() {
+              assert_eq!(to_level(3), None, "to_level(3)");
+          }
+
+          #[test]
+          fn rejects_large_bytes() {
+              assert_eq!(to_level(200), None, "to_level(200)");
+              assert_eq!(to_level(255), None, "to_level(255)");
+          }
+        forbid:
+          - pattern: '\bunsafe\b|transmute'
+            message: Use a `match` instead of `transmute`.
+        hints:
+          - "A `match n { 0 => Some(Level::Low), ... }` can never produce an invalid `Level`."
+          - "Finish with `_ => None`."
+
+  - title: When (not) to use unsafe at work
+    id: unsafe-6
+    text: |
+      Here's the honest picture: most Rust developers write little or no `unsafe`, and many application teams have none in their own code at all. The unsafe code your programs rely on lives in std, Tokio, `hashbrown` and similar crates, where specialists write it, review it and test it with Miri and fuzzers. You get the speed without the risk.
+
+      ### When unsafe is (rarely) right
+
+      - **FFI**: calling a C library or an OS API that has no safe crate yet.
+      - **Low-level data structures** that can't be expressed with references, when no existing crate fits (a custom arena allocator, a lock-free queue).
+      - **Hardware**: memory-mapped registers in embedded code.
+      - **Performance**, but only when profiling **proves** a hot spot and the safe version can't be made fast. This is rarer than it sounds: iterators and an `assert!` up front usually let the compiler remove bounds checks on their own (see the performance module).
+
+      ### A checklist before writing unsafe
+
+      1. **Is there a safe API?** Most "I need unsafe" moments have one:
+
+      | You want to... | Safe tool |
+      |---|---|
+      | two `&mut` into one slice | `split_at_mut`, `chunks_mut`, `get_disjoint_mut` |
+      | swap or move out of a `&mut` | `std::mem::swap`, `mem::take`, `mem::replace` |
+      | mutate through a shared reference | `Cell`, `RefCell`, `Mutex`, atomics |
+      | reinterpret bytes as numbers | `u32::from_le_bytes`, `f32::from_bits`, or the `bytemuck` / `zerocopy` crates |
+      | skip a bounds check | iterators, `chunks_exact`, an `assert!` before the loop |
+      | a global counter | an atomic in a `static` |
+
+      2. **Is there a well-tested crate** that already wraps it?
+      3. **Did you measure** that it's worth it?
+      4. **Can you keep it tiny?** One small module, a safe public API, `assert!`s that make it sound.
+      5. **Is every block documented?** A `// SAFETY:` comment per block, a `# Safety` section per `unsafe fn`.
+      6. **Is it tested?** Unit tests run under Miri in CI, and a second reviewer who knows unsafe Rust.
+
+      ### Tooling that keeps unsafe in check
+
+      Put `#![forbid(unsafe_code)]` at the top of your crate (in `main.rs` or `lib.rs`) and the compiler rejects any unsafe in it, permanently:
+
+      ```rust compile_fail
+      #![forbid(unsafe_code)]
+
+      fn main() {
+          let x = 5;
+          let p = &raw const x;
+          println!("{}", unsafe { *p });
+      }
+      ```
+
+      ```error
+      error: usage of an `unsafe` block
+      ```
+
+      Many teams set it on every crate except one small, well-reviewed module. Also useful: clippy's `undocumented_unsafe_blocks` lint, the `unsafe_op_in_unsafe_fn` lint (on by default since edition 2024), and `cargo geiger`, which counts the unsafe code in your dependencies.
+
+      ### The safe versions are usually shorter
+
+      ```rust run
+      use std::mem;
+
+      struct Player {
+          name: String,
+          inventory: Vec<String>,
+      }
+
+      fn main() {
+          let mut a = 1;
+          let mut b = 2;
+          mem::swap(&mut a, &mut b);
+          println!("{a} {b}");
+
+          let mut p = Player { name: "Ferris".to_string(), inventory: vec!["map".to_string()] };
+          let old = mem::take(&mut p.inventory); // moves the Vec out, leaves an empty one
+          println!("{} had {:?}, now {:?}", p.name, old, p.inventory);
+
+          let bytes = [0x2a, 0x00, 0x00, 0x00];
+          println!("{}", u32::from_le_bytes(bytes));
+      }
+      ```
+
+      ```output
+      2 1
+      Ferris had ["map"], now []
+      42
+      ```
+
+      `mem::take` replaces a value with its `Default` and hands you the old one, which is how you "move out of a `&mut`" without `ptr::read`. `mem::replace(&mut x, new)` does the same with a value you choose.
+
+      **Your turn:** a teammate wrote `rotate_left_by_one` with `ptr::read`, `ptr::copy` and `ptr::write`. It works, but every reader now has to verify the pointer math. Rewrite it with no `unsafe`, using the slice method `rotate_left`. Keep the empty-slice case working (`rotate_left(1)` panics on an empty slice).
+    seed: |
+      /// Moves the first element to the end: [1, 2, 3] becomes [2, 3, 1].
+      fn rotate_left_by_one(v: &mut [i32]) {
+          if v.is_empty() {
+              return;
+          }
+          let len = v.len();
+          let p = v.as_mut_ptr();
+          unsafe {
+              let first = std::ptr::read(p);
+              std::ptr::copy(p.add(1), p, len - 1);
+              std::ptr::write(p.add(len - 1), first);
+          }
+      }
+    solution: |
+      /// Moves the first element to the end: [1, 2, 3] becomes [2, 3, 1].
+      fn rotate_left_by_one(v: &mut [i32]) {
+          if v.is_empty() {
+              return;
+          }
+          v.rotate_left(1);
+      }
+    harness: |
+      #[test]
+      fn moves_the_first_element_to_the_end() {
+          let mut v = [1, 2, 3];
+          rotate_left_by_one(&mut v);
+          assert_eq!(v, [2, 3, 1], "rotate [1, 2, 3]");
+      }
+
+      #[test]
+      fn works_on_longer_slices() {
+          let mut v = vec![9, 8, 7, 6, 5];
+          rotate_left_by_one(&mut v);
+          assert_eq!(v, vec![8, 7, 6, 5, 9], "rotate [9, 8, 7, 6, 5]");
+      }
+
+      #[test]
+      fn one_element_stays_put() {
+          let mut v = [42];
+          rotate_left_by_one(&mut v);
+          assert_eq!(v, [42], "rotate [42]");
+      }
+
+      #[test]
+      fn an_empty_slice_is_fine() {
+          let mut v: [i32; 0] = [];
+          rotate_left_by_one(&mut v);
+          assert_eq!(v, [], "rotate []");
+      }
+    require:
+      - pattern: '\.rotate_left\s*\('
+        message: Use the slice method `rotate_left`.
+    forbid:
+      - pattern: '\bunsafe\b'
+        message: Remove the unsafe code entirely.
+    hints:
+      - "Keep the `if v.is_empty() { return; }` check."
+      - "Then one line: `v.rotate_left(1);`."
+    more:
+      - task: |
+          `take_name` moves the name out of a `Player` and leaves an empty name behind, using `ptr::read` and `ptr::write`. That's correct only because the two lines are in exactly this order with nothing in between that could panic; one careless edit and the `String` gets freed twice. Rewrite it with `std::mem::take` and no `unsafe`.
+        seed: |
+          struct Player {
+              name: String,
+              score: u32,
+          }
+
+          impl Player {
+              /// Returns the name and leaves an empty name behind.
+              fn take_name(&mut self) -> String {
+                  unsafe {
+                      let name = std::ptr::read(&self.name);
+                      std::ptr::write(&mut self.name, String::new());
+                      name
+                  }
+              }
+          }
+        solution: |
+          struct Player {
+              name: String,
+              score: u32,
+          }
+
+          impl Player {
+              /// Returns the name and leaves an empty name behind.
+              fn take_name(&mut self) -> String {
+                  std::mem::take(&mut self.name)
+              }
+          }
+        harness: |
+          #[test]
+          fn returns_the_name() {
+              let mut p = Player { name: "Ferris".to_string(), score: 10 };
+              assert_eq!(p.take_name(), "Ferris", "take_name()");
+          }
+
+          #[test]
+          fn leaves_an_empty_name_behind() {
+              let mut p = Player { name: "Corro".to_string(), score: 5 };
+              let _ = p.take_name();
+              assert_eq!(p.name, "", "name after take_name()");
+              assert_eq!(p.take_name(), "", "a second take_name()");
+          }
+
+          #[test]
+          fn the_score_is_untouched() {
+              let mut p = Player { name: "Ana".to_string(), score: 99 };
+              let _ = p.take_name();
+              assert_eq!(p.score, 99, "score after take_name()");
+          }
+        forbid:
+          - pattern: '\bunsafe\b'
+            message: Use `std::mem::take`; no `unsafe` needed.
+        hints:
+          - "`std::mem::take(&mut x)` returns `x` and puts `Default::default()` (an empty `String`) in its place."
+      - task: |
+          `read_u32_le` reads the first four bytes of a buffer as a little-endian `u32` by casting the byte pointer to `*const u32`. That's two bugs: it never checks the buffer has four bytes, and a `u32` must be read from an address divisible by 4, which a byte slice doesn't guarantee (debug builds abort with `misaligned pointer dereference`). Rewrite it safely: return `None` if there are fewer than 4 bytes, otherwise `Some(u32::from_le_bytes(...))`.
+        seed: |
+          /// The first 4 bytes as a little-endian u32, or None if there are fewer than 4.
+          fn read_u32_le(bytes: &[u8]) -> Option<u32> {
+              Some(unsafe { *(bytes.as_ptr() as *const u32) })
+          }
+        solution: |
+          /// The first 4 bytes as a little-endian u32, or None if there are fewer than 4.
+          fn read_u32_le(bytes: &[u8]) -> Option<u32> {
+              let first: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
+              Some(u32::from_le_bytes(first))
+          }
+        harness: |
+          #[test]
+          fn reads_a_small_number() {
+              assert_eq!(read_u32_le(&[0x2a, 0, 0, 0]), Some(42), "read_u32_le(&[0x2a, 0, 0, 0])");
+          }
+
+          #[test]
+          fn the_lowest_byte_comes_first() {
+              assert_eq!(read_u32_le(&[1, 2, 3, 4, 5]), Some(0x0403_0201), "read_u32_le(&[1, 2, 3, 4, 5])");
+          }
+
+          #[test]
+          fn works_on_any_starting_offset() {
+              let buf = [0u8, 0xff, 0, 0, 0, 9];
+              assert_eq!(read_u32_le(&buf[1..]), Some(255), "read_u32_le(&buf[1..])");
+          }
+
+          #[test]
+          fn too_few_bytes_give_none() {
+              assert_eq!(read_u32_le(&[1, 2, 3]), None, "read_u32_le(&[1, 2, 3])");
+              assert_eq!(read_u32_le(&[]), None, "read_u32_le(&[])");
+          }
+        forbid:
+          - pattern: '\bunsafe\b|as\s+\*const'
+            message: Read the bytes safely with `u32::from_le_bytes`.
+        hints:
+          - "`bytes.get(..4)` is `None` when there are fewer than 4 bytes."
+          - "A `&[u8]` of length 4 converts to `[u8; 4]` with `.try_into()`, which returns a `Result`."
+          - "`let first: [u8; 4] = bytes.get(..4)?.try_into().ok()?; Some(u32::from_le_bytes(first))`"

@@ -1,0 +1,869 @@
+id: bank-ledger
+title: A bank ledger
+level: Beginner
+after: errors
+summary: Process a day of banking from a ledger file. Transactions become an enum, every rule is checked with Result and the ? operator, transfers never leave money half-moved, and each account gets a statement.
+seed: |
+  use std::collections::BTreeMap;
+  use std::io;
+  use std::io::BufRead;
+
+  fn main() {
+      // Account name -> balance, in whole coins.
+      let mut balances: BTreeMap<String, u64> = BTreeMap::new();
+
+      for line in io::stdin().lock().lines() {
+          let line = line.expect("failed to read input");
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          if parts.is_empty() {
+              continue;
+          }
+          // Handle: open NAME AMOUNT, deposit NAME AMOUNT, withdraw NAME AMOUNT
+
+      }
+
+      // Print every balance, in name order.
+  }
+milestones:
+  - title: Accounts in a map
+    text: |
+      Banks, shops and payment apps all keep a **ledger**: a list of transactions, processed in order, that moves money between accounts. In this project your program reads a ledger, one transaction per line, keeps every balance up to date, and explains clearly when a line can't be processed.
+
+      This first milestone handles three commands, and you can assume every line is valid:
+
+      | Line | Effect | Prints |
+      |---|---|---|
+      | `open alice 100` | creates account `alice` with 100 | `opened alice with 100` |
+      | `deposit alice 25` | adds 25 | `alice: +25, balance 125` |
+      | `withdraw alice 30` | takes 30 out | `alice: -30, balance 95` |
+
+      After the last line, print every account in name order:
+
+      ```
+      Balances:
+        alice: 95
+        bob: 50
+      ```
+
+      ### Why a BTreeMap
+
+      You look accounts up by name, so a map from `String` to balance fits. A `HashMap` would work for the lookups, but it iterates in an unpredictable order, and a bank report that shuffles itself every run is useless (and untestable). A `BTreeMap` keeps its keys sorted, so the final report comes out in name order for free.
+
+      Balances are `u64`: whole coins that can never be negative. Real systems also use integers for money (counting cents instead of dollars), because floating point can't represent 0.10 exactly.
+
+      ### Splitting the line
+
+      The starter code turns each line into a `Vec<&str>` of words: `split_whitespace()` produces the words and `.collect()` gathers them into a vector. A **slice pattern** then matches the command and its arguments in one go, and names them:
+
+      ```rust run
+      fn main() {
+          let line = "deposit alice 25";
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          match parts.as_slice() {
+              ["deposit", name, amount] => println!("deposit {amount} into {name}"),
+              _ => println!("something else"),
+          }
+      }
+      ```
+
+      ```output
+      deposit 25 into alice
+      ```
+
+      For `deposit` and `withdraw`, `balances.get_mut(*name)` gives an `Option<&mut u64>`. Since the input is valid for now, `.expect("unknown account")` is fine: milestone 3 replaces it with proper errors. (`name` is a `&&str` here, a reference to an element of the vector; `*name` gets the `&str`.)
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::BufRead;
+
+      fn main() {
+          // Account name -> balance, in whole coins.
+          let mut balances: BTreeMap<String, u64> = BTreeMap::new();
+
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              let parts: Vec<&str> = line.split_whitespace().collect();
+              if parts.is_empty() {
+                  continue;
+              }
+              match parts.as_slice() {
+                  ["open", name, amount] => {
+                      let amount: u64 = amount.parse().expect("amount must be a number");
+                      balances.insert(name.to_string(), amount);
+                      println!("opened {name} with {amount}");
+                  }
+                  ["deposit", name, amount] => {
+                      let amount: u64 = amount.parse().expect("amount must be a number");
+                      let balance = balances.get_mut(*name).expect("unknown account");
+                      *balance += amount;
+                      println!("{name}: +{amount}, balance {balance}");
+                  }
+                  ["withdraw", name, amount] => {
+                      let amount: u64 = amount.parse().expect("amount must be a number");
+                      let balance = balances.get_mut(*name).expect("unknown account");
+                      *balance -= amount;
+                      println!("{name}: -{amount}, balance {balance}");
+                  }
+                  _ => panic!("cannot understand the line: {line}"),
+              }
+          }
+
+          // Print every balance, in name order.
+          println!("Balances:");
+          for (name, balance) in &balances {
+              println!("  {name}: {balance}");
+          }
+      }
+    tests:
+      - stdin: "open alice 100\nopen bob 50\ndeposit alice 25\nwithdraw bob 20\n"
+      - stdin: "open zoe 10\nopen adam 0\ndeposit adam 5\n\nwithdraw zoe 10\n"
+      - stdin: "open mia 7\nopen leo 300\nwithdraw leo 299\ndeposit mia 3\ndeposit leo 1000\n"
+        hidden: true
+    hints:
+      - "`match parts.as_slice() { [\"open\", name, amount] => { ... } ... }` gives you the pieces by name."
+      - "Parse the amount in each arm with `let amount: u64 = amount.parse().expect(\"...\");`, then `*balance += amount;` through `balances.get_mut(*name)`."
+      - "At the end, `for (name, balance) in &balances { println!(\"  {name}: {balance}\"); }` prints them sorted."
+
+  - title: Transactions as an enum
+    text: |
+      Real ledger files contain mistakes: a typo in a command, a missing amount, `ten` instead of `10`. Right now any of them crashes the program and loses the whole day. Instead, a bad line should be reported with its line number and skipped, and the rest of the ledger processed.
+
+      ```
+      open alice 100
+      deposit alice ten
+      fly away
+      open bob
+      withdraw alice 30
+      ```
+
+      prints:
+
+      ```
+      opened alice with 100
+      line 2: invalid amount "ten"
+      line 3: unknown command "fly"
+      line 4: usage: open NAME AMOUNT
+      alice: -30, balance 70
+      Balances:
+        alice: 70
+      ```
+
+      ### Two steps: parse, then apply
+
+      Turning text into an action is one job; doing the action is another. Give the first job its own function that returns a value saying exactly what to do, or an error explaining why it can't:
+
+      ```rust
+      enum Transaction {
+          Open { name: String, amount: u64 },
+          Deposit { name: String, amount: u64 },
+          Withdraw { name: String, amount: u64 },
+      }
+
+      fn parse_line(line: &str) -> Result<Transaction, String> { ... }
+      fn apply(balances: &mut BTreeMap<String, u64>, tx: Transaction) -> String { ... }
+      ```
+
+      Why an enum? A transaction is exactly *one of* a few kinds, and each kind carries its own data. Once a line is a `Transaction`, the amount is already a number and the command is already known; `apply` can't receive a malformed line, because there's no way to build one. (`apply` returns the message to print, and `main` does the printing.)
+
+      ### The ? operator does the plumbing
+
+      Parsing the amount can fail in every arm. Write it once:
+
+      ```rust
+      fn parse_amount(text: &str) -> Result<u64, String> {
+          text.parse().map_err(|_| format!("invalid amount \"{text}\""))
+      }
+      ```
+
+      `map_err` swaps parse's error type for your own message. Then, inside `parse_line`, `parse_amount(amount)?` means "give me the number, or return this error from `parse_line` right now". No nested `match` needed.
+
+      The error messages to produce:
+
+      - wrong number of words for a known command: `usage: open NAME AMOUNT` (with that command's name),
+      - an unknown command: `unknown command "fly"`,
+      - an amount that isn't a non-negative whole number: `invalid amount "ten"`.
+
+      In `main`, print errors as `line N: message`, where N counts every line of input from 1 (blank lines included, so the number matches what you'd see in an editor). `.lines().enumerate()` gives you the index alongside each line.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::BufRead;
+
+      enum Transaction {
+          Open { name: String, amount: u64 },
+          Deposit { name: String, amount: u64 },
+          Withdraw { name: String, amount: u64 },
+      }
+
+      fn parse_amount(text: &str) -> Result<u64, String> {
+          text.parse().map_err(|_| format!("invalid amount \"{text}\""))
+      }
+
+      fn parse_line(line: &str) -> Result<Transaction, String> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          match parts.as_slice() {
+              ["open", name, amount] => Ok(Transaction::Open { name: name.to_string(), amount: parse_amount(amount)? }),
+              ["deposit", name, amount] => Ok(Transaction::Deposit { name: name.to_string(), amount: parse_amount(amount)? }),
+              ["withdraw", name, amount] => Ok(Transaction::Withdraw { name: name.to_string(), amount: parse_amount(amount)? }),
+              [command @ ("open" | "deposit" | "withdraw"), ..] => Err(format!("usage: {command} NAME AMOUNT")),
+              [other, ..] => Err(format!("unknown command \"{other}\"")),
+              [] => Err(String::from("empty line")),
+          }
+      }
+
+      fn apply(balances: &mut BTreeMap<String, u64>, tx: Transaction) -> String {
+          match tx {
+              Transaction::Open { name, amount } => {
+                  let message = format!("opened {name} with {amount}");
+                  balances.insert(name, amount);
+                  message
+              }
+              Transaction::Deposit { name, amount } => {
+                  let balance = balances.get_mut(&name).expect("unknown account");
+                  *balance += amount;
+                  format!("{name}: +{amount}, balance {balance}")
+              }
+              Transaction::Withdraw { name, amount } => {
+                  let balance = balances.get_mut(&name).expect("unknown account");
+                  *balance -= amount;
+                  format!("{name}: -{amount}, balance {balance}")
+              }
+          }
+      }
+
+      fn main() {
+          // Account name -> balance, in whole coins.
+          let mut balances: BTreeMap<String, u64> = BTreeMap::new();
+
+          for (i, line) in io::stdin().lock().lines().enumerate() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match parse_line(&line) {
+                  Ok(tx) => println!("{}", apply(&mut balances, tx)),
+                  Err(message) => println!("line {}: {message}", i + 1),
+              }
+          }
+
+          // Print every balance, in name order.
+          println!("Balances:");
+          for (name, balance) in &balances {
+              println!("  {name}: {balance}");
+          }
+      }
+    tests:
+      - stdin: "open alice 100\ndeposit alice ten\nfly away\nopen bob\nwithdraw alice 30\n"
+      - stdin: "open zed 5\n\ndeposit zed -5\ndeposit zed 5 extra\nwithdraw\ndeposit zed 1\n"
+        hidden: true
+      - stdin: "open kim 40\nopen lee 4o\nOPEN lee 40\nwithdraw kim 2.5\nwithdraw kim 25\n"
+        hidden: true
+    hints:
+      - "Each slice pattern arm builds a variant: `[\"deposit\", name, amount] => Ok(Transaction::Deposit { name: name.to_string(), amount: parse_amount(amount)? })`."
+      - "An `@` binding catches the usage errors: `[command @ (\"open\" | \"deposit\" | \"withdraw\"), ..] => Err(format!(\"usage: {command} NAME AMOUNT\"))`. Put it after the full patterns."
+      - "In `main`, loop with `for (i, line) in io::stdin().lock().lines().enumerate()` and print errors as `line {}: {message}` with `i + 1`."
+
+  - title: Rules that can't be broken
+    text: |
+      A line can be perfectly formatted and still be wrong. Try `withdraw bob 80` when Bob has 50: `*balance -= amount` on a `u64` panics with `attempt to subtract with overflow`. The type system stopped a negative balance, but crashing the bank isn't the right answer either. These are **business rules**, and each needs a clear error:
+
+      | Problem | Message |
+      |---|---|
+      | depositing or withdrawing 0 | `amount must be positive` |
+      | an account that doesn't exist | `no account named "carol"` |
+      | opening an account twice | `account "alice" already exists` |
+      | withdrawing more than the balance | `insufficient funds: bob has 50, needs 80` |
+
+      They're printed like parse errors (`line 3: insufficient funds: bob has 50, needs 80`), and a rejected transaction changes nothing. Opening an account with 0 is allowed: empty accounts are normal.
+
+      ### A Bank type that guards its own rules
+
+      Wrap the map in a struct and give it methods that return `Result`:
+
+      ```rust
+      struct Bank {
+          accounts: BTreeMap<String, u64>,
+      }
+
+      impl Bank {
+          fn balance_mut(&mut self, name: &str) -> Result<&mut u64, String> { ... }
+          fn open(&mut self, name: &str, amount: u64) -> Result<String, String> { ... }
+          fn deposit(&mut self, name: &str, amount: u64) -> Result<String, String> { ... }
+          fn withdraw(&mut self, name: &str, amount: u64) -> Result<String, String> { ... }
+          fn apply(&mut self, tx: &Transaction) -> Result<String, String> { ... }
+      }
+      ```
+
+      `balance_mut` is where "no such account" is decided, once: `self.accounts.get_mut(name).ok_or_else(|| format!(...))` turns the `Option` into a `Result` with a message. Every other method just writes `let balance = self.balance_mut(name)?;`.
+
+      `apply` matches on the transaction and calls the right method. It takes `&Transaction` because applying a transaction doesn't need to own it (that will matter in the last milestone).
+
+      Now both steps return `Result<_, String>`, so one small function can chain them with `?`:
+
+      ```rust
+      fn process(bank: &mut Bank, line: &str) -> Result<String, String> {
+          let tx = parse_line(line)?;
+          bank.apply(&tx)
+      }
+      ```
+
+      `main` calls `process` and prints either the message or `line N: error`. Notice that `main` no longer cares *which* step failed: a parse error and a business-rule error travel the same road. That's the payoff of using one error type throughout.
+
+      Error messages follow the Rust convention: lowercase, no final period, and the values that help (who, how much). Someone reading `insufficient funds: bob has 50, needs 80` at 2 a.m. knows exactly what happened.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::BufRead;
+
+      enum Transaction {
+          Open { name: String, amount: u64 },
+          Deposit { name: String, amount: u64 },
+          Withdraw { name: String, amount: u64 },
+      }
+
+      fn parse_amount(text: &str) -> Result<u64, String> {
+          text.parse().map_err(|_| format!("invalid amount \"{text}\""))
+      }
+
+      fn parse_line(line: &str) -> Result<Transaction, String> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          match parts.as_slice() {
+              ["open", name, amount] => Ok(Transaction::Open { name: name.to_string(), amount: parse_amount(amount)? }),
+              ["deposit", name, amount] => Ok(Transaction::Deposit { name: name.to_string(), amount: parse_amount(amount)? }),
+              ["withdraw", name, amount] => Ok(Transaction::Withdraw { name: name.to_string(), amount: parse_amount(amount)? }),
+              [command @ ("open" | "deposit" | "withdraw"), ..] => Err(format!("usage: {command} NAME AMOUNT")),
+              [other, ..] => Err(format!("unknown command \"{other}\"")),
+              [] => Err(String::from("empty line")),
+          }
+      }
+
+      fn check_positive(amount: u64) -> Result<(), String> {
+          if amount == 0 {
+              Err(String::from("amount must be positive"))
+          } else {
+              Ok(())
+          }
+      }
+
+      struct Bank {
+          accounts: BTreeMap<String, u64>,
+      }
+
+      impl Bank {
+          fn new() -> Self {
+              Bank { accounts: BTreeMap::new() }
+          }
+
+          fn balance_mut(&mut self, name: &str) -> Result<&mut u64, String> {
+              self.accounts.get_mut(name).ok_or_else(|| format!("no account named \"{name}\""))
+          }
+
+          fn open(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              if self.accounts.contains_key(name) {
+                  return Err(format!("account \"{name}\" already exists"));
+              }
+              self.accounts.insert(name.to_string(), amount);
+              Ok(format!("opened {name} with {amount}"))
+          }
+
+          fn deposit(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              check_positive(amount)?;
+              let balance = self.balance_mut(name)?;
+              *balance += amount;
+              Ok(format!("{name}: +{amount}, balance {balance}"))
+          }
+
+          fn withdraw(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              check_positive(amount)?;
+              let balance = self.balance_mut(name)?;
+              if *balance < amount {
+                  return Err(format!("insufficient funds: {name} has {balance}, needs {amount}"));
+              }
+              *balance -= amount;
+              Ok(format!("{name}: -{amount}, balance {balance}"))
+          }
+
+          fn apply(&mut self, tx: &Transaction) -> Result<String, String> {
+              match tx {
+                  Transaction::Open { name, amount } => self.open(name, *amount),
+                  Transaction::Deposit { name, amount } => self.deposit(name, *amount),
+                  Transaction::Withdraw { name, amount } => self.withdraw(name, *amount),
+              }
+          }
+      }
+
+      fn process(bank: &mut Bank, line: &str) -> Result<String, String> {
+          let tx = parse_line(line)?;
+          bank.apply(&tx)
+      }
+
+      fn main() {
+          let mut bank = Bank::new();
+
+          for (i, line) in io::stdin().lock().lines().enumerate() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match process(&mut bank, &line) {
+                  Ok(message) => println!("{message}"),
+                  Err(error) => println!("line {}: {error}", i + 1),
+              }
+          }
+
+          // Print every balance, in name order.
+          println!("Balances:");
+          for (name, balance) in &bank.accounts {
+              println!("  {name}: {balance}");
+          }
+      }
+    tests:
+      - stdin: "open alice 100\nopen bob 50\nwithdraw bob 80\ndeposit carol 10\nopen alice 5\ndeposit alice 0\nwithdraw alice 100\n"
+      - stdin: "open empty 0\nwithdraw empty 1\ndeposit empty x\ndeposit empty 1\nwithdraw empty 1\n"
+      - stdin: "open ana 20\nwithdraw ana 21\nwithdraw ana 20\nwithdraw ana 0\nopen ana 1\nopen ben 3\nwithdraw ghost 3\ndeposit ben 7\n"
+        hidden: true
+    hints:
+      - "`balance_mut`: `self.accounts.get_mut(name).ok_or_else(|| format!(\"no account named \\\"{name}\\\"\"))`."
+      - "In `withdraw`, check `*balance < amount` and `return Err(...)` before subtracting. A small `check_positive(amount)?` helper covers the zero rule."
+      - "`apply` is a `match tx` that calls `self.open(name, *amount)` and friends; `process` is two lines with `?`."
+
+  - title: Transfers that never half-happen
+    text: |
+      Add the most important banking operation:
+
+      ```
+      transfer alice bob 30
+      ```
+
+      moves 30 from Alice to Bob and prints `transferred 30 from alice to bob`. A transfer is a withdrawal and a deposit glued together, and the glue is the hard part.
+
+      ### All or nothing
+
+      Imagine writing it as "withdraw from Alice, then deposit to Bob". If Bob's account doesn't exist, the deposit fails *after* Alice's money is gone. The money has vanished. Databases call the property you need **atomicity**: either the whole transfer happens, or none of it does.
+
+      The simple way to get it in your code: **check everything first, change things last.**
+
+      1. The amount is positive.
+      2. The two accounts are different (`cannot transfer from alice to itself`).
+      3. The sender exists, then the receiver exists (`no account named "carol"`).
+      4. The sender has enough (`insufficient funds: alice has 10, needs 30`).
+      5. Only now, update both balances.
+
+      Every `?` and `return Err(...)` happens in steps 1 to 4, before anything is modified, so an error can never leave the bank half-updated. Check in exactly this order, since the first failing check decides the message.
+
+      A read-only helper makes the checks easy:
+
+      ```rust
+      fn balance(&self, name: &str) -> Result<u64, String> {
+          match self.accounts.get(name) {
+              Some(balance) => Ok(*balance),
+              None => Err(format!("no account named \"{name}\"")),
+          }
+      }
+      ```
+
+      Then read both balances with `?`, check, and write both back with `insert`.
+
+      **Also:** add the `Transfer { from, to, amount }` variant, parse `transfer FROM TO AMOUNT`, and report a wrong word count as `usage: transfer FROM TO AMOUNT`. When you add the variant, notice how the compiler immediately complains that `apply`'s `match` doesn't cover it. That's the enum keeping you honest.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::BufRead;
+
+      enum Transaction {
+          Open { name: String, amount: u64 },
+          Deposit { name: String, amount: u64 },
+          Withdraw { name: String, amount: u64 },
+          Transfer { from: String, to: String, amount: u64 },
+      }
+
+      fn parse_amount(text: &str) -> Result<u64, String> {
+          text.parse().map_err(|_| format!("invalid amount \"{text}\""))
+      }
+
+      fn parse_line(line: &str) -> Result<Transaction, String> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          match parts.as_slice() {
+              ["open", name, amount] => Ok(Transaction::Open { name: name.to_string(), amount: parse_amount(amount)? }),
+              ["deposit", name, amount] => Ok(Transaction::Deposit { name: name.to_string(), amount: parse_amount(amount)? }),
+              ["withdraw", name, amount] => Ok(Transaction::Withdraw { name: name.to_string(), amount: parse_amount(amount)? }),
+              ["transfer", from, to, amount] => Ok(Transaction::Transfer {
+                  from: from.to_string(),
+                  to: to.to_string(),
+                  amount: parse_amount(amount)?,
+              }),
+              [command @ ("open" | "deposit" | "withdraw"), ..] => Err(format!("usage: {command} NAME AMOUNT")),
+              ["transfer", ..] => Err(String::from("usage: transfer FROM TO AMOUNT")),
+              [other, ..] => Err(format!("unknown command \"{other}\"")),
+              [] => Err(String::from("empty line")),
+          }
+      }
+
+      fn check_positive(amount: u64) -> Result<(), String> {
+          if amount == 0 {
+              Err(String::from("amount must be positive"))
+          } else {
+              Ok(())
+          }
+      }
+
+      struct Bank {
+          accounts: BTreeMap<String, u64>,
+      }
+
+      impl Bank {
+          fn new() -> Self {
+              Bank { accounts: BTreeMap::new() }
+          }
+
+          fn balance(&self, name: &str) -> Result<u64, String> {
+              match self.accounts.get(name) {
+                  Some(balance) => Ok(*balance),
+                  None => Err(format!("no account named \"{name}\"")),
+              }
+          }
+
+          fn balance_mut(&mut self, name: &str) -> Result<&mut u64, String> {
+              self.accounts.get_mut(name).ok_or_else(|| format!("no account named \"{name}\""))
+          }
+
+          fn open(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              if self.accounts.contains_key(name) {
+                  return Err(format!("account \"{name}\" already exists"));
+              }
+              self.accounts.insert(name.to_string(), amount);
+              Ok(format!("opened {name} with {amount}"))
+          }
+
+          fn deposit(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              check_positive(amount)?;
+              let balance = self.balance_mut(name)?;
+              *balance += amount;
+              Ok(format!("{name}: +{amount}, balance {balance}"))
+          }
+
+          fn withdraw(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              check_positive(amount)?;
+              let balance = self.balance_mut(name)?;
+              if *balance < amount {
+                  return Err(format!("insufficient funds: {name} has {balance}, needs {amount}"));
+              }
+              *balance -= amount;
+              Ok(format!("{name}: -{amount}, balance {balance}"))
+          }
+
+          fn transfer(&mut self, from: &str, to: &str, amount: u64) -> Result<String, String> {
+              // Check everything first...
+              check_positive(amount)?;
+              if from == to {
+                  return Err(format!("cannot transfer from {from} to itself"));
+              }
+              let from_balance = self.balance(from)?;
+              let to_balance = self.balance(to)?;
+              if from_balance < amount {
+                  return Err(format!("insufficient funds: {from} has {from_balance}, needs {amount}"));
+              }
+              // ...then change both accounts. Nothing below can fail.
+              self.accounts.insert(from.to_string(), from_balance - amount);
+              self.accounts.insert(to.to_string(), to_balance + amount);
+              Ok(format!("transferred {amount} from {from} to {to}"))
+          }
+
+          fn apply(&mut self, tx: &Transaction) -> Result<String, String> {
+              match tx {
+                  Transaction::Open { name, amount } => self.open(name, *amount),
+                  Transaction::Deposit { name, amount } => self.deposit(name, *amount),
+                  Transaction::Withdraw { name, amount } => self.withdraw(name, *amount),
+                  Transaction::Transfer { from, to, amount } => self.transfer(from, to, *amount),
+              }
+          }
+      }
+
+      fn process(bank: &mut Bank, line: &str) -> Result<String, String> {
+          let tx = parse_line(line)?;
+          bank.apply(&tx)
+      }
+
+      fn main() {
+          let mut bank = Bank::new();
+
+          for (i, line) in io::stdin().lock().lines().enumerate() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match process(&mut bank, &line) {
+                  Ok(message) => println!("{message}"),
+                  Err(error) => println!("line {}: {error}", i + 1),
+              }
+          }
+
+          // Print every balance, in name order.
+          println!("Balances:");
+          for (name, balance) in &bank.accounts {
+              println!("  {name}: {balance}");
+          }
+      }
+    tests:
+      - stdin: "open alice 100\nopen bob 50\ntransfer alice bob 30\ntransfer bob alice 500\ntransfer alice carol 10\ntransfer alice alice 10\ntransfer alice bob 0\ntransfer alice bob\n"
+      - stdin: "open a 10\nopen b 0\ntransfer ghost a 5\ntransfer a b 10\ntransfer a b 1\ntransfer b a 4\n"
+      - stdin: "open x 5\ntransfer x y 5\nopen y 1\ntransfer y x 2\ntransfer x x 0\ntransfer x y 5\ntransfer x y five\n"
+        hidden: true
+    hints:
+      - "Add `Transfer { from: String, to: String, amount: u64 }`, a `[\"transfer\", from, to, amount]` arm in `parse_line`, and a `[\"transfer\", ..]` usage arm after it."
+      - "In `transfer`, do every check (`check_positive`, `from == to`, `self.balance(from)?`, `self.balance(to)?`, enough money) before changing anything."
+      - "Write the new balances with `self.accounts.insert(from.to_string(), from_balance - amount);` and the same for `to`."
+
+  - title: "Polish: history and statements"
+    text: |
+      Every bank gives customers a **statement**: the transactions on their account, with the balance after each. Add a `statement NAME` command:
+
+      ```
+      open alice 100
+      open bob 50
+      deposit alice 25
+      transfer alice bob 30
+      withdraw bob 20
+      statement alice
+      ```
+
+      ends with:
+
+      ```
+      statement for alice
+        opened              +100     100
+        deposit              +25     125
+        transfer to bob      -30      95
+      ```
+
+      For Bob, the transfer appears as `transfer from alice` with `+30`, and his withdrawal as `withdrawal` with `-20`. Rejected transactions never appear: they didn't happen. `statement` for an unknown account is an error (`no account named "carol"`), and a wrong word count is `usage: statement NAME`.
+
+      Each entry line is two spaces, the description padded to 22 characters, the change with its sign in 6 characters, and the balance in 8: `format!("  {what:<22}{change:>+6}{balance:>8}")`. The `+` flag prints the sign of positive numbers too.
+
+      ### Keep the history, replay it
+
+      Real ledgers don't store "Alice's statement". They store the transactions, and compute everything else from them. Add `history: Vec<Transaction>` to `Bank`, and record each transaction **only after** it succeeds:
+
+      ```rust
+      fn record(&mut self, tx: Transaction) -> Result<String, String> {
+          let message = self.apply(&tx)?;
+          self.history.push(tx);
+          Ok(message)
+      }
+      ```
+
+      This is why `apply` borrows the transaction: `record` keeps ownership so it can move `tx` into the history afterwards.
+
+      A statement then walks the history, asks "how did this transaction change *this* account?", and keeps a running balance. Write that question as its own function, returning `None` for transactions that don't touch the account:
+
+      ```rust
+      fn effect(tx: &Transaction, name: &str) -> Option<(String, i64)>
+      ```
+
+      A `match` with guards (`Transaction::Transfer { from, to, amount } if from == name => ...`) answers it neatly. The change is an `i64` because it can be negative.
+
+      ### A statement isn't a transaction
+
+      You could add a `Statement` variant to `Transaction`, but then the history could contain statements, and every `match` on transactions would need a "this isn't really a transaction" arm. Instead, wrap the two kinds of line in a separate enum:
+
+      ```rust
+      enum Command {
+          Record(Transaction),
+          Statement(String),
+      }
+      ```
+
+      `parse_line` returns a `Command`, and `process` matches on it. A `Transaction` now always means money moved, and the type system guarantees it.
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io;
+      use std::io::BufRead;
+
+      /// Something that moves money. Only successful transactions are recorded.
+      enum Transaction {
+          Open { name: String, amount: u64 },
+          Deposit { name: String, amount: u64 },
+          Withdraw { name: String, amount: u64 },
+          Transfer { from: String, to: String, amount: u64 },
+      }
+
+      /// One line of the ledger: a transaction to record, or a question about an account.
+      enum Command {
+          Record(Transaction),
+          Statement(String),
+      }
+
+      fn parse_amount(text: &str) -> Result<u64, String> {
+          text.parse().map_err(|_| format!("invalid amount \"{text}\""))
+      }
+
+      fn parse_line(line: &str) -> Result<Command, String> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          let tx = match parts.as_slice() {
+              ["statement", name] => return Ok(Command::Statement(name.to_string())),
+              ["open", name, amount] => Transaction::Open { name: name.to_string(), amount: parse_amount(amount)? },
+              ["deposit", name, amount] => Transaction::Deposit { name: name.to_string(), amount: parse_amount(amount)? },
+              ["withdraw", name, amount] => Transaction::Withdraw { name: name.to_string(), amount: parse_amount(amount)? },
+              ["transfer", from, to, amount] => Transaction::Transfer {
+                  from: from.to_string(),
+                  to: to.to_string(),
+                  amount: parse_amount(amount)?,
+              },
+              [command @ ("open" | "deposit" | "withdraw"), ..] => return Err(format!("usage: {command} NAME AMOUNT")),
+              ["transfer", ..] => return Err(String::from("usage: transfer FROM TO AMOUNT")),
+              ["statement", ..] => return Err(String::from("usage: statement NAME")),
+              [other, ..] => return Err(format!("unknown command \"{other}\"")),
+              [] => return Err(String::from("empty line")),
+          };
+          Ok(Command::Record(tx))
+      }
+
+      fn check_positive(amount: u64) -> Result<(), String> {
+          if amount == 0 {
+              Err(String::from("amount must be positive"))
+          } else {
+              Ok(())
+          }
+      }
+
+      /// How a transaction changed one account: a description and a signed amount.
+      fn effect(tx: &Transaction, name: &str) -> Option<(String, i64)> {
+          match tx {
+              Transaction::Open { name: n, amount } if n == name => Some((String::from("opened"), *amount as i64)),
+              Transaction::Deposit { name: n, amount } if n == name => Some((String::from("deposit"), *amount as i64)),
+              Transaction::Withdraw { name: n, amount } if n == name => Some((String::from("withdrawal"), -(*amount as i64))),
+              Transaction::Transfer { from, to, amount } if from == name => Some((format!("transfer to {to}"), -(*amount as i64))),
+              Transaction::Transfer { from, to, amount } if to == name => Some((format!("transfer from {from}"), *amount as i64)),
+              _ => None,
+          }
+      }
+
+      struct Bank {
+          accounts: BTreeMap<String, u64>,
+          history: Vec<Transaction>,
+      }
+
+      impl Bank {
+          fn new() -> Self {
+              Bank { accounts: BTreeMap::new(), history: Vec::new() }
+          }
+
+          fn balance(&self, name: &str) -> Result<u64, String> {
+              match self.accounts.get(name) {
+                  Some(balance) => Ok(*balance),
+                  None => Err(format!("no account named \"{name}\"")),
+              }
+          }
+
+          fn balance_mut(&mut self, name: &str) -> Result<&mut u64, String> {
+              self.accounts.get_mut(name).ok_or_else(|| format!("no account named \"{name}\""))
+          }
+
+          fn open(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              if self.accounts.contains_key(name) {
+                  return Err(format!("account \"{name}\" already exists"));
+              }
+              self.accounts.insert(name.to_string(), amount);
+              Ok(format!("opened {name} with {amount}"))
+          }
+
+          fn deposit(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              check_positive(amount)?;
+              let balance = self.balance_mut(name)?;
+              *balance += amount;
+              Ok(format!("{name}: +{amount}, balance {balance}"))
+          }
+
+          fn withdraw(&mut self, name: &str, amount: u64) -> Result<String, String> {
+              check_positive(amount)?;
+              let balance = self.balance_mut(name)?;
+              if *balance < amount {
+                  return Err(format!("insufficient funds: {name} has {balance}, needs {amount}"));
+              }
+              *balance -= amount;
+              Ok(format!("{name}: -{amount}, balance {balance}"))
+          }
+
+          fn transfer(&mut self, from: &str, to: &str, amount: u64) -> Result<String, String> {
+              // Check everything first...
+              check_positive(amount)?;
+              if from == to {
+                  return Err(format!("cannot transfer from {from} to itself"));
+              }
+              let from_balance = self.balance(from)?;
+              let to_balance = self.balance(to)?;
+              if from_balance < amount {
+                  return Err(format!("insufficient funds: {from} has {from_balance}, needs {amount}"));
+              }
+              // ...then change both accounts. Nothing below can fail.
+              self.accounts.insert(from.to_string(), from_balance - amount);
+              self.accounts.insert(to.to_string(), to_balance + amount);
+              Ok(format!("transferred {amount} from {from} to {to}"))
+          }
+
+          fn apply(&mut self, tx: &Transaction) -> Result<String, String> {
+              match tx {
+                  Transaction::Open { name, amount } => self.open(name, *amount),
+                  Transaction::Deposit { name, amount } => self.deposit(name, *amount),
+                  Transaction::Withdraw { name, amount } => self.withdraw(name, *amount),
+                  Transaction::Transfer { from, to, amount } => self.transfer(from, to, *amount),
+              }
+          }
+
+          /// Applies a transaction and, only if it succeeded, records it.
+          fn record(&mut self, tx: Transaction) -> Result<String, String> {
+              let message = self.apply(&tx)?;
+              self.history.push(tx);
+              Ok(message)
+          }
+
+          fn statement(&self, name: &str) -> Result<String, String> {
+              self.balance(name)?; // the account must exist
+              let mut out = format!("statement for {name}");
+              let mut balance: i64 = 0;
+              for tx in &self.history {
+                  if let Some((what, change)) = effect(tx, name) {
+                      balance += change;
+                      out.push_str(&format!("\n  {what:<22}{change:>+6}{balance:>8}"));
+                  }
+              }
+              Ok(out)
+          }
+      }
+
+      fn process(bank: &mut Bank, line: &str) -> Result<String, String> {
+          match parse_line(line)? {
+              Command::Record(tx) => bank.record(tx),
+              Command::Statement(name) => bank.statement(&name),
+          }
+      }
+
+      fn main() {
+          let mut bank = Bank::new();
+
+          for (i, line) in io::stdin().lock().lines().enumerate() {
+              let line = line.expect("failed to read input");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match process(&mut bank, &line) {
+                  Ok(message) => println!("{message}"),
+                  Err(error) => println!("line {}: {error}", i + 1),
+              }
+          }
+
+          // Print every balance, in name order.
+          println!("Balances:");
+          for (name, balance) in &bank.accounts {
+              println!("  {name}: {balance}");
+          }
+      }
+    tests:
+      - stdin: "open alice 100\nopen bob 50\ndeposit alice 25\ntransfer alice bob 30\nwithdraw bob 20\nstatement alice\nstatement bob\n"
+      - stdin: "open kai 10\nwithdraw kai 50\ndeposit kai 5\nstatement kai\nstatement carol\nstatement\n"
+      - stdin: "open rui 1000\nopen sam 0\ntransfer rui sam 250\ntransfer sam rui 100\nwithdraw sam 151\nwithdraw sam 150\nstatement sam\ndeposit rui 1\nstatement rui\n"
+        hidden: true
+    hints:
+      - "Add `history: Vec<Transaction>` to `Bank` and a `record` method that calls `self.apply(&tx)?` and then pushes `tx`."
+      - "`effect` is a `match tx` with guards, for example `Transaction::Deposit { name: n, amount } if n == name => Some((String::from(\"deposit\"), *amount as i64))`, and `_ => None` at the end."
+      - "`statement` checks the account with `self.balance(name)?`, then loops over `&self.history`, adds each change to a running `i64` balance and appends `format!(\"\\n  {what:<22}{change:>+6}{balance:>8}\")`."

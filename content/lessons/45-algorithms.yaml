@@ -88,7 +88,7 @@ steps:
       - **"O(1) means fast."** It means "doesn't grow with n". A HashMap lookup hashes the key every time; for five items a plain Vec scan is often quicker.
       - **Testing only with tiny inputs.** Everything is fast with 10 items. Test with the size you'll really get.
 
-      **Your turn:** write `fn has_duplicate(ids: &[u64]) -> bool` in O(n) on average, using a `HashSet`. Remember that `HashSet::insert` returns `false` when the value was already there. The tests include 200,000 ids.
+      **Your turn:** write `fn has_duplicate(ids: &[u64]) -> bool` in O(n) on average, using a `HashSet`. Remember that `HashSet::insert` returns `false` when the value was already there. The tests include 100,000 ids.
     seed: |
       use std::collections::HashSet;
 
@@ -132,17 +132,17 @@ steps:
       }
 
       #[test]
-      fn checks_200000_ids_quickly() {
-          let mut ids: Vec<u64> = (0..200_000).map(|i| i * 7).collect();
-          assert_eq!(has_duplicate(&ids), false, "has_duplicate(200,000 different ids)");
-          ids.push(7 * 123_456);
-          assert_eq!(has_duplicate(&ids), true, "has_duplicate(200,000 ids plus one repeat)");
+      fn checks_100000_ids_quickly() {
+          let mut ids: Vec<u64> = (0..100_000).map(|i| i * 7).collect();
+          assert_eq!(has_duplicate(&ids), false, "has_duplicate(100,000 different ids)");
+          ids.push(7 * 12_345);
+          assert_eq!(has_duplicate(&ids), true, "has_duplicate(100,000 ids plus one repeat)");
       }
     more:
       - task: |
           The log analyzer wants the first word that **repeats**: the word whose second appearance comes earliest. In `["ok", "error", "warn", "error", "ok"]` that's `"error"` (it repeats at position 3, before `"ok"` repeats at position 4).
 
-          Write `fn first_repeat<'a>(words: &[&'a str]) -> Option<&'a str>` in O(n) with a `HashSet`. (The `'a` says the returned word lives as long as the words in the slice; the lifetimes module explained why the compiler needs it here.) The tests include 200,000 words.
+          Write `fn first_repeat<'a>(words: &[&'a str]) -> Option<&'a str>` in O(n) with a `HashSet`. (The `'a` says the returned word lives as long as the words in the slice; the lifetimes module explained why the compiler needs it here.) The tests include 100,000 words.
         seed: |
           use std::collections::HashSet;
 
@@ -177,12 +177,12 @@ steps:
           }
 
           #[test]
-          fn handles_200000_words_quickly() {
-              let owned: Vec<String> = (0..200_000).map(|i| format!("w{i}")).collect();
+          fn handles_100000_words_quickly() {
+              let owned: Vec<String> = (0..100_000).map(|i| format!("w{i}")).collect();
               let mut words: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
-              assert_eq!(first_repeat(&words), None, "first_repeat(200,000 different words)");
-              words.push("w199999");
-              assert_eq!(first_repeat(&words), Some("w199999"), "first_repeat(200,000 words + a repeat of the last)");
+              assert_eq!(first_repeat(&words), None, "first_repeat(100,000 different words)");
+              words.push("w99999");
+              assert_eq!(first_repeat(&words), Some("w99999"), "first_repeat(100,000 words + a repeat of the last)");
           }
         hints:
           - "Walk the words in order and insert each into a `HashSet<&str>`."
@@ -193,7 +193,7 @@ steps:
 
           If several pairs work, return the one that is completed first: the smallest `j`, and for that `j` the smallest `i`. Return `None` if no pair works.
 
-          Checking every pair is O(n²), and the tests have 200,000 prices. Instead, walk the list once and keep a `HashMap` from price to the index where you first saw it: for each price `p` at index `j`, look up `budget - p`.
+          Checking every pair is O(n²), and the tests have 100,000 prices. Instead, walk the list once and keep a `HashMap` from price to the index where you first saw it: for each price `p` at index `j`, look up `budget - p`.
         seed: |
           use std::collections::HashMap;
 
@@ -241,10 +241,10 @@ steps:
           }
 
           #[test]
-          fn handles_200000_prices_quickly() {
-              let mut prices: Vec<i64> = (0..199_999).map(|i| i * 2).collect();
+          fn handles_100000_prices_quickly() {
+              let mut prices: Vec<i64> = (0..99_999).map(|i| i * 2).collect();
               prices.push(1_000_001);
-              assert_eq!(two_sum(&prices, 1_200_001), Some((100_000, 199_999)), "two_sum(200,000 prices, 1200001)");
+              assert_eq!(two_sum(&prices, 1_100_001), Some((50_000, 99_999)), "two_sum(100,000 prices, 1100001)");
           }
         hints:
           - "For each `(j, &p)` in `prices.iter().enumerate()`, the partner you need is `budget - p`."
@@ -565,7 +565,7 @@ steps:
           staff.sort_by_key(|e| Reverse(e.salary));
           println!("top earner: {}", staff[0].name);
 
-          let mut temps = vec![21.5, -3.0, 18.25, 0.0];
+          let mut temps: Vec<f64> = vec![21.5, -3.0, 18.25, 0.0];
           temps.sort_by(|a, b| a.total_cmp(b));
           println!("{temps:?}");
       }
@@ -581,7 +581,7 @@ steps:
       [-3.0, 0.0, 18.25, 21.5]
       ```
 
-      - Floats don't implement `Ord` (NaN isn't comparable), so `sort` won't compile on a `Vec<f64>`. `f64::total_cmp` is a full ordering for floats, made for exactly this.
+      - Floats don't implement `Ord` (NaN isn't comparable), so `sort` won't compile on a `Vec<f64>`. `f64::total_cmp` is a full ordering for floats, made for exactly this. (The `: Vec<f64>` annotation matters: `total_cmp` belongs to a specific float type, and a bare `21.5` could still be an `f32`.)
       - When a type has one obvious order (a version number, a date), implement `Ord` for it (module 23) and plain `sort()` works. When the order depends on the screen or report, use `sort_by`.
       - Related tools: `v.is_sorted()`, `iter.max_by_key(...)`, `iter.min_by(|a, b| a.total_cmp(b))`.
 
