@@ -347,7 +347,7 @@ Use this to know what's already been taught. Modules come in this order.
 - `39-app-errors` app-errors: thiserror for library errors (#[derive(Error)], #[error], #[from]), anyhow for applications (anyhow::Result, context/with_context, bail!, ensure!), main returning anyhow::Result, printing error chains, choosing between them.
 - `40-cli` cli: std::env::args, parsing flags, exit codes (process::exit, ExitCode), eprintln! for errors, reading files with std::fs (tests provide files), reading stdin, a Config struct and run() -> Result, clap derive (shown, not compiled).
 - `41-web` web: HTTP basics, request/response types, routing by (method, path), JSON in and out with serde, handler functions returning Result with status codes, shared state with Arc<Mutex<_>>, how this maps to axum (shown, not compiled), testing handlers.
-- `42-patterns` patterns: builder, newtype, typestate, RAII guards, From/Into conversions, Default, returning iterators, AsRef parameters, enum state machines, making invalid states unrepresentable, clippy's common suggestions, a code-review refactor.
+- `42-patterns` patterns-idioms (id differs from module 15): builder, newtype, typestate, RAII guards, From/Into conversions, Default, returning iterators, AsRef parameters, enum state machines, making invalid states unrepresentable, clippy's common suggestions, a code-review refactor.
 - `43-tooling` tooling: dbg!, eprintln!, reading panics and RUST_BACKTRACE, debuggers (rust-gdb/rust-lldb, VS Code + rust-analyzer), logging with log/tracing (shown), rustdoc (///, //!, doc tests), clippy and rustfmt configuration, CI basics.
 
 **Algorithms and data structures**

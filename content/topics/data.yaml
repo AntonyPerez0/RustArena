@@ -1,0 +1,982 @@
+# Reference pages at /topics/<slug>: the Structuring data phase (structs, methods, enums, patterns, collections, strings).
+topics:
+  - slug: structs-and-methods
+    title: "Structs and impl blocks in Rust: methods and associated functions"
+    description: "How to define a struct in Rust, add methods with impl, choose between &self, &mut self and self, and write a new() constructor."
+    modules: [structs, methods]
+    body: |
+      A **struct** groups related values under one name, with a named **field** for each:
+
+      ```rust
+      struct Account {
+          owner: String,
+          balance: u64,
+      }
+      ```
+
+      Create one by giving every field a value: `Account { owner: String::from("Ferris"), balance: 0 }`. If a variable has the same name as a field, you can write it once (**field init shorthand**): `Account { owner, balance: 0 }`. Read fields with a dot: `acct.balance`. To change a field, the whole variable must be `let mut`; Rust has no per-field mutability.
+
+      ## impl blocks: methods
+
+      Behavior goes in an `impl` block. A **method** is a function whose first parameter is some form of `self`, and you call it with a dot:
+
+      | First parameter | Meaning | Called on | Typical use |
+      |---|---|---|---|
+      | `&self` | borrow the value to read | any instance | getters, calculations, formatting |
+      | `&mut self` | borrow it to change it | a `let mut` instance | deposits, pushes, updates |
+      | `self` | take ownership | the instance is moved | converting or consuming: `into_*`, `finish`, builder `build` |
+
+      Most methods take `&self` or `&mut self`. Taking `self` means the caller can't use the value afterwards, which is exactly right for things like closing an account or turning a builder into the finished object.
+
+      ## Associated functions and new
+
+      A function in an `impl` block **without** `self` is an **associated function**, called with `::` on the type. The idiomatic constructor is `new`:
+
+      ```rust
+      impl Account {
+          fn new(owner: &str) -> Self {
+              Self { owner: owner.to_string(), balance: 0 }
+          }
+      }
+
+      let acct = Account::new("Ferris");
+      ```
+
+      Inside an `impl`, `Self` is an alias for the type being implemented. Rust has no special constructor syntax; `new` is just a convention, and you can have others (`with_capacity`, `from_parts`, `open`). If a type has an obvious empty value, also derive or implement `Default`.
+
+      ## Printing a struct
+
+      `println!("{}", acct)` doesn't compile until you implement `Display`. For debugging, add `#[derive(Debug)]` above the struct and print with `{:?}` or the multi-line `{:#?}`. `dbg!(&acct)` prints the file, line and value to standard error.
+
+      ## Tuple structs and unit structs
+
+      `struct Meters(f64);` is a **tuple struct**: fields are accessed as `.0`, `.1`. A one-field tuple struct is a **newtype**, used to give a plain value its own type so you can't mix up `Meters` and `Seconds`. `struct Marker;` is a **unit struct** with no fields, useful as a type-level tag.
+
+      ## Common mistakes
+
+      - **Missing a field:** `Point { x: 1 }` is E0063, "missing field `y` in initializer of `Point`". Every field must be set (struct update syntax `..Default::default()` fills the rest).
+      - **Calling a `&mut self` method on an immutable variable:** E0596, "cannot borrow `acct` as mutable, as it is not declared as mutable". Add `mut`.
+      - **Changing a field in a `&self` method:** E0594, "cannot assign to `self.balance`, which is behind a `&` reference". Make it `&mut self`.
+      - **Calling an associated function with a dot** (`acct.new(...)`) or a method with `::` without passing the instance. `Account::summary(&acct)` works, but `acct.summary()` is the normal form.
+
+      ## At work
+
+      Keep fields private (no `pub`) when the struct has rules to protect, like "balance never goes negative", and expose methods that enforce them. Return `Result` from methods that can fail. Small getters returning `&str` or `&[T]` avoid needless clones.
+    example: |
+      #[derive(Debug)]
+      struct Account {
+          owner: String,
+          balance: u64,
+      }
+
+      impl Account {
+          fn new(owner: &str) -> Self {
+              Self { owner: owner.to_string(), balance: 0 }
+          }
+
+          fn deposit(&mut self, amount: u64) {
+              self.balance += amount;
+          }
+
+          fn withdraw(&mut self, amount: u64) -> Result<(), String> {
+              if amount > self.balance {
+                  return Err(format!("insufficient funds: have {}, need {}", self.balance, amount));
+              }
+              self.balance -= amount;
+              Ok(())
+          }
+
+          fn summary(&self) -> String {
+              format!("{} has {} coins", self.owner, self.balance)
+          }
+
+          fn close(self) -> u64 {
+              self.balance
+          }
+      }
+
+      fn main() {
+          let mut acct = Account::new("Ferris");
+          acct.deposit(100);
+          println!("{}", acct.summary());
+
+          match acct.withdraw(250) {
+              Ok(()) => println!("withdrew 250"),
+              Err(e) => println!("error: {e}"),
+          }
+          acct.withdraw(30).expect("enough money");
+          println!("{acct:?}");
+
+          let paid_out = acct.close(); // acct is moved; it can't be used after this
+          println!("closed, paid out {paid_out}");
+      }
+
+  - slug: enums
+    title: "Enums in Rust: variants that carry data"
+    description: "Rust enums explained: defining variants with and without data, matching on them, methods on enums, and modeling states that can't go wrong."
+    modules: [enums]
+    body: |
+      An **enum** (enumeration) is a type whose value is exactly **one of** a fixed set of **variants**. Unlike enums in C or Java, each Rust variant can carry its own data:
+
+      ```rust
+      enum Command {
+          Quit,                        // no data
+          Move { x: i32, y: i32 },     // named fields, like a struct
+          Say(String),                 // one unnamed value
+          SetColor(u8, u8, u8),        // several unnamed values
+      }
+      ```
+
+      A `Command` is either a `Quit`, or a `Move` with coordinates, or a `Say` with text, never a mix. You create values with the enum name and `::`: `Command::Say(String::from("hi"))`, `Command::Move { x: 1, y: 2 }`.
+
+      ## Using an enum: match
+
+      You get the data back out with `match`, which runs the arm whose **pattern** fits and binds the variant's data to names:
+
+      ```rust run
+      enum Command {
+          Quit,
+          Move { x: i32, y: i32 },
+          Say(String),
+      }
+
+      fn run(cmd: &Command) -> String {
+          match cmd {
+              Command::Quit => String::from("bye"),
+              Command::Move { x, y } => format!("moving to ({x}, {y})"),
+              Command::Say(text) => format!("saying {text:?}"),
+          }
+      }
+
+      fn main() {
+          let script = [Command::Say(String::from("hi")), Command::Move { x: 3, y: -1 }, Command::Quit];
+          for cmd in &script {
+              println!("{}", run(cmd));
+          }
+      }
+      ```
+
+      ```output
+      saying "hi"
+      moving to (3, -1)
+      bye
+      ```
+
+      `match` is **exhaustive**: forget a variant and the code doesn't compile (E0004, "non-exhaustive patterns: `Command::Quit` not covered"). When you add a variant later, the compiler lists every `match` you need to update. That's the biggest practical advantage of enums.
+
+      ## Methods on enums
+
+      Enums get `impl` blocks just like structs: `impl Command { fn is_quit(&self) -> bool { matches!(self, Command::Quit) } }`. `matches!` returns `true` if a value fits a pattern.
+
+      ## The enums you use every day
+
+      The standard library's two most important types are enums:
+
+      - `Option<T>` is `Some(T)` or `None`: a value that might be missing. Rust has no null.
+      - `Result<T, E>` is `Ok(T)` or `Err(E)`: an operation that can fail.
+
+      ## Enums vs structs, and designing with them
+
+      Use a struct when a value has **all** of several fields; use an enum when it's **one of** several shapes. A classic design mistake is a struct with flags and optional fields that only make sense in some combinations:
+
+      ```rust
+      struct Order { shipped: bool, tracking: Option<String>, cancelled: bool, reason: Option<String> }
+      ```
+
+      Nothing stops `shipped: true, cancelled: true`. An enum makes invalid states impossible to write:
+
+      ```rust
+      enum OrderState { Pending, Shipped { tracking: String }, Cancelled { reason: String } }
+      ```
+
+      ## Common mistakes
+
+      - **Forgetting the enum name:** `Quit` alone is "cannot find value `Quit`". Write `Command::Quit`, or `use Command::*;` inside a function for short names.
+      - **Comparing with `==`:** `if light == Light::Red` is E0369, "binary operation `==` cannot be applied to type `Light`", until you `#[derive(PartialEq)]`. Or use `matches!(light, Light::Red)`.
+      - **Using `_ =>` too eagerly.** A catch-all arm switches off the exhaustiveness check: new variants silently fall into it. List variants explicitly when it matters.
+      - **C-style enums:** variants without data can be cast to integers (`Level::Warn as u8`), and you can set values (`Warn = 30`). Converting back from an integer needs a `match` or `TryFrom`.
+    example: |
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum Level {
+          Info,
+          Warn,
+          Error,
+      }
+
+      #[derive(Debug)]
+      enum OrderState {
+          Pending,
+          Shipped { tracking: String },
+          Cancelled { reason: String },
+      }
+
+      impl OrderState {
+          fn describe(&self) -> String {
+              match self {
+                  OrderState::Pending => String::from("waiting to ship"),
+                  OrderState::Shipped { tracking } => format!("shipped, tracking {tracking}"),
+                  OrderState::Cancelled { reason } => format!("cancelled: {reason}"),
+              }
+          }
+
+          fn is_open(&self) -> bool {
+              matches!(self, OrderState::Pending | OrderState::Shipped { .. })
+          }
+      }
+
+      fn main() {
+          let orders = vec![
+              OrderState::Pending,
+              OrderState::Shipped { tracking: String::from("RS-1042") },
+              OrderState::Cancelled { reason: String::from("out of stock") },
+          ];
+          for (i, o) in orders.iter().enumerate() {
+              println!("order {}: {} (open: {})", i + 1, o.describe(), o.is_open());
+          }
+          println!("{:?}", orders[1]);
+
+          let level = Level::Warn;
+          if level == Level::Warn {
+              println!("{level:?} has code {}", level as u8);
+          }
+          println!("{:?} {:?}", Level::Info, Level::Error);
+      }
+
+  - slug: match
+    title: "Match in Rust: pattern matching explained"
+    description: "How Rust's match works: literals, ranges, | alternatives, guards, @ bindings, destructuring tuples, structs and enums, and exhaustiveness."
+    modules: [enums, patterns]
+    body: |
+      `match` compares a value against a list of **patterns**, top to bottom, and runs the first arm that fits. It's an expression, so it produces a value, and it's **exhaustive**: every possible value must be covered.
+
+      ```rust run
+      fn describe(code: u16) -> &'static str {
+          match code {
+              200 => "ok",
+              301 | 302 => "redirect",
+              400..=499 => "client error",
+              500..=599 => "server error",
+              _ => "unknown",
+          }
+      }
+
+      fn main() {
+          for code in [200, 302, 404, 503, 42] {
+              println!("{code}: {}", describe(code));
+          }
+      }
+      ```
+
+      ```output
+      200: ok
+      302: redirect
+      404: client error
+      503: server error
+      42: unknown
+      ```
+
+      ## Pattern cheat sheet
+
+      | Pattern | Matches |
+      |---|---|
+      | `5`, `'x'`, `"quit"`, `true` | that exact literal |
+      | `1..=9`, `'a'..='z'` | an inclusive range |
+      | `A \| B` | either pattern |
+      | `n` (a name) | anything, and binds it to `n` |
+      | `_` | anything, binds nothing |
+      | `(x, 0)` | a tuple whose second item is 0 |
+      | `Point { x, y: 0 }` | a struct, binding `x`, requiring `y == 0` |
+      | `Some(v)`, `Err(e)` | an enum variant, binding its data |
+      | `[first, .., last]` | a slice with at least two elements |
+      | `n @ 1..=9` | a range, also binding the value to `n` |
+      | `x if x > 100` | anything, but only if the **guard** is true |
+
+      ## Destructuring
+
+      Patterns take values apart. This works in `match`, `if let`, `let` and function parameters:
+
+      ```rust
+      match (dx, dy) {
+          (0, 0) => "standing still",
+          (0, _) => "vertical",
+          (_, 0) => "horizontal",
+          _ => "diagonal",
+      }
+      ```
+
+      `..` skips the remaining fields of a struct (`Player { name, .. }`) or items of a tuple or slice.
+
+      ## Exhaustiveness
+
+      ```rust compile_fail
+      enum Direction {
+          North,
+          East,
+          South,
+          West,
+      }
+
+      fn turn(d: Direction) -> &'static str {
+          match d {
+              Direction::North => "up",
+              Direction::East => "right",
+              Direction::South => "down",
+          }
+      }
+
+      fn main() {
+          println!("{}", turn(Direction::West));
+      }
+      ```
+
+      ```error
+      error[E0004]: non-exhaustive patterns: `Direction::West` not covered
+      ```
+
+      For integers and strings you can't list every value, so finish with `_ =>` (or a name to use the value). For your own enums, prefer listing every variant so that adding one later points you at every `match` to update.
+
+      ## match vs if let
+
+      When you only care about one pattern, `if let` is shorter: `if let Some(price) = lookup(item) { ... }`. Its sibling `let ... else` handles the "bail out if it doesn't match" case: `let Some(user) = find(id) else { return; };`. And `matches!(value, pattern)` gives a `bool`.
+
+      ## Common mistakes
+
+      - **Matching against a variable.** A plain name in a pattern doesn't compare, it **binds a new variable** that matches everything:
+
+        ```rust
+        let target = 5;
+        match guess {
+            target => println!("always runs!"), // shadows `target`
+        }
+        ```
+
+        rustc warns "unreachable pattern" for the arms after it. Use a guard: `g if g == target => ...`.
+      - **Arms with different types.** Every arm must produce the same type: E0308, "`match` arms have incompatible types".
+      - **Overlapping ranges** in the wrong order: the first matching arm wins, so put specific patterns before general ones.
+    example: |
+      #[derive(Debug)]
+      enum Event {
+          Click { x: i32, y: i32 },
+          Key(char),
+          Scroll(i32),
+          Resize(u32, u32),
+      }
+
+      fn handle(e: &Event) -> String {
+          match e {
+              Event::Click { x: 0, y: 0 } => String::from("click at the origin"),
+              Event::Click { x, y } if *x < 0 || *y < 0 => format!("click off screen at ({x}, {y})"),
+              Event::Click { x, .. } => format!("click in column {x}"),
+              Event::Key(c @ ('q' | 'Q')) => format!("quit key {c:?}"),
+              Event::Key(c) if c.is_ascii_digit() => format!("digit {c}"),
+              Event::Key(c) => format!("key {c}"),
+              Event::Scroll(0) => String::from("no scroll"),
+              Event::Scroll(n @ 1..) => format!("scroll down {n}"),
+              Event::Scroll(n) => format!("scroll up {}", -n),
+              Event::Resize(w, h) => format!("resize to {w}x{h}"),
+          }
+      }
+
+      fn main() {
+          let events = [
+              Event::Click { x: 0, y: 0 },
+              Event::Click { x: -5, y: 3 },
+              Event::Click { x: 40, y: 12 },
+              Event::Key('Q'),
+              Event::Key('7'),
+              Event::Key('a'),
+              Event::Scroll(3),
+              Event::Scroll(-2),
+              Event::Resize(800, 600),
+          ];
+          for e in &events {
+              println!("{:<28} -> {}", format!("{e:?}"), handle(e));
+          }
+
+          let scores = [72, 95, 88];
+          match scores {
+              [first, .., last] => println!("first {first}, last {last}"),
+          }
+      }
+
+  - slug: option
+    title: "Option in Rust: Some, None and handling missing values"
+    description: "How Rust's Option<T> replaces null: Some and None, match and if let, unwrap_or, map, and_then, the ? operator, and when unwrap is OK."
+    modules: [enums, errors]
+    body: |
+      Rust has no `null`. A value that might be missing has the type **`Option<T>`**, an enum from the standard library:
+
+      ```rust
+      enum Option<T> {
+          Some(T),
+          None,
+      }
+      ```
+
+      An `Option<u32>` is either `Some(5)` or `None`, and the type system **forces** you to handle `None` before you can use the number. The famous "billion-dollar mistake" of null pointer crashes simply can't happen by accident.
+
+      Many standard methods return an `Option`: `v.first()`, `v.get(i)`, `v.pop()`, `map.get(&key)`, `s.find('x')`, `iter.max()`, `s.chars().next()`, `text.parse().ok()`.
+
+      ## Getting the value out
+
+      ```rust run
+      fn find_price(item: &str) -> Option<u32> {
+          match item {
+              "apple" => Some(3),
+              "bread" => Some(5),
+              _ => None,
+          }
+      }
+
+      fn main() {
+          match find_price("apple") {
+              Some(p) => println!("apple costs {p}"),
+              None => println!("no apples"),
+          }
+          if let Some(p) = find_price("bread") {
+              println!("bread costs {p}");
+          }
+          println!("caviar costs {}", find_price("caviar").unwrap_or(0));
+      }
+      ```
+
+      ```output
+      apple costs 3
+      bread costs 5
+      caviar costs 0
+      ```
+
+      ## The methods worth knowing
+
+      | Method | What it does |
+      |---|---|
+      | `unwrap_or(default)` | the value, or a default |
+      | `unwrap_or_default()` | the value, or `0` / `""` / empty |
+      | `unwrap_or_else(\|\| ...)` | the value, or compute a default (only when needed) |
+      | `map(\|v\| ...)` | transform the value if there is one |
+      | `and_then(\|v\| ...)` | chain another step that also returns an `Option` |
+      | `filter(\|v\| ...)` | turn `Some` into `None` if a test fails |
+      | `ok_or(err)` | turn it into a `Result` with an error for `None` |
+      | `is_some()`, `is_none()` | test without taking the value |
+      | `as_ref()`, `as_deref()` | borrow the contents: `Option<&T>`, `Option<&str>` |
+      | `copied()`, `cloned()` | `Option<&T>` to `Option<T>` |
+      | `take()` | move the value out, leaving `None` |
+
+      Inside a function that returns `Option`, the **`?` operator** returns `None` early: `let first = words.first()?;`.
+
+      ## let else
+
+      To bail out when a value is missing and keep going with a plain value otherwise:
+
+      ```rust
+      let Some(user) = find_user(id) else {
+          return Err("no such user".to_string());
+      };
+      // `user` is a plain value from here on
+      ```
+
+      ## unwrap and expect
+
+      `unwrap()` returns the value or **panics** on `None` with "called `Option::unwrap()` on a `None` value". `expect("message")` panics with your message. They're fine in tests, quick scripts, and when `None` really is impossible (say why in the `expect` message). In code that handles user input or data from outside, handle `None` properly.
+
+      ## Common mistakes
+
+      - **Using an `Option` as the value:** `let first: i32 = v.first();` is E0308, expected `i32`, found `Option<&i32>`.
+      - **Option of a reference.** `v.first()` gives `Option<&i32>`, not `Option<i32>`; call `.copied()` to get the number.
+      - **`if x.is_some() { x.unwrap() }`.** Use `if let Some(v) = x` instead: one check, no unwrap.
+      - **Using `Option` for errors.** If the caller needs to know *why* something failed, return a `Result`.
+    example: |
+      #[derive(Debug)]
+      struct User {
+          name: String,
+          nickname: Option<String>,
+      }
+
+      fn find_user(users: &[User], name: &str) -> Option<usize> {
+          users.iter().position(|u| u.name == name)
+      }
+
+      fn display_name(u: &User) -> &str {
+          u.nickname.as_deref().unwrap_or(&u.name)
+      }
+
+      fn first_initial(users: &[User]) -> Option<char> {
+          let first = users.first()?;
+          first.name.chars().next()
+      }
+
+      fn main() {
+          let users = vec![
+              User { name: String::from("Ferris"), nickname: Some(String::from("crab")) },
+              User { name: String::from("Corro"), nickname: None },
+          ];
+
+          for name in ["Corro", "Gopher"] {
+              match find_user(&users, name) {
+                  Some(i) => println!("{name} is user #{i}, shown as {}", display_name(&users[i])),
+                  None => println!("{name} not found"),
+              }
+          }
+
+          println!("{}", display_name(&users[0]));
+          println!("initial {:?}", first_initial(&users));
+          println!("no users: {:?}", first_initial(&[]));
+
+          let scores = vec![12, 40, 7];
+          let best = scores.iter().max().copied().unwrap_or(0);
+          let doubled = scores.get(1).map(|s| s * 2);
+          let big = scores.get(2).copied().filter(|s| *s > 10);
+          println!("best {best}, doubled {doubled:?}, big {big:?}");
+
+          let Some(last) = scores.last() else {
+              println!("no scores");
+              return;
+          };
+          println!("last {last}, {:?}", users[1]);
+      }
+
+  - slug: vec
+    title: "Vec in Rust: creating, adding, removing and iterating"
+    description: "A practical guide to Rust's Vec<T>: vec!, push and pop, get vs indexing, insert and remove, sort, retain, dedup, and with_capacity."
+    modules: [vectors]
+    body: |
+      `Vec<T>` is Rust's growable array: a list of values of the same type, stored next to each other on the heap. It's the collection you'll use most.
+
+      ## Creating
+
+      ```rust
+      let mut scores: Vec<u32> = Vec::new();  // empty, type given
+      let names = vec!["Ferris", "Corro"];     // with values, type inferred
+      let zeros = vec![0; 10];                 // ten zeros
+      let mut buf = Vec::with_capacity(1000);  // room for 1000 before reallocating
+      ```
+
+      ## Reading
+
+      - `v[i]` returns the element, and **panics** if `i` is out of range: `index out of bounds: the len is 3 but the index is 3`.
+      - `v.get(i)` returns an `Option<&T>`: `None` instead of a panic. Use it when the index comes from outside (user input, a file).
+      - `v.first()`, `v.last()`, `v.len()`, `v.is_empty()`, `v.contains(&x)`, `v.iter().position(|x| ...)`.
+
+      ## Adding and removing
+
+      | Method | Does | Cost |
+      |---|---|---|
+      | `push(x)` | add at the end | fast (amortized O(1)) |
+      | `pop()` | remove the last, returns `Option<T>` | fast |
+      | `insert(i, x)` | add at index `i`, shifting the rest right | O(n) |
+      | `remove(i)` | take out index `i`, shifting the rest left | O(n) |
+      | `swap_remove(i)` | take out index `i`, filling the gap with the last | fast, changes order |
+      | `truncate(n)`, `clear()` | drop elements past `n` / all of them | |
+      | `extend(other)` | append everything from an iterator | |
+      | `retain(\|x\| ...)` | keep only elements that pass a test | O(n) |
+      | `dedup()` | remove consecutive duplicates (sort first) | O(n) |
+
+      ## Sorting
+
+      `sort()` for types with a natural order (integers, strings). `sort_by_key(|p| p.age)` to sort by a field, `sort_by(|a, b| b.score.cmp(&a.score))` for full control (this one sorts descending). `f64` has no total order, so `sort()` on floats doesn't compile; use `sort_by(|a, b| a.total_cmp(b))`. `sort_unstable*` variants are a bit faster when equal elements don't need to keep their order.
+
+      ## Iterating
+
+      - `for x in &v`: borrow each element (`&T`); `v` is still usable afterwards.
+      - `for x in &mut v`: change elements in place (`*x += 1`).
+      - `for x in v`: consume the vector, taking each element by value.
+
+      ## Capacity
+
+      A `Vec` has a **length** (elements in use) and a **capacity** (room reserved). When `push` exceeds the capacity, it allocates a bigger block (roughly double) and moves everything. That's why holding a reference into a `Vec` while pushing is forbidden (E0502), and why `with_capacity` helps when you know the size up front.
+
+      ## Common mistakes
+
+      - **Indexing with the wrong integer type.** Indexes are `usize`:
+
+      ```rust compile_fail
+      fn main() {
+          let v = vec![10, 20, 30];
+          let i: i32 = 1;
+          println!("{}", v[i]);
+      }
+      ```
+
+      ```error
+      error[E0277]: the type `[{integer}]` cannot be indexed by `i32`
+      ```
+
+      Convert with `v[i as usize]` (if `i` can't be negative) or use `usize` for the variable.
+      - **`v.len() - 1` on an empty vector** panics (`attempt to subtract with overflow`). Use `v.last()`.
+      - **Moving out with an index:** `let s = names[0];` for a `Vec<String>` is E0507. Borrow (`&names[0]`) or `clone()`.
+      - **Removing while iterating:** use `retain` instead of a loop with `remove`.
+    example: |
+      #[derive(Debug)]
+      struct Item {
+          name: &'static str,
+          qty: u32,
+      }
+
+      fn main() {
+          let mut inventory = vec![
+              Item { name: "sword", qty: 1 },
+              Item { name: "potion", qty: 5 },
+              Item { name: "arrow", qty: 0 },
+              Item { name: "shield", qty: 2 },
+          ];
+          inventory.push(Item { name: "map", qty: 1 });
+          println!("{} kinds of item", inventory.len());
+
+          inventory.retain(|it| it.qty > 0);
+          inventory.sort_by_key(|it| it.name);
+          let names: Vec<&str> = inventory.iter().map(|it| it.name).collect();
+          println!("{names:?}");
+
+          for it in &mut inventory {
+              it.qty *= 2;
+          }
+          println!("potions: {:?}", inventory.iter().find(|it| it.name == "potion").map(|it| it.qty));
+
+          println!("index 1: {:?}", inventory.get(1));
+          println!("index 9: {:?}", inventory.get(9));
+          let last = inventory.pop();
+          println!("popped {last:?}, {} left", inventory.len());
+
+          let mut readings = vec![3.5, -1.0, 2.25, 9.0];
+          readings.sort_by(|a, b| a.total_cmp(b));
+          println!("{readings:?}");
+
+          let mut tags = vec!["b", "a", "b", "c", "a"];
+          tags.sort();
+          tags.dedup();
+          println!("{tags:?}");
+      }
+
+  - slug: hashmap
+    title: "HashMap in Rust: insert, get and the entry API"
+    description: "How to use HashMap in Rust: insert, get, contains_key, remove, counting with entry().or_insert(), and printing keys in a stable order."
+    modules: [hashmaps]
+    body: |
+      A **`HashMap<K, V>`** stores values by key, with average O(1) lookup. It isn't in the prelude, so import it: `use std::collections::HashMap;`.
+
+      ```rust run
+      use std::collections::HashMap;
+
+      fn main() {
+          let mut stock: HashMap<String, u32> = HashMap::new();
+          stock.insert(String::from("apples"), 12);
+          stock.insert(String::from("pears"), 4);
+
+          println!("{:?}", stock.get("apples"));
+          println!("{:?}", stock.get("kiwis"));
+          println!("{}", stock.contains_key("pears"));
+
+          let old = stock.insert(String::from("pears"), 9);
+          println!("replaced {old:?}, now {}", stock["pears"]);
+      }
+      ```
+
+      ```output
+      Some(12)
+      None
+      true
+      replaced Some(4), now 9
+      ```
+
+      - `insert` returns the **old** value as an `Option` (`None` if the key was new).
+      - `get` returns `Option<&V>`. A map with `String` keys can be searched with a `&str`.
+      - `map[&key]` panics if the key is missing. Prefer `get` unless absence is a bug.
+      - `remove(&key)` returns the removed value as an `Option`.
+
+      ## The entry API
+
+      The most common map job is "update the value for this key, or start it with a default". The **entry API** does it with one lookup:
+
+      ```rust
+      *counts.entry(word).or_insert(0) += 1;
+      ```
+
+      `entry(key)` finds the slot for the key. `or_insert(default)` inserts the default if it's empty and returns a `&mut V` either way; `*... += 1` updates it. Variants:
+
+      | Call | Use |
+      |---|---|
+      | `.or_insert(v)` | insert `v` if missing |
+      | `.or_default()` | insert `0`, `""`, empty `Vec`... |
+      | `.or_insert_with(\|\| ...)` | build the default only when needed |
+      | `.and_modify(\|v\| ...).or_insert(x)` | change an existing value, or insert `x` |
+
+      Grouping is the other classic: `groups.entry(dept).or_default().push(name)` builds a `HashMap<Dept, Vec<Name>>`.
+
+      ## Iteration order is random
+
+      A `HashMap` iterates in an **unspecified order** that changes between runs (Rust seeds its hash function randomly to resist denial-of-service attacks). Never rely on it for output. When order matters:
+
+      - collect the entries into a `Vec` and sort it, or
+      - use a **`BTreeMap`**, which keeps keys sorted (O(log n) operations, same API).
+
+      ## Keys
+
+      Keys must implement `Eq` and `Hash`. Strings, integers, `char`, `bool`, tuples of those, and your own types with `#[derive(PartialEq, Eq, Hash)]` all work. `f64` doesn't (NaN isn't equal to itself); store prices in cents as integers instead.
+
+      ## Common mistakes
+
+      - **Printing a map directly in output that must be stable** (tests, reports): sort first.
+      - **`get` then `insert`** (two lookups, and a borrow conflict if you hold the `get` reference): use `entry`.
+      - **Moving keys in:** `map.insert(name, 1)` moves a `String` `name`; insert `name.clone()` if you still need it, or use `&str` keys when the strings outlive the map.
+      - **Holding a reference from `get` while inserting** is E0502: copy the value out first.
+    example: |
+      use std::collections::{BTreeMap, HashMap};
+
+      fn main() {
+          let log = "GET /home GET /about POST /login GET /home GET /home POST /login GET /pricing";
+          let mut hits: HashMap<&str, u32> = HashMap::new();
+          for word in log.split_whitespace() {
+              if word.starts_with('/') {
+                  *hits.entry(word).or_insert(0) += 1;
+              }
+          }
+
+          // Sort by count (highest first), then by path, for stable output.
+          let mut pages: Vec<(&str, u32)> = hits.iter().map(|(k, v)| (*k, *v)).collect();
+          pages.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+          for (page, n) in &pages {
+              println!("{page:<10} {n}");
+          }
+          println!("home {:?}, admin {:?}", hits.get("/home"), hits.get("/admin"));
+
+          let mut by_dept: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+          for (name, dept) in [("Ada", "eng"), ("Grace", "eng"), ("Linus", "ops"), ("Ferris", "eng")] {
+              by_dept.entry(dept).or_default().push(name);
+          }
+          println!("{by_dept:?}");
+
+          let mut stock: BTreeMap<String, i32> = BTreeMap::new();
+          stock.insert(String::from("apples"), 3);
+          for fruit in ["apples", "pears"] {
+              stock.entry(fruit.to_string()).and_modify(|n| *n += 10).or_insert(1);
+          }
+          println!("{stock:?}");
+      }
+
+  - slug: iterating-collections
+    title: "Iterating over collections in Rust: iter, iter_mut and into_iter"
+    description: "The three ways to loop over a Vec, array or HashMap in Rust: &v (iter), &mut v (iter_mut) and v (into_iter), plus enumerate, zip and rev."
+    modules: [vectors, iterators]
+    body: |
+      There are three ways to loop over a collection, and they differ in **what you get** for each element and **what happens to the collection**:
+
+      | Loop | Same as | Each item is | Collection afterwards |
+      |---|---|---|---|
+      | `for x in &v` | `v.iter()` | `&T` (shared borrow) | unchanged, still usable |
+      | `for x in &mut v` | `v.iter_mut()` | `&mut T` (can modify) | modified, still usable |
+      | `for x in v` | `v.into_iter()` | `T` (owned) | **moved**: gone |
+
+      ```rust run
+      fn main() {
+          let mut prices = vec![100, 250, 40];
+
+          for p in &prices {
+              print!("{p} ");
+          }
+          println!();
+
+          for p in &mut prices {
+              *p += 5;
+          }
+          println!("{prices:?}");
+
+          for p in prices {
+              print!("{} ", p * 2);
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      100 250 40
+      [105, 255, 45]
+      210 510 90
+      ```
+
+      Use `&v` by default. Use `&mut v` to change elements in place (with `*x` to reach the value). Use `v` when you're done with the collection and want to move its elements somewhere else, like into another collection or a thread.
+
+      ## Index and value together: enumerate
+
+      Instead of `for i in 0..v.len()` with `v[i]`, write `for (i, x) in v.iter().enumerate()`. It's clearer, can't go out of bounds, and clippy suggests it (`needless_range_loop`). Other everyday adapters:
+
+      - `.rev()`: backwards.
+      - `.zip(other)`: pairs from two collections, stopping at the shorter one.
+      - `.skip(n)`, `.take(n)`: skip or keep the first `n`.
+      - `.windows(2)`: overlapping pairs from a slice (great for differences between neighbors).
+      - `.chunks(3)`: groups of up to 3.
+
+      ## Maps and sets
+
+      Iterating a `HashMap` gives `(&K, &V)` tuples: `for (name, score) in &scores`. Use `.keys()` or `.values()` for one side, `.values_mut()` to change values. The order is **unspecified**, so sort the entries (or use `BTreeMap`) before printing.
+
+      ## Arrays and strings
+
+      Arrays work like vectors: `for x in [1, 2, 3]` takes items by value (since the 2021 edition), `for x in &arr` borrows. A `String` isn't directly iterable: choose `.chars()` (characters), `.bytes()`, `.lines()` or `.split_whitespace()`.
+
+      ## Common mistakes
+
+      - **Using the collection after `for x in v`:** E0382, "borrow of moved value: `v`". Loop over `&v`.
+      - **Modifying through a shared borrow:** `for x in &v { *x += 1; }` is E0594, "cannot assign to `*x`, which is behind a `&` reference". Use `&mut v`.
+      - **Forgetting `*` with `iter_mut`:**
+
+      ```rust compile_fail
+      fn main() {
+          let mut v = vec![1, 2, 3];
+          for x in &mut v {
+              x += 1;
+          }
+          println!("{v:?}");
+      }
+      ```
+
+      ```error
+      error[E0368]: binary assignment operation `+=` cannot be applied to type `&mut {integer}`
+      ```
+
+      Write `*x += 1`.
+      - **Pushing to a collection while looping over it:** E0502. Collect changes first, then apply them.
+    example: |
+      use std::collections::HashMap;
+
+      fn main() {
+          let names = vec!["Ferris", "Corro", "Gopher"];
+          let mut scores = vec![72, 95, 88];
+
+          for (i, name) in names.iter().enumerate() {
+              println!("{}. {name}", i + 1);
+          }
+
+          for s in &mut scores {
+              *s += 5;
+          }
+
+          for (name, score) in names.iter().zip(&scores) {
+              println!("{name}: {score}");
+          }
+
+          for pair in scores.windows(2) {
+              println!("change {:+}", pair[1] - pair[0]);
+          }
+
+          let mut by_name: HashMap<&str, i32> = HashMap::new();
+          for (name, score) in names.iter().zip(scores.iter()) {
+              by_name.insert(name, *score);
+          }
+          let mut keys: Vec<_> = by_name.keys().collect();
+          keys.sort();
+          for k in keys {
+              println!("{k} -> {}", by_name[k]);
+          }
+
+          let total: i32 = scores.into_iter().sum(); // consumes scores
+          println!("total {total}");
+      }
+
+  - slug: string-indexing-and-utf8
+    title: "Why you can't index a String in Rust (UTF-8, chars and bytes)"
+    description: "Why s[0] doesn't compile for a Rust String, how UTF-8 works, and how to get characters with chars(), char_indices() and safe slicing."
+    modules: [strings]
+    body: |
+      Coming from Python or JavaScript, the first surprise is that this doesn't compile:
+
+      ```rust compile_fail
+      fn main() {
+          let s = String::from("hello");
+          let c = s[0];
+          println!("{c}");
+      }
+      ```
+
+      ```error
+      error[E0277]: the type `str` cannot be indexed by `{integer}`
+      ```
+
+      ## Why: strings are UTF-8 bytes
+
+      A Rust `String` (and `&str`) stores text as **UTF-8**, where one character takes between 1 and 4 bytes. ASCII letters take 1 byte, `é` takes 2, `€` takes 3, and an emoji like 🦀 takes 4.
+
+      ```rust run
+      fn main() {
+          for word in ["crab", "café", "🦀"] {
+              println!("{word}: {} bytes, {} chars", word.len(), word.chars().count());
+          }
+      }
+      ```
+
+      ```output
+      crab: 4 bytes, 4 chars
+      café: 5 bytes, 4 chars
+      🦀: 4 bytes, 1 chars
+      ```
+
+      So `s[0]` would be ambiguous (the first byte? the first character?), and finding the n-th character requires scanning from the start, which isn't the O(1) that indexing promises. Rust makes you say what you mean.
+
+      ## What to use instead
+
+      | You want | Write |
+      |---|---|
+      | the first character | `s.chars().next()` (an `Option<char>`) |
+      | the n-th character | `s.chars().nth(n)` (O(n)) |
+      | number of characters | `s.chars().count()` |
+      | number of bytes | `s.len()` |
+      | characters with byte positions | `s.char_indices()` |
+      | the raw bytes | `s.bytes()` or `s.as_bytes()` |
+      | a substring by byte range | `&s[start..end]`, at character boundaries |
+      | reverse | `s.chars().rev().collect::<String>()` |
+
+      If you do many position-based operations, convert once: `let chars: Vec<char> = s.chars().collect();` and then index `chars[i]` freely.
+
+      ## Slicing is by bytes, and must hit boundaries
+
+      `&s[0..3]` takes **bytes** 0 to 2. If the range ends in the middle of a character, the program **panics**:
+
+      ```rust panics
+      fn main() {
+          let s = String::from("héllo");
+          println!("{}", &s[0..1]);
+          println!("{}", &s[0..2]);
+      }
+      ```
+
+      ```output
+      h
+      ```
+
+      The panic message is `end byte index 2 is not a char boundary; it is inside 'é' (bytes 1..3 of string)`. Get safe positions from `find`, `char_indices`, or `s.is_char_boundary(i)`, or use `s.get(0..2)`, which returns `None` instead of panicking.
+
+      ## ASCII-only data
+
+      For data you know is ASCII (hex strings, simple identifiers, DNA sequences), working with bytes is fast and simple: `s.as_bytes()[0]` is a `u8`, and `b'a'` is a byte literal. Methods like `is_ascii_digit`, `to_ascii_uppercase` and `eq_ignore_ascii_case` exist for both `char` and `u8`.
+
+      ## Characters vs what users see
+
+      A `char` is a Unicode **scalar value**, not always what a reader would call one character. "é" can be written as one `char` or as `e` plus a combining accent (two `char`s), and many emoji are several `char`s joined together. For user-facing text operations such as truncating names for display, use the `unicode-segmentation` crate's grapheme clusters.
+    example: |
+      fn initials(name: &str) -> String {
+          name.split_whitespace().filter_map(|w| w.chars().next()).collect()
+      }
+
+      fn truncate_chars(s: &str, max: usize) -> &str {
+          match s.char_indices().nth(max) {
+              Some((byte_pos, _)) => &s[..byte_pos],
+              None => s,
+          }
+      }
+
+      fn main() {
+          let city = String::from("Zürich");
+          println!("{city}: {} bytes, {} chars", city.len(), city.chars().count());
+          println!("first char {:?}, third {:?}", city.chars().next(), city.chars().nth(2));
+
+          for (pos, c) in city.char_indices().take(3) {
+              println!("byte {pos}: {c}");
+          }
+
+          println!("{:?} {:?}", city.get(0..2), city.get(0..3));
+          println!("reversed {}", city.chars().rev().collect::<String>());
+          println!("initials {}", initials("Grace Brewster Hopper"));
+          println!("truncated {}", truncate_chars("crème brûlée", 7));
+
+          let code = "a7f3";
+          println!("first byte {} ({})", code.as_bytes()[0], code.as_bytes()[0] as char);
+      }
