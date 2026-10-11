@@ -1,0 +1,1766 @@
+id: async
+title: Async Rust with Tokio
+phase: "Concurrency and async"
+summary: Handle thousands of waiting tasks on a few threads. Futures and .await, the Tokio runtime, running futures concurrently with join!, spawning tasks, async channels, racing futures with select! and timeouts, and when to choose async over threads.
+roadmap: ["Futures & Async/Await Paradigm", "tokio"]
+steps:
+  - title: "Futures, async fn and .await"
+    id: async-1
+    text: |
+      Threads are great for keeping CPU cores busy. But a lot of real work is **waiting**: for a database query, a web API, a file, a timer. A web server with 10,000 open connections spends almost all of its time waiting for the network. One OS thread per connection means 10,000 threads, each with its own stack, and the operating system constantly switching between them.
+
+      **Async** code lets a few threads juggle thousands of waiting jobs. Whenever a job would wait, it steps aside, and the thread runs another job that's ready to make progress. Two keywords make it work:
+
+      - **`async fn`** defines a function that doesn't run when you call it. Instead, calling it returns a **future**: a value that stands for a computation that will produce its result later. (Formally, something that implements the `Future` trait, with an `Output` type.)
+      - **`.await`**, written *after* a future, runs it until it finishes and gives you its output. While the future is waiting, `.await` lets the current job pause so other jobs can run.
+
+      ```rust run
+      async fn fetch_price(item: &str) -> u32 {
+          match item {
+              "kelp" => 3,
+              "pearl" => 250,
+              _ => 0,
+          }
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let price = fetch_price("pearl").await;
+          println!("pearl costs {price}");
+          let total = fetch_price("kelp").await * 4;
+          println!("four kelp cost {total}");
+      }
+      ```
+
+      ```output
+      pearl costs 250
+      four kelp cost 12
+      ```
+
+      - `async fn fetch_price(item: &str) -> u32` really returns `impl Future<Output = u32>`. In a real program it would call a web service; here it answers at once, so you can focus on the syntax.
+      - `fetch_price("pearl").await` runs the future and gives back the `u32`. Because `.await` is postfix, calls chain nicely: `fetch(url).await?.parse()`.
+      - `#[tokio::main]` sets up an async **runtime** for `async fn main`. More on that below.
+
+      ### Futures are lazy
+
+      Calling an async function does **nothing** until the future is awaited:
+
+      ```rust run
+      async fn load_profile(name: &str) -> String {
+          println!("loading {name}...");
+          format!("{name} (level 12)")
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let future = load_profile("ferris");
+          println!("future created, nothing loaded yet");
+          let profile = future.await;
+          println!("got {profile}");
+      }
+      ```
+
+      ```output
+      future created, nothing loaded yet
+      loading ferris...
+      got ferris (level 12)
+      ```
+
+      Forget the `.await` and the work never happens. The compiler warns you: ``warning: unused implementer of `Future` that must be used``, with the note `futures do nothing unless you .await or poll them`. That warning almost always means a bug.
+
+      ### The runtime
+
+      The standard library defines `Future`, `async` and `.await`, but not the machinery that runs futures, the **runtime** (also called an executor). You pick one as a crate. **Tokio** is the one nearly every company uses, and most async crates (the axum web framework, the reqwest HTTP client, the sqlx database library) are built on it:
+
+      ```toml
+      [dependencies]
+      tokio = { version = "1", features = ["full"] }
+      ```
+
+      `#[tokio::main]` turns `async fn main` into a normal `main` that starts a Tokio runtime and runs your code on it. Without it, rustc stops you with ``error[E0752]: `main` function is not allowed to be `async` ``.
+
+      ### .await only works in async code
+
+      ```rust compile_fail
+      async fn price() -> u32 {
+          5
+      }
+
+      fn main() {
+          let p = price().await;
+          println!("{p}");
+      }
+      ```
+
+      ```error
+      error[E0728]: `await` is only allowed inside `async` functions and blocks
+      ```
+
+      The fix is to make the calling function `async` too, and its callers, all the way up to `main`. That's normal: async code spreads up the call chain.
+
+      ### Common mistakes
+
+      - **Forgetting `.await`**: the future is created and thrown away; nothing runs. Read the warning.
+      - **Writing `await fetch()`** as in JavaScript or C#. Rust's `.await` goes after: `fetch().await`.
+      - **Calling async code from a normal `fn`**: `E0728`. Make it `async`, or (in tests and small tools) run it with a runtime's `block_on`, next step.
+
+      **Your turn:** fill in the three blanks: the attribute that starts Tokio, the keyword that makes `main` asynchronous, and the keyword that waits for the first future. The program should print `in stock: 10 items`.
+    fill: |
+      async fn count_stock(item: &str) -> u32 {
+          match item {
+              "helmet" => 7,
+              "shield" => 3,
+              _ => 0,
+          }
+      }
+
+      #[tokio::[[main]]]
+      [[async]] fn main() {
+          let helmets = count_stock("helmet").[[await]];
+          let shields = count_stock("shield").await;
+          println!("in stock: {} items", helmets + shields);
+      }
+    hints:
+      - "The attribute is `#[tokio::main]`, and it goes on an `async fn main`."
+      - "To get the value out of a future, add `.await` after it."
+    tests:
+      - expect: "in stock: 10 items"
+    more:
+      - task: |
+          `double_score` is awaited in `main`, so it has to be an async function. Fill in the keyword. The program should print `score: 42`.
+        fill: |
+          [[async]] fn double_score(score: u32) -> u32 {
+              score * 2
+          }
+
+          #[tokio::main]
+          async fn main() {
+              let s = double_score(21).await;
+              println!("score: {s}");
+          }
+        hints:
+          - "A function whose result you `.await` is declared with `async fn`."
+        tests:
+          - expect: "score: 42"
+      - task: |
+          Write two async functions and use them from `main`:
+
+          - `async fn load_scores(player: &str) -> Vec<u32>` returns `[30, 50, 20]` for `"ana"`, `[80, 10]` for `"bo"`, and an empty `Vec` for anyone else.
+          - `async fn best_score(player: &str) -> Option<u32>` awaits `load_scores` and returns the highest score (`None` if there are no scores).
+
+          In `main`, print the best score of `ana`, `bo` and `cy`:
+
+          ```
+          ana: Some(50)
+          bo: Some(80)
+          cy: None
+          ```
+        seed: |
+          #[tokio::main]
+          async fn main() {
+          }
+        solution: |
+          async fn load_scores(player: &str) -> Vec<u32> {
+              match player {
+                  "ana" => vec![30, 50, 20],
+                  "bo" => vec![80, 10],
+                  _ => Vec::new(),
+              }
+          }
+
+          async fn best_score(player: &str) -> Option<u32> {
+              let scores = load_scores(player).await;
+              scores.into_iter().max()
+          }
+
+          #[tokio::main]
+          async fn main() {
+              for player in ["ana", "bo", "cy"] {
+                  println!("{player}: {:?}", best_score(player).await);
+              }
+          }
+        require:
+          - pattern: 'async\s+fn\s+best_score'
+            message: Write `best_score` as an `async fn`.
+          - pattern: 'load_scores\([^)]*\)\s*\.await'
+            message: "`best_score` should await `load_scores`."
+        hints:
+          - "`load_scores` is a `match` on `player` that returns a `Vec<u32>` in each arm."
+          - "`best_score`: `let scores = load_scores(player).await; scores.into_iter().max()`."
+          - "In `main`, `println!(\"{player}: {:?}\", best_score(player).await);` for each name."
+        tests:
+          - expect: "ana: Some(50)\nbo: Some(80)\ncy: None"
+
+  - title: "The runtime, and sleeping without blocking"
+    id: async-2
+    text: |
+      `#[tokio::main]` hides a few lines. Written out by hand, it's this:
+
+      ```rust run
+      use std::time::Duration;
+
+      async fn boil_water() -> &'static str {
+          tokio::time::sleep(Duration::from_millis(5)).await;
+          "water boiled"
+      }
+
+      fn main() {
+          let runtime = tokio::runtime::Runtime::new().unwrap();
+          let result = runtime.block_on(boil_water());
+          println!("{result}");
+      }
+      ```
+
+      ```output
+      water boiled
+      ```
+
+      - `Runtime::new()` starts Tokio: a pool of **worker threads** (one per CPU core by default) plus a timer and an I/O driver.
+      - `block_on(future)` runs a future to completion and blocks the current (normal, non-async) thread until it's done. It's the bridge from ordinary code into async code. You'll use it in tests, and in small tools that call one async library.
+      - Inside the runtime, work is organized in **tasks**: lightweight jobs that the runtime switches between whenever one of them is waiting at an `.await`. `main`'s future is the first task.
+      - `#[tokio::main(flavor = "current_thread")]` runs everything on one thread, handy for small tools and tests.
+
+      ### tokio::time::sleep, not std::thread::sleep
+
+      `tokio::time::sleep(duration).await` pauses the current **task**. The worker thread is free to run other tasks in the meantime, and the timer wakes the task up later.
+
+      `std::thread::sleep` pauses the whole **thread**. In async code, that freezes every task scheduled on that worker. The program still produces the right output, which is what makes it dangerous: it's just slow, and under load everything stalls. The golden rule of async code: **never block**. No `std::thread::sleep`, no long CPU loops, no blocking file or network calls inside async functions. Use the async versions (`tokio::time::sleep`, `tokio::fs`, `tokio::net`), or move the blocking work elsewhere (step 7).
+
+      ### Awaits run one after another
+
+      Each `.await` waits for its future to finish before the next line runs:
+
+      ```rust run
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_user(id: u32) -> String {
+          sleep(Duration::from_millis(20)).await; // pretend this is a network call
+          format!("user{id}")
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let a = fetch_user(1).await;
+          let b = fetch_user(2).await;
+          println!("{a} and {b}");
+      }
+      ```
+
+      ```output
+      user1 and user2
+      ```
+
+      This takes about 40 ms: the second call doesn't start until the first is done. That's right when the second call needs the first one's result. When they're independent, you can run them at the same time: next step.
+
+      ### Common mistakes
+
+      - **`std::thread::sleep` in async code**: correct output, frozen worker thread. Use `tokio::time::sleep(...).await`.
+      - **Forgetting `.await` on `sleep`**: `tokio::time::sleep(d);` creates a timer future and drops it, so nothing waits (and you get the "unused `Future`" warning).
+      - **Calling `block_on` inside async code**: Tokio panics with "Cannot start a runtime from within a runtime". `block_on` is only for the boundary from normal code; inside async code, just `.await`.
+
+      **Your turn:** services fail sometimes, and real clients **retry with backoff**: wait a little longer after each failure. Write `async fn ping_with_retry(service: &mut FlakyService, max_tries: u32) -> Result<String, String>`. Try `service.ping().await` up to `max_tries` times (assume at least 1):
+
+      - on success at attempt `n` (counting from 1), return `Ok(format!("{reply} (attempt {n})"))`;
+      - after a failure, if there are tries left, wait `2^n` milliseconds with **Tokio's** sleep (`Duration::from_millis(2u64.pow(n))`) before trying again;
+      - if every try fails, return `Err(format!("gave up after {max_tries} attempts: {last_error}"))` with the last error message.
+    seed: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      // A service that fails `failures_left` times, then answers "pong".
+      struct FlakyService {
+          failures_left: u32,
+      }
+
+      impl FlakyService {
+          async fn ping(&mut self) -> Result<String, String> {
+              if self.failures_left > 0 {
+                  self.failures_left -= 1;
+                  Err(String::from("connection refused"))
+              } else {
+                  Ok(String::from("pong"))
+              }
+          }
+      }
+
+      async fn ping_with_retry(service: &mut FlakyService, max_tries: u32) -> Result<String, String> {
+          todo!()
+      }
+    solution: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      // A service that fails `failures_left` times, then answers "pong".
+      struct FlakyService {
+          failures_left: u32,
+      }
+
+      impl FlakyService {
+          async fn ping(&mut self) -> Result<String, String> {
+              if self.failures_left > 0 {
+                  self.failures_left -= 1;
+                  Err(String::from("connection refused"))
+              } else {
+                  Ok(String::from("pong"))
+              }
+          }
+      }
+
+      async fn ping_with_retry(service: &mut FlakyService, max_tries: u32) -> Result<String, String> {
+          let mut last_error = String::new();
+          for attempt in 1..=max_tries {
+              match service.ping().await {
+                  Ok(reply) => return Ok(format!("{reply} (attempt {attempt})")),
+                  Err(e) => last_error = e,
+              }
+              if attempt < max_tries {
+                  sleep(Duration::from_millis(2u64.pow(attempt))).await;
+              }
+          }
+          Err(format!("gave up after {max_tries} attempts: {last_error}"))
+      }
+    require:
+      - pattern: 'sleep\([\s\S]*?\)\s*\.await'
+        message: Wait between attempts with Tokio's `sleep(...).await`.
+    forbid:
+      - pattern: 'thread::sleep'
+        message: "`std::thread::sleep` blocks the runtime's thread; use `tokio::time::sleep(...).await`."
+    hints:
+      - "Loop `for attempt in 1..=max_tries`, and `match service.ping().await`: return right away on `Ok`, remember the message on `Err`."
+      - "After a failure, `if attempt < max_tries { sleep(Duration::from_millis(2u64.pow(attempt))).await; }`."
+      - "After the loop, every try failed: `Err(format!(\"gave up after {max_tries} attempts: {last_error}\"))`."
+    harness: |
+      fn run<F: std::future::Future>(future: F) -> F::Output {
+          tokio::runtime::Runtime::new().unwrap().block_on(future)
+      }
+
+      #[test]
+      fn answers_on_the_first_try() {
+          let mut service = FlakyService { failures_left: 0 };
+          assert_eq!(run(ping_with_retry(&mut service, 3)), Ok(String::from("pong (attempt 1)")), "0 failures, max 3 tries");
+      }
+
+      #[test]
+      fn retries_until_it_works() {
+          let mut service = FlakyService { failures_left: 2 };
+          assert_eq!(run(ping_with_retry(&mut service, 5)), Ok(String::from("pong (attempt 3)")), "2 failures, max 5 tries");
+      }
+
+      #[test]
+      fn works_on_the_last_allowed_try() {
+          let mut service = FlakyService { failures_left: 3 };
+          assert_eq!(run(ping_with_retry(&mut service, 4)), Ok(String::from("pong (attempt 4)")), "3 failures, max 4 tries");
+      }
+
+      #[test]
+      fn gives_up_after_max_tries() {
+          let mut service = FlakyService { failures_left: 10 };
+          assert_eq!(
+              run(ping_with_retry(&mut service, 3)),
+              Err(String::from("gave up after 3 attempts: connection refused")),
+              "10 failures, max 3 tries"
+          );
+      }
+    more:
+      - task: |
+          Call async code from a normal `fn main`, without `#[tokio::main]`: fill in the function that creates the runtime and the method that runs a future to completion. The program should print `cache ready with 128 entries`.
+        fill: |
+          use std::time::Duration;
+
+          async fn warm_up_cache() -> usize {
+              tokio::time::sleep(Duration::from_millis(3)).await;
+              128
+          }
+
+          fn main() {
+              let runtime = tokio::runtime::Runtime::[[new]]().unwrap();
+              let entries = runtime.[[block_on]](warm_up_cache());
+              println!("cache ready with {entries} entries");
+          }
+        hints:
+          - "A runtime is created with `Runtime::new()`, which returns a `Result`."
+          - "`runtime.block_on(future)` runs the future and returns its output."
+        tests:
+          - expect: "cache ready with 128 entries"
+      - task: |
+          This kitchen timer prints the right lines, but `std::thread::sleep` blocks the runtime's worker thread while it waits. Switch `timer` to Tokio's non-blocking sleep (and await it). The output stays the same:
+
+          ```
+          eggs: done after 3 ms
+          toast: done after 2 ms
+          tea: done after 4 ms
+          ```
+        seed: |
+          use std::time::Duration;
+
+          async fn timer(name: &str, ms: u64) -> String {
+              std::thread::sleep(Duration::from_millis(ms));
+              format!("{name}: done after {ms} ms")
+          }
+
+          #[tokio::main]
+          async fn main() {
+              println!("{}", timer("eggs", 3).await);
+              println!("{}", timer("toast", 2).await);
+              println!("{}", timer("tea", 4).await);
+          }
+        solution: |
+          use std::time::Duration;
+
+          async fn timer(name: &str, ms: u64) -> String {
+              tokio::time::sleep(Duration::from_millis(ms)).await;
+              format!("{name}: done after {ms} ms")
+          }
+
+          #[tokio::main]
+          async fn main() {
+              println!("{}", timer("eggs", 3).await);
+              println!("{}", timer("toast", 2).await);
+              println!("{}", timer("tea", 4).await);
+          }
+        require:
+          - pattern: 'sleep\([\s\S]*?\)\s*\.await'
+            message: "Use Tokio's sleep and `.await` it."
+        forbid:
+          - pattern: 'thread::sleep'
+            message: "`std::thread::sleep` blocks the worker thread; use `tokio::time::sleep(...).await`."
+        hints:
+          - "Replace `std::thread::sleep(...)` with `tokio::time::sleep(...)`."
+          - "Tokio's sleep returns a future: add `.await`, or it never waits."
+        tests:
+          - expect: "eggs: done after 3 ms\ntoast: done after 2 ms\ntea: done after 4 ms"
+
+  - title: "Running futures at the same time: join! and try_join!"
+    id: async-3
+    text: |
+      When two calls don't depend on each other, waiting for one before starting the other wastes time. **`tokio::join!`** takes several futures, runs them **concurrently**, and when *all* of them have finished, returns their outputs as a tuple, in the order you listed them:
+
+      ```rust run
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_profile(id: u32) -> String {
+          sleep(Duration::from_millis(30)).await;
+          format!("profile of user {id}")
+      }
+
+      async fn fetch_orders(id: u32) -> Vec<u32> {
+          sleep(Duration::from_millis(10)).await;
+          vec![id * 100, id * 100 + 1]
+      }
+
+      async fn fetch_balance(id: u32) -> i64 {
+          sleep(Duration::from_millis(20)).await;
+          i64::from(id) * 1000
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let (profile, orders, balance) = tokio::join!(fetch_profile(7), fetch_orders(7), fetch_balance(7));
+          println!("{profile}");
+          println!("orders: {orders:?}");
+          println!("balance: {balance}");
+      }
+      ```
+
+      ```output
+      profile of user 7
+      orders: [700, 701]
+      balance: 7000
+      ```
+
+      The three waits overlap, so this takes about 30 ms (the slowest one) instead of 60 ms. And the results come back in argument order, not finishing order, so the output never changes.
+
+      How can this work without threads? `join!` runs all three futures **inside one task**. When one is waiting at an `.await` (here, sleeping), `join!` moves on and lets the next one make progress. Nothing needs a second CPU core, because all three are mostly just waiting. That's **concurrency without parallelism**, the heart of async.
+
+      ### try_join! for things that can fail
+
+      With futures that return `Result`, `tokio::try_join!` gives `Ok((a, b, ...))` if all of them succeed, or the **first** `Err` as soon as one fails. The others are then dropped, which cancels them: no point waiting for the rest. It pairs nicely with `?`:
+
+      ```rust run
+      async fn load_config() -> Result<String, String> {
+          Ok(String::from("port=8080"))
+      }
+
+      async fn connect_db() -> Result<u32, String> {
+          Err(String::from("database unreachable"))
+      }
+
+      async fn start() -> Result<(), String> {
+          let (config, conn) = tokio::try_join!(load_config(), connect_db())?;
+          println!("started with {config} and connection {conn}");
+          Ok(())
+      }
+
+      #[tokio::main]
+      async fn main() {
+          if let Err(e) = start().await {
+              println!("startup failed: {e}");
+          }
+      }
+      ```
+
+      ```output
+      startup failed: database unreachable
+      ```
+
+      All the futures in one `try_join!` must use the same error type. Convert with `map_err`, or use `anyhow::Error` (module 39) in application code.
+
+      `join!` takes a fixed list of futures written in your code. For a `Vec` of work whose length you only know at run time, spawn a task per item: next step.
+
+      ### Common mistakes
+
+      - **Awaiting independent calls one by one**: `let a = f().await; let b = g().await;` takes the sum of both times. Use `join!`.
+      - **Expecting `join!` to use several cores**: everything runs in one task. It speeds up *waiting*, not CPU work (step 7).
+      - **Mixed error types in `try_join!`**: a type mismatch error. Make the errors the same type first.
+
+      **Your turn:** `dashboard` needs three independent pieces of data. Write it so the three fetches run **at the same time** with `tokio::join!`, and return `"{name}: {points} points, rank #{rank}"`. The program should print:
+
+      ```
+      ferris: 600 points, rank #3
+      corro: 1200 points, rank #2
+      ```
+    seed: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_name(user: u32) -> String {
+          sleep(Duration::from_millis(15)).await;
+          match user {
+              1 => String::from("ferris"),
+              2 => String::from("corro"),
+              _ => String::from("unknown"),
+          }
+      }
+
+      async fn fetch_points(user: u32) -> u32 {
+          sleep(Duration::from_millis(10)).await;
+          user * 600
+      }
+
+      async fn fetch_rank(user: u32) -> u32 {
+          sleep(Duration::from_millis(5)).await;
+          4 - user
+      }
+
+      async fn dashboard(user: u32) -> String {
+          // run the three fetches at the same time with tokio::join!
+          todo!()
+      }
+
+      #[tokio::main]
+      async fn main() {
+          println!("{}", dashboard(1).await);
+          println!("{}", dashboard(2).await);
+      }
+    solution: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_name(user: u32) -> String {
+          sleep(Duration::from_millis(15)).await;
+          match user {
+              1 => String::from("ferris"),
+              2 => String::from("corro"),
+              _ => String::from("unknown"),
+          }
+      }
+
+      async fn fetch_points(user: u32) -> u32 {
+          sleep(Duration::from_millis(10)).await;
+          user * 600
+      }
+
+      async fn fetch_rank(user: u32) -> u32 {
+          sleep(Duration::from_millis(5)).await;
+          4 - user
+      }
+
+      async fn dashboard(user: u32) -> String {
+          // run the three fetches at the same time with tokio::join!
+          let (name, points, rank) = tokio::join!(fetch_name(user), fetch_points(user), fetch_rank(user));
+          format!("{name}: {points} points, rank #{rank}")
+      }
+
+      #[tokio::main]
+      async fn main() {
+          println!("{}", dashboard(1).await);
+          println!("{}", dashboard(2).await);
+      }
+    require:
+      - pattern: 'join!'
+        message: Run the three fetches concurrently with `tokio::join!`.
+    hints:
+      - "`tokio::join!(a, b, c)` returns a tuple of the three outputs, in the same order."
+      - "`let (name, points, rank) = tokio::join!(fetch_name(user), fetch_points(user), fetch_rank(user));` then `format!(...)`."
+    tests:
+      - expect: "ferris: 600 points, rank #3\ncorro: 1200 points, rank #2"
+    more:
+      - task: |
+          Fill in the macro that runs both lookups at the same time and returns both results. The program should print `pearl: 4 in stock at 250 each`.
+        fill: |
+          use std::time::Duration;
+          use tokio::time::sleep;
+
+          async fn fetch_stock(item: &str) -> u32 {
+              sleep(Duration::from_millis(4)).await;
+              item.len() as u32 - 1
+          }
+
+          async fn fetch_price(item: &str) -> u32 {
+              sleep(Duration::from_millis(2)).await;
+              item.len() as u32 * 50
+          }
+
+          #[tokio::main]
+          async fn main() {
+              let (stock, price) = tokio::[[join]]!(fetch_stock("pearl"), fetch_price("pearl"));
+              println!("pearl: {stock} in stock at {price} each");
+          }
+        hints:
+          - "The macro is `tokio::join!`, and it returns a tuple in argument order."
+        tests:
+          - expect: "pearl: 4 in stock at 250 each"
+      - task: |
+          Write `async fn load_order(order_id: u32) -> Result<Order, String>` that fetches the customer and the items **concurrently** with `tokio::try_join!`, and returns the first error if either fetch fails. Use `?` on the result of `try_join!`.
+        seed: |
+          use std::time::Duration;
+          use tokio::time::sleep;
+
+          #[derive(Debug, PartialEq)]
+          struct Order {
+              customer: String,
+              items: Vec<String>,
+          }
+
+          async fn fetch_customer(order_id: u32) -> Result<String, String> {
+              sleep(Duration::from_millis(3)).await;
+              if order_id == 0 {
+                  Err(format!("order {order_id} has no customer"))
+              } else {
+                  Ok(format!("customer-{order_id}"))
+              }
+          }
+
+          async fn fetch_items(order_id: u32) -> Result<Vec<String>, String> {
+              sleep(Duration::from_millis(5)).await;
+              if order_id == 13 {
+                  Err(String::from("item service unavailable"))
+              } else {
+                  Ok(vec![format!("kelp x{order_id}"), String::from("shell x1")])
+              }
+          }
+
+          async fn load_order(order_id: u32) -> Result<Order, String> {
+              todo!()
+          }
+        solution: |
+          use std::time::Duration;
+          use tokio::time::sleep;
+
+          #[derive(Debug, PartialEq)]
+          struct Order {
+              customer: String,
+              items: Vec<String>,
+          }
+
+          async fn fetch_customer(order_id: u32) -> Result<String, String> {
+              sleep(Duration::from_millis(3)).await;
+              if order_id == 0 {
+                  Err(format!("order {order_id} has no customer"))
+              } else {
+                  Ok(format!("customer-{order_id}"))
+              }
+          }
+
+          async fn fetch_items(order_id: u32) -> Result<Vec<String>, String> {
+              sleep(Duration::from_millis(5)).await;
+              if order_id == 13 {
+                  Err(String::from("item service unavailable"))
+              } else {
+                  Ok(vec![format!("kelp x{order_id}"), String::from("shell x1")])
+              }
+          }
+
+          async fn load_order(order_id: u32) -> Result<Order, String> {
+              let (customer, items) = tokio::try_join!(fetch_customer(order_id), fetch_items(order_id))?;
+              Ok(Order { customer, items })
+          }
+        require:
+          - pattern: 'try_join!'
+            message: Fetch both concurrently with `tokio::try_join!`.
+        hints:
+          - "`tokio::try_join!(a, b)` gives `Result<(A, B), E>`; add `?` to get the tuple out."
+          - "`let (customer, items) = tokio::try_join!(fetch_customer(order_id), fetch_items(order_id))?;` then `Ok(Order { customer, items })`."
+        harness: |
+          fn run<F: std::future::Future>(future: F) -> F::Output {
+              tokio::runtime::Runtime::new().unwrap().block_on(future)
+          }
+
+          #[test]
+          fn loads_a_complete_order() {
+              let expected = Order { customer: String::from("customer-5"), items: vec![String::from("kelp x5"), String::from("shell x1")] };
+              assert_eq!(run(load_order(5)), Ok(expected), "load_order(5)");
+          }
+
+          #[test]
+          fn missing_customer_is_an_error() {
+              assert_eq!(run(load_order(0)), Err(String::from("order 0 has no customer")), "load_order(0)");
+          }
+
+          #[test]
+          fn item_service_failure_is_an_error() {
+              assert_eq!(run(load_order(13)), Err(String::from("item service unavailable")), "load_order(13)");
+          }
+
+  - title: "Tasks: tokio::spawn and JoinHandle"
+    id: async-4
+    text: |
+      `join!` runs futures inside one task. **`tokio::spawn(future)`** starts a new, independent **task**. The runtime schedules tasks on its worker threads, so spawned tasks can also run in parallel on several cores. It returns a `tokio::task::JoinHandle<T>`, and awaiting the handle gives `Result<T, JoinError>`: `Err` if the task panicked or was cancelled.
+
+      Tasks are cheap: a few hundred bytes each, against megabytes of stack for a thread. A server running 100,000 tasks, one per connection, is perfectly normal.
+
+      ```rust run
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn check_server(name: String, latency_ms: u64) -> String {
+          sleep(Duration::from_millis(latency_ms)).await;
+          format!("{name}: up ({latency_ms} ms)")
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let servers = vec![("eu-1", 15), ("us-1", 5), ("ap-1", 10)];
+          let mut handles = Vec::new();
+          for (name, ms) in servers {
+              handles.push(tokio::spawn(check_server(name.to_string(), ms)));
+          }
+          for handle in handles {
+              println!("{}", handle.await.unwrap());
+          }
+      }
+      ```
+
+      ```output
+      eu-1: up (15 ms)
+      us-1: up (5 ms)
+      ap-1: up (10 ms)
+      ```
+
+      The same pattern as threads in module 31: spawn everything, keep the handles, await them in spawn order. `us-1` finishes first, but the results print in a fixed order.
+
+      ### 'static and Send, again
+
+      `tokio::spawn` has the same requirements as `thread::spawn`, for the same reasons:
+
+      - **`'static`**: the task may outlive the function that spawned it, so it can't borrow local variables. Pass owned values (as `check_server` takes a `String`), or write an **`async move { ... }`** block, which moves the variables it uses into the future, just like a `move` closure.
+      - **`Send`**: a task can pause at an `.await` on one worker thread and resume on another. So everything the task holds **across an `.await`** must be `Send`. An `Rc` kept alive over an `.await` breaks that:
+
+      ```rust compile_fail
+      use std::rc::Rc;
+      use std::time::Duration;
+
+      #[tokio::main]
+      async fn main() {
+          let handle = tokio::spawn(async {
+              let name = Rc::new(String::from("crab"));
+              tokio::time::sleep(Duration::from_millis(1)).await;
+              name.len()
+          });
+          println!("{}", handle.await.unwrap());
+      }
+      ```
+
+      ```error
+      error: future cannot be sent between threads safely
+      ```
+
+      The full message points at the `.await` and says `name` is still in use after it. Use `Arc`, or make sure the value is dropped before the `.await`.
+
+      ### Panics and cancellation
+
+      A panic inside a task doesn't bring down the program: the task ends, and its handle's `.await` returns an `Err(JoinError)` (`e.is_panic()` is `true`). `handle.abort()` cancels a task; awaiting it then gives an `Err` where `is_cancelled()` is `true`. And when `main` returns, the runtime shuts down and drops every task that hasn't finished, so await the handles you care about.
+
+      ### Many tasks: JoinSet
+
+      `tokio::task::JoinSet` holds a group of tasks: `set.spawn(future)` adds one, and `set.join_all().await` waits for all of them and returns their outputs in a `Vec`, **in the order they finished** (sort before printing!). It's handy when you don't need each handle separately.
+
+      ### Common mistakes
+
+      - **Borrowing locals in a spawned task**: the compiler says the borrowed value doesn't live long enough, or suggests `async move`. Move owned data in.
+      - **Holding an `Rc`, a `RefCell` borrow or a `std` `MutexGuard` across `.await`** in a spawned task: "future cannot be sent between threads safely".
+      - **Printing from inside tasks**: the order changes between runs. Return values and print after awaiting.
+      - **Not awaiting the handles**: work still running when `main` ends is lost.
+
+      **Your turn:** write `async fn fetch_all(ids: Vec<u32>) -> Vec<String>`. Spawn **one task per id** with `tokio::spawn`, each running `fetch_user(id)`, then await the handles and return the results in the same order as `ids`. One hidden test fetches 300 users: one after another that would take over 3 seconds, so they really have to run at the same time.
+    seed: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_user(id: u32) -> String {
+          // later ids answer faster, so the tasks finish out of order
+          sleep(Duration::from_millis(u64::from(20 - id % 20))).await;
+          format!("user-{id}")
+      }
+
+      async fn fetch_all(ids: Vec<u32>) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_user(id: u32) -> String {
+          // later ids answer faster, so the tasks finish out of order
+          sleep(Duration::from_millis(u64::from(20 - id % 20))).await;
+          format!("user-{id}")
+      }
+
+      async fn fetch_all(ids: Vec<u32>) -> Vec<String> {
+          let mut handles = Vec::new();
+          for id in ids {
+              handles.push(tokio::spawn(fetch_user(id)));
+          }
+          let mut users = Vec::new();
+          for handle in handles {
+              users.push(handle.await.unwrap());
+          }
+          users
+      }
+    require:
+      - pattern: 'tokio::spawn'
+        message: Start one task per id with `tokio::spawn`.
+    hints:
+      - "First loop: `handles.push(tokio::spawn(fetch_user(id)));` for every id. Don't await inside this loop."
+      - "Second loop: `users.push(handle.await.unwrap());` for each handle, in order."
+    harness: |
+      fn run<F: std::future::Future>(future: F) -> F::Output {
+          tokio::runtime::Runtime::new().unwrap().block_on(future)
+      }
+
+      #[test]
+      fn fetches_three_users_in_order() {
+          let expected = vec![String::from("user-1"), String::from("user-2"), String::from("user-3")];
+          assert_eq!(run(fetch_all(vec![1, 2, 3])), expected, "fetch_all([1, 2, 3])");
+      }
+
+      #[test]
+      fn no_ids_gives_no_users() {
+          assert_eq!(run(fetch_all(vec![])), Vec::<String>::new(), "fetch_all([])");
+      }
+
+      #[test]
+      fn keeps_the_order_of_the_ids() {
+          let expected = vec![String::from("user-19"), String::from("user-5"), String::from("user-12")];
+          assert_eq!(run(fetch_all(vec![19, 5, 12])), expected, "fetch_all([19, 5, 12])");
+      }
+
+      #[test]
+      fn three_hundred_users_run_at_the_same_time() {
+          let ids: Vec<u32> = (0..300).collect();
+          let users = run(fetch_all(ids));
+          assert_eq!((users.len(), users[0].as_str(), users[299].as_str()), (300, "user-0", "user-299"), "fetch_all(0..300)");
+      }
+    more:
+      - task: |
+          Fill in the function that starts a new task. The program should print `letters: 14`.
+        fill: |
+          #[tokio::main]
+          async fn main() {
+              let words = vec!["crab", "arena", "async"];
+              let handle = tokio::[[spawn]](async move { words.iter().map(|w| w.len()).sum::<usize>() });
+              println!("letters: {}", handle.await.unwrap());
+          }
+        hints:
+          - "Tasks are started with `tokio::spawn(future)`."
+        tests:
+          - expect: "letters: 14"
+      - task: |
+          Use a `JoinSet` to measure several files at once. Spawn one task per file into the set; each task returns `(name, file_size(name).await)`. Wait for all of them with `set.join_all().await` (which returns them in **finishing** order), sort the results by name, and print:
+
+          ```
+          a.txt: 5120 bytes
+          notes.md: 8192 bytes
+          photo_large.png: 15360 bytes
+          report.pdf: 10240 bytes
+          ```
+        seed: |
+          use std::time::Duration;
+          use tokio::task::JoinSet;
+          use tokio::time::sleep;
+
+          async fn file_size(name: &str) -> u64 {
+              sleep(Duration::from_millis(name.len() as u64)).await;
+              name.len() as u64 * 1024
+          }
+
+          #[tokio::main]
+          async fn main() {
+              let files = vec!["report.pdf", "a.txt", "photo_large.png", "notes.md"];
+          }
+        solution: |
+          use std::time::Duration;
+          use tokio::task::JoinSet;
+          use tokio::time::sleep;
+
+          async fn file_size(name: &str) -> u64 {
+              sleep(Duration::from_millis(name.len() as u64)).await;
+              name.len() as u64 * 1024
+          }
+
+          #[tokio::main]
+          async fn main() {
+              let files = vec!["report.pdf", "a.txt", "photo_large.png", "notes.md"];
+              let mut set = JoinSet::new();
+              for name in files {
+                  set.spawn(async move { (name, file_size(name).await) });
+              }
+              let mut sizes = set.join_all().await;
+              sizes.sort();
+              for (name, size) in sizes {
+                  println!("{name}: {size} bytes");
+              }
+          }
+        require:
+          - pattern: 'JoinSet::new'
+            message: Collect the tasks in a `JoinSet`.
+          - pattern: 'join_all'
+            message: Wait for every task with `join_all().await`.
+        hints:
+          - "`let mut set = JoinSet::new();` then, for each file, `set.spawn(async move { (name, file_size(name).await) });`."
+          - "`let mut sizes = set.join_all().await;` gives a `Vec<(&str, u64)>`; `sizes.sort()` orders it by name."
+        tests:
+          - expect: "a.txt: 5120 bytes\nnotes.md: 8192 bytes\nphoto_large.png: 15360 bytes\nreport.pdf: 10240 bytes"
+
+  - title: "Async channels: tokio::sync::mpsc"
+    id: async-5
+    text: |
+      Tasks pass messages through channels too, but `std::sync::mpsc` is the wrong tool in async code: its `recv()` **blocks the thread**. Tokio's channels, in `tokio::sync`, **await** instead:
+
+      - `mpsc::channel(capacity)` creates a **bounded** channel. `tx.send(value).await` waits while the channel is full (backpressure, as in module 32), and returns `Err` if the receiver is gone.
+      - `rx.recv().await` returns an `Option`: `Some(message)`, or `None` once the channel is empty and every `Sender` has been dropped. So the receiving loop is `while let Some(msg) = rx.recv().await`. The receiver must be declared `mut`.
+
+      ```rust run
+      use tokio::sync::mpsc;
+
+      #[tokio::main]
+      async fn main() {
+          let (tx, mut rx) = mpsc::channel(8);
+          for service in ["auth", "cart", "search"] {
+              let tx = tx.clone();
+              tokio::spawn(async move {
+                  for n in 1..=2 {
+                      tx.send(format!("{service} event {n}")).await.unwrap();
+                  }
+              });
+          }
+          drop(tx);
+
+          let mut events = Vec::new();
+          while let Some(event) = rx.recv().await {
+              events.push(event);
+          }
+          events.sort();
+          for event in &events {
+              println!("{event}");
+          }
+      }
+      ```
+
+      ```output
+      auth event 1
+      auth event 2
+      cart event 1
+      cart event 2
+      search event 1
+      search event 2
+      ```
+
+      Everything from module 32 still applies: clone the `Sender` for each producer, `drop` the original so the loop can end, and sort messages from several producers before printing.
+
+      ### The other Tokio channels
+
+      | Channel | What it's for |
+      |---|---|
+      | `mpsc` | many producers, one consumer: work queues, event streams |
+      | `oneshot` | exactly one value, once: the reply to a request |
+      | `broadcast` | every receiver gets every message: chat rooms, notifications |
+      | `watch` | receivers see only the latest value: config updates, status |
+
+      ### Actors: a task that owns its state
+
+      A very common design in async services: instead of sharing a `Mutex`, one task **owns** the state, and others send it commands over an `mpsc` channel. A command that needs an answer carries a `oneshot::Sender` for the reply. No locks at all, and the state is only ever touched by one task:
+
+      ```rust run
+      use tokio::sync::{mpsc, oneshot};
+
+      enum Command {
+          Deposit(u64),
+          Balance(oneshot::Sender<u64>),
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let (tx, mut rx) = mpsc::channel(16);
+          let bank = tokio::spawn(async move {
+              let mut balance = 0;
+              while let Some(command) = rx.recv().await {
+                  match command {
+                      Command::Deposit(amount) => balance += amount,
+                      Command::Balance(reply) => {
+                          let _ = reply.send(balance);
+                      }
+                  }
+              }
+          });
+
+          tx.send(Command::Deposit(50)).await.unwrap();
+          tx.send(Command::Deposit(25)).await.unwrap();
+          let (reply_tx, reply_rx) = oneshot::channel();
+          tx.send(Command::Balance(reply_tx)).await.unwrap();
+          println!("balance: {}", reply_rx.await.unwrap());
+
+          drop(tx);
+          bank.await.unwrap();
+      }
+      ```
+
+      ```output
+      balance: 75
+      ```
+
+      `reply.send(...)` on a `oneshot` isn't async (there's never a queue to wait for). `let _ =` ignores the `Result`: if the asker stopped waiting, there's nobody to tell.
+
+      ### Common mistakes
+
+      - **Using `std::sync::mpsc` in async code**: its `recv()` blocks a worker thread.
+      - **Forgetting `mut` on the receiver**: ``error[E0596]: cannot borrow `rx` as mutable, as it is not declared as mutable``.
+      - **Forgetting to drop the original `Sender`**: `rx.recv().await` never returns `None`, and the loop waits forever.
+      - **`unbounded_channel` everywhere**: if the consumer is slower than the producers, memory grows without limit. Prefer a bounded channel.
+
+      **Your turn:** spawn a producer task that sends each amount in `orders` over a Tokio channel with capacity 2. The main task receives them with `while let Some(...) = rx.recv().await`, prints each one, and then prints the total:
+
+      ```
+      order: 120
+      order: 80
+      order: 45
+      order: 300
+      total: 545
+      ```
+    seed: |
+      use tokio::sync::mpsc;
+
+      #[tokio::main]
+      async fn main() {
+          let orders = vec![120, 80, 45, 300];
+          // producer task: send each order over a channel with capacity 2
+          // main task: receive, print "order: N" for each, then "total: T"
+      }
+    solution: |
+      use tokio::sync::mpsc;
+
+      #[tokio::main]
+      async fn main() {
+          let orders = vec![120, 80, 45, 300];
+          // producer task: send each order over a channel with capacity 2
+          let (tx, mut rx) = mpsc::channel(2);
+          tokio::spawn(async move {
+              for amount in orders {
+                  tx.send(amount).await.unwrap();
+              }
+          });
+          // main task: receive, print "order: N" for each, then "total: T"
+          let mut total = 0;
+          while let Some(amount) = rx.recv().await {
+              println!("order: {amount}");
+              total += amount;
+          }
+          println!("total: {total}");
+      }
+    require:
+      - pattern: 'mpsc::channel\(\s*2\s*\)'
+        message: Create the channel with `mpsc::channel(2)`.
+      - pattern: 'tokio::spawn'
+        message: Send the orders from a task started with `tokio::spawn`.
+      - pattern: 'recv\(\)\s*\.await'
+        message: Receive with `rx.recv().await`.
+    hints:
+      - "`let (tx, mut rx) = mpsc::channel(2);`, then `tokio::spawn(async move { for amount in orders { tx.send(amount).await.unwrap(); } });`."
+      - "The task owns `tx`, so when it finishes the channel closes and `rx.recv().await` returns `None`."
+      - "`while let Some(amount) = rx.recv().await { ... }` then print the total."
+    tests:
+      - expect: "order: 120\norder: 80\norder: 45\norder: 300\ntotal: 545"
+    more:
+      - task: |
+          Fill in the method that waits for the next message. The program should print `received 3 alerts: cpu, disk, memory`.
+        fill: |
+          use tokio::sync::mpsc;
+
+          #[tokio::main]
+          async fn main() {
+              let (tx, mut rx) = mpsc::channel(4);
+              tokio::spawn(async move {
+                  for alert in ["cpu", "disk", "memory"] {
+                      tx.send(alert).await.unwrap();
+                  }
+              });
+              let mut alerts = Vec::new();
+              while let Some(alert) = rx.[[recv]]().await {
+                  alerts.push(alert);
+              }
+              println!("received {} alerts: {}", alerts.len(), alerts.join(", "));
+          }
+        hints:
+          - "The receiver's method is `recv()`; it returns a future that you `.await`."
+        tests:
+          - expect: "received 3 alerts: cpu, disk, memory"
+      - task: |
+          Write an **actor**: `async fn visitor_log(mut rx: mpsc::Receiver<Cmd>)` owns a set of visitor names and handles commands until the channel closes:
+
+          - `Cmd::Visit(name)` records a visit (the same name twice counts once).
+          - `Cmd::Count(reply)` sends the number of **different** visitors so far through the `oneshot` reply.
+
+          The function returns when every sender is gone. The hidden tests spawn it as a task and talk to it.
+        seed: |
+          use std::collections::BTreeSet;
+          use tokio::sync::{mpsc, oneshot};
+
+          enum Cmd {
+              Visit(String),
+              Count(oneshot::Sender<usize>),
+          }
+
+          async fn visitor_log(mut rx: mpsc::Receiver<Cmd>) {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeSet;
+          use tokio::sync::{mpsc, oneshot};
+
+          enum Cmd {
+              Visit(String),
+              Count(oneshot::Sender<usize>),
+          }
+
+          async fn visitor_log(mut rx: mpsc::Receiver<Cmd>) {
+              let mut visitors = BTreeSet::new();
+              while let Some(cmd) = rx.recv().await {
+                  match cmd {
+                      Cmd::Visit(name) => {
+                          visitors.insert(name);
+                      }
+                      Cmd::Count(reply) => {
+                          let _ = reply.send(visitors.len());
+                      }
+                  }
+              }
+          }
+        hints:
+          - "Keep a `BTreeSet<String>` and loop `while let Some(cmd) = rx.recv().await { match cmd { ... } }`."
+          - "`Cmd::Visit(name)` inserts into the set; `Cmd::Count(reply)` does `let _ = reply.send(visitors.len());`."
+        harness: |
+          async fn count(tx: &mpsc::Sender<Cmd>) -> usize {
+              let (reply, answer) = oneshot::channel();
+              tx.send(Cmd::Count(reply)).await.unwrap();
+              answer.await.unwrap()
+          }
+
+          fn run<F: std::future::Future>(future: F) -> F::Output {
+              tokio::runtime::Runtime::new().unwrap().block_on(future)
+          }
+
+          #[test]
+          fn starts_with_no_visitors() {
+              let n = run(async {
+                  let (tx, rx) = mpsc::channel(8);
+                  tokio::spawn(visitor_log(rx));
+                  count(&tx).await
+              });
+              assert_eq!(n, 0, "Count before any visits");
+          }
+
+          #[test]
+          fn counts_different_visitors_once() {
+              let n = run(async {
+                  let (tx, rx) = mpsc::channel(8);
+                  tokio::spawn(visitor_log(rx));
+                  for name in ["ana", "bo", "ana", "cy", "bo"] {
+                      tx.send(Cmd::Visit(name.to_string())).await.unwrap();
+                  }
+                  count(&tx).await
+              });
+              assert_eq!(n, 3, "visits from ana, bo, ana, cy, bo");
+          }
+
+          #[test]
+          fn counts_change_over_time() {
+              let counts = run(async {
+                  let (tx, rx) = mpsc::channel(8);
+                  tokio::spawn(visitor_log(rx));
+                  tx.send(Cmd::Visit(String::from("ana"))).await.unwrap();
+                  let first = count(&tx).await;
+                  tx.send(Cmd::Visit(String::from("dee"))).await.unwrap();
+                  (first, count(&tx).await)
+              });
+              assert_eq!(counts, (1, 2), "count after 1 visitor, then after 2");
+          }
+
+          #[test]
+          fn stops_when_the_senders_are_dropped() {
+              let finished = run(async {
+                  let (tx, rx) = mpsc::channel::<Cmd>(8);
+                  let actor = tokio::spawn(visitor_log(rx));
+                  drop(tx);
+                  actor.await.is_ok()
+              });
+              assert_eq!(finished, true, "the actor returns once every Sender is dropped");
+          }
+
+  - title: "select!: the first one to finish wins"
+    id: async-6
+    text: |
+      `join!` waits for **all** its futures. **`tokio::select!`** waits on several futures and runs the branch of whichever finishes **first**. The other futures are **dropped**, which cancels them on the spot.
+
+      ```rust run
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn quick_answer() -> u32 {
+          42
+      }
+
+      #[tokio::main]
+      async fn main() {
+          tokio::select! {
+              n = quick_answer() => println!("answer arrived first: {n}"),
+              _ = sleep(Duration::from_secs(3)) => println!("gave up waiting"),
+          }
+          println!("the 3-second sleep was cancelled, not waited for");
+      }
+      ```
+
+      ```output
+      answer arrived first: 42
+      the 3-second sleep was cancelled, not waited for
+      ```
+
+      Each branch reads `pattern = future => handler,`. The handler runs with the pattern bound to that future's output. `select!` is an expression: if every handler returns a value of the same type, `let x = tokio::select! { ... };` gives you the winner's value.
+
+      ### Timeouts
+
+      Racing a future against a sleep is so common that Tokio has a shortcut: `tokio::time::timeout(duration, future)` returns `Ok(output)` if the future finishes in time, or `Err(Elapsed)` if it doesn't (and then drops the future):
+
+      ```rust run
+      use std::time::Duration;
+      use tokio::time::{sleep, timeout};
+
+      async fn slow_report() -> String {
+          sleep(Duration::from_secs(3)).await;
+          String::from("report")
+      }
+
+      #[tokio::main]
+      async fn main() {
+          match timeout(Duration::from_millis(20), slow_report()).await {
+              Ok(report) => println!("got {report}"),
+              Err(_) => println!("report timed out after 20 ms"),
+          }
+      }
+      ```
+
+      ```output
+      report timed out after 20 ms
+      ```
+
+      Every call to another service in production code should have a timeout. Without one, a single stuck dependency can tie up your tasks forever.
+
+      ### select! in a loop
+
+      A long-running task usually loops over `select!` to handle whichever event comes next, for example new messages or a shutdown signal. When several branches are ready at the same moment, `select!` picks one **at random** (so no branch can starve the others). Add `biased;` as the first line to check the branches in the order written instead:
+
+      ```rust run
+      use tokio::sync::mpsc;
+
+      #[tokio::main]
+      async fn main() {
+          let (tx, mut rx) = mpsc::channel(8);
+          let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+          for amount in [5, 10, 20] {
+              tx.send(amount).await.unwrap();
+          }
+          stop_tx.send(()).await.unwrap();
+
+          let mut total = 0;
+          loop {
+              tokio::select! {
+                  biased;
+                  Some(amount) = rx.recv() => total += amount,
+                  _ = stop_rx.recv() => break,
+              }
+          }
+          println!("handled before shutdown: {total}");
+      }
+      ```
+
+      ```output
+      handled before shutdown: 35
+      ```
+
+      With `biased;`, waiting messages are always handled before the stop signal. Without it, the shutdown could win while messages are still waiting, and the total would change from run to run. `break` in a handler leaves the surrounding `loop`.
+
+      ### Cancellation
+
+      When a branch loses, its future is dropped in the middle of whatever it was doing: the code after its current `.await` never runs. Futures that survive this cleanly are called **cancellation safe**. `rx.recv()` and `sleep` are; a future that has read half a message from a socket is not. Tokio's documentation says which of its methods are cancellation safe, and it's worth checking before you put one in a `select!` loop.
+
+      ### Common mistakes
+
+      - **Expecting the losing branch to finish later**: it's dropped, not paused.
+      - **Relying on branch order without `biased;`**: ready branches are picked at random.
+      - **No timeout on calls to other services**: one hung dependency hangs your request.
+
+      **Your turn:** write `async fn fetch_with_timeout(delay_ms: u64, limit_ms: u64) -> Result<String, String>` with `tokio::select!`. Race `fetch_quote(delay_ms)` against a `sleep` of `limit_ms` milliseconds: return `Ok(quote)` if the quote comes first, or `Err(format!("timed out after {limit_ms} ms"))` if the sleep finishes first.
+    seed: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_quote(delay_ms: u64) -> String {
+          sleep(Duration::from_millis(delay_ms)).await;
+          String::from("Fortune favors the crab")
+      }
+
+      async fn fetch_with_timeout(delay_ms: u64, limit_ms: u64) -> Result<String, String> {
+          todo!()
+      }
+    solution: |
+      use std::time::Duration;
+      use tokio::time::sleep;
+
+      async fn fetch_quote(delay_ms: u64) -> String {
+          sleep(Duration::from_millis(delay_ms)).await;
+          String::from("Fortune favors the crab")
+      }
+
+      async fn fetch_with_timeout(delay_ms: u64, limit_ms: u64) -> Result<String, String> {
+          tokio::select! {
+              quote = fetch_quote(delay_ms) => Ok(quote),
+              _ = sleep(Duration::from_millis(limit_ms)) => Err(format!("timed out after {limit_ms} ms")),
+          }
+      }
+    require:
+      - pattern: 'select!'
+        message: Race the two futures with `tokio::select!`.
+    hints:
+      - "Two branches: `quote = fetch_quote(delay_ms) => Ok(quote),` and `_ = sleep(Duration::from_millis(limit_ms)) => Err(...)`."
+      - "`select!` is an expression, so it can be the function's last expression and return the `Result` directly."
+    harness: |
+      fn run<F: std::future::Future>(future: F) -> F::Output {
+          tokio::runtime::Runtime::new().unwrap().block_on(future)
+      }
+
+      #[test]
+      fn fast_quote_arrives() {
+          assert_eq!(run(fetch_with_timeout(1, 1_000)), Ok(String::from("Fortune favors the crab")), "fetch_with_timeout(1, 1000)");
+      }
+
+      #[test]
+      fn instant_quote_arrives() {
+          assert_eq!(run(fetch_with_timeout(0, 200)), Ok(String::from("Fortune favors the crab")), "fetch_with_timeout(0, 200)");
+      }
+
+      #[test]
+      fn slow_quote_times_out() {
+          assert_eq!(run(fetch_with_timeout(5_000, 10)), Err(String::from("timed out after 10 ms")), "fetch_with_timeout(5000, 10)");
+      }
+
+      #[test]
+      fn very_slow_quote_times_out_without_waiting_for_it() {
+          assert_eq!(run(fetch_with_timeout(60_000, 30)), Err(String::from("timed out after 30 ms")), "fetch_with_timeout(60000, 30)");
+      }
+    more:
+      - task: |
+          Fill in Tokio's helper that gives up on a future after a time limit. The program should print `backup timed out` and then `ping: pong`.
+        fill: |
+          use std::time::Duration;
+          use tokio::time::sleep;
+
+          async fn backup() -> &'static str {
+              sleep(Duration::from_secs(10)).await;
+              "backup done"
+          }
+
+          async fn ping() -> &'static str {
+              "pong"
+          }
+
+          #[tokio::main]
+          async fn main() {
+              match tokio::time::[[timeout]](Duration::from_millis(15), backup()).await {
+                  Ok(msg) => println!("{msg}"),
+                  Err(_) => println!("backup timed out"),
+              }
+              let reply = tokio::time::timeout(Duration::from_secs(1), ping()).await.unwrap();
+              println!("ping: {reply}");
+          }
+        hints:
+          - "The helper is `tokio::time::timeout(duration, future)`, which returns a `Result`."
+        tests:
+          - expect: "backup timed out\nping: pong"
+      - task: |
+          Three download mirrors answer at different speeds. Use `tokio::select!` with **three** branches to take whichever answers first, and print it:
+
+          ```
+          fastest mirror: eu (3 ms)
+          ```
+
+          The `mirror` function is given; call it with `("us", 300)`, `("eu", 3)` and `("asia", 900)`.
+        seed: |
+          use std::time::Duration;
+          use tokio::time::sleep;
+
+          async fn mirror(name: &str, latency_ms: u64) -> String {
+              sleep(Duration::from_millis(latency_ms)).await;
+              format!("{name} ({latency_ms} ms)")
+          }
+
+          #[tokio::main]
+          async fn main() {
+          }
+        solution: |
+          use std::time::Duration;
+          use tokio::time::sleep;
+
+          async fn mirror(name: &str, latency_ms: u64) -> String {
+              sleep(Duration::from_millis(latency_ms)).await;
+              format!("{name} ({latency_ms} ms)")
+          }
+
+          #[tokio::main]
+          async fn main() {
+              let fastest = tokio::select! {
+                  m = mirror("us", 300) => m,
+                  m = mirror("eu", 3) => m,
+                  m = mirror("asia", 900) => m,
+              };
+              println!("fastest mirror: {fastest}");
+          }
+        require:
+          - pattern: 'select!'
+            message: Race the mirrors with `tokio::select!`.
+        hints:
+          - "`let fastest = tokio::select! { m = mirror(\"us\", 300) => m, ... };` with one branch per mirror."
+          - "Every handler returns the same type (`String`), so `select!` gives you the winner's value."
+        tests:
+          - expect: "fastest mirror: eu (3 ms)"
+
+  - title: "Async vs threads, spawn_blocking, and locks across .await"
+    id: async-7
+    text: |
+      ### When to use which
+
+      Async isn't "faster threads". It makes **waiting** cheap. A task costs a few hundred bytes, and switching tasks at an `.await` is far cheaper than the OS switching threads. It does nothing to make CPU work faster.
+
+      | Your program mostly... | Use |
+      |---|---|
+      | waits on the network or disk, for many things at once (web servers, API clients, crawlers, chat) | async with Tokio |
+      | computes: parsing big files, image processing, number crunching | threads: rayon, or `thread::scope` |
+      | does a bit of both | async, sending the heavy parts to `spawn_blocking` or rayon |
+      | is a small CLI tool doing one thing after another | plain synchronous code; you may not need either |
+
+      Async has costs: a runtime dependency, `async` spreading up your call chain, and harder-to-read compiler errors. Don't reach for it just because a program does some I/O.
+
+      ### Don't block the runtime
+
+      Tokio runs many tasks on a few worker threads, and switches between them only at `.await` points. A task that runs a long CPU loop, or calls a blocking function (`std::fs::read`, `std::thread::sleep`, a synchronous database driver), holds its worker thread the whole time, and every other task waiting for that worker stalls. A good rule of thumb: never go more than about 100 microseconds between two `.await`s.
+
+      For blocking work, **`tokio::task::spawn_blocking(closure)`** runs a normal (non-async) closure on a separate pool of threads made for blocking, and gives you a `JoinHandle` to `.await`:
+
+      ```rust run
+      fn checksum(data: &[u8]) -> u64 {
+          // imagine this takes 200 ms of pure CPU work
+          data.iter().map(|&b| u64::from(b)).sum()
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let data: Vec<u8> = (0..=255).cycle().take(10_000).collect();
+          let handle = tokio::task::spawn_blocking(move || checksum(&data));
+          // while it runs, this worker thread is free for other tasks
+          let sum = handle.await.unwrap();
+          println!("checksum: {sum}");
+      }
+      ```
+
+      ```output
+      checksum: 1273080
+      ```
+
+      The closure must own its data (`move`), like a spawned thread. For heavy parallel CPU work, `spawn_blocking` a closure that uses rayon, so the computation spreads over all cores without touching the async workers.
+
+      ### std Mutex and .await
+
+      A `std::sync::Mutex` is fine in async code, **as long as you never hold its guard across an `.await`**. A task that pauses while holding the lock keeps every other task that needs the lock waiting, possibly on the very worker thread the lock holder needs to resume on. The compiler catches the most common case: a `std` `MutexGuard` isn't `Send`, so a spawned task that holds one across an `.await` doesn't compile:
+
+      ```rust compile_fail
+      use std::sync::{Arc, Mutex};
+      use std::time::Duration;
+
+      #[tokio::main]
+      async fn main() {
+          let hits = Arc::new(Mutex::new(0));
+          let for_task = Arc::clone(&hits);
+          let handle = tokio::spawn(async move {
+              let mut count = for_task.lock().unwrap();
+              *count += 1;
+              tokio::time::sleep(Duration::from_millis(1)).await;
+              *count += 1;
+          });
+          handle.await.unwrap();
+          println!("{}", hits.lock().unwrap());
+      }
+      ```
+
+      ```error
+      error: future cannot be sent between threads safely
+      ```
+
+      The fix is to keep the guard in a block that ends **before** the `.await`:
+
+      ```rust run
+      use std::sync::{Arc, Mutex};
+      use std::time::Duration;
+
+      #[tokio::main]
+      async fn main() {
+          let hits = Arc::new(Mutex::new(0));
+          let mut handles = Vec::new();
+          for _ in 0..4 {
+              let hits = Arc::clone(&hits);
+              handles.push(tokio::spawn(async move {
+                  {
+                      let mut count = hits.lock().unwrap();
+                      *count += 1;
+                  } // the guard is dropped here, before the .await
+                  tokio::time::sleep(Duration::from_millis(1)).await;
+              }));
+          }
+          for handle in handles {
+              handle.await.unwrap();
+          }
+          println!("hits: {}", hits.lock().unwrap());
+      }
+      ```
+
+      ```output
+      hits: 4
+      ```
+
+      If you really must keep data locked across an `.await` (for example, to keep writes to one connection in order), use **`tokio::sync::Mutex`**: its `lock().await` waits without blocking the thread, and its guard may be held across `.await`. It's slower than the `std` one, so use it only when you need that. Clippy's `await_holding_lock` lint warns about `std` guards held across `.await`.
+
+      ### Common mistakes
+
+      - **CPU-heavy loops or blocking calls in async functions**: everything else on that worker freezes. Use `spawn_blocking` (or rayon inside it).
+      - **Holding a `std` `MutexGuard` across `.await`**: put the guard in a block, or switch to `tokio::sync::Mutex` if you truly need it held.
+      - **Using async for CPU-bound work**: it adds complexity and no speed. Use threads.
+
+      **Your turn:** `slow_hash` is expensive CPU work, so it must not run on the async workers. Write `async fn hash_all(passwords: Vec<String>) -> Vec<u64>` that starts one `tokio::task::spawn_blocking` job per password (all of them before awaiting any), then awaits the handles in order and returns the hashes in the same order as `passwords`.
+    seed: |
+      fn slow_hash(input: &str) -> u64 {
+          let mut h: u64 = 1469598103934665603;
+          for _ in 0..1000 {
+              for b in input.bytes() {
+                  h ^= u64::from(b);
+                  h = h.wrapping_mul(1099511628211);
+              }
+          }
+          h
+      }
+
+      async fn hash_all(passwords: Vec<String>) -> Vec<u64> {
+          todo!()
+      }
+    solution: |
+      fn slow_hash(input: &str) -> u64 {
+          let mut h: u64 = 1469598103934665603;
+          for _ in 0..1000 {
+              for b in input.bytes() {
+                  h ^= u64::from(b);
+                  h = h.wrapping_mul(1099511628211);
+              }
+          }
+          h
+      }
+
+      async fn hash_all(passwords: Vec<String>) -> Vec<u64> {
+          let handles: Vec<_> = passwords
+              .into_iter()
+              .map(|p| tokio::task::spawn_blocking(move || slow_hash(&p)))
+              .collect();
+          let mut hashes = Vec::new();
+          for handle in handles {
+              hashes.push(handle.await.unwrap());
+          }
+          hashes
+      }
+    require:
+      - pattern: 'spawn_blocking'
+        message: Run `slow_hash` with `tokio::task::spawn_blocking`.
+    hints:
+      - "Start all the jobs first: `passwords.into_iter().map(|p| tokio::task::spawn_blocking(move || slow_hash(&p))).collect()` into a `Vec`."
+      - "Then `for handle in handles { hashes.push(handle.await.unwrap()); }`."
+    harness: |
+      fn run<F: std::future::Future>(future: F) -> F::Output {
+          tokio::runtime::Runtime::new().unwrap().block_on(future)
+      }
+
+      #[test]
+      fn hashes_in_input_order() {
+          let input = vec![String::from("hunter2"), String::from("crab"), String::from("")];
+          let expected = vec![slow_hash("hunter2"), slow_hash("crab"), slow_hash("")];
+          assert_eq!(run(hash_all(input)), expected, "hash_all([\"hunter2\", \"crab\", \"\"])");
+      }
+
+      #[test]
+      fn no_passwords_gives_no_hashes() {
+          assert_eq!(run(hash_all(vec![])), Vec::<u64>::new(), "hash_all([])");
+      }
+
+      #[test]
+      fn same_password_gives_same_hash() {
+          let hashes = run(hash_all(vec![String::from("abc"), String::from("abc")]));
+          assert_eq!(hashes[0], hashes[1], "hash_all([\"abc\", \"abc\"])");
+      }
+
+      #[test]
+      fn many_passwords() {
+          let input: Vec<String> = (0..40).map(|n| format!("password{n}")).collect();
+          let expected: Vec<u64> = input.iter().map(|p| slow_hash(p)).collect();
+          assert_eq!(run(hash_all(input)), expected, "hash_all(40 passwords)");
+      }
+    more:
+      - task: |
+          `record_visit` holds a `std` `MutexGuard` across the `.await`, so `tokio::spawn` rejects it ("future cannot be sent between threads safely"). Fix `record_visit` so the guard is dropped before the `.await` (lock again afterwards for the second push). The program should print:
+
+          ```
+          saved /cart
+          saved /home
+          visit /cart
+          visit /home
+          ```
+        seed: |
+          use std::sync::{Arc, Mutex};
+          use std::time::Duration;
+
+          async fn record_visit(log: Arc<Mutex<Vec<String>>>, page: String) {
+              let mut entries = log.lock().unwrap();
+              entries.push(format!("visit {page}"));
+              tokio::time::sleep(Duration::from_millis(2)).await; // pretend to write to disk
+              entries.push(format!("saved {page}"));
+          }
+
+          #[tokio::main]
+          async fn main() {
+              let log = Arc::new(Mutex::new(Vec::new()));
+              let a = tokio::spawn(record_visit(Arc::clone(&log), String::from("/home")));
+              let b = tokio::spawn(record_visit(Arc::clone(&log), String::from("/cart")));
+              a.await.unwrap();
+              b.await.unwrap();
+              let mut entries = log.lock().unwrap().clone();
+              entries.sort();
+              for entry in entries {
+                  println!("{entry}");
+              }
+          }
+        solution: |
+          use std::sync::{Arc, Mutex};
+          use std::time::Duration;
+
+          async fn record_visit(log: Arc<Mutex<Vec<String>>>, page: String) {
+              log.lock().unwrap().push(format!("visit {page}"));
+              tokio::time::sleep(Duration::from_millis(2)).await; // pretend to write to disk
+              log.lock().unwrap().push(format!("saved {page}"));
+          }
+
+          #[tokio::main]
+          async fn main() {
+              let log = Arc::new(Mutex::new(Vec::new()));
+              let a = tokio::spawn(record_visit(Arc::clone(&log), String::from("/home")));
+              let b = tokio::spawn(record_visit(Arc::clone(&log), String::from("/cart")));
+              a.await.unwrap();
+              b.await.unwrap();
+              let mut entries = log.lock().unwrap().clone();
+              entries.sort();
+              for entry in entries {
+                  println!("{entry}");
+              }
+          }
+        hints:
+          - "The guard `entries` lives until the end of the function, so it's still alive at the `.await`."
+          - "Lock just for each push: `log.lock().unwrap().push(...)` drops the guard at the end of the statement. Or put the first lock in its own `{ }` block."
+        tests:
+          - expect: "saved /cart\nsaved /home\nvisit /cart\nvisit /home"
+      - task: |
+          Tickets must be numbered in the order they're saved, so the lock has to stay held while the (async) save runs. That's the job for **`tokio::sync::Mutex`**. Write `async fn issue_ticket(counter: &tokio::sync::Mutex<u32>) -> u32`: lock with `counter.lock().await`, add 1 to the counter, call `save_ticket(number).await` **while still holding the lock**, and return the new number.
+        seed: |
+          use std::time::Duration;
+
+          async fn save_ticket(number: u32) {
+              tokio::time::sleep(Duration::from_millis(u64::from(number % 3))).await;
+          }
+
+          async fn issue_ticket(counter: &tokio::sync::Mutex<u32>) -> u32 {
+              todo!()
+          }
+        solution: |
+          use std::time::Duration;
+
+          async fn save_ticket(number: u32) {
+              tokio::time::sleep(Duration::from_millis(u64::from(number % 3))).await;
+          }
+
+          async fn issue_ticket(counter: &tokio::sync::Mutex<u32>) -> u32 {
+              let mut count = counter.lock().await;
+              *count += 1;
+              save_ticket(*count).await;
+              *count
+          }
+        require:
+          - pattern: 'lock\(\)\s*\.await'
+            message: Lock the Tokio mutex with `counter.lock().await`.
+        hints:
+          - "`let mut count = counter.lock().await;` gives a guard you may keep across `.await`."
+          - "`*count += 1; save_ticket(*count).await; *count`."
+        harness: |
+          fn run<F: std::future::Future>(future: F) -> F::Output {
+              tokio::runtime::Runtime::new().unwrap().block_on(future)
+          }
+
+          #[test]
+          fn first_ticket_is_number_one() {
+              let counter = tokio::sync::Mutex::new(0);
+              assert_eq!(run(issue_ticket(&counter)), 1, "issue_ticket on a new counter");
+          }
+
+          #[test]
+          fn tickets_count_up() {
+              let counter = tokio::sync::Mutex::new(0);
+              let numbers = run(async {
+                  let a = issue_ticket(&counter).await;
+                  let b = issue_ticket(&counter).await;
+                  let c = issue_ticket(&counter).await;
+                  vec![a, b, c]
+              });
+              assert_eq!(numbers, vec![1, 2, 3], "three tickets one after another");
+          }
+
+          #[test]
+          fn concurrent_tickets_are_all_different() {
+              let counter = tokio::sync::Mutex::new(100);
+              let mut numbers = run(async {
+                  let (a, b, c, d) = tokio::join!(issue_ticket(&counter), issue_ticket(&counter), issue_ticket(&counter), issue_ticket(&counter));
+                  vec![a, b, c, d]
+              });
+              numbers.sort();
+              assert_eq!(numbers, vec![101, 102, 103, 104], "four tickets at the same time");
+          }

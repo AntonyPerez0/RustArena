@@ -1,6 +1,7 @@
 topic: ownership
 drills:
   - type: predict
+    after: ownership-3
     body: |
       let a = 7;
       let mut b = a;
@@ -9,6 +10,7 @@ drills:
     why: i32 is a Copy type, so `let mut b = a;` gives b its own copy. Changing b doesn't touch a.
 
   - type: predict
+    after: ownership-4
     body: |
       let s = String::from("crab");
       let mut t = s.clone();
@@ -17,6 +19,7 @@ drills:
     why: clone makes a second String with its own heap text, so pushing onto t leaves s unchanged.
 
   - type: predict
+    after: ownership-5
     pre: |
       fn add_star(mut s: String) -> String {
           s.push('*');
@@ -39,6 +42,7 @@ drills:
     why: The inner x only lives until the inner block's closing brace, where it's dropped. After it, the name x means the outer String again.
 
   - type: fill
+    after: ownership-4
     prompt: Keep `s` usable by giving `t` its own copy.
     body: |
       let s = String::from("map");
@@ -70,6 +74,7 @@ drills:
     why: A parameter is a variable like any other. To change it with push_str, it must be declared `mut`.
 
   - type: bug
+    after: ownership-4
     body: |
       let name = String::from("Ferris");
       let greeting = name; // BUG
@@ -79,6 +84,7 @@ drills:
     why: "`let greeting = name;` moves the String, so `name` can't be printed afterwards. Both are used, so greeting needs its own copy."
 
   - type: bug
+    after: ownership-5
     pre: |
       fn add_line(mut log: String) -> String {
           log.push_str("ok;");
@@ -92,6 +98,7 @@ drills:
     why: add_line takes ownership and gives the String back. If you don't keep the returned value, log has moved and can't be printed.
 
   - type: compiles
+    after: ownership-3
     answer: no
     body: |
       let s = String::from("hi");
@@ -100,6 +107,7 @@ drills:
     why: "Assigning s to t moves the String. Using s afterwards is error E0382: borrow of moved value."
 
   - type: compiles
+    after: ownership-4
     answer: yes
     body: |
       let a = 42;
@@ -108,6 +116,7 @@ drills:
     why: i32 is Copy, so assignment copies the number and both variables stay valid.
 
   - type: compiles
+    after: ownership-5
     answer: no
     pre: |
       fn eat(food: String) {
@@ -151,12 +160,14 @@ drills:
     why: The String itself is a small handle on the stack (pointer, length, capacity); the text is on the heap so it can grow. Only string literals live in the binary.
 
   - type: choice
+    after: ownership-2
     prompt: When does Rust free the heap memory of a String?
     choices: ["When a garbage collector notices it's unused", "When you call free on it", "When its owner goes out of scope (or it's passed to drop)", "Only when the program exits"]
     answer: 3
     why: Rust has no garbage collector and no free. The compiler inserts the cleanup where the owner's scope ends; drop(value) just moves the value into a function that ends immediately.
 
   - type: boss
+    after: ownership-6
     prompt: |
       Write `fn merge(a: Vec<String>, b: Vec<String>) -> Vec<String>` that returns all of `a`'s strings followed by all of `b`'s, in order. The function owns both vectors, so it can move every string: don't use `.clone()`.
     seed: |

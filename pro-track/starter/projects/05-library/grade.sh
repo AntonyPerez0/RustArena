@@ -6,10 +6,10 @@ source "$HERE/../../tools/lib.sh"
 LIB="$HERE/semver-lite"
 
 provided_tests_unchanged() {
-  unchanged "$LIB/tests/api.rs" SHA_API &&
-    unchanged "$LIB/tests/serde.rs" SHA_SERDE &&
-    unchanged "$LIB/tests/metadata.rs" SHA_METADATA &&
-    unchanged "$HERE/semver-cli/tests/cli.rs" SHA_CLI
+  unchanged "$LIB/tests/api.rs" e89b0bb7a08d584e431fb0b8edd539d7507f8663dfcf23dd3f8a910ea58db1a4 &&
+    unchanged "$LIB/tests/serde.rs" 208979a9e2d69cd35c64a7dff15646e9318e237539334757ce5cca9017c366e3 &&
+    unchanged "$LIB/tests/metadata.rs" 17c88dff1dc5df96ca0786124aed64d33c6fb600d9a7ff638043623077beebe8 &&
+    unchanged "$HERE/semver-cli/tests/cli.rs" 2bf455d343ce4dc43449bfd3d2374fe1c764adbcc961844ab9c54116e916d907
 }
 
 typed_errors() {

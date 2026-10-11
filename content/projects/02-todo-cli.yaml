@@ -1,0 +1,856 @@
+id: todo-cli
+title: A to-do list manager
+level: Beginner
+after: vectors
+summary: A command interpreter for your to-do list. Read commands like `add`, `done` and `remove` from input, keep tasks in a Vec of structs, give them stable ids, and parse every line into an enum before acting on it.
+seed: |
+  use std::io;
+  use std::io::BufRead;
+
+  // One task on the list: what to do, and whether it's done.
+  struct Task {
+      text: String,
+      done: bool,
+  }
+
+  fn main() {
+      let mut tasks: Vec<Task> = Vec::new();
+
+      for line in io::stdin().lock().lines() {
+          let line = line.expect("failed to read input");
+          let line = line.trim();
+          if line.is_empty() {
+              continue;
+          }
+          // Split "add Buy milk" into the command ("add") and the rest ("Buy milk").
+          let (command, rest) = match line.split_once(' ') {
+              Some((command, rest)) => (command, rest.trim()),
+              None => (line, ""),
+          };
+
+          // Handle the commands here: add, list, and anything else is an error.
+
+      }
+  }
+milestones:
+  - title: Add and list
+    text: |
+      Shells, database consoles, chat bots and game consoles all work the same way: read a line, figure out which **command** it is, run it, print the result, repeat. That loop is called a **command interpreter** (or a REPL, for "read, evaluate, print, loop"). In this project you'll build one for a to-do list.
+
+      Each line of input is one command. In this first milestone there are two:
+
+      - `add Buy milk` adds a task and prints `Added #1: Buy milk`. The number is the task's position in the list, starting at 1.
+      - `list` prints every task as `1. [ ] Buy milk` (the `[ ]` becomes `[x]` once a task is done, in the next milestone). If there are no tasks, it prints `No tasks.`
+
+      Any other command prints `Error: unknown command "fly"` (with the command's name).
+
+      ```
+      add Buy milk
+      add Walk the dog
+      list
+      ```
+
+      prints:
+
+      ```
+      Added #1: Buy milk
+      Added #2: Walk the dog
+      1. [ ] Buy milk
+      2. [ ] Walk the dog
+      ```
+
+      ### What the starter code gives you
+
+      The `Task` struct holds one task. The list is a `Vec<Task>`: tasks keep the order they were added in, and a `Vec` grows as you push. The loop reads one line at a time, trims it and skips blank lines.
+
+      Two new tools appear in the starter code:
+
+      - `let line = line.trim();` **shadows** the `String` with a trimmed `&str` view of it. The original `String` still lives until the end of the loop body (shadowing hides a variable, it doesn't drop it), so the borrow is fine.
+      - `line.split_once(' ')` splits a string at the first space and returns `Some((before, after))`, or `None` if there's no space at all. `"add Buy milk"` becomes `("add", "Buy milk")`. A line like `list` has no space, so the `None` arm uses the whole line as the command and `""` as the rest.
+
+      Then `match command { "add" => ..., "list" => ..., _ => ... }` picks the command. Matching on string slices works just like matching on numbers.
+
+      To print the tasks with their numbers, `tasks.iter().enumerate()` gives you each task together with its index, starting at 0:
+
+      ```rust run
+      fn main() {
+          let names = vec!["crab", "ferris"];
+          for (i, name) in names.iter().enumerate() {
+              println!("{} {}", i + 1, name);
+          }
+      }
+      ```
+
+      ```output
+      1 crab
+      2 ferris
+      ```
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      // One task on the list: what to do, and whether it's done.
+      struct Task {
+          text: String,
+          done: bool,
+      }
+
+      fn main() {
+          let mut tasks: Vec<Task> = Vec::new();
+
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              let line = line.trim();
+              if line.is_empty() {
+                  continue;
+              }
+              // Split "add Buy milk" into the command ("add") and the rest ("Buy milk").
+              let (command, rest) = match line.split_once(' ') {
+                  Some((command, rest)) => (command, rest.trim()),
+                  None => (line, ""),
+              };
+
+              match command {
+                  "add" => {
+                      tasks.push(Task { text: rest.to_string(), done: false });
+                      println!("Added #{}: {}", tasks.len(), rest);
+                  }
+                  "list" => {
+                      if tasks.is_empty() {
+                          println!("No tasks.");
+                      }
+                      for (i, task) in tasks.iter().enumerate() {
+                          let mark = if task.done { 'x' } else { ' ' };
+                          println!("{}. [{}] {}", i + 1, mark, task.text);
+                      }
+                  }
+                  _ => println!("Error: unknown command \"{command}\""),
+              }
+          }
+      }
+    tests:
+      - stdin: "add Buy milk\nadd Walk the dog\nlist\n"
+      - stdin: "list\nadd   Water the plants  \n\nlist\nfly away\n"
+      - stdin: "add Pay rent\nadd Fix the bike\nadd Learn Rust\nlist\nhelp\n"
+        hidden: true
+    hints:
+      - "Add a `match command { ... }` with arms for `\"add\"`, `\"list\"` and `_`."
+      - "For `add`: `tasks.push(Task { text: rest.to_string(), done: false });` then print `tasks.len()` as the number."
+      - "For `list`: `let mark = if task.done { 'x' } else { ' ' };` inside `for (i, task) in tasks.iter().enumerate()`, and print `i + 1`."
+
+  - title: Check things off
+    text: |
+      A to-do list is only satisfying if you can tick things off. Add the `done` command:
+
+      - `done 2` marks task number 2 as done and prints `Completed #2: Walk the dog`. After that, `list` shows it as `2. [x] Walk the dog`.
+      - If it's already done, print `Task #2 is already done`.
+
+      The number comes from the user, so it can be wrong in several ways. Handle each with a clear message instead of a crash:
+
+      - Not a number (`done zero`, `done -1`): `Error: "zero" is not a task number`.
+      - No such task (`done 7` with 2 tasks, or `done 0`): `Error: no task #7`.
+      - And while you're validating input: `add` with no description prints `Error: add needs a description` and adds nothing.
+
+      ### People count from 1, vectors from 0
+
+      The user types `done 1` for the first task, which lives at `tasks[0]`. Converting between the two is a classic source of **off-by-one** bugs. Check the range *before* indexing: `tasks[number - 1]` with `number == 0` would subtract below zero (a panic for `usize`), and a number past the end panics with `index out of bounds`.
+
+      ```rust
+      if number == 0 || number > tasks.len() {
+          println!("Error: no task #{number}");
+          continue;
+      }
+      let task = &mut tasks[number - 1];
+      ```
+
+      `&mut tasks[number - 1]` borrows that one task mutably, so you can set `task.done = true` and still print `task.text`.
+
+      Parse the number as a `usize` (the type of `Vec` indexes and lengths) with a `match` on `rest.parse()`, as in the input module. A negative number like `-1` simply fails to parse as `usize`, so it gets the "not a task number" message for free.
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      // One task on the list: what to do, and whether it's done.
+      struct Task {
+          text: String,
+          done: bool,
+      }
+
+      fn main() {
+          let mut tasks: Vec<Task> = Vec::new();
+
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              let line = line.trim();
+              if line.is_empty() {
+                  continue;
+              }
+              // Split "add Buy milk" into the command ("add") and the rest ("Buy milk").
+              let (command, rest) = match line.split_once(' ') {
+                  Some((command, rest)) => (command, rest.trim()),
+                  None => (line, ""),
+              };
+
+              match command {
+                  "add" => {
+                      if rest.is_empty() {
+                          println!("Error: add needs a description");
+                          continue;
+                      }
+                      tasks.push(Task { text: rest.to_string(), done: false });
+                      println!("Added #{}: {}", tasks.len(), rest);
+                  }
+                  "list" => {
+                      if tasks.is_empty() {
+                          println!("No tasks.");
+                      }
+                      for (i, task) in tasks.iter().enumerate() {
+                          let mark = if task.done { 'x' } else { ' ' };
+                          println!("{}. [{}] {}", i + 1, mark, task.text);
+                      }
+                  }
+                  "done" => {
+                      let number: usize = match rest.parse() {
+                          Ok(n) => n,
+                          Err(_) => {
+                              println!("Error: \"{rest}\" is not a task number");
+                              continue;
+                          }
+                      };
+                      if number == 0 || number > tasks.len() {
+                          println!("Error: no task #{number}");
+                          continue;
+                      }
+                      let task = &mut tasks[number - 1];
+                      if task.done {
+                          println!("Task #{number} is already done");
+                      } else {
+                          task.done = true;
+                          println!("Completed #{number}: {}", task.text);
+                      }
+                  }
+                  _ => println!("Error: unknown command \"{command}\""),
+              }
+          }
+      }
+    tests:
+      - stdin: "add Buy milk\nadd Walk the dog\ndone 2\nlist\ndone 2\n"
+      - stdin: "add Read a book\ndone 3\ndone zero\ndone 0\nadd\nlist\n"
+      - stdin: "add a\nadd b\nadd c\ndone 1\ndone 3\nlist\ndone -1\ndone 4\n"
+        hidden: true
+    hints:
+      - "Parse with `let number: usize = match rest.parse() { Ok(n) => n, Err(_) => { println!(...); continue; } };`"
+      - "Reject `number == 0 || number > tasks.len()` before you touch the vector."
+      - "`let task = &mut tasks[number - 1];` then check `task.done` before setting it to `true`."
+
+  - title: Remove tasks, keep their ids
+    text: |
+      Add `remove`, and you'll hit a real design problem. Say the list is:
+
+      ```
+      1. [ ] Buy milk
+      2. [ ] Walk the dog
+      3. [ ] Call mom
+      ```
+
+      After `remove 2`, "Call mom" moves to position 2. A user (or a script) that still thinks "Call mom" is task 3 now types `done 3` and gets an error, or worse, in a longer list, ticks off the wrong task. Numbers that change under your feet are a bug factory.
+
+      The fix every real system uses (databases, issue trackers, this site's lesson ids) is a **stable id**: each task gets a number when it's created, and keeps it forever. Ids are never reused, even after a removal.
+
+      **Change the program so that:**
+
+      - Each `Task` has an `id: u32`. The first task added gets 1, the next 2, and so on, from a counter that only goes up.
+      - `list`, `done` and the messages use the id instead of the position: after removing task 2, the list shows `1. [ ] Buy milk` and `3. [ ] Call mom`, and `done 3` completes "Call mom".
+      - `remove 2` removes the task with id 2 and prints `Removed #2: Walk the dog`. The same errors as `done` apply: `Error: "x" is not a task number` and `Error: no task #9`.
+
+      ### Give the list its own type
+
+      The list now has two pieces of state that belong together: the tasks and the next id. Put them in a struct with methods, so `main` doesn't have to know how ids are handed out:
+
+      ```rust
+      struct TodoList {
+          tasks: Vec<Task>,
+          next_id: u32,
+      }
+
+      impl TodoList {
+          fn new() -> Self { ... }                                       // next_id starts at 1
+          fn add(&mut self, text: String) -> &Task { ... }               // returns the new task
+          fn find_mut(&mut self, id: u32) -> Option<&mut Task> { ... }
+          fn remove(&mut self, id: u32) -> Option<Task> { ... }
+      }
+      ```
+
+      - `find_mut` walks the tasks with `for task in &mut self.tasks` and returns `Some(task)` when the id matches, `None` after the loop.
+      - `remove` needs the *position* to call `Vec::remove`, so loop over `0..self.tasks.len()` and return `Some(self.tasks.remove(i))`. `Vec::remove` hands the removed task back to you (it moves out of the vector), so the caller can still print its text.
+      - `add` returns a reference to the task it just pushed (`&self.tasks[self.tasks.len() - 1]`), which is handy for printing its id.
+
+      This is **encapsulation**: the rule "ids only go up" lives in one place, `add`, and nothing else can break it.
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      // One task on the list. The id never changes once it's given out.
+      struct Task {
+          id: u32,
+          text: String,
+          done: bool,
+      }
+
+      struct TodoList {
+          tasks: Vec<Task>,
+          next_id: u32,
+      }
+
+      impl TodoList {
+          fn new() -> Self {
+              TodoList { tasks: Vec::new(), next_id: 1 }
+          }
+
+          fn add(&mut self, text: String) -> &Task {
+              let id = self.next_id;
+              self.next_id += 1;
+              self.tasks.push(Task { id, text, done: false });
+              &self.tasks[self.tasks.len() - 1]
+          }
+
+          fn find_mut(&mut self, id: u32) -> Option<&mut Task> {
+              for task in &mut self.tasks {
+                  if task.id == id {
+                      return Some(task);
+                  }
+              }
+              None
+          }
+
+          fn remove(&mut self, id: u32) -> Option<Task> {
+              for i in 0..self.tasks.len() {
+                  if self.tasks[i].id == id {
+                      return Some(self.tasks.remove(i));
+                  }
+              }
+              None
+          }
+      }
+
+      fn parse_id(text: &str) -> Option<u32> {
+          match text.parse() {
+              Ok(id) => Some(id),
+              Err(_) => None,
+          }
+      }
+
+      fn main() {
+          let mut list = TodoList::new();
+
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              let line = line.trim();
+              if line.is_empty() {
+                  continue;
+              }
+              // Split "add Buy milk" into the command ("add") and the rest ("Buy milk").
+              let (command, rest) = match line.split_once(' ') {
+                  Some((command, rest)) => (command, rest.trim()),
+                  None => (line, ""),
+              };
+
+              match command {
+                  "add" => {
+                      if rest.is_empty() {
+                          println!("Error: add needs a description");
+                          continue;
+                      }
+                      let task = list.add(rest.to_string());
+                      println!("Added #{}: {}", task.id, task.text);
+                  }
+                  "list" => {
+                      if list.tasks.is_empty() {
+                          println!("No tasks.");
+                      }
+                      for task in &list.tasks {
+                          let mark = if task.done { 'x' } else { ' ' };
+                          println!("{}. [{}] {}", task.id, mark, task.text);
+                      }
+                  }
+                  "done" => {
+                      let Some(id) = parse_id(rest) else {
+                          println!("Error: \"{rest}\" is not a task number");
+                          continue;
+                      };
+                      match list.find_mut(id) {
+                          None => println!("Error: no task #{id}"),
+                          Some(task) if task.done => println!("Task #{id} is already done"),
+                          Some(task) => {
+                              task.done = true;
+                              println!("Completed #{id}: {}", task.text);
+                          }
+                      }
+                  }
+                  "remove" => {
+                      let Some(id) = parse_id(rest) else {
+                          println!("Error: \"{rest}\" is not a task number");
+                          continue;
+                      };
+                      match list.remove(id) {
+                          Some(task) => println!("Removed #{id}: {}", task.text),
+                          None => println!("Error: no task #{id}"),
+                      }
+                  }
+                  _ => println!("Error: unknown command \"{command}\""),
+              }
+          }
+      }
+    tests:
+      - stdin: "add Buy milk\nadd Walk the dog\nadd Call mom\nremove 2\nlist\ndone 3\nlist\n"
+      - stdin: "add a\nremove 1\nremove 1\nadd b\nlist\n"
+      - stdin: "add x\nadd y\nremove 1\ndone 2\nremove two\ndone 1\nlist\nadd z\nlist\n"
+        hidden: true
+    hints:
+      - "Add `id: u32` to `Task` and a `TodoList { tasks, next_id }` struct whose `add` gives out `next_id` and then increments it."
+      - "`find_mut`: `for task in &mut self.tasks { if task.id == id { return Some(task); } } None`."
+      - "A small `fn parse_id(text: &str) -> Option<u32>` keeps `done` and `remove` short: `let Some(id) = parse_id(rest) else { ...; continue; };`"
+
+  - title: Parse commands into an enum
+    text: |
+      Look at your `main`: the loop splits the line, checks arguments, parses numbers, *and* changes the list, all mixed together. Every new command makes it longer, and nothing stops you from forgetting a check in one of the arms.
+
+      Professional interpreters split this into two phases:
+
+      1. **Parse**: turn the text into a value that says exactly what to do, or explain why the line is wrong.
+      2. **Execute**: carry out a command that is already known to be valid.
+
+      The "value that says what to do" is a perfect job for an enum, one variant per command, carrying exactly the data that command needs:
+
+      ```rust
+      enum Command {
+          Add(String),
+          Done(u32),
+          Remove(u32),
+          List,
+          Clear,
+      }
+      ```
+
+      An `Add` always has its text and a `Done` always has a valid id, so the execute phase never has to check again. And when you add a sixth command later, the compiler points at every `match` that doesn't handle it yet. That's the main reason Rust programmers reach for enums: the compiler keeps track of the cases for you.
+
+      ### A function that can fail: Result
+
+      Parsing can fail, and the caller needs to know why. You've been matching on `Result` since the input module (`parse` returns one). Your own functions can return one too: `Ok(value)` on success, `Err(error)` on failure. Here the error is just the message:
+
+      ```rust
+      fn parse_command(line: &str) -> Result<Command, String> {
+          ...
+          match command {
+              "add" if rest.is_empty() => Err(String::from("add needs a description")),
+              "add" => Ok(Command::Add(rest.to_string())),
+              ...
+          }
+      }
+      ```
+
+      The errors module covers `Result` in depth (including the `?` operator, a shortcut for "if this failed, return the error").
+
+      **Make these changes:**
+
+      - Write `parse_command` and use it in `main`: on `Err(message)` print `Error: {message}`; on `Ok(command)`, `match` on the command and run it.
+      - Improve the messages for missing numbers: `done` alone prints `Error: done needs a task number`, and `remove` alone prints `Error: remove needs a task number`. (A non-number is still `Error: "x" is not a task number`.)
+      - Add the `clear` command: it removes every finished task and prints `Cleared 2 finished tasks` (or `Cleared 1 finished task`, or `Cleared 0 finished tasks`).
+
+      For `clear`, `Vec::retain` keeps only the elements for which a test returns `true`: `self.tasks.retain(|task| !task.done);`. Compare the length before and after to know how many were removed.
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      // One task on the list. The id never changes once it's given out.
+      struct Task {
+          id: u32,
+          text: String,
+          done: bool,
+      }
+
+      struct TodoList {
+          tasks: Vec<Task>,
+          next_id: u32,
+      }
+
+      impl TodoList {
+          fn new() -> Self {
+              TodoList { tasks: Vec::new(), next_id: 1 }
+          }
+
+          fn add(&mut self, text: String) -> &Task {
+              let id = self.next_id;
+              self.next_id += 1;
+              self.tasks.push(Task { id, text, done: false });
+              &self.tasks[self.tasks.len() - 1]
+          }
+
+          fn find_mut(&mut self, id: u32) -> Option<&mut Task> {
+              for task in &mut self.tasks {
+                  if task.id == id {
+                      return Some(task);
+                  }
+              }
+              None
+          }
+
+          fn remove(&mut self, id: u32) -> Option<Task> {
+              for i in 0..self.tasks.len() {
+                  if self.tasks[i].id == id {
+                      return Some(self.tasks.remove(i));
+                  }
+              }
+              None
+          }
+
+          /// Removes every finished task and returns how many were removed.
+          fn clear_done(&mut self) -> usize {
+              let before = self.tasks.len();
+              self.tasks.retain(|task| !task.done);
+              before - self.tasks.len()
+          }
+      }
+
+      enum Command {
+          Add(String),
+          Done(u32),
+          Remove(u32),
+          List,
+          Clear,
+      }
+
+      fn parse_id(command: &str, rest: &str) -> Result<u32, String> {
+          if rest.is_empty() {
+              return Err(format!("{command} needs a task number"));
+          }
+          match rest.parse() {
+              Ok(id) => Ok(id),
+              Err(_) => Err(format!("\"{rest}\" is not a task number")),
+          }
+      }
+
+      fn parse_command(line: &str) -> Result<Command, String> {
+          // Split "add Buy milk" into the command ("add") and the rest ("Buy milk").
+          let (command, rest) = match line.split_once(' ') {
+              Some((command, rest)) => (command, rest.trim()),
+              None => (line, ""),
+          };
+          match command {
+              "add" if rest.is_empty() => Err(String::from("add needs a description")),
+              "add" => Ok(Command::Add(rest.to_string())),
+              "done" => match parse_id(command, rest) {
+                  Ok(id) => Ok(Command::Done(id)),
+                  Err(message) => Err(message),
+              },
+              "remove" => match parse_id(command, rest) {
+                  Ok(id) => Ok(Command::Remove(id)),
+                  Err(message) => Err(message),
+              },
+              "list" => Ok(Command::List),
+              "clear" => Ok(Command::Clear),
+              other => Err(format!("unknown command \"{other}\"")),
+          }
+      }
+
+      fn main() {
+          let mut list = TodoList::new();
+
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              let line = line.trim();
+              if line.is_empty() {
+                  continue;
+              }
+              let command = match parse_command(line) {
+                  Ok(command) => command,
+                  Err(message) => {
+                      println!("Error: {message}");
+                      continue;
+                  }
+              };
+
+              match command {
+                  Command::Add(text) => {
+                      let task = list.add(text);
+                      println!("Added #{}: {}", task.id, task.text);
+                  }
+                  Command::List => {
+                      if list.tasks.is_empty() {
+                          println!("No tasks.");
+                      }
+                      for task in &list.tasks {
+                          let mark = if task.done { 'x' } else { ' ' };
+                          println!("{}. [{}] {}", task.id, mark, task.text);
+                      }
+                  }
+                  Command::Done(id) => match list.find_mut(id) {
+                      None => println!("Error: no task #{id}"),
+                      Some(task) if task.done => println!("Task #{id} is already done"),
+                      Some(task) => {
+                          task.done = true;
+                          println!("Completed #{id}: {}", task.text);
+                      }
+                  },
+                  Command::Remove(id) => match list.remove(id) {
+                      Some(task) => println!("Removed #{id}: {}", task.text),
+                      None => println!("Error: no task #{id}"),
+                  },
+                  Command::Clear => {
+                      let n = list.clear_done();
+                      let word = if n == 1 { "task" } else { "tasks" };
+                      println!("Cleared {n} finished {word}");
+                  }
+              }
+          }
+      }
+    tests:
+      - stdin: "add Buy milk\nadd Walk the dog\nadd Call mom\ndone 1\ndone 3\nclear\nlist\nadd Cook dinner\nlist\n"
+      - stdin: "clear\nadd a\ndone\nremove\ndone x\nadd\nfly\ndone 1\nclear\n"
+      - stdin: "add one\nadd two\nadd three\ndone 2\nclear\nremove 2\ndone 3\ndone 3\nclear\nlist\n"
+        hidden: true
+    hints:
+      - "Start with `enum Command { Add(String), Done(u32), Remove(u32), List, Clear }` and move the splitting code into `fn parse_command(line: &str) -> Result<Command, String>`."
+      - "A helper `fn parse_id(command: &str, rest: &str) -> Result<u32, String>` can return `Err(format!(\"{command} needs a task number\"))` when `rest` is empty."
+      - "`clear_done`: remember `self.tasks.len()`, call `self.tasks.retain(|task| !task.done);`, and return the difference."
+
+  - title: "Polish: filters and a progress line"
+    text: |
+      Time to make the list pleasant to use, and to finish the parse/execute split.
+
+      **New behavior:**
+
+      - `list` still shows every task, and now ends with a progress line: `1 of 3 done`.
+      - `list todo` shows only unfinished tasks, and `list done` only finished ones. Both end with the same progress line, which always counts the whole list.
+      - Any other filter is an error: `Error: unknown filter "later" (use todo or done)`.
+      - When the list is completely empty, every `list` still prints just `No tasks.`, with no progress line.
+
+      ```
+      add Buy milk
+      add Walk the dog
+      add Call mom
+      done 2
+      list todo
+      ```
+
+      ends with:
+
+      ```
+      1. [ ] Buy milk
+      3. [ ] Call mom
+      1 of 3 done
+      ```
+
+      ### An enum inside an enum
+
+      The filter is another small enum, carried by the `List` variant:
+
+      ```rust
+      enum Filter {
+          All,
+          Todo,
+          Done,
+      }
+
+      enum Command {
+          ...
+          List(Filter),
+      }
+      ```
+
+      Give `Filter` a method `fn matches(&self, task: &Task) -> bool` with a `match` inside. Then the list command is just "print every task the filter matches", and the knowledge of what "todo" means lives in one place.
+
+      Why not a `String` for the filter? Because then every piece of code that looks at it has to handle typos like `"tood"`. With an enum, a filter that exists is a filter that's valid: the parser rejects bad ones once, at the edge, and the rest of the program can't even express them. "Make invalid states unrepresentable" is a design rule you'll hear a lot in Rust teams.
+
+      ### Move execution into its own function
+
+      Finally, pull the big `match command { ... }` out of `main` into `fn run(list: &mut TodoList, command: Command)`. Then `main` reads like the description of the program: read a line, parse it, report an error or run it. Each function now does one job, and you could test `parse_command` on its own without any input at all.
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      // One task on the list. The id never changes once it's given out.
+      struct Task {
+          id: u32,
+          text: String,
+          done: bool,
+      }
+
+      struct TodoList {
+          tasks: Vec<Task>,
+          next_id: u32,
+      }
+
+      impl TodoList {
+          fn new() -> Self {
+              TodoList { tasks: Vec::new(), next_id: 1 }
+          }
+
+          fn add(&mut self, text: String) -> &Task {
+              let id = self.next_id;
+              self.next_id += 1;
+              self.tasks.push(Task { id, text, done: false });
+              &self.tasks[self.tasks.len() - 1]
+          }
+
+          fn find_mut(&mut self, id: u32) -> Option<&mut Task> {
+              for task in &mut self.tasks {
+                  if task.id == id {
+                      return Some(task);
+                  }
+              }
+              None
+          }
+
+          fn remove(&mut self, id: u32) -> Option<Task> {
+              for i in 0..self.tasks.len() {
+                  if self.tasks[i].id == id {
+                      return Some(self.tasks.remove(i));
+                  }
+              }
+              None
+          }
+
+          /// Removes every finished task and returns how many were removed.
+          fn clear_done(&mut self) -> usize {
+              let before = self.tasks.len();
+              self.tasks.retain(|task| !task.done);
+              before - self.tasks.len()
+          }
+
+          fn done_count(&self) -> usize {
+              let mut count = 0;
+              for task in &self.tasks {
+                  if task.done {
+                      count += 1;
+                  }
+              }
+              count
+          }
+      }
+
+      enum Filter {
+          All,
+          Todo,
+          Done,
+      }
+
+      impl Filter {
+          fn matches(&self, task: &Task) -> bool {
+              match self {
+                  Filter::All => true,
+                  Filter::Todo => !task.done,
+                  Filter::Done => task.done,
+              }
+          }
+      }
+
+      enum Command {
+          Add(String),
+          Done(u32),
+          Remove(u32),
+          List(Filter),
+          Clear,
+      }
+
+      fn parse_id(command: &str, rest: &str) -> Result<u32, String> {
+          if rest.is_empty() {
+              return Err(format!("{command} needs a task number"));
+          }
+          match rest.parse() {
+              Ok(id) => Ok(id),
+              Err(_) => Err(format!("\"{rest}\" is not a task number")),
+          }
+      }
+
+      fn parse_command(line: &str) -> Result<Command, String> {
+          // Split "add Buy milk" into the command ("add") and the rest ("Buy milk").
+          let (command, rest) = match line.split_once(' ') {
+              Some((command, rest)) => (command, rest.trim()),
+              None => (line, ""),
+          };
+          match command {
+              "add" if rest.is_empty() => Err(String::from("add needs a description")),
+              "add" => Ok(Command::Add(rest.to_string())),
+              "done" => match parse_id(command, rest) {
+                  Ok(id) => Ok(Command::Done(id)),
+                  Err(message) => Err(message),
+              },
+              "remove" => match parse_id(command, rest) {
+                  Ok(id) => Ok(Command::Remove(id)),
+                  Err(message) => Err(message),
+              },
+              "list" => match rest {
+                  "" => Ok(Command::List(Filter::All)),
+                  "todo" => Ok(Command::List(Filter::Todo)),
+                  "done" => Ok(Command::List(Filter::Done)),
+                  other => Err(format!("unknown filter \"{other}\" (use todo or done)")),
+              },
+              "clear" => Ok(Command::Clear),
+              other => Err(format!("unknown command \"{other}\"")),
+          }
+      }
+
+      fn run(list: &mut TodoList, command: Command) {
+          match command {
+              Command::Add(text) => {
+                  let task = list.add(text);
+                  println!("Added #{}: {}", task.id, task.text);
+              }
+              Command::List(filter) => {
+                  if list.tasks.is_empty() {
+                      println!("No tasks.");
+                      return;
+                  }
+                  for task in &list.tasks {
+                      if filter.matches(task) {
+                          let mark = if task.done { 'x' } else { ' ' };
+                          println!("{}. [{}] {}", task.id, mark, task.text);
+                      }
+                  }
+                  println!("{} of {} done", list.done_count(), list.tasks.len());
+              }
+              Command::Done(id) => match list.find_mut(id) {
+                  None => println!("Error: no task #{id}"),
+                  Some(task) if task.done => println!("Task #{id} is already done"),
+                  Some(task) => {
+                      task.done = true;
+                      println!("Completed #{id}: {}", task.text);
+                  }
+              },
+              Command::Remove(id) => match list.remove(id) {
+                  Some(task) => println!("Removed #{id}: {}", task.text),
+                  None => println!("Error: no task #{id}"),
+              },
+              Command::Clear => {
+                  let n = list.clear_done();
+                  let word = if n == 1 { "task" } else { "tasks" };
+                  println!("Cleared {n} finished {word}");
+              }
+          }
+      }
+
+      fn main() {
+          let mut list = TodoList::new();
+
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read input");
+              let line = line.trim();
+              if line.is_empty() {
+                  continue;
+              }
+              match parse_command(line) {
+                  Ok(command) => run(&mut list, command),
+                  Err(message) => println!("Error: {message}"),
+              }
+          }
+      }
+    tests:
+      - stdin: "add Buy milk\nadd Walk the dog\nadd Call mom\ndone 2\nlist\nlist todo\nlist done\n"
+      - stdin: "list\nlist todo\nadd Feed the crab\nlist done\nlist later\n"
+      - stdin: "add a\nadd b\nadd c\nadd d\ndone 1\ndone 4\nremove 2\nlist\nlist done\nclear\nlist todo\n"
+        hidden: true
+    hints:
+      - "Add `enum Filter { All, Todo, Done }`, change the variant to `List(Filter)`, and in `parse_command` match `rest` against `\"\"`, `\"todo\"` and `\"done\"`."
+      - "`Filter::matches` is a `match self { Filter::All => true, Filter::Todo => !task.done, Filter::Done => task.done }`."
+      - "In the list command, `return` right after printing `No tasks.` so the progress line only appears for a non-empty list."

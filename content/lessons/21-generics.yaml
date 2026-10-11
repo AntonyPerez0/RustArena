@@ -1,0 +1,1561 @@
+id: generics
+title: Generics
+phase: "Errors and abstraction"
+summary: "Write a function or a type once and use it with many types. Generic functions, trait bounds like T: PartialOrd + Copy, generic structs, enums and impl blocks, why generics cost nothing at run time, and const generics for arrays of any length."
+roadmap: ["Traits & Generics", Trait Bounds and Associated Types]
+steps:
+  - title: Generic functions
+    id: generics-1
+    text: |
+      Say you need the last element of a list of scores, then of a list of names, then of a list of prices. Without generics you'd write three functions with identical bodies:
+
+      ```rust
+      fn last_i32(items: &[i32]) -> Option<&i32> { ... }
+      fn last_str(items: &[&str]) -> Option<&&str> { ... }
+      fn last_f64(items: &[f64]) -> Option<&f64> { ... }
+      ```
+
+      **Generics** let you write it once, with a placeholder for the type:
+
+      ```rust run
+      fn last<T>(items: &[T]) -> Option<&T> {
+          if items.is_empty() {
+              None
+          } else {
+              Some(&items[items.len() - 1])
+          }
+      }
+
+      fn swap<A, B>(pair: (A, B)) -> (B, A) {
+          (pair.1, pair.0)
+      }
+
+      fn main() {
+          let scores = [88, 92, 75];
+          let names = vec!["ana", "bo"];
+          let empty: [f64; 0] = [];
+          println!("{:?}", last(&scores));
+          println!("{:?}", last(&names));
+          println!("{:?}", last(&empty));
+          println!("{:?}", swap(("crab", 8)));
+      }
+      ```
+
+      ```output
+      Some(75)
+      Some("bo")
+      None
+      (8, "crab")
+      ```
+
+      Piece by piece:
+
+      - `<T>` right after the function name declares a **type parameter** called `T`. Inside the function, `T` is used like any type: `&[T]` is "a slice of T", `Option<&T>` "maybe a reference to a T".
+      - At each call, the compiler works out what `T` is from the arguments: `i32` for `scores`, `&str` for `names`, `f64` for `empty`. You don't write it.
+      - A function can have several type parameters, separated by commas. In `swap<A, B>`, the two halves of the pair can be different types.
+      - `last` works for *any* `T` because it never does anything with the values except hand out references. It doesn't compare them, add them or print them. The next step shows what happens when you need to.
+
+      You've been using generic code all along: `Vec<T>`, `Option<T>`, `Result<T, E>` and `HashMap<K, V>` are generic types, and slice methods like `.last()` and `.first()` are generic functions.
+
+      **Naming:** type parameters are usually single capital letters: `T` for "type", `U` for a second one, `K`/`V` for keys and values, `E` for errors. A descriptive name like `Item` is fine when it reads better.
+
+      ### Common mistakes
+
+      - **Forgetting to declare the parameter.** Using `T` without `<T>` after the function name:
+
+      ```rust compile_fail
+      fn last(items: &[T]) -> Option<&T> {
+          items.last()
+      }
+
+      fn main() {
+          println!("{:?}", last(&[1, 2]));
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find type `T` in this scope
+        | fn last(items: &[T]) -> Option<&T> {
+        |                  ^ not found in this scope
+        help: you might be missing a type parameter
+      ```
+
+      - **One parameter for two different types.** In `fn pair<T>(a: T, b: T)`, both arguments are the *same* `T`, so `pair(1, "two")` is `mismatched types: expected integer, found &str`. If they may differ, use two parameters: `fn pair<A, B>(a: A, b: B)`.
+      - **Writing a generic function too early.** Generic code is a little harder to read. If you only ever call a function with `i32`, write it for `i32`. Make it generic when a second real use shows up.
+
+      **Your turn:** fill in the blanks so `middle` works for slices of any type. It returns the element in the middle (at index `len / 2`), or `None` for an empty slice. The program prints:
+
+      ```
+      Some(3)
+      Some("green")
+      Some('y')
+      None
+      ```
+    fill: |
+      fn middle<[[T]]>(items: &[T]) -> Option<&[[T]]> {
+          if items.is_empty() {
+              None
+          } else {
+              Some(&items[items.len() / 2])
+          }
+      }
+
+      fn main() {
+          println!("{:?}", middle(&[1, 2, 3, 4, 5]));
+          println!("{:?}", middle(&["red", "green", "blue"]));
+          println!("{:?}", middle(&['x', 'y']));
+          let none: [u8; 0] = [];
+          println!("{:?}", middle(&none));
+      }
+    hints:
+      - The type parameter is declared between `<` and `>` after the function name.
+      - The return type is a reference to one element, and the elements have type `T`.
+    tests:
+      - expect: "Some(3)\nSome(\"green\")\nSome('y')\nNone"
+    more:
+      - task: |
+          Write `fn last_two<T>(items: &[T]) -> Option<(&T, &T)>` that returns references to the last two elements, in order, or `None` if there are fewer than two. For `[1, 2, 3]` it returns `Some((&2, &3))`.
+        seed: |
+          fn last_two<T>(items: &[T]) -> Option<(&T, &T)> {
+              todo!()
+          }
+        solution: |
+          fn last_two<T>(items: &[T]) -> Option<(&T, &T)> {
+              let n = items.len();
+              if n < 2 {
+                  return None;
+              }
+              Some((&items[n - 2], &items[n - 1]))
+          }
+        hints:
+          - "Check `items.len() < 2` first and return `None`."
+          - "Otherwise `Some((&items[n - 2], &items[n - 1]))` with `let n = items.len();`."
+        harness: |
+          #[test]
+          fn returns_the_last_two_numbers() {
+              assert_eq!(last_two(&[1, 2, 3]), Some((&2, &3)), "last_two(&[1, 2, 3])");
+          }
+
+          #[test]
+          fn works_with_strings() {
+              let words = vec![String::from("ready"), String::from("set"), String::from("go")];
+              assert_eq!(last_two(&words), Some((&words[1], &words[2])), "last_two(&[\"ready\", \"set\", \"go\"])");
+          }
+
+          #[test]
+          fn works_with_exactly_two() {
+              assert_eq!(last_two(&['a', 'b']), Some((&'a', &'b')), "last_two(&['a', 'b'])");
+          }
+
+          #[test]
+          fn needs_at_least_two() {
+              assert_eq!(last_two(&[7]), None, "last_two(&[7])");
+              let empty: [f64; 0] = [];
+              assert_eq!(last_two(&empty), None, "last_two(&[])");
+          }
+      - task: |
+          Write a generic function from scratch: `reverse_in_place`, which takes a mutable slice of any type and reverses it in place. Use `items.swap(i, j)`, which swaps two elements of a slice, and don't call `.reverse()`. It must work for numbers and for `String`s, and do nothing for an empty slice.
+        seed: |
+          // fn reverse_in_place ...
+        solution: |
+          // fn reverse_in_place ...
+          fn reverse_in_place<T>(items: &mut [T]) {
+              let n = items.len();
+              for i in 0..n / 2 {
+                  items.swap(i, n - 1 - i);
+              }
+          }
+        forbid:
+          - pattern: '\.reverse\(\)'
+            message: Do it yourself with `swap` instead of `.reverse()`.
+        hints:
+          - "The signature is `fn reverse_in_place<T>(items: &mut [T])`."
+          - "Swap the first and last, the second and second-to-last, and so on: `for i in 0..n / 2 { items.swap(i, n - 1 - i); }`."
+        harness: |
+          #[test]
+          fn reverses_numbers() {
+              let mut v = [1, 2, 3, 4, 5];
+              reverse_in_place(&mut v);
+              assert_eq!(v, [5, 4, 3, 2, 1], "after reverse_in_place(&mut [1, 2, 3, 4, 5])");
+          }
+
+          #[test]
+          fn reverses_an_even_number_of_items() {
+              let mut v = vec!['a', 'b', 'c', 'd'];
+              reverse_in_place(&mut v);
+              assert_eq!(v, vec!['d', 'c', 'b', 'a'], "after reverse_in_place(&mut ['a', 'b', 'c', 'd'])");
+          }
+
+          #[test]
+          fn reverses_strings() {
+              let mut v = vec![String::from("first"), String::from("second")];
+              reverse_in_place(&mut v);
+              assert_eq!(v, vec![String::from("second"), String::from("first")], "after reverse_in_place on two Strings");
+          }
+
+          #[test]
+          fn leaves_empty_and_single_slices_alone() {
+              let mut empty: Vec<i32> = Vec::new();
+              reverse_in_place(&mut empty);
+              assert_eq!(empty, Vec::<i32>::new(), "after reverse_in_place on an empty Vec");
+              let mut one = [42];
+              reverse_in_place(&mut one);
+              assert_eq!(one, [42], "after reverse_in_place(&mut [42])");
+          }
+
+  - title: "Trait bounds: what T is allowed to do"
+    id: generics-2
+    text: |
+      Now a function that finds the largest element:
+
+      ```rust compile_fail
+      fn largest<T>(items: &[T]) -> T {
+          let mut best = items[0];
+          for &item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+
+      fn main() {
+          println!("{}", largest(&[1, 5, 2]));
+      }
+      ```
+
+      ```error
+      error[E0369]: binary operation `>` cannot be applied to type `T`
+        help: consider restricting type parameter `T` with trait `PartialOrd`
+      ```
+
+      Inside a generic function, the compiler only allows what works for **every** possible `T`, and not every type can be compared with `>`. (How would you order two bank accounts, or two colors?) So you must say what `T` needs to be able to do.
+
+      Each capability is a **trait**: a named set of operations a type can support. Module 22 shows how to write your own; for now you only need to *use* a few from the standard library. A **trait bound** like `T: PartialOrd` restricts `T` to types that have that capability:
+
+      | Bound | Lets you |
+      |---|---|
+      | `PartialEq` | compare with `==` and `!=` |
+      | `PartialOrd` | compare with `<`, `>`, `<=`, `>=` |
+      | `Copy` | copy values (`let x = items[0];`) instead of moving them: numbers, `char`, `bool` |
+      | `Clone` | call `.clone()` |
+      | `Display` | print with `{}` (it's `std::fmt::Display`) |
+      | `Debug` | print with `{:?}` (it's `std::fmt::Debug`) |
+
+      Several bounds are joined with `+`:
+
+      ```rust run
+      fn largest<T: PartialOrd + Copy>(items: &[T]) -> T {
+          let mut best = items[0];
+          for &item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+
+      fn largest_ref<T: PartialOrd>(items: &[T]) -> &T {
+          let mut best = &items[0];
+          for item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+
+      fn main() {
+          println!("{}", largest(&[34, 50, 25, 100, 65]));
+          println!("{}", largest(&[1.5, -2.0, 0.25]));
+          println!("{}", largest(&['r', 'u', 's', 't']));
+          let names = vec![String::from("ana"), String::from("zoe"), String::from("bo")];
+          println!("{}", largest_ref(&names));
+      }
+      ```
+
+      ```output
+      100
+      1.5
+      u
+      zoe
+      ```
+
+      - `T: PartialOrd` makes `item > best` legal.
+      - `T: Copy` makes `let mut best = items[0];` and `for &item in items` legal: both *copy* an element out of the slice. A `String` can't be copied, only moved, and you can't move out of a borrowed slice.
+      - `largest_ref` avoids needing `Copy` by returning a *reference* to the largest element. That's why it works for `String`s too. Fewer bounds means more types can use your function.
+      - Every type in the calls satisfies the bounds: integers, floats and `char`s can all be compared and copied.
+
+      (Both versions panic on an empty slice, at `items[0]`. A more careful version returns an `Option`: that's one of the exercises.)
+
+      ### Display and Debug bounds
+
+      To print a `T`, require the matching trait:
+
+      ```rust run
+      use std::fmt::{Debug, Display};
+
+      fn announce<T: Display>(label: &str, value: T) {
+          println!("{label}: {value}");
+      }
+
+      fn log_all<T: Debug>(items: &[T]) {
+          for item in items {
+              println!("[log] {item:?}");
+          }
+      }
+
+      fn main() {
+          announce("winner", "Ferris");
+          announce("score", 9001);
+          announce("ratio", 0.75);
+          log_all(&[Some(1), None]);
+      }
+      ```
+
+      ```output
+      winner: Ferris
+      score: 9001
+      ratio: 0.75
+      [log] Some(1)
+      [log] None
+      ```
+
+      When bounds get long, Rust also lets you list them after the signature in a `where` clause (`fn largest<T>(items: &[T]) -> T where T: PartialOrd + Copy`). Module 22 covers `where`, writing your own traits, and more.
+
+      ### Common mistakes
+
+      - **A missing `Copy` bound.** With only `T: PartialOrd`, the first version fails at `items[0]`:
+
+      ```rust compile_fail
+      fn largest<T: PartialOrd>(items: &[T]) -> T {
+          let mut best = items[0];
+          for &item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          best
+      }
+
+      fn main() {
+          println!("{}", largest(&[1, 5, 2]));
+      }
+      ```
+
+      ```error
+      error[E0508]: cannot move out of type `[T]`, a non-copy slice
+      ```
+
+      - **Calling with a type that doesn't meet the bound.** `largest(&names)` with `String`s gives ``the trait bound `String: Copy` is not satisfied``. The function's bounds are a promise the caller has to keep. Use `largest_ref` instead.
+      - **Printing a `T` without a bound.** `println!("{x}")` with an unbounded `T` gives `` `T` doesn't implement `std::fmt::Display` ``. Add `T: Display` (and `use std::fmt::Display;`).
+
+      **Your turn:** write `clamp`, which keeps a value between a lower and an upper limit: below `low` it returns `low`, above `high` it returns `high`, otherwise the value itself. Add the trait bound `T` needs. It should work for numbers, `char`s and `&str`s.
+    seed: |
+      // Add the trait bound that makes < and > work.
+      fn clamp<T>(value: T, low: T, high: T) -> T {
+          todo!()
+      }
+    solution: |
+      // Add the trait bound that makes < and > work.
+      fn clamp<T: PartialOrd>(value: T, low: T, high: T) -> T {
+          if value < low {
+              low
+          } else if value > high {
+              high
+          } else {
+              value
+          }
+      }
+    require:
+      - pattern: 'PartialOrd'
+        message: "`T` needs the `PartialOrd` bound to be compared with `<` and `>`."
+    hints:
+      - "The bound goes in the angle brackets: `fn clamp<T: PartialOrd>(...)`."
+      - "`if value < low { low } else if value > high { high } else { value }`"
+      - "No `Copy` is needed: the function owns its three arguments and returns one of them."
+    harness: |
+      #[test]
+      fn keeps_a_value_in_range() {
+          assert_eq!(clamp(5, 0, 10), 5, "clamp(5, 0, 10)");
+      }
+
+      #[test]
+      fn raises_a_low_value() {
+          assert_eq!(clamp(-3, 0, 10), 0, "clamp(-3, 0, 10)");
+      }
+
+      #[test]
+      fn lowers_a_high_value() {
+          assert_eq!(clamp(42, 0, 10), 10, "clamp(42, 0, 10)");
+      }
+
+      #[test]
+      fn works_with_floats() {
+          assert_eq!(clamp(1.7, 0.0, 1.0), 1.0, "clamp(1.7, 0.0, 1.0)");
+      }
+
+      #[test]
+      fn works_with_chars_and_strs() {
+          assert_eq!(clamp('z', 'a', 'm'), 'm', "clamp('z', 'a', 'm')");
+          assert_eq!(clamp("pear", "apple", "mango"), "mango", "clamp(\"pear\", \"apple\", \"mango\")");
+      }
+    more:
+      - task: |
+          Write `fn smallest<T: PartialOrd + Copy>(items: &[T]) -> Option<T>`: the smallest element, or `None` for an empty slice (no panic).
+        seed: |
+          fn smallest<T: PartialOrd + Copy>(items: &[T]) -> Option<T> {
+              todo!()
+          }
+        solution: |
+          fn smallest<T: PartialOrd + Copy>(items: &[T]) -> Option<T> {
+              if items.is_empty() {
+                  return None;
+              }
+              let mut best = items[0];
+              for &item in items {
+                  if item < best {
+                      best = item;
+                  }
+              }
+              Some(best)
+          }
+        hints:
+          - "Return `None` early if `items.is_empty()`."
+          - "Then it's `largest` with `<` instead of `>`, wrapped in `Some(...)` at the end."
+        harness: |
+          #[test]
+          fn finds_the_smallest_number() {
+              assert_eq!(smallest(&[34, 50, 25, 100, 65]), Some(25), "smallest(&[34, 50, 25, 100, 65])");
+          }
+
+          #[test]
+          fn works_with_negative_floats() {
+              assert_eq!(smallest(&[1.5, -2.0, 0.25]), Some(-2.0), "smallest(&[1.5, -2.0, 0.25])");
+          }
+
+          #[test]
+          fn works_with_chars() {
+              assert_eq!(smallest(&['r', 'u', 's', 't']), Some('r'), "smallest(&['r', 'u', 's', 't'])");
+          }
+
+          #[test]
+          fn empty_slice_gives_none() {
+              let empty: [i32; 0] = [];
+              assert_eq!(smallest(&empty), None, "smallest(&[])");
+          }
+      - task: |
+          Write `join_all`, which turns a slice of anything printable into one `String`, with `separator` between the items: `join_all(&[1, 2, 3], ", ")` is `"1, 2, 3"`. Add the bound it needs (and the `use` line for it). An empty slice gives `""`.
+        seed: |
+          fn join_all<T>(items: &[T], separator: &str) -> String {
+              todo!()
+          }
+        solution: |
+          use std::fmt::Display;
+
+          fn join_all<T: Display>(items: &[T], separator: &str) -> String {
+              let mut out = String::new();
+              let mut first = true;
+              for item in items {
+                  if !first {
+                      out.push_str(separator);
+                  }
+                  out.push_str(&item.to_string());
+                  first = false;
+              }
+              out
+          }
+        require:
+          - pattern: 'Display'
+            message: "`T` needs the `Display` bound so its items can be turned into text."
+        hints:
+          - "`use std::fmt::Display;` and then `fn join_all<T: Display>(...)`."
+          - "With `Display`, `item.to_string()` works (or `format!(\"{item}\")`)."
+          - "Put the separator before every item except the first; a `bool` flag `first` keeps track."
+        harness: |
+          #[test]
+          fn joins_numbers() {
+              assert_eq!(join_all(&[1, 2, 3], ", "), "1, 2, 3", "join_all(&[1, 2, 3], \", \")");
+          }
+
+          #[test]
+          fn joins_floats_with_another_separator() {
+              assert_eq!(join_all(&[1.5, 2.0], " | "), "1.5 | 2", "join_all(&[1.5, 2.0], \" | \")");
+          }
+
+          #[test]
+          fn one_item_has_no_separator() {
+              assert_eq!(join_all(&["crab"], ", "), "crab", "join_all(&[\"crab\"], \", \")");
+          }
+
+          #[test]
+          fn empty_slice_gives_an_empty_string() {
+              let empty: [char; 0] = [];
+              assert_eq!(join_all(&empty, "-"), "", "join_all(&[], \"-\")");
+          }
+
+  - title: Generic structs and enums
+    id: generics-3
+    text: |
+      Types can have type parameters too. A point on a game grid uses whole numbers; a GPS position uses decimals. One definition covers both:
+
+      ```rust run
+      struct Point<T> {
+          x: T,
+          y: T,
+      }
+
+      struct Labeled<T> {
+          label: String,
+          value: T,
+      }
+
+      #[derive(Debug)]
+      enum Reading<T> {
+          Value(T),
+          OutOfRange,
+          Missing,
+      }
+
+      fn main() {
+          let tile = Point { x: 3, y: 7 };
+          let gps = Point { x: 52.52, y: 13.40 };
+          println!("tile at ({}, {}), gps at ({}, {})", tile.x, tile.y, gps.x, gps.y);
+
+          let temp = Labeled { label: String::from("kitchen"), value: 21.5 };
+          let door = Labeled { label: String::from("front door open"), value: false };
+          println!("{}: {}", temp.label, temp.value);
+          println!("{}: {}", door.label, door.value);
+
+          let readings: [Reading<u32>; 3] = [Reading::Value(19), Reading::OutOfRange, Reading::Missing];
+          for r in &readings {
+              match r {
+                  Reading::Value(v) => println!("{v} degrees"),
+                  other => println!("no value: {other:?}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      tile at (3, 7), gps at (52.52, 13.4)
+      kitchen: 21.5
+      front door open: false
+      19 degrees
+      no value: OutOfRange
+      no value: Missing
+      ```
+
+      - `struct Point<T>` declares the parameter; the fields use it. `tile` is a `Point<i32>` and `gps` is a `Point<f64>`. They're two different types, built from one definition.
+      - `Labeled<T>` mixes a fixed type (`label` is always a `String`) with a generic one: `temp` is a `Labeled<f64>`, `door` a `Labeled<bool>`.
+      - To write the full type, put the parameter in angle brackets: `let origin: Point<f64> = Point { x: 0.0, y: 0.0 };`, or `[Reading<u32>; 3]` above.
+      - If two fields may have *different* types, use two parameters: `struct Pair<K, V> { key: K, value: V }`.
+
+      ### Option and Result are generic enums
+
+      `Reading<T>` is your own generic enum, and it follows the same pattern as the two most important enums in Rust:
+
+      ```rust
+      enum Option<T> {
+          Some(T),
+          None,
+      }
+
+      enum Result<T, E> {
+          Ok(T),
+          Err(E),
+      }
+      ```
+
+      Nothing magic: `Option<String>` and `Result<u32, ParseIntError>` are these definitions with the parameters filled in.
+
+      ### Common mistakes
+
+      - **Mixing types in fields that share one parameter.** In `Point<T>`, `x` and `y` are both `T`:
+
+      ```rust compile_fail
+      struct Point<T> {
+          x: T,
+          y: T,
+      }
+
+      fn main() {
+          let p = Point { x: 5, y: 4.0 };
+          println!("{} {}", p.x, p.y);
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+        |     let p = Point { x: 5, y: 4.0 };
+        |                              ^^^ expected integer, found floating-point number
+      ```
+
+      - **A variant with no data, and no other hint.** `let r = Reading::Missing;` alone gives ``type annotations needed for `Reading<_>` ``: a missing reading of *what*? Write the type, `let r: Reading<u32> = Reading::Missing;`. The same happens with `None` and `Vec::new()`.
+      - **Leaving out the parameter in a signature.** `fn show(p: &Point)` gives ``missing generics for struct `Point` ``. Write `&Point<i32>` for one specific type, or make the function generic: `fn show<T: Display>(p: &Point<T>)`.
+
+      **Your turn:** fill in the blanks: declare the type parameter of `Pair`, use it for `second`, and make `total` accept only pairs of `i32`. The program prints:
+
+      ```
+      90 vs 75
+      ana vs bo
+      total 165
+      ```
+    fill: |
+      struct Pair<[[T]]> {
+          first: T,
+          second: [[T]],
+      }
+
+      fn total(p: &Pair<[[i32]]>) -> i32 {
+          p.first + p.second
+      }
+
+      fn main() {
+          let scores = Pair { first: 90, second: 75 };
+          let names = Pair { first: "ana", second: "bo" };
+          println!("{} vs {}", scores.first, scores.second);
+          println!("{} vs {}", names.first, names.second);
+          println!("total {}", total(&scores));
+      }
+    hints:
+      - "`struct Pair<T>` declares the parameter, and both fields have type `T`."
+      - "`total` takes a pair of a specific type: `&Pair<i32>`."
+    tests:
+      - expect: "90 vs 75\nana vs bo\ntotal 165"
+    more:
+      - task: |
+          A sensor log is a slice of `Reading<T>` (in the starter). Write `fn first_value<T: Copy>(readings: &[Reading<T>]) -> Option<T>` that returns the first `Value` in the slice, skipping `Missing` entries, or `None` if there's no value at all.
+        seed: |
+          enum Reading<T> {
+              Value(T),
+              Missing,
+          }
+
+          fn first_value<T: Copy>(readings: &[Reading<T>]) -> Option<T> {
+              todo!()
+          }
+        solution: |
+          enum Reading<T> {
+              Value(T),
+              Missing,
+          }
+
+          fn first_value<T: Copy>(readings: &[Reading<T>]) -> Option<T> {
+              for r in readings {
+                  if let Reading::Value(v) = r {
+                      return Some(*v);
+                  }
+              }
+              None
+          }
+        hints:
+          - "Loop over the readings: `for r in readings`."
+          - "`if let Reading::Value(v) = r { return Some(*v); }`: `v` is a `&T`, and `Copy` lets you copy it out with `*v`."
+        harness: |
+          #[test]
+          fn finds_the_first_value() {
+              let log = [Reading::Missing, Reading::Value(19), Reading::Value(21)];
+              assert_eq!(first_value(&log), Some(19), "first_value(&[Missing, Value(19), Value(21)])");
+          }
+
+          #[test]
+          fn works_with_floats() {
+              let log = [Reading::Value(-3.5), Reading::Missing];
+              assert_eq!(first_value(&log), Some(-3.5), "first_value(&[Value(-3.5), Missing])");
+          }
+
+          #[test]
+          fn all_missing_gives_none() {
+              let log: [Reading<u8>; 2] = [Reading::Missing, Reading::Missing];
+              assert_eq!(first_value(&log), None, "first_value(&[Missing, Missing])");
+          }
+
+          #[test]
+          fn empty_log_gives_none() {
+              let log: [Reading<i32>; 0] = [];
+              assert_eq!(first_value(&log), None, "first_value(&[])");
+          }
+      - task: |
+          From scratch: define a generic struct `Labeled<T>` with the fields `label: String` and `value: T`, then write `fn label_all<T>(label: &str, values: Vec<T>) -> Vec<Labeled<T>>`, which labels each value `<label> #1`, `<label> #2`, and so on. `label_all("sensor", vec![21.5, 19.0])` gives two items labeled `sensor #1` and `sensor #2`.
+        seed: |
+          // struct Labeled<T> ...
+
+          // fn label_all ...
+        solution: |
+          // struct Labeled<T> ...
+          struct Labeled<T> {
+              label: String,
+              value: T,
+          }
+
+          // fn label_all ...
+          fn label_all<T>(label: &str, values: Vec<T>) -> Vec<Labeled<T>> {
+              let mut out = Vec::new();
+              let mut n = 0;
+              for value in values {
+                  n += 1;
+                  out.push(Labeled { label: format!("{label} #{n}"), value });
+              }
+              out
+          }
+        hints:
+          - "`struct Labeled<T> { label: String, value: T }`"
+          - "Loop with `for value in values` (this moves each value out of the Vec), counting with a variable."
+          - "`out.push(Labeled { label: format!(\"{label} #{n}\"), value });`"
+        harness: |
+          #[test]
+          fn labels_numbers_in_order() {
+              let items = label_all("sensor", vec![21.5, 19.0]);
+              assert_eq!(items.len(), 2, "label_all(\"sensor\", vec![21.5, 19.0]).len()");
+              assert_eq!(items[0].label, "sensor #1", "items[0].label");
+              assert_eq!(items[0].value, 21.5, "items[0].value");
+              assert_eq!(items[1].label, "sensor #2", "items[1].label");
+              assert_eq!(items[1].value, 19.0, "items[1].value");
+          }
+
+          #[test]
+          fn works_with_strings() {
+              let items = label_all("player", vec![String::from("ferris"), String::from("corro")]);
+              assert_eq!(items[1].label, "player #2", "items[1].label");
+              assert_eq!(items[1].value, "corro", "items[1].value");
+          }
+
+          #[test]
+          fn empty_input_gives_an_empty_vec() {
+              let items: Vec<Labeled<bool>> = label_all("flag", Vec::new());
+              assert_eq!(items.len(), 0, "label_all(\"flag\", vec![]).len()");
+          }
+
+  - title: "Methods on generic types: impl<T>"
+    id: generics-4
+    text: |
+      Methods on a generic type go in an `impl` block that declares the type parameter too. Here's a stack, the data structure behind every "undo" button:
+
+      ```rust run
+      struct Stack<T> {
+          items: Vec<T>,
+      }
+
+      impl<T> Stack<T> {
+          fn new() -> Self {
+              Stack { items: Vec::new() }
+          }
+
+          fn push(&mut self, item: T) {
+              self.items.push(item);
+          }
+
+          fn pop(&mut self) -> Option<T> {
+              self.items.pop()
+          }
+
+          fn peek(&self) -> Option<&T> {
+              self.items.last()
+          }
+
+          fn len(&self) -> usize {
+              self.items.len()
+          }
+      }
+
+      fn main() {
+          let mut undo: Stack<String> = Stack::new();
+          undo.push(String::from("type 'hello'"));
+          undo.push(String::from("delete word"));
+          println!("{} actions, last: {:?}", undo.len(), undo.peek());
+          println!("undo {:?}", undo.pop());
+          println!("undo {:?}", undo.pop());
+          println!("undo {:?}", undo.pop());
+
+          let mut moves = Stack::new();
+          moves.push((3, 4));
+          println!("{:?}", moves.peek());
+      }
+      ```
+
+      ```output
+      2 actions, last: Some("delete word")
+      undo Some("delete word")
+      undo Some("type 'hello'")
+      undo None
+      Some((3, 4))
+      ```
+
+      - `impl<T> Stack<T>` reads "for any type `T`, here are the methods of `Stack<T>`". The first `<T>` declares the parameter, `Stack<T>` uses it. It's the same idea as `fn last<T>`.
+      - Inside, `T` is the element type: `push` takes a `T`, `pop` gives one back, `peek` lends a `&T`.
+      - `Self` is `Stack<T>`, so `new` doesn't have to repeat the parameter.
+      - `undo` gets its type from the annotation `Stack<String>`. `moves` has no annotation: the compiler sees `push((3, 4))` on the next line and infers `Stack<(i32, i32)>`.
+
+      ### Methods for some types only
+
+      An `impl` block can add bounds, or name one concrete type. The methods inside then exist only for those types:
+
+      ```rust run
+      struct Pair<T> {
+          a: T,
+          b: T,
+      }
+
+      impl<T> Pair<T> {
+          fn new(a: T, b: T) -> Self {
+              Pair { a, b }
+          }
+      }
+
+      impl<T: PartialOrd + Copy> Pair<T> {
+          fn larger(&self) -> T {
+              if self.a >= self.b { self.a } else { self.b }
+          }
+      }
+
+      impl Pair<f64> {
+          fn average(&self) -> f64 {
+              (self.a + self.b) / 2.0
+          }
+      }
+
+      fn main() {
+          let temps = Pair::new(18.5, 23.0);
+          println!("warmest {}, average {}", temps.larger(), temps.average());
+          let letters = Pair::new('q', 'b');
+          println!("later letter {}", letters.larger());
+          let names = Pair::new(String::from("ana"), String::from("bo"));
+          println!("{} and {}", names.a, names.b);
+      }
+      ```
+
+      ```output
+      warmest 23, average 20.75
+      later letter q
+      ana and bo
+      ```
+
+      - Every `Pair` has `new`.
+      - `larger` exists only when `T` is `PartialOrd + Copy`. `Pair<String>` is a fine type, but it has no `larger` method.
+      - `impl Pair<f64>` has no `<T>` at all: it's for exactly one type, so `average` exists only on `Pair<f64>`. Adding `a + b` and dividing by `2.0` only makes sense for floats anyway.
+
+      ### Common mistakes
+
+      - **`impl Stack<T>` without `impl<T>`.** The compiler reads `T` as the name of a real type, which doesn't exist:
+
+      ```rust compile_fail
+      struct Stack<T> {
+          items: Vec<T>,
+      }
+
+      impl Stack<T> {
+          fn len(&self) -> usize {
+              self.items.len()
+          }
+      }
+
+      fn main() {
+          let s = Stack { items: vec![1] };
+          println!("{}", s.len());
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find type `T` in this scope
+        help: you might be missing a type parameter
+        | impl<T> Stack<T> {
+        |     +++
+      ```
+
+      - **Calling a method that belongs to another concrete type.** `distance_from_origin` defined in `impl Point<f64>` doesn't exist on a `Point` of integers:
+
+      ```rust compile_fail
+      struct Point<T> {
+          x: T,
+          y: T,
+      }
+
+      impl Point<f64> {
+          fn distance_from_origin(&self) -> f64 {
+              (self.x * self.x + self.y * self.y).sqrt()
+          }
+      }
+
+      fn main() {
+          let p = Point { x: 3, y: 4 };
+          println!("{}", p.distance_from_origin());
+      }
+      ```
+
+      ```error
+      error[E0599]: no method named `distance_from_origin` found for struct `Point<{integer}>` in the current scope
+        = note: the method was found for `Point<f64>`
+      ```
+
+      `{integer}` means "some integer type, not decided yet". Write `Point { x: 3.0, y: 4.0 }` to get a `Point<f64>`.
+
+      **Your turn:** a chat app keeps the last few messages in a `History<T>` with a size limit. Write the methods in the starter:
+
+      - `new(limit)`: an empty history
+      - `record(item)`: adds the item; if there are now more than `limit` items, removes the oldest (index 0, with `self.items.remove(0)`)
+      - `latest()`: the newest item, `oldest()`: the oldest one still kept (both `Option<&T>`)
+      - `len()`: how many items are kept
+    seed: |
+      struct History<T> {
+          items: Vec<T>,
+          limit: usize,
+      }
+
+      impl<T> History<T> {
+          fn new(limit: usize) -> Self {
+              todo!()
+          }
+
+          fn record(&mut self, item: T) {
+              todo!()
+          }
+
+          fn latest(&self) -> Option<&T> {
+              todo!()
+          }
+
+          fn oldest(&self) -> Option<&T> {
+              todo!()
+          }
+
+          fn len(&self) -> usize {
+              todo!()
+          }
+      }
+    solution: |
+      struct History<T> {
+          items: Vec<T>,
+          limit: usize,
+      }
+
+      impl<T> History<T> {
+          fn new(limit: usize) -> Self {
+              History { items: Vec::new(), limit }
+          }
+
+          fn record(&mut self, item: T) {
+              self.items.push(item);
+              if self.items.len() > self.limit {
+                  self.items.remove(0);
+              }
+          }
+
+          fn latest(&self) -> Option<&T> {
+              self.items.last()
+          }
+
+          fn oldest(&self) -> Option<&T> {
+              self.items.first()
+          }
+
+          fn len(&self) -> usize {
+              self.items.len()
+          }
+      }
+    hints:
+      - "`new` builds `History { items: Vec::new(), limit }`."
+      - "`record` pushes, then checks `self.items.len() > self.limit` and calls `self.items.remove(0)`."
+      - "`self.items.last()` and `self.items.first()` already return `Option<&T>`."
+    harness: |
+      #[test]
+      fn starts_empty() {
+          let h: History<i32> = History::new(3);
+          assert_eq!(h.len(), 0, "History::new(3).len()");
+          assert_eq!(h.latest(), None, "History::new(3).latest()");
+      }
+
+      #[test]
+      fn keeps_items_up_to_the_limit() {
+          let mut h = History::new(3);
+          h.record(1);
+          h.record(2);
+          assert_eq!(h.len(), 2, "len after recording 1, 2");
+          assert_eq!(h.oldest(), Some(&1), "oldest after recording 1, 2");
+          assert_eq!(h.latest(), Some(&2), "latest after recording 1, 2");
+      }
+
+      #[test]
+      fn drops_the_oldest_items() {
+          let mut h = History::new(3);
+          for n in 1..=5 {
+              h.record(n);
+          }
+          assert_eq!(h.len(), 3, "len after recording 1..=5 with limit 3");
+          assert_eq!(h.oldest(), Some(&3), "oldest after recording 1..=5 with limit 3");
+          assert_eq!(h.latest(), Some(&5), "latest after recording 1..=5 with limit 3");
+      }
+
+      #[test]
+      fn works_with_strings() {
+          let mut h = History::new(2);
+          h.record(String::from("hi"));
+          h.record(String::from("gg"));
+          h.record(String::from("rematch?"));
+          assert_eq!(h.oldest(), Some(&String::from("gg")), "oldest message");
+          assert_eq!(h.latest(), Some(&String::from("rematch?")), "latest message");
+      }
+    more:
+      - task: |
+          Add methods to `Pair<T>` in two impl blocks:
+
+          - in an `impl<T: PartialOrd + Copy> Pair<T>` block: `larger(&self) -> T` and `smaller(&self) -> T`
+          - in an `impl<T> Pair<T>` block (no bounds, so it works for `String`s too): `swap(self) -> Pair<T>`, which returns a pair with `a` and `b` exchanged
+        seed: |
+          struct Pair<T> {
+              a: T,
+              b: T,
+          }
+        solution: |
+          struct Pair<T> {
+              a: T,
+              b: T,
+          }
+
+          impl<T: PartialOrd + Copy> Pair<T> {
+              fn larger(&self) -> T {
+                  if self.a >= self.b { self.a } else { self.b }
+              }
+
+              fn smaller(&self) -> T {
+                  if self.a <= self.b { self.a } else { self.b }
+              }
+          }
+
+          impl<T> Pair<T> {
+              fn swap(self) -> Pair<T> {
+                  Pair { a: self.b, b: self.a }
+              }
+          }
+        hints:
+          - "`larger` and `smaller` compare `self.a` and `self.b` and return a copy of one of them."
+          - "`swap` takes `self` by value, so it can move the fields: `Pair { a: self.b, b: self.a }`."
+        harness: |
+          #[test]
+          fn finds_larger_and_smaller_numbers() {
+              let p = Pair { a: 3, b: 9 };
+              assert_eq!(p.larger(), 9, "Pair {{ a: 3, b: 9 }}.larger()");
+              assert_eq!(p.smaller(), 3, "Pair {{ a: 3, b: 9 }}.smaller()");
+          }
+
+          #[test]
+          fn works_with_chars() {
+              let p = Pair { a: 'x', b: 'c' };
+              assert_eq!(p.larger(), 'x', "Pair {{ a: 'x', b: 'c' }}.larger()");
+              assert_eq!(p.smaller(), 'c', "Pair {{ a: 'x', b: 'c' }}.smaller()");
+          }
+
+          #[test]
+          fn swaps_strings() {
+              let p = Pair { a: String::from("left"), b: String::from("right") };
+              let s = p.swap();
+              assert_eq!(s.a, "right", "swapped .a");
+              assert_eq!(s.b, "left", "swapped .b");
+          }
+      - task: |
+          Write a generic `Shelf<T>` from scratch: a container with a fixed capacity.
+
+          - `struct Shelf<T>` with `items: Vec<T>` and `capacity: usize`
+          - in `impl<T> Shelf<T>`: `new(capacity: usize) -> Self`, `len(&self) -> usize`, and `add(&mut self, item: T) -> Result<(), T>`, which stores the item, or, when the shelf is full, gives the item back in `Err` so it isn't lost
+          - in `impl Shelf<f64>` (a shelf of prices): `total(&self) -> f64`, the sum of all items
+        seed: |
+          // struct Shelf<T> ...
+        solution: |
+          // struct Shelf<T> ...
+          struct Shelf<T> {
+              items: Vec<T>,
+              capacity: usize,
+          }
+
+          impl<T> Shelf<T> {
+              fn new(capacity: usize) -> Self {
+                  Shelf { items: Vec::new(), capacity }
+              }
+
+              fn len(&self) -> usize {
+                  self.items.len()
+              }
+
+              fn add(&mut self, item: T) -> Result<(), T> {
+                  if self.items.len() >= self.capacity {
+                      return Err(item);
+                  }
+                  self.items.push(item);
+                  Ok(())
+              }
+          }
+
+          impl Shelf<f64> {
+              fn total(&self) -> f64 {
+                  let mut sum = 0.0;
+                  for price in &self.items {
+                      sum += price;
+                  }
+                  sum
+              }
+          }
+        hints:
+          - "`add` checks `self.items.len() >= self.capacity` first and returns `Err(item)`, handing the item back."
+          - "`total` lives in its own block, `impl Shelf<f64> { ... }`, and adds up the items in a loop."
+        harness: |
+          #[test]
+          fn adds_until_full() {
+              let mut shelf = Shelf::new(2);
+              assert_eq!(shelf.add(10), Ok(()), "first add");
+              assert_eq!(shelf.add(20), Ok(()), "second add");
+              assert_eq!(shelf.len(), 2, "len after two adds");
+          }
+
+          #[test]
+          fn gives_the_item_back_when_full() {
+              let mut shelf = Shelf::new(1);
+              assert_eq!(shelf.add(String::from("lamp")), Ok(()), "add lamp");
+              assert_eq!(shelf.add(String::from("vase")), Err(String::from("vase")), "add vase to a full shelf");
+              assert_eq!(shelf.len(), 1, "len stays at 1");
+          }
+
+          #[test]
+          fn a_zero_capacity_shelf_is_always_full() {
+              let mut shelf = Shelf::new(0);
+              assert_eq!(shelf.add('x'), Err('x'), "add to Shelf::new(0)");
+          }
+
+          #[test]
+          fn totals_a_shelf_of_prices() {
+              let mut shelf = Shelf::new(5);
+              shelf.add(2.5).unwrap();
+              shelf.add(4.25).unwrap();
+              assert_eq!(shelf.total(), 6.75, "total of 2.5 and 4.25");
+              let empty: Shelf<f64> = Shelf::new(3);
+              assert_eq!(empty.total(), 0.0, "total of an empty shelf");
+          }
+
+  - title: "Monomorphization: generics cost nothing at run time"
+    id: generics-5
+    text: |
+      How can one `largest` function work on `i32`s, `f64`s and `char`s, which have different sizes and are compared by different machine instructions? The compiler doesn't keep one flexible version. For every concrete type you actually use, it generates a separate copy of the generic code with `T` filled in, as if you had written `largest_i32`, `largest_f64` and `largest_char` yourself. This is called **monomorphization** ("making into a single form").
+
+      You can watch it happen. `std::any::type_name::<T>()` returns the name of whatever `T` is in the copy that's running:
+
+      ```rust run
+      fn describe<T: std::fmt::Debug>(value: T) -> String {
+          format!("{} = {:?}", std::any::type_name::<T>(), value)
+      }
+
+      fn main() {
+          println!("{}", describe(42));
+          println!("{}", describe(2.5));
+          println!("{}", describe('z'));
+          println!("{}", describe("crab"));
+          println!("{}", describe(7u8));
+          println!("{}", describe::<i64>(7));
+      }
+      ```
+
+      ```output
+      i32 = 42
+      f64 = 2.5
+      char = 'z'
+      &str = "crab"
+      u8 = 7
+      i64 = 7
+      ```
+
+      This program contains six versions of `describe`: for `i32`, `f64`, `char`, `&str`, `u8` and `i64`. (`std::fmt::Debug` is written out in full here instead of with a `use` line; both work.)
+
+      ### Zero-cost abstraction
+
+      Because each copy is specialized, generic code runs exactly as fast as the hand-written versions would: no checking types at run time, no extra indirection. Rust people call this a **zero-cost abstraction**: you pay nothing at run time for writing the code once.
+
+      The cost is paid at compile time instead: every copy has to be compiled, and the program file gets bigger. In large projects heavy generic code can noticeably slow down builds. The alternative is **dynamic dispatch**, which you've already met in `Box<dyn Error>`: one copy of the code, and a small run-time lookup to find the right method. Module 25 compares the two.
+
+      ### The turbofish: ::<>
+
+      Usually the compiler infers `T` from the arguments. When it can't, or when you want a different type, write it explicitly with `::<Type>`, nicknamed the **turbofish**:
+
+      - `describe::<i64>(7)`: without it, `7` would be an `i32`.
+      - `"42".parse::<u32>()`: `parse` can produce many types, and nothing else says which.
+      - `Vec::<String>::new()`: an empty `Vec` has no elements to infer from.
+      - `std::mem::size_of::<u64>()`: a function with a type parameter and no arguments at all.
+
+      ### Common mistakes
+
+      - **Nothing to infer the type from.** `parse` needs to know its target type:
+
+      ```rust compile_fail
+      fn main() {
+          let n = "42".parse().unwrap();
+          println!("{n}");
+      }
+      ```
+
+      ```error
+      error[E0284]: type annotations needed
+      ```
+
+      Fix it with `"42".parse::<u32>()` or `let n: u32 = ...`.
+
+      - **Thinking generics are slow.** It's the opposite: generic code is specialized for each type. If you hear "use `dyn` instead of generics for speed", it's backwards; `dyn` trades a little speed for less compiled code.
+      - **The turbofish on the wrong name.** It goes right after the generic function or type: `parse::<u32>()`, not `parse()::<u32>`.
+
+      **Your turn:** write `fn size_info<T>(_value: &T) -> String` that returns `size of <type name>: <size in bytes>`, using `std::any::type_name::<T>()` and `std::mem::size_of::<T>()`. The starter's `main` calls it seven times (seven copies!), the last one with a turbofish. The program prints:
+
+      ```
+      size of u8: 1
+      size of i32: 4
+      size of f64: 8
+      size of char: 4
+      size of bool: 1
+      size of (u8, u32): 8
+      size of u64: 8
+      ```
+
+      (The `(u8, u32)` tuple takes 8 bytes, not 5: the compiler adds padding so the `u32` sits at a position divisible by 4, where the processor reads it fastest.)
+    seed: |
+      fn size_info<T>(_value: &T) -> String {
+          todo!()
+      }
+
+      fn main() {
+          println!("{}", size_info(&7u8));
+          println!("{}", size_info(&7));
+          println!("{}", size_info(&7.0));
+          println!("{}", size_info(&'c'));
+          println!("{}", size_info(&true));
+          println!("{}", size_info(&(1u8, 2u32)));
+          println!("{}", size_info::<u64>(&7));
+      }
+    solution: |
+      fn size_info<T>(_value: &T) -> String {
+          format!("size of {}: {}", std::any::type_name::<T>(), std::mem::size_of::<T>())
+      }
+
+      fn main() {
+          println!("{}", size_info(&7u8));
+          println!("{}", size_info(&7));
+          println!("{}", size_info(&7.0));
+          println!("{}", size_info(&'c'));
+          println!("{}", size_info(&true));
+          println!("{}", size_info(&(1u8, 2u32)));
+          println!("{}", size_info::<u64>(&7));
+      }
+    require:
+      - pattern: 'type_name::<T>'
+        message: "Use `std::any::type_name::<T>()` for the name."
+      - pattern: 'size_of::<T>'
+        message: "Use `std::mem::size_of::<T>()` for the size."
+    hints:
+      - "Both functions take the type with a turbofish and no arguments: `std::any::type_name::<T>()`."
+      - "`format!(\"size of {}: {}\", std::any::type_name::<T>(), std::mem::size_of::<T>())`"
+    tests:
+      - expect: "size of u8: 1\nsize of i32: 4\nsize of f64: 8\nsize of char: 4\nsize of bool: 1\nsize of (u8, u32): 8\nsize of u64: 8"
+    more:
+      - task: |
+          Fill in the turbofish types: parse `"42"` as a `u8`, parse `"5000000000"` as a `u64` (too big for a `u32`), and create an empty `Vec` of `String`s. The program prints:
+
+          ```
+          42 5000000000 ["ferris"]
+          ```
+        fill: |
+          fn main() {
+              let level = "42".parse::<[[u8]]>().unwrap();
+              let views = "5000000000".parse::<[[u64]]>().unwrap();
+              let mut names = Vec::<[[String]]>::new();
+              names.push(String::from("ferris"));
+              println!("{level} {views} {names:?}");
+          }
+        hints:
+          - The turbofish holds a type name, like `::<i32>`.
+          - "The three types are `u8`, `u64` and `String`."
+      - task: |
+          Write `fn count_matching<T: PartialEq>(items: &[T], target: &T) -> usize` that counts how many items are equal to `target`. The tests call it with four different types, so the compiler builds four copies.
+        seed: |
+          fn count_matching<T: PartialEq>(items: &[T], target: &T) -> usize {
+              todo!()
+          }
+        solution: |
+          fn count_matching<T: PartialEq>(items: &[T], target: &T) -> usize {
+              let mut count = 0;
+              for item in items {
+                  if item == target {
+                      count += 1;
+                  }
+              }
+              count
+          }
+        hints:
+          - "Loop over `items`; each `item` is a `&T`, like `target`, so `item == target` compares them."
+          - "Count matches in a `mut` variable and return it."
+        harness: |
+          #[test]
+          fn counts_numbers() {
+              assert_eq!(count_matching(&[7, 1, 7, 7, 3], &7), 3, "count_matching(&[7, 1, 7, 7, 3], &7)");
+          }
+
+          #[test]
+          fn counts_chars() {
+              let letters: Vec<char> = "banana".chars().collect();
+              assert_eq!(count_matching(&letters, &'a'), 3, "count_matching(<chars of banana>, &'a')");
+          }
+
+          #[test]
+          fn counts_strs_and_strings() {
+              assert_eq!(count_matching(&["crab", "fish", "crab"], &"crab"), 2, "count_matching(&[\"crab\", \"fish\", \"crab\"], &\"crab\")");
+              let names = vec![String::from("ana"), String::from("bo")];
+              assert_eq!(count_matching(&names, &String::from("zed")), 0, "count_matching(&[\"ana\", \"bo\"], &\"zed\")");
+          }
+
+          #[test]
+          fn empty_slice_counts_zero() {
+              let empty: [u8; 0] = [];
+              assert_eq!(count_matching(&empty, &1), 0, "count_matching(&[], &1)");
+          }
+
+  - title: "Const generics: arrays of any length"
+    id: generics-6
+    text: |
+      An array's length is part of its type: `[f64; 7]` and `[f64; 2]` are different types. So how do you write one function for arrays of every length? With a **const generic parameter**: a parameter that stands for a *value* known at compile time, instead of a type.
+
+      ```rust run
+      fn average<const N: usize>(readings: [f64; N]) -> f64 {
+          let mut total = 0.0;
+          for r in readings {
+              total += r;
+          }
+          total / N as f64
+      }
+
+      fn main() {
+          let week = [12.0, 14.5, 13.0, 15.5, 16.0, 11.0, 12.5];
+          let weekend = [20.0, 22.0];
+          println!("week: {:.2}", average(week));
+          println!("weekend: {:.2}", average(weekend));
+      }
+      ```
+
+      ```output
+      week: 13.50
+      weekend: 21.00
+      ```
+
+      - `const N: usize` declares the parameter: `N` is a `usize` value, fixed at compile time.
+      - `[f64; N]` uses it as the array length, and the body can use `N` like a constant (`N as f64`).
+      - Like type parameters, `N` is inferred from the argument: 7 for `week`, 2 for `weekend`. And like type parameters, each `N` gets its own compiled copy.
+
+      Const parameters work on structs too, mixed freely with type parameters. Here's a game board whose size is part of its type:
+
+      ```rust run
+      struct Grid<const W: usize, const H: usize> {
+          cells: [[char; W]; H],
+      }
+
+      impl<const W: usize, const H: usize> Grid<W, H> {
+          fn new() -> Self {
+              Grid { cells: [['.'; W]; H] }
+          }
+
+          fn set(&mut self, x: usize, y: usize, c: char) {
+              self.cells[y][x] = c;
+          }
+
+          fn print(&self) {
+              for row in &self.cells {
+                  let mut line = String::new();
+                  for c in row {
+                      line.push(*c);
+                  }
+                  println!("{line}");
+              }
+          }
+      }
+
+      fn main() {
+          let mut board: Grid<5, 3> = Grid::new();
+          board.set(0, 0, '@');
+          board.set(4, 2, '$');
+          board.print();
+      }
+      ```
+
+      ```output
+      @....
+      .....
+      ....$
+      ```
+
+      `[['.'; W]; H]` builds an array of `H` rows, each an array of `W` dots. `impl<const W: usize, const H: usize>` declares the parameters for the impl block, exactly like `impl<T>`.
+
+      ### Const generics or slices?
+
+      For "a list of things", a slice `&[T]` is usually the right parameter: it accepts arrays, `Vec`s and parts of them, of any length decided at run time. Reach for const generics when the length is part of the *meaning* and the compiler should enforce it:
+
+      - an RGB color is exactly `[u8; 3]`, a 3D position `[f64; 3]`
+      - a key for a cipher is exactly 32 bytes: `[u8; 32]`
+      - two vectors in a dot product must have the same length (this step's exercise)
+      - a matrix's shape: a 2x3 matrix transposed is a 3x2 matrix
+
+      The standard library itself uses const generics: they're why `{:?}`, `==` and many other features work on arrays of any length.
+
+      ### Common mistakes
+
+      - **An array of the wrong length.** The length is checked at compile time:
+
+      ```rust compile_fail
+      fn brightness(color: [u8; 3]) -> u32 {
+          color[0] as u32 + color[1] as u32 + color[2] as u32
+      }
+
+      fn main() {
+          println!("{}", brightness([255, 128, 0, 255]));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+        |     println!("{}", brightness([255, 128, 0, 255]));
+        |                    ---------- ^^^^^^^^^^^^^^^^^^ expected an array with a size of 3, found one with a size of 4
+      ```
+
+      - **Using `N` without declaring it.** `fn sum(values: [i32; N])` gives ``cannot find value `N` in this scope``. Declare it: `fn sum<const N: usize>(values: [i32; N])`.
+      - **Const parameters of other types.** Only integers, `bool` and `char` are allowed: ``f64` is forbidden as the type of a const generic parameter``.
+
+      **Your turn:** the **dot product** of two vectors multiplies matching elements and adds the results: `[1, 2, 3]` and `[4, 5, 6]` give `1*4 + 2*5 + 3*6 = 32`. The starter only works for length 3. Make `dot` generic over the length, so the compiler guarantees both arrays have the same length, whatever it is.
+    seed: |
+      // Only works for length 3. Make it work for any length N.
+      fn dot(a: [i32; 3], b: [i32; 3]) -> i32 {
+          todo!()
+      }
+    solution: |
+      // Only works for length 3. Make it work for any length N.
+      fn dot<const N: usize>(a: [i32; N], b: [i32; N]) -> i32 {
+          let mut total = 0;
+          for i in 0..N {
+              total += a[i] * b[i];
+          }
+          total
+      }
+    require:
+      - pattern: 'const\s+N\s*:\s*usize'
+        message: "Declare a const generic parameter: `fn dot<const N: usize>(...)`."
+    hints:
+      - "The signature is `fn dot<const N: usize>(a: [i32; N], b: [i32; N]) -> i32`."
+      - "Loop `for i in 0..N` and add `a[i] * b[i]` to a running total."
+    harness: |
+      #[test]
+      fn length_3() {
+          assert_eq!(dot([1, 2, 3], [4, 5, 6]), 32, "dot([1, 2, 3], [4, 5, 6])");
+      }
+
+      #[test]
+      fn length_2_with_negatives() {
+          assert_eq!(dot([3, -1], [2, 5]), 1, "dot([3, -1], [2, 5])");
+      }
+
+      #[test]
+      fn length_5() {
+          assert_eq!(dot([1, 1, 1, 1, 1], [1, 2, 3, 4, 5]), 15, "dot([1, 1, 1, 1, 1], [1, 2, 3, 4, 5])");
+      }
+
+      #[test]
+      fn empty_arrays_give_zero() {
+          assert_eq!(dot([], []), 0, "dot([], [])");
+      }
+    more:
+      - task: |
+          Write `fn reversed<T: Copy, const N: usize>(arr: [T; N]) -> [T; N]` that returns a reversed copy of the array. Don't use `.reverse()`: make a mutable copy (`let mut out = arr;`, allowed because `T: Copy` makes the array `Copy` too) and swap elements with `out.swap(i, j)`.
+        seed: |
+          fn reversed<T: Copy, const N: usize>(arr: [T; N]) -> [T; N] {
+              todo!()
+          }
+        solution: |
+          fn reversed<T: Copy, const N: usize>(arr: [T; N]) -> [T; N] {
+              let mut out = arr;
+              for i in 0..N / 2 {
+                  out.swap(i, N - 1 - i);
+              }
+              out
+          }
+        forbid:
+          - pattern: '\.reverse\(\)'
+            message: Do it yourself with `swap` instead of `.reverse()`.
+        hints:
+          - "`let mut out = arr;` copies the array."
+          - "`for i in 0..N / 2 { out.swap(i, N - 1 - i); }` then return `out`."
+        harness: |
+          #[test]
+          fn reverses_numbers() {
+              assert_eq!(reversed([1, 2, 3]), [3, 2, 1], "reversed([1, 2, 3])");
+          }
+
+          #[test]
+          fn reverses_chars() {
+              assert_eq!(reversed(['r', 'u', 's', 't']), ['t', 's', 'u', 'r'], "reversed(['r', 'u', 's', 't'])");
+          }
+
+          #[test]
+          fn leaves_the_original_alone() {
+              let original = [1.5, 2.5];
+              let flipped = reversed(original);
+              assert_eq!(original, [1.5, 2.5], "the original after reversed(original)");
+              assert_eq!(flipped, [2.5, 1.5], "reversed([1.5, 2.5])");
+          }
+
+          #[test]
+          fn handles_an_empty_array() {
+              let empty: [i32; 0] = [];
+              assert_eq!(reversed(empty), empty, "reversed([])");
+          }
+      - task: |
+          A `Matrix<R, C>` has `R` rows and `C` columns, both const parameters. Write the `transpose` method, which turns rows into columns: the result is a `Matrix<C, R>`, and the element at row `r`, column `c` moves to row `c`, column `r`. The type system guarantees the new shape.
+
+          You'll need to start from a filled array of the new shape: `[[0; R]; C]`.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Matrix<const R: usize, const C: usize> {
+              data: [[i32; C]; R],
+          }
+
+          impl<const R: usize, const C: usize> Matrix<R, C> {
+              // fn transpose(&self) -> Matrix<C, R>
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Matrix<const R: usize, const C: usize> {
+              data: [[i32; C]; R],
+          }
+
+          impl<const R: usize, const C: usize> Matrix<R, C> {
+              // fn transpose(&self) -> Matrix<C, R>
+              fn transpose(&self) -> Matrix<C, R> {
+                  let mut data = [[0; R]; C];
+                  for r in 0..R {
+                      for c in 0..C {
+                          data[c][r] = self.data[r][c];
+                      }
+                  }
+                  Matrix { data }
+              }
+          }
+        hints:
+          - "Start with `let mut data = [[0; R]; C];`: `C` rows of `R` zeros."
+          - "Two nested loops over `0..R` and `0..C`: `data[c][r] = self.data[r][c];`"
+          - "Return `Matrix { data }`; its type is `Matrix<C, R>` because of the array's shape."
+        harness: |
+          #[test]
+          fn transposes_a_2_by_3_matrix() {
+              let m = Matrix { data: [[1, 2, 3], [4, 5, 6]] };
+              let t = m.transpose();
+              assert_eq!(t.data, [[1, 4], [2, 5], [3, 6]], "transpose of [[1, 2, 3], [4, 5, 6]]");
+          }
+
+          #[test]
+          fn transposes_a_single_row_into_a_column() {
+              let m = Matrix { data: [[7, 8, 9]] };
+              assert_eq!(m.transpose().data, [[7], [8], [9]], "transpose of [[7, 8, 9]]");
+          }
+
+          #[test]
+          fn transposing_twice_gives_the_original() {
+              let m = Matrix { data: [[1, 2], [3, 4], [5, 6]] };
+              assert_eq!(m.transpose().transpose(), m, "m.transpose().transpose()");
+          }

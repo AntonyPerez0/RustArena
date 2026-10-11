@@ -1,0 +1,1577 @@
+id: strings
+title: Strings in depth
+phase: "Structuring data"
+summary: "How Rust text really works: UTF-8 bytes versus chars, why s[0] doesn't compile, slicing safely, splitting and parsing lines, trimming and searching, building strings efficiently, and formatting aligned tables with Display and Debug."
+roadmap: [Strings, String Manipulation, Formatting]
+steps:
+  - title: "UTF-8: bytes, chars and why s[0] fails"
+    id: strings-1
+    text: |
+      In module 7 you met `String` (owned, growable text) and `&str` (a borrowed view of text). Both store text as **UTF-8**, the encoding used by the web, by files and by almost every system today. In UTF-8 one character takes **1 to 4 bytes**: plain English letters and digits take 1, accented Latin letters 2, most other scripts and symbols like `€` 3, and emoji 4.
+
+      ```rust run
+      fn main() {
+          for word in ["crab", "café", "€5", "🦀"] {
+              println!("{word}: bytes={} chars={}", word.len(), word.chars().count());
+          }
+
+          let s = "née";
+          for b in s.bytes() {
+              print!("{b} ");
+          }
+          println!();
+          for c in s.chars() {
+              print!("{c:?} ");
+          }
+          println!();
+          println!("{:?} {:?}", s.chars().next(), s.chars().nth(1));
+      }
+      ```
+
+      ```output
+      crab: bytes=4 chars=4
+      café: bytes=5 chars=4
+      €5: bytes=4 chars=2
+      🦀: bytes=4 chars=1
+      110 195 169 101
+      'n' 'é' 'e'
+      Some('n') Some('é')
+      ```
+
+      - `.len()` counts **bytes**, not characters. That's what it costs in memory, and it's instant because the String stores it.
+      - `.chars()` decodes the bytes into `char`s, one at a time. `.chars().count()` is the number of characters; it has to walk the whole string.
+      - `.bytes()` gives the raw bytes: `é` is the two bytes 195 169.
+      - `.chars().next()` is the first character and `.chars().nth(i)` the character at position `i`. Both return an `Option<char>`, since the string might be too short.
+
+      ### Why `s[0]` doesn't compile
+
+      ```rust compile_fail
+      fn main() {
+          let s = String::from("hello");
+          let c = s[0];
+          println!("{c}");
+      }
+      ```
+
+      ```error
+      error[E0277]: the type `str` cannot be indexed by `{integer}`
+      ```
+
+      Two reasons. First, a position in bytes isn't a character: in `"née"`, byte 1 is the first half of `é`, and returning it as if it were a letter would be wrong. Second, `[]` is expected to be instant, but finding the *n*th character means decoding everything before it. Rather than hide that cost or return half-characters, Rust makes you say what you mean:
+
+      | You want | Write |
+      |---|---|
+      | the first character | `s.chars().next()` |
+      | the character at position `n` | `s.chars().nth(n)` (walks from the start) |
+      | the last character | `s.chars().last()` |
+      | the first byte (for ASCII protocols) | `s.as_bytes()[0]` |
+      | the number of characters | `s.chars().count()` |
+
+      `char` has handy methods for classifying: `is_alphabetic()`, `is_numeric()`, `is_ascii_digit()`, `is_whitespace()`, `is_uppercase()`, `is_alphanumeric()`.
+
+      ### A workplace note on "characters"
+
+      A Rust `char` is a Unicode **scalar value**, which isn't always one symbol on screen. `é` can also be written as `e` followed by a combining accent (two chars), and an emoji like 👩‍💻 is three chars glued together. When you must count what a person *sees* (for example, limiting a display name), teams use the `unicode-segmentation` crate. For parsing logs, CSV, numbers and commands, `chars` and bytes are what you want.
+
+      **Your turn:** write `fn initials(full_name: &str) -> String` that returns the first character of each word, in uppercase: `"ada lovelace"` gives `"AL"`. Words are separated by any amount of whitespace, and names can contain accents (`"émile zola"` gives `"ÉZ"`).
+    seed: |
+      fn initials(full_name: &str) -> String {
+          todo!()
+      }
+    solution: |
+      fn initials(full_name: &str) -> String {
+          let mut out = String::new();
+          for word in full_name.split_whitespace() {
+              if let Some(c) = word.chars().next() {
+                  out.push(c);
+              }
+          }
+          out.to_uppercase()
+      }
+    harness: |
+      #[test]
+      fn two_words() {
+          assert_eq!(initials("ada lovelace"), "AL", "initials(\"ada lovelace\")");
+      }
+
+      #[test]
+      fn accented_letters() {
+          assert_eq!(initials("émile zola"), "ÉZ", "initials(\"émile zola\")");
+      }
+
+      #[test]
+      fn extra_spaces_and_three_names() {
+          assert_eq!(initials("  grace   brewster  hopper "), "GBH", "initials(\"  grace   brewster  hopper \")");
+      }
+
+      #[test]
+      fn empty_name() {
+          assert_eq!(initials(""), "", "initials(\"\")");
+      }
+    hints:
+      - "Loop over `full_name.split_whitespace()`."
+      - "`word.chars().next()` is an `Option<char>`: `if let Some(c) = word.chars().next() { out.push(c); }`"
+      - "Uppercase the whole result at the end: `out.to_uppercase()`."
+    more:
+      - task: |
+          Fill in the blanks: the method that counts bytes, the method that iterates characters, and the method that takes the first character.
+        fill: |
+          fn main() {
+              let tag = "jalapeño";
+              println!("{} bytes", tag.[[len]]());
+              println!("{} chars", tag.[[chars]]().count());
+              println!("first: {:?}", tag.chars().[[next]]());
+          }
+        hints:
+          - "`len` counts bytes; `chars` gives the characters one by one."
+          - "The first item of `chars()` comes from `next()`."
+        tests:
+          - expect: "9 bytes\n8 chars\nfirst: Some('j')"
+      - task: |
+          Write `fn is_palindrome(s: &str) -> bool` that ignores case and everything that isn't a letter or digit: `"A man, a plan, a canal: Panama"` is a palindrome. Lowercase the text first, keep only the `is_alphanumeric()` chars in a `Vec<char>`, then compare it from both ends.
+        seed: |
+          fn is_palindrome(s: &str) -> bool {
+              todo!()
+          }
+        solution: |
+          fn is_palindrome(s: &str) -> bool {
+              let mut letters: Vec<char> = Vec::new();
+              for c in s.to_lowercase().chars() {
+                  if c.is_alphanumeric() {
+                      letters.push(c);
+                  }
+              }
+              let n = letters.len();
+              for i in 0..n / 2 {
+                  if letters[i] != letters[n - 1 - i] {
+                      return false;
+                  }
+              }
+              true
+          }
+        harness: |
+          #[test]
+          fn simple_palindrome() {
+              assert_eq!(is_palindrome("racecar"), true, "is_palindrome(\"racecar\")");
+          }
+
+          #[test]
+          fn ignores_case_spaces_and_punctuation() {
+              assert_eq!(is_palindrome("A man, a plan, a canal: Panama"), true, "is_palindrome(\"A man, a plan, a canal: Panama\")");
+          }
+
+          #[test]
+          fn not_a_palindrome() {
+              assert_eq!(is_palindrome("crab"), false, "is_palindrome(\"crab\")");
+          }
+
+          #[test]
+          fn accented_letters_count_as_one_char() {
+              assert_eq!(is_palindrome("ésé"), true, "is_palindrome(\"ésé\")");
+              assert_eq!(is_palindrome("éso"), false, "is_palindrome(\"éso\")");
+          }
+
+          #[test]
+          fn empty_is_a_palindrome() {
+              assert_eq!(is_palindrome(""), true, "is_palindrome(\"\")");
+          }
+        hints:
+          - "Build `letters` with `for c in s.to_lowercase().chars() { if c.is_alphanumeric() { letters.push(c); } }`"
+          - "Compare `letters[i]` with `letters[n - 1 - i]` for `i` in `0..n / 2`."
+
+  - title: Slicing safely at char boundaries
+    id: strings-2
+    text: |
+      You've sliced strings with `&s[a..b]`. The numbers are **byte** positions. That's fine as long as both ends fall on a **char boundary** (the start of a character); if one lands inside a multi-byte character, the program panics.
+
+      ```rust panics
+      fn main() {
+          let s = String::from("café");
+          println!("slicing...");
+          println!("{}", &s[0..4]);
+      }
+      ```
+
+      ```output
+      slicing...
+      ```
+
+      The panic message says byte 4 `is not a char boundary; it is inside 'é' (bytes 3..5 ...)`. This is a real bug class at work: code that cuts names to "the first 10 characters" with `&name[..10]` passes every test written in English, then crashes on the first user named Zoë or 李.
+
+      ### Finding where characters start
+
+      `char_indices()` gives `(byte position, char)` pairs, so you can find safe places to cut:
+
+      ```rust run
+      fn main() {
+          let s = "naïve café";
+          for (i, c) in s.char_indices() {
+              print!("{i}:{c} ");
+          }
+          println!();
+          println!("{:?} {:?}", s.get(0..3), s.get(0..4));
+          println!("{}", s.is_char_boundary(3));
+      }
+      ```
+
+      ```output
+      0:n 1:a 2:ï 4:v 5:e 6:  7:c 8:a 9:f 10:é
+      None Some("naï")
+      false
+      ```
+
+      - `ï` starts at byte 2 and takes two bytes, so the next character starts at byte 4.
+      - `s.get(a..b)` is the non-panicking slice: `None` if either end isn't a char boundary (or is past the end).
+      - `is_char_boundary(i)` checks one position.
+
+      ### Cutting after n characters
+
+      The *n*th entry of `char_indices()` tells you the byte where character number *n* starts, which is exactly where to cut to keep *n* characters:
+
+      ```rust run
+      fn preview(s: &str, max_chars: usize) -> &str {
+          match s.char_indices().nth(max_chars) {
+              Some((byte_pos, _)) => &s[..byte_pos],
+              None => s,
+          }
+      }
+
+      fn main() {
+          println!("{}", preview("crème brûlée", 5));
+          println!("{}", preview("🦀🦀🦀", 2));
+          println!("{}", preview("ok", 10));
+      }
+      ```
+
+      ```output
+      crème
+      🦀🦀
+      ok
+      ```
+
+      `&s[..byte_pos]` means "from the start up to `byte_pos`" (and `&s[i..]` means "from `i` to the end"). If there's no character number `max_chars`, the string is short enough and is returned whole.
+
+      ### Common mistakes
+
+      - **Mixing up counts.** Positions from `chars()` (character numbers) and positions for slicing (bytes) only agree for plain ASCII text. Never slice with a number that came from counting chars.
+      - **Using `.len()` as a character count** for limits like "at most 20 characters": `"ñandú".len()` is 7.
+
+      **Your turn:** write `fn preview(text: &str, max_chars: usize) -> String` for a chat app's notification preview. If `text` has more than `max_chars` characters, return the first `max_chars` characters followed by `...`; otherwise return the whole text.
+    seed: |
+      fn preview(text: &str, max_chars: usize) -> String {
+          todo!()
+      }
+    solution: |
+      fn preview(text: &str, max_chars: usize) -> String {
+          match text.char_indices().nth(max_chars) {
+              Some((cut, _)) => format!("{}...", &text[..cut]),
+              None => text.to_string(),
+          }
+      }
+    harness: |
+      #[test]
+      fn cuts_long_text_after_whole_characters() {
+          assert_eq!(preview("héllo wörld", 5), "héllo...", "preview(\"héllo wörld\", 5)");
+      }
+
+      #[test]
+      fn emoji_are_one_char_each() {
+          assert_eq!(preview("🦀🦀🦀", 1), "🦀...", "preview(\"🦀🦀🦀\", 1)");
+      }
+
+      #[test]
+      fn short_text_is_unchanged() {
+          assert_eq!(preview("short", 10), "short", "preview(\"short\", 10)");
+          assert_eq!(preview("exact", 5), "exact", "preview(\"exact\", 5)");
+      }
+
+      #[test]
+      fn zero_and_empty() {
+          assert_eq!(preview("abc", 0), "...", "preview(\"abc\", 0)");
+          assert_eq!(preview("", 3), "", "preview(\"\", 3)");
+      }
+    hints:
+      - "`text.char_indices().nth(max_chars)` is `Some((byte, char))` if the text has more than `max_chars` characters."
+      - "Cut at that byte: `format!(\"{}...\", &text[..cut])`; otherwise return `text.to_string()`."
+    more:
+      - task: |
+          Write `fn split_at_char(s: &str, n: usize) -> (&str, &str)` that splits after the first `n` characters (not bytes). If the string has `n` characters or fewer, return `(s, "")`. Use `char_indices` to find the byte position, then the slice method `split_at(byte)` from module 11.
+        seed: |
+          fn split_at_char(s: &str, n: usize) -> (&str, &str) {
+              todo!()
+          }
+        solution: |
+          fn split_at_char(s: &str, n: usize) -> (&str, &str) {
+              match s.char_indices().nth(n) {
+                  Some((i, _)) => s.split_at(i),
+                  None => (s, ""),
+              }
+          }
+        harness: |
+          #[test]
+          fn splits_after_n_chars() {
+              assert_eq!(split_at_char("añejo", 2), ("añ", "ejo"), "split_at_char(\"añejo\", 2)");
+          }
+
+          #[test]
+          fn zero_puts_everything_on_the_right() {
+              assert_eq!(split_at_char("crab", 0), ("", "crab"), "split_at_char(\"crab\", 0)");
+          }
+
+          #[test]
+          fn n_past_the_end() {
+              assert_eq!(split_at_char("hi", 2), ("hi", ""), "split_at_char(\"hi\", 2)");
+              assert_eq!(split_at_char("hi", 9), ("hi", ""), "split_at_char(\"hi\", 9)");
+          }
+
+          #[test]
+          fn emoji() {
+              assert_eq!(split_at_char("🦀a🦀", 2), ("🦀a", "🦀"), "split_at_char(\"🦀a🦀\", 2)");
+          }
+        hints:
+          - "`match s.char_indices().nth(n) { Some((i, _)) => ..., None => (s, \"\") }`"
+          - "`s.split_at(i)` returns the two halves as a tuple."
+      - task: |
+          A support tool shows masked usernames. For each input line (one username), print it with the first two characters kept and every following character replaced by `*`: `ferris` becomes `fe****` and `zoë` becomes `zo*`. Names with two characters or fewer are printed unchanged.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let name = line.trim();
+              }
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let name = line.trim();
+                  let mut masked = String::new();
+                  for (i, c) in name.chars().enumerate() {
+                      if i < 2 {
+                          masked.push(c);
+                      } else {
+                          masked.push('*');
+                      }
+                  }
+                  println!("{masked}");
+              }
+          }
+        tests:
+          - stdin: "ferris\nzoë\né\n"
+            expect: "fe****\nzo*\né"
+          - stdin: "ÅsaLind\n"
+          - stdin: "bo\n🦀crabby\nnaïve\n"
+            hidden: true
+        forbid:
+          - pattern: '\[\s*\.\.\s*2\s*\]|\[\s*0\s*\.\.\s*2\s*\]'
+            message: "Byte slicing like `&name[..2]` breaks on names that start with accented letters. Work with chars."
+        hints:
+          - "`name.chars().enumerate()` gives `(position, char)` with positions counted in characters."
+          - "Push the char itself while the position is below 2, and `'*'` after that."
+
+  - title: "Splitting: lines, split, splitn, split_once"
+    id: strings-3
+    text: |
+      Most text a program receives is structured: lines, fields separated by commas or tabs, `key=value` pairs. Splitting is how you take it apart.
+
+      ```rust run
+      fn main() {
+          let order = "A12,Crab plush,4\nB07,Rust mug,12\nC33,Sticker pack,1";
+          let mut total = 0;
+          for line in order.lines() {
+              let fields: Vec<&str> = line.split(',').collect();
+              let qty: u32 = fields[2].parse().expect("qty must be a number");
+              total += qty;
+              println!("{} x {}", qty, fields[1]);
+          }
+          println!("{total} items");
+      }
+      ```
+
+      ```output
+      4 x Crab plush
+      12 x Rust mug
+      1 x Sticker pack
+      17 items
+      ```
+
+      - `lines()` splits text into lines. It handles both `\n` and Windows `\r\n` endings and doesn't produce an empty last line for a trailing newline.
+      - `split(',')` gives the pieces between commas. `.collect()` gathers them into a `Vec<&str>`. The pieces are slices **pointing into the original text**: nothing is copied.
+      - `fields[2].parse()` turns the text `"4"` into a number. `parse` works for any type that knows how to read itself from text (integers, floats, `bool`, `char`), and returns a `Result` because the text might not be a valid number.
+
+      ### The splitting family
+
+      ```rust run
+      fn main() {
+          println!("{:?}", "a,,b".split(',').collect::<Vec<&str>>());
+          println!("{:?}", "  a   b ".split_whitespace().collect::<Vec<&str>>());
+          println!("{:?}", "ERROR: disk full: /var".splitn(2, ": ").collect::<Vec<&str>>());
+          println!("{:?}", "port=8080".split_once('='));
+          println!("{:?}", "report.final.pdf".rsplit_once('.'));
+          println!("{:?}", "a;b,c".split([',', ';']).collect::<Vec<&str>>());
+      }
+      ```
+
+      ```output
+      ["a", "", "b"]
+      ["a", "b"]
+      ["ERROR", "disk full: /var"]
+      Some(("port", "8080"))
+      Some(("report.final", "pdf"))
+      ["a", "b", "c"]
+      ```
+
+      | Method | Splits | Notes |
+      |---|---|---|
+      | `split(sep)` | at every separator | keeps empty pieces (`"a,,b"` has an empty middle field) |
+      | `split_whitespace()` | at any run of spaces, tabs, newlines | never gives empty pieces |
+      | `lines()` | at line endings | |
+      | `splitn(n, sep)` | at most `n` pieces | the last piece keeps any further separators |
+      | `split_once(sep)` | at the first separator | `Option<(&str, &str)>`: `None` if there's none |
+      | `rsplit_once(sep)` | at the last separator | file extensions, `host:port` |
+
+      The separator can be a `char`, a `&str`, an array of chars (`[',', ';']`, any of them) or a closure (`|c: char| !c.is_alphanumeric()`). `collect::<Vec<&str>>()` names the type in place (the "turbofish" `::<>`) when there's no variable to annotate.
+
+      ### Common mistakes
+
+      - **`split(' ')` for words.** `"a  b".split(' ')` gives `["a", "", "b"]` because of the double space. Use `split_whitespace()`.
+      - **Indexing fields blindly.** `fields[2]` panics on a short line. For input you don't control, check the length or match on `fields.as_slice()` with a slice pattern (module 15).
+      - **`split('\n')` on text ending in a newline** gives an extra empty string at the end. Use `lines()`.
+
+      **Your turn:** write `fn parse_product(line: &str) -> Option<Product>` for lines like `A12, Crab plush, 4` (SKU, name, quantity). Trim spaces around each field. Return `None` unless there are exactly three fields and the quantity is a valid `u32`. Tip: `let [sku, name, qty] = fields.as_slice() else { return None; };`
+    seed: |
+      #[derive(Debug)]
+      struct Product {
+          sku: String,
+          name: String,
+          qty: u32,
+      }
+
+      fn parse_product(line: &str) -> Option<Product> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug)]
+      struct Product {
+          sku: String,
+          name: String,
+          qty: u32,
+      }
+
+      fn parse_product(line: &str) -> Option<Product> {
+          let fields: Vec<&str> = line.split(',').collect();
+          let [sku, name, qty] = fields.as_slice() else {
+              return None;
+          };
+          let Ok(qty) = qty.trim().parse::<u32>() else {
+              return None;
+          };
+          Some(Product {
+              sku: sku.trim().to_string(),
+              name: name.trim().to_string(),
+              qty,
+          })
+      }
+    harness: |
+      #[test]
+      fn parses_a_good_line() {
+          let p = parse_product("A12,Crab plush,4").expect("A12,Crab plush,4 should parse");
+          assert_eq!(p.sku, "A12", "sku");
+          assert_eq!(p.name, "Crab plush", "name");
+          assert_eq!(p.qty, 4, "qty");
+      }
+
+      #[test]
+      fn trims_spaces_around_fields() {
+          let p = parse_product("  B07 , Rust mug ,12 ").expect("\"  B07 , Rust mug ,12 \" should parse");
+          assert_eq!(p.sku, "B07", "sku");
+          assert_eq!(p.name, "Rust mug", "name");
+          assert_eq!(p.qty, 12, "qty");
+      }
+
+      #[test]
+      fn wrong_number_of_fields() {
+          assert_eq!(parse_product("A12,Crab plush").is_none(), true, "parse_product(\"A12,Crab plush\") is None");
+          assert_eq!(parse_product("A12,Crab,plush,4").is_none(), true, "parse_product(\"A12,Crab,plush,4\") is None");
+      }
+
+      #[test]
+      fn bad_quantity() {
+          assert_eq!(parse_product("A12,Crab plush,four").is_none(), true, "parse_product(\"A12,Crab plush,four\") is None");
+          assert_eq!(parse_product("A12,Crab plush,-1").is_none(), true, "parse_product(\"A12,Crab plush,-1\") is None");
+      }
+    hints:
+      - "`let fields: Vec<&str> = line.split(',').collect();`"
+      - "`let [sku, name, qty] = fields.as_slice() else { return None; };` checks there are exactly three."
+      - "`let Ok(qty) = qty.trim().parse::<u32>() else { return None; };` then build the Product with trimmed `to_string()` copies."
+    more:
+      - task: |
+          Write `fn extension(filename: &str) -> Option<&str>` that returns the text after the **last** dot: `"photo.JPG"` gives `Some("JPG")` and `"archive.tar.gz"` gives `Some("gz")`. Return `None` when there's no dot, when the name *starts* with its only dot (hidden files like `.bashrc` have no extension), or when the dot is the last character.
+        seed: |
+          fn extension(filename: &str) -> Option<&str> {
+              todo!()
+          }
+        solution: |
+          fn extension(filename: &str) -> Option<&str> {
+              match filename.rsplit_once('.') {
+                  Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => Some(ext),
+                  _ => None,
+              }
+          }
+        harness: |
+          #[test]
+          fn simple_extension() {
+              assert_eq!(extension("photo.JPG"), Some("JPG"), "extension(\"photo.JPG\")");
+          }
+
+          #[test]
+          fn uses_the_last_dot() {
+              assert_eq!(extension("archive.tar.gz"), Some("gz"), "extension(\"archive.tar.gz\")");
+          }
+
+          #[test]
+          fn no_dot() {
+              assert_eq!(extension("README"), None, "extension(\"README\")");
+          }
+
+          #[test]
+          fn hidden_file_and_trailing_dot() {
+              assert_eq!(extension(".bashrc"), None, "extension(\".bashrc\")");
+              assert_eq!(extension("notes."), None, "extension(\"notes.\")");
+          }
+        require:
+          - pattern: 'rsplit_once|rfind'
+            message: "Split at the last dot with `rsplit_once('.')`."
+        hints:
+          - "`filename.rsplit_once('.')` gives `Some((stem, ext))` split at the last dot."
+          - "A match guard rejects the edge cases: `Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => Some(ext),`"
+      - task: |
+          Read a CSV grade sheet from input. The first line is the header `name,score`; every other line should be `name,score`. Skip rows that don't have exactly two fields or whose score isn't a whole number. There's always at least one valid row. Print:
+
+          ```
+          students: 3
+          average: 84.7
+          best: ana (91)
+          skipped: 1
+          ```
+
+          The average has one decimal. If two students share the best score, report the first one.
+        seed: |
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("could not read input");
+          }
+        solution: |
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("could not read input");
+              let mut count = 0;
+              let mut total = 0;
+              let mut skipped = 0;
+              let mut best_name = "";
+              let mut best_score = 0;
+              let mut header = true;
+              for line in input.lines() {
+                  if header {
+                      header = false;
+                      continue;
+                  }
+                  let fields: Vec<&str> = line.split(',').collect();
+                  let [name, score] = fields.as_slice() else {
+                      skipped += 1;
+                      continue;
+                  };
+                  let Ok(score) = score.trim().parse::<u32>() else {
+                      skipped += 1;
+                      continue;
+                  };
+                  if count == 0 || score > best_score {
+                      best_name = name.trim();
+                      best_score = score;
+                  }
+                  count += 1;
+                  total += score;
+              }
+              println!("students: {count}");
+              println!("average: {:.1}", total as f64 / count as f64);
+              println!("best: {best_name} ({best_score})");
+              println!("skipped: {skipped}");
+          }
+        tests:
+          - stdin: "name,score\nana,91\nbo,78\ncy,eighty\ndee,85\n"
+            expect: "students: 3\naverage: 84.7\nbest: ana (91)\nskipped: 1"
+          - stdin: "name,score\nsolo,60\n"
+          - stdin: "name,score\nx,1,2\nzed, 70\namy,70\n\nkim,100\nlee,\n"
+            hidden: true
+        hints:
+          - "Skip the first line (a `bool` flag works), then split each row with `line.split(',')` into a `Vec<&str>`."
+          - "Use `let [name, score] = fields.as_slice() else { skipped += 1; continue; };` and the same idea for parsing the score."
+          - "Track the count, the total, and the best name/score as you go; print the average as `total as f64 / count as f64` with `{:.1}`."
+
+  - title: Trimming and searching
+    id: strings-4
+    text: |
+      Input is full of stray spaces, prefixes, brackets and markers. These methods clean it up and find things in it. None of them change the string: they return a new `&str` (a view of part of the original) or an answer.
+
+      ```rust run
+      fn main() {
+          println!("{:?}", "  padded\t\n".trim());
+          println!("{:?}", "  padded  ".trim_start());
+          println!("{:?}", "007".trim_start_matches('0'));
+          println!("{:?}", "--name--".trim_matches('-'));
+          println!("{:?}", "$12.50".strip_prefix('$'));
+          println!("{:?}", "12.50".strip_prefix('$'));
+          println!("{:?}", "report.pdf".strip_suffix(".pdf"));
+          println!("{:?} {:?}", "banana".find("an"), "banana".rfind("an"));
+          println!("{:?}", "banana".find('z'));
+          println!("{}", "Error: disk".to_lowercase().starts_with("error"));
+      }
+      ```
+
+      ```output
+      "padded"
+      "padded  "
+      "7"
+      "name"
+      Some("12.50")
+      None
+      Some("report")
+      Some(1) Some(3)
+      None
+      true
+      ```
+
+      | Method | Returns |
+      |---|---|
+      | `trim()`, `trim_start()`, `trim_end()` | the text without whitespace at both ends / the start / the end |
+      | `trim_matches(p)`, `trim_start_matches(p)`, `trim_end_matches(p)` | the text with **every** repeat of `p` removed from those ends |
+      | `strip_prefix(p)`, `strip_suffix(p)` | `Some(rest)` with **one** `p` removed, or `None` if it isn't there |
+      | `starts_with(p)`, `ends_with(p)`, `contains(p)` | `bool` |
+      | `find(p)`, `rfind(p)` | `Option<usize>`: the **byte** position of the first / last match |
+
+      The pattern `p` can be a char, a `&str`, an array of chars, or a closure: `"abc123".trim_end_matches(|c: char| c.is_ascii_digit())` gives `"abc"`.
+
+      `strip_prefix` is the one to reach for when you *require* a prefix: its `None` tells you the input was malformed, and it fits `let ... else` perfectly.
+
+      ### Putting them together: parsing log lines
+
+      ```rust run
+      fn main() {
+          let lines = [
+              "  [WARN] disk 91% full  ",
+              "[INFO] user ana logged in",
+              "# a comment",
+              "[ERROR] payment failed: card declined",
+              "garbage",
+          ];
+          for raw in lines {
+              let line = raw.trim();
+              if line.starts_with('#') {
+                  continue;
+              }
+              let Some(rest) = line.strip_prefix('[') else {
+                  continue;
+              };
+              let Some(end) = rest.find(']') else {
+                  continue;
+              };
+              let level = &rest[..end];
+              let message = rest[end + 1..].trim_start();
+              println!("{level} | {message}");
+          }
+      }
+      ```
+
+      ```output
+      WARN | disk 91% full
+      INFO | user ana logged in
+      ERROR | payment failed: card declined
+      ```
+
+      Slicing with positions from `find` is safe: `find` returns the byte where the match *starts*, always a char boundary, and `]` is one byte long, so `end + 1` is a boundary too.
+
+      ### Common mistakes
+
+      - **Ignoring the result.** `input.trim();` on its own line does nothing: it returns the trimmed text and you threw it away. The compiler warns `unused return value of ... that must be used`. Write `let input = input.trim();`.
+      - **Treating `find`'s result as a character count.** It's a byte position, which is exactly what slicing needs, but not "the 3rd letter".
+      - **Case.** `line.contains("error")` misses `ERROR`. Lowercase first when case doesn't matter.
+      - **`trim_start_matches` where you meant `strip_prefix`.** `"$$5".trim_start_matches('$')` removes both dollars; `strip_prefix` removes exactly one and tells you whether it was there.
+
+      **Your turn:** write `fn parse_price(text: &str) -> Option<u32>` that turns a price like `"$12.50"` into cents (`1250`). Rules: surrounding spaces are allowed; the price must start with `$`; the dollars must be a whole number; the cents part is optional but, if there's a `.`, it must be exactly two digits. `"$3"` is `300`, `"12.50"` (no `$`) and `"$1.5"` are `None`.
+    seed: |
+      fn parse_price(text: &str) -> Option<u32> {
+          todo!()
+      }
+    solution: |
+      fn parse_price(text: &str) -> Option<u32> {
+          let Some(amount) = text.trim().strip_prefix('$') else {
+              return None;
+          };
+          let (dollars, cents) = match amount.split_once('.') {
+              Some((d, c)) => (d, c),
+              None => (amount, "00"),
+          };
+          if cents.len() != 2 {
+              return None;
+          }
+          let Ok(dollars) = dollars.parse::<u32>() else {
+              return None;
+          };
+          let Ok(cents) = cents.parse::<u32>() else {
+              return None;
+          };
+          Some(dollars * 100 + cents)
+      }
+    harness: |
+      #[test]
+      fn dollars_and_cents() {
+          assert_eq!(parse_price("$12.50"), Some(1250), "parse_price(\"$12.50\")");
+          assert_eq!(parse_price("$0.99"), Some(99), "parse_price(\"$0.99\")");
+      }
+
+      #[test]
+      fn whole_dollars_and_spaces() {
+          assert_eq!(parse_price("  $3 "), Some(300), "parse_price(\"  $3 \")");
+      }
+
+      #[test]
+      fn missing_dollar_sign() {
+          assert_eq!(parse_price("12.50"), None, "parse_price(\"12.50\")");
+      }
+
+      #[test]
+      fn cents_must_be_two_digits() {
+          assert_eq!(parse_price("$1.5"), None, "parse_price(\"$1.5\")");
+          assert_eq!(parse_price("$1.505"), None, "parse_price(\"$1.505\")");
+      }
+
+      #[test]
+      fn not_a_number() {
+          assert_eq!(parse_price("$abc"), None, "parse_price(\"$abc\")");
+          assert_eq!(parse_price("$1.xy"), None, "parse_price(\"$1.xy\")");
+      }
+    require:
+      - pattern: 'strip_prefix'
+        message: "Require the dollar sign with `strip_prefix('$')`."
+    hints:
+      - "`let Some(amount) = text.trim().strip_prefix('$') else { return None; };`"
+      - "`amount.split_once('.')` splits dollars from cents; with no dot, use `(amount, \"00\")`."
+      - "Check `cents.len() != 2`, then parse both parts with `let Ok(...) = ... else` and return `Some(dollars * 100 + cents)`."
+    more:
+      - task: |
+          Hashtags arrive in every shape. Write `fn clean_tag(raw: &str) -> String` that trims whitespace, removes all leading `#` characters and lowercases the rest: `"  #RustLang "` gives `"rustlang"`, `"##Crab"` gives `"crab"`.
+        seed: |
+          fn clean_tag(raw: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn clean_tag(raw: &str) -> String {
+              raw.trim().trim_start_matches('#').to_lowercase()
+          }
+        harness: |
+          #[test]
+          fn trims_and_lowercases() {
+              assert_eq!(clean_tag("  #RustLang "), "rustlang", "clean_tag(\"  #RustLang \")");
+          }
+
+          #[test]
+          fn removes_several_hashes() {
+              assert_eq!(clean_tag("##Crab"), "crab", "clean_tag(\"##Crab\")");
+          }
+
+          #[test]
+          fn no_hash_at_all() {
+              assert_eq!(clean_tag("WebDev"), "webdev", "clean_tag(\"WebDev\")");
+          }
+
+          #[test]
+          fn hash_in_the_middle_is_kept() {
+              assert_eq!(clean_tag("#c#"), "c#", "clean_tag(\"#c#\")");
+          }
+        hints:
+          - "Chain the steps: `raw.trim()`, then `.trim_start_matches('#')`, then `.to_lowercase()`."
+      - task: |
+          Read log lines and report the errors. A line is an error if, after trimming, it starts with `[ERROR]`. For each error print its message (the text after `[ERROR]`, trimmed), then a final line `N errors`. Other lines are ignored.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut errors = 0;
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  if let Some(message) = line.trim().strip_prefix("[ERROR]") {
+                      println!("{}", message.trim());
+                      errors += 1;
+                  }
+              }
+              println!("{errors} errors");
+          }
+        tests:
+          - stdin: "[INFO] started\n[ERROR] disk full\n  [ERROR]   timeout talking to db  \n[WARN] slow\n"
+            expect: "disk full\ntimeout talking to db\n2 errors"
+          - stdin: "[INFO] all good\n"
+          - stdin: "[error] lowercase is not an error\n[ERROR]payment declined\n[ERROR] x\nERROR no brackets\n"
+            hidden: true
+        hints:
+          - "`line.trim().strip_prefix(\"[ERROR]\")` is `Some(message)` only for error lines."
+          - "Print `message.trim()` and count it; print the count after the loop."
+
+  - title: Building strings
+    id: strings-5
+    text: |
+      There are several ways to put text together. They differ in convenience and in how many allocations they cost.
+
+      ```rust run
+      fn main() {
+          let items = ["apple", "bread", "milk"];
+
+          let mut list = String::with_capacity(32);
+          for item in items {
+              if !list.is_empty() {
+                  list.push_str(", ");
+              }
+              list.push_str(item);
+          }
+          println!("{list}");
+
+          println!("{}", items.join(", "));
+
+          let backwards: String = "stressed".chars().rev().collect();
+          println!("{backwards}");
+
+          let line = format!("{} items, first is {}", items.len(), items[0]);
+          println!("{line}");
+          println!("{}", "=-".repeat(5));
+      }
+      ```
+
+      ```output
+      apple, bread, milk
+      apple, bread, milk
+      desserts
+      3 items, first is apple
+      =-=-=-=-=-
+      ```
+
+      - `push_str` appends a `&str` and `push` appends one `char`. Both grow one String in place. `String::with_capacity(32)` reserves room up front, like `Vec::with_capacity`.
+      - `join(sep)` glues a slice or Vec of strings together with a separator. It's the idiomatic version of the loop above.
+      - `.collect()` can build a `String` from chars (or from `&str` pieces). Here the chars come out reversed. Name the type (`let backwards: String`) so `collect` knows what to build.
+      - `format!` builds a new String from a format string, like `println!` without printing. Use it whenever you mix text and values.
+      - `repeat(n)` repeats a string `n` times: great for separators and bars.
+
+      ### `+` and ownership
+
+      `s1 + &s2` works, but it has an ownership twist: `+` **takes `s1` by value** (reusing its buffer) and **borrows** the right side, which must be a `&str`.
+
+      ```rust compile_fail
+      fn main() {
+          let s1 = String::from("tic");
+          let s2 = String::from("tac");
+          let s3 = s1 + s2;
+          println!("{s3}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      The right side must be a reference: `s1 + &s2`. And afterwards `s1` is gone:
+
+      ```rust compile_fail
+      fn main() {
+          let s1 = String::from("tic");
+          let s2 = String::from("tac");
+          let s3 = s1 + &s2;
+          println!("{s1} {s3}");
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `s1`
+      ```
+
+      For more than two pieces, `format!("{s1}-{s2}-{s3}")` is clearer and borrows everything. `s += "text";` appends in place.
+
+      ### A workplace note on performance
+
+      Building a big string with `s = s + &piece` or a new `format!` per piece in a loop allocates over and over. Push into one String instead (with `with_capacity` if you know the size), or collect the pieces into a Vec and `join` them once. To format directly into an existing String, `use std::fmt::Write;` and call `write!(s, ...)`.
+
+      **Your turn:** write `fn csv_line(fields: &[&str]) -> String` that joins fields with commas, following the real CSV rule: a field that contains a comma or a double quote must be wrapped in double quotes, and each double quote inside it doubled. `["Crab, plush", "4"]` gives `"Crab, plush",4`, and `say "hi"` becomes `"say ""hi"""`.
+    seed: |
+      fn csv_line(fields: &[&str]) -> String {
+          todo!()
+      }
+    solution: |
+      fn csv_line(fields: &[&str]) -> String {
+          let mut out = String::new();
+          for (i, field) in fields.iter().enumerate() {
+              if i > 0 {
+                  out.push(',');
+              }
+              if field.contains(',') || field.contains('"') {
+                  out.push('"');
+                  out.push_str(&field.replace('"', "\"\""));
+                  out.push('"');
+              } else {
+                  out.push_str(field);
+              }
+          }
+          out
+      }
+    harness: |
+      #[test]
+      fn plain_fields() {
+          assert_eq!(csv_line(&["A12", "Rust mug", "12"]), "A12,Rust mug,12", "csv_line([A12, Rust mug, 12])");
+      }
+
+      #[test]
+      fn field_with_a_comma_is_quoted() {
+          assert_eq!(csv_line(&["Crab, plush", "4"]), "\"Crab, plush\",4", "csv_line([Crab, plush | 4])");
+      }
+
+      #[test]
+      fn quotes_are_doubled() {
+          assert_eq!(csv_line(&["say \"hi\""]), "\"say \"\"hi\"\"\"", "csv_line([say \"hi\"])");
+      }
+
+      #[test]
+      fn empty_fields_and_no_fields() {
+          assert_eq!(csv_line(&["a", "", "b"]), "a,,b", "csv_line([a, , b])");
+          assert_eq!(csv_line(&[]), "", "csv_line([])");
+      }
+    hints:
+      - "Build one `String` and push a `,` before every field except the first (`enumerate` tells you which is first)."
+      - "Check `field.contains(',') || field.contains('\"')` to decide whether to quote."
+      - "`field.replace('\"', \"\\\"\\\"\")` doubles the quotes; push `'\"'` before and after it."
+    more:
+      - task: |
+          Blogs turn titles into URL **slugs**. Write `fn slugify(title: &str) -> String`: lowercase the title, keep letters and digits (`is_alphanumeric()`), and turn every run of other characters into a single `-`, with no `-` at the start or end. `"Hello, World!"` gives `"hello-world"`.
+        seed: |
+          fn slugify(title: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn slugify(title: &str) -> String {
+              let mut slug = String::new();
+              for c in title.to_lowercase().chars() {
+                  if c.is_alphanumeric() {
+                      slug.push(c);
+                  } else if !slug.is_empty() && !slug.ends_with('-') {
+                      slug.push('-');
+                  }
+              }
+              if slug.ends_with('-') {
+                  slug.pop();
+              }
+              slug
+          }
+        harness: |
+          #[test]
+          fn punctuation_becomes_one_dash() {
+              assert_eq!(slugify("Hello, World!"), "hello-world", "slugify(\"Hello, World!\")");
+          }
+
+          #[test]
+          fn spaces_at_the_ends_and_digits() {
+              assert_eq!(slugify("  Rust 2024 Edition "), "rust-2024-edition", "slugify(\"  Rust 2024 Edition \")");
+          }
+
+          #[test]
+          fn apostrophes_and_accents() {
+              assert_eq!(slugify("C'est la vie"), "c-est-la-vie", "slugify(\"C'est la vie\")");
+              assert_eq!(slugify("Crème Brûlée"), "crème-brûlée", "slugify(\"Crème Brûlée\")");
+          }
+
+          #[test]
+          fn nothing_left() {
+              assert_eq!(slugify(""), "", "slugify(\"\")");
+              assert_eq!(slugify("--!!--"), "", "slugify(\"--!!--\")");
+          }
+        hints:
+          - "Loop over `title.to_lowercase().chars()` and push alphanumeric chars."
+          - "For other chars, push `'-'` only if the slug isn't empty and doesn't already end with `'-'`."
+          - "At the end, `if slug.ends_with('-') { slug.pop(); }` removes a trailing dash."
+      - task: |
+          Each input line is `item qty`. Print one summary line joining the entries with ` + `, then the total quantity:
+
+          ```
+          3 x apple + 1 x bread + 12 x egg
+          total items: 16
+          ```
+
+          Build the pieces with `format!` into a `Vec<String>`, then `join` them.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut pieces: Vec<String> = Vec::new();
+              let mut total = 0;
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let Some((item, qty)) = line.trim().split_once(' ') else {
+                      continue;
+                  };
+                  let qty: u32 = qty.trim().parse().expect("qty must be a number");
+                  pieces.push(format!("{qty} x {item}"));
+                  total += qty;
+              }
+              println!("{}", pieces.join(" + "));
+              println!("total items: {total}");
+          }
+        tests:
+          - stdin: "apple 3\nbread 1\negg 12\n"
+            expect: "3 x apple + 1 x bread + 12 x egg\ntotal items: 16"
+          - stdin: "crab 1\n"
+          - stdin: "mug 2\nplush 5\nsticker 40\npin 0\n"
+            hidden: true
+        require:
+          - pattern: '\.join\('
+            message: "Collect the pieces in a Vec and `join(\" + \")` them."
+        hints:
+          - "Split each line into item and quantity, and push `format!(\"{qty} x {item}\")` into a `Vec<String>`."
+          - "`pieces.join(\" + \")` builds the summary line in one go."
+
+  - title: "Formatting: width, alignment, precision"
+    id: strings-6
+    text: |
+      Inside `{}` you can add a **format spec** after a colon: `{:>8}`, `{:.2}`, `{:08.3}`. It controls width, alignment, padding, precision, sign and number base. It works the same in `println!`, `format!`, `write!` and `panic!`.
+
+      ```rust run
+      fn main() {
+          let rows = [("Crab plush", 4, 12.5), ("Rust mug", 12, 9.99), ("Sticker", 150, 0.5)];
+          println!("{:<12}|{:>5}|{:>8}", "item", "qty", "price");
+          println!("{}", "-".repeat(27));
+          for (name, qty, price) in rows {
+              println!("{:<12}|{:>5}|{:>8.2}", name, qty, price);
+          }
+      }
+      ```
+
+      ```output
+      item        |  qty|   price
+      ---------------------------
+      Crab plush  |    4|   12.50
+      Rust mug    |   12|    9.99
+      Sticker     |  150|    0.50
+      ```
+
+      - `{:<12}` pads to **width** 12, aligned left; `{:>5}` aligns right; `{:^9}` centers.
+      - `{:>8.2}` combines width 8 with **precision** 2 (two decimals).
+      - Without an alignment, text is left-aligned and numbers right-aligned.
+      - The width is a **minimum**: a longer value is printed in full, never cut.
+
+      ### The rest of the toolbox
+
+      ```rust run
+      fn main() {
+          println!("[{:^9}]", "crab");
+          println!("[{:*<8}]", "ok");
+          println!("[{:05}]", 42);
+          println!("[{:+}] [{:+}]", 7, -7);
+          println!("{:x} {:X} {:#x} {:o}", 255, 255, 255, 8);
+          println!("{:b} {:#010b}", 5, 5);
+          let width = 8;
+          println!("[{:>width$.2}]", 3.14159);
+          let name = "ana";
+          println!("[{name:>6}] [{:.3}]", "crabby");
+      }
+      ```
+
+      ```output
+      [  crab   ]
+      [ok******]
+      [00042]
+      [+7] [-7]
+      ff FF 0xff 10
+      101 0b00000101
+      [    3.14]
+      [   ana] [cra]
+      ```
+
+      | Spec | Meaning |
+      |---|---|
+      | `{:*<8}` | **fill** character `*` (any char), then alignment and width |
+      | `{:05}` | pad a number with zeros to width 5 |
+      | `{:+}` | always show the sign |
+      | `{:x}` `{:X}` `{:o}` `{:b}` | hexadecimal (lower/upper), octal, binary |
+      | `{:#x}` `{:#b}` | with the `0x` / `0b` prefix (the prefix counts toward the width) |
+      | `{:>width$}` | width taken from a variable named `width` |
+      | `{name:>6}` | inline argument with a spec |
+      | `{:.3}` on text | at most 3 characters: the one way to *cut* text in a format |
+
+      Width counts `char`s, not bytes, so `é` takes one column. (Emoji and CJK characters often take two columns on screen, which `format!` can't know about.)
+
+      ### Common mistakes
+
+      - **`{:2}` versus `{:.2}`.** The first is a width of 2; the second is 2 decimals.
+      - **Expecting a narrow width to truncate.** `{:3}` on `"crabby"` prints all six letters. Use `{:.3}` to cut.
+      - **Money in floats.** `0.1 + 0.2` isn't exactly `0.3` in binary floating point. Formatting with `{:.2}` hides it on screen, but real billing code stores whole cents in integers.
+
+      **Your turn:** print a receipt table. Each input line is `name,qty,unit_price` (prices with decimals). Print a header, a separator, one row per item with its line total (qty times unit price), another separator and the grand total, laid out like this:
+
+      ```
+      item          qty    price    total
+      -----------------------------------
+      Crab plush      4    12.50    50.00
+      Rust mug       12     9.99   119.88
+      -----------------------------------
+      total                        169.88
+      ```
+
+      Columns: item left-aligned in 12, qty right-aligned in 5, price and total right-aligned in 9 with 2 decimals. The separator is 35 dashes; the last line is `total` left-aligned in 26 followed by the grand total right-aligned in 9 with 2 decimals.
+    seed: |
+      use std::io::{self, BufRead};
+
+      fn main() {
+          println!("{:<12}{:>5}{:>9}{:>9}", "item", "qty", "price", "total");
+          // separator, rows, separator, total
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let fields: Vec<&str> = line.split(',').collect();
+              let name = fields[0].trim();
+              let qty: u32 = fields[1].trim().parse().expect("qty must be a whole number");
+              let price: f64 = fields[2].trim().parse().expect("price must be a number");
+          }
+      }
+    solution: |
+      use std::io::{self, BufRead};
+
+      fn main() {
+          println!("{:<12}{:>5}{:>9}{:>9}", "item", "qty", "price", "total");
+          // separator, rows, separator, total
+          println!("{}", "-".repeat(35));
+          let mut grand_total = 0.0;
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let fields: Vec<&str> = line.split(',').collect();
+              let name = fields[0].trim();
+              let qty: u32 = fields[1].trim().parse().expect("qty must be a whole number");
+              let price: f64 = fields[2].trim().parse().expect("price must be a number");
+              let total = qty as f64 * price;
+              grand_total += total;
+              println!("{:<12}{:>5}{:>9.2}{:>9.2}", name, qty, price, total);
+          }
+          println!("{}", "-".repeat(35));
+          println!("{:<26}{:>9.2}", "total", grand_total);
+      }
+    tests:
+      - stdin: "Crab plush,4,12.50\nRust mug,12,9.99\n"
+        expect: "item          qty    price    total\n-----------------------------------\nCrab plush      4    12.50    50.00\nRust mug       12     9.99   119.88\n-----------------------------------\ntotal                        169.88"
+      - stdin: "Sticker,150,0.5\nPin,1,3\n"
+      - stdin: "Keyboard,1,89.9\nCable,3,4.25\nCrab hat,2,15\n"
+        hidden: true
+    require:
+      - pattern: '\{:<12\}'
+        strings: true
+        message: "Left-align the item name in 12 columns with `{:<12}`."
+      - pattern: '\{:>9\.2\}'
+        strings: true
+        message: "Print prices and totals with `{:>9.2}`."
+    hints:
+      - "A row is `println!(\"{:<12}{:>5}{:>9.2}{:>9.2}\", name, qty, price, total);`"
+      - "The line total is `qty as f64 * price`; add it to a running `grand_total`."
+      - "The separator is `\"-\".repeat(35)` and the last line is `println!(\"{:<26}{:>9.2}\", \"total\", grand_total);`"
+    more:
+      - task: |
+          Fill in the four format specs so the program prints exactly:
+
+          ```
+          [   right]
+          [   mid    ]
+          [0003.142]
+          [0xbeef]
+          ```
+        fill: |
+          fn main() {
+              println!("[{:[[>8]]}]", "right");
+              println!("[{:[[^10]]}]", "mid");
+              println!("[{:[[08.3]]}]", 3.14159);
+              println!("[{:[[#x]]}]", 48879);
+          }
+        hints:
+          - "`>` aligns right, `^` centers; the number after it is the width."
+          - "`08.3` means: pad with zeros to width 8, three decimals. `#x` is hex with a `0x` prefix."
+        tests:
+          - expect: "[   right]\n[   mid    ]\n[0003.142]\n[0xbeef]"
+      - task: |
+          Write `fn progress_bar(done: u32, total: u32, width: usize) -> String` for a command-line tool. The percentage is `done * 100 / total` (rounded down; treat `total == 0` as 100%). The bar has `width` characters: `width * percent / 100` of them `#`, the rest `-`. After the bar comes a space and the percentage right-aligned in 3 columns, then `%`:
+
+          ```
+          [#####-----]  50%
+          ```
+        seed: |
+          fn progress_bar(done: u32, total: u32, width: usize) -> String {
+              todo!()
+          }
+        solution: |
+          fn progress_bar(done: u32, total: u32, width: usize) -> String {
+              let percent = if total == 0 { 100 } else { done * 100 / total };
+              let filled = width * percent as usize / 100;
+              format!("[{}{}] {:>3}%", "#".repeat(filled), "-".repeat(width - filled), percent)
+          }
+        harness: |
+          #[test]
+          fn half_done() {
+              assert_eq!(progress_bar(5, 10, 10), "[#####-----]  50%", "progress_bar(5, 10, 10)");
+          }
+
+          #[test]
+          fn nothing_done() {
+              assert_eq!(progress_bar(0, 4, 8), "[--------]   0%", "progress_bar(0, 4, 8)");
+          }
+
+          #[test]
+          fn all_done() {
+              assert_eq!(progress_bar(4, 4, 8), "[########] 100%", "progress_bar(4, 4, 8)");
+          }
+
+          #[test]
+          fn rounds_down() {
+              assert_eq!(progress_bar(1, 3, 10), "[###-------]  33%", "progress_bar(1, 3, 10)");
+          }
+
+          #[test]
+          fn zero_total_counts_as_complete() {
+              assert_eq!(progress_bar(0, 0, 5), "[#####] 100%", "progress_bar(0, 0, 5)");
+          }
+        hints:
+          - "`let percent = if total == 0 { 100 } else { done * 100 / total };`"
+          - "`let filled = width * percent as usize / 100;` and the bar is `\"#\".repeat(filled)` plus `\"-\".repeat(width - filled)`."
+          - "Right-align the percentage in 3 columns: `{:>3}%`."
+
+  - title: Display versus Debug
+    id: strings-7
+    text: |
+      `{}` and `{:?}` call two different formatting abilities (**traits**):
+
+      - **Display** (`{}`) is the text for **users**: clean, no quotes, decided by the type's author.
+      - **Debug** (`{:?}`) is the text for **programmers**: unambiguous, showing quotes, escapes and structure. `{:#?}` is the pretty, multi-line version.
+
+      ```rust run
+      fn main() {
+          let name = "Ferris \"the crab\"";
+          println!("{}", name);
+          println!("{:?}", name);
+          println!("{:?}", "a\tb");
+          println!("{} vs {:?}", 'x', 'x');
+          println!("{:?} {:?}", Some("ok"), vec!["a", "b"]);
+      }
+      ```
+
+      ```output
+      Ferris "the crab"
+      "Ferris \"the crab\""
+      "a\tb"
+      x vs 'x'
+      Some("ok") ["a", "b"]
+      ```
+
+      Debug output is what you want in logs and test failures: with `{:?}` you can *see* a stray tab or trailing space that `{}` would hide.
+
+      Collections and `Option` only have Debug. There's no single "right" way to show a list to a user, so Rust leaves it to you:
+
+      ```rust compile_fail
+      fn main() {
+          println!("{}", vec![1, 2]);
+      }
+      ```
+
+      ```error
+      error[E0277]: `Vec<{integer}>` doesn't implement `std::fmt::Display`
+      ```
+
+      ### Display for your own types
+
+      `#[derive(Debug)]` writes Debug for you (module 12). Display you write yourself, because only you know how your type should look to users. The shape is always the same:
+
+      ```rust run
+      use std::fmt;
+
+      struct Money {
+          cents: i64,
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+              let sign = if self.cents < 0 { "-" } else { "" };
+              let abs = self.cents.abs();
+              write!(f, "{}${}.{:02}", sign, abs / 100, abs % 100)
+          }
+      }
+
+      fn main() {
+          let price = Money { cents: 1999 };
+          let refund = Money { cents: -250 };
+          println!("{price} and {refund}");
+          let text = price.to_string();
+          println!("{} chars: {text}", text.len());
+      }
+      ```
+
+      ```output
+      $19.99 and -$2.50
+      6 chars: $19.99
+      ```
+
+      - `impl fmt::Display for Money` says "here's how Money does Display". It has one method, `fmt`, which you copy in this exact shape. (`Formatter<'_>` contains a lifetime placeholder; module 24 explains it, and you can copy it as is.)
+      - `write!(f, ...)` works like `format!`, but writes into the formatter `f`. Its result, a `fmt::Result`, is what `fmt` returns.
+      - Once a type has Display, `{}` works for it everywhere (`println!`, `format!`, `panic!`), and you get `.to_string()` for free.
+      - Need several `write!` calls? Each returns a `fmt::Result`, and real code ends them with `?` to stop on an error (module 19). Until then, build the text in a `String` and `write!` it once.
+
+      ### Common mistake: width on your own type
+
+      A width like `{:>10}` is handled by each type's `fmt`, and a `fmt` that just calls `write!` ignores it:
+
+      ```rust run
+      use std::fmt;
+
+      struct Money {
+          cents: i64,
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+              write!(f, "${}.{:02}", self.cents / 100, self.cents % 100)
+          }
+      }
+
+      fn main() {
+          let m = Money { cents: 1999 };
+          println!("[{:>10}]", m);
+          println!("[{:>10}]", m.to_string());
+      }
+      ```
+
+      ```output
+      [$19.99]
+      [    $19.99]
+      ```
+
+      Format it into a String first (as above), or make your `fmt` end with `f.pad(&text)`, which applies the caller's width and alignment.
+
+      **Your turn:** implement `Display` for `Elapsed` (a number of seconds) the way a CLI shows durations: `45` seconds is `45s`, `125` is `2m 05s`, `3725` is `1h 02m 05s`. Minutes and seconds after the first unit are padded to two digits; hours appear only if there's at least one, minutes only if there are hours or minutes.
+    seed: |
+      use std::fmt;
+
+      struct Elapsed {
+          seconds: u32,
+      }
+
+      impl fmt::Display for Elapsed {
+          fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+              todo!()
+          }
+      }
+    solution: |
+      use std::fmt;
+
+      struct Elapsed {
+          seconds: u32,
+      }
+
+      impl fmt::Display for Elapsed {
+          fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+              let h = self.seconds / 3600;
+              let m = self.seconds % 3600 / 60;
+              let s = self.seconds % 60;
+              if h > 0 {
+                  write!(f, "{h}h {m:02}m {s:02}s")
+              } else if m > 0 {
+                  write!(f, "{m}m {s:02}s")
+              } else {
+                  write!(f, "{s}s")
+              }
+          }
+      }
+    harness: |
+      #[test]
+      fn seconds_only() {
+          assert_eq!(Elapsed { seconds: 45 }.to_string(), "45s", "Elapsed 45");
+          assert_eq!(Elapsed { seconds: 0 }.to_string(), "0s", "Elapsed 0");
+      }
+
+      #[test]
+      fn minutes_and_padded_seconds() {
+          assert_eq!(Elapsed { seconds: 125 }.to_string(), "2m 05s", "Elapsed 125");
+          assert_eq!(Elapsed { seconds: 600 }.to_string(), "10m 00s", "Elapsed 600");
+      }
+
+      #[test]
+      fn hours() {
+          assert_eq!(Elapsed { seconds: 3725 }.to_string(), "1h 02m 05s", "Elapsed 3725");
+          assert_eq!(Elapsed { seconds: 3600 }.to_string(), "1h 00m 00s", "Elapsed 3600");
+      }
+
+      #[test]
+      fn works_with_format() {
+          let e = Elapsed { seconds: 61 };
+          assert_eq!(format!("took {e}"), "took 1m 01s", "format!(\"took {e}\") for 61 seconds");
+      }
+    hints:
+      - "Split the seconds: `let h = self.seconds / 3600; let m = self.seconds % 3600 / 60; let s = self.seconds % 60;`"
+      - "Pick one of three `write!` calls with `if h > 0 { ... } else if m > 0 { ... } else { ... }`."
+      - "`write!(f, \"{h}h {m:02}m {s:02}s\")`: `{m:02}` pads to two digits with a zero."
+    more:
+      - task: |
+          Implement `Display` for `Level` (`INFO`, `WARN`, `ERROR`) and for `LogLine`, which displays as `[LEVEL] message`, for example `[WARN] disk 91% full`. Inside `LogLine`'s `fmt` you can use `{}` on `self.level` once `Level` has Display.
+        seed: |
+          use std::fmt;
+
+          enum Level {
+              Info,
+              Warn,
+              Error,
+          }
+
+          struct LogLine {
+              level: Level,
+              message: String,
+          }
+
+          // impl fmt::Display for Level { ... }
+
+          // impl fmt::Display for LogLine { ... }
+        solution: |
+          use std::fmt;
+
+          enum Level {
+              Info,
+              Warn,
+              Error,
+          }
+
+          struct LogLine {
+              level: Level,
+              message: String,
+          }
+
+          // impl fmt::Display for Level { ... }
+          impl fmt::Display for Level {
+              fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                  let name = match self {
+                      Level::Info => "INFO",
+                      Level::Warn => "WARN",
+                      Level::Error => "ERROR",
+                  };
+                  write!(f, "{name}")
+              }
+          }
+
+          // impl fmt::Display for LogLine { ... }
+          impl fmt::Display for LogLine {
+              fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                  write!(f, "[{}] {}", self.level, self.message)
+              }
+          }
+        harness: |
+          #[test]
+          fn levels_display_in_capitals() {
+              assert_eq!(Level::Info.to_string(), "INFO", "Level::Info");
+              assert_eq!(Level::Warn.to_string(), "WARN", "Level::Warn");
+              assert_eq!(Level::Error.to_string(), "ERROR", "Level::Error");
+          }
+
+          #[test]
+          fn log_line_shows_level_and_message() {
+              let line = LogLine { level: Level::Warn, message: String::from("disk 91% full") };
+              assert_eq!(line.to_string(), "[WARN] disk 91% full", "a WARN log line");
+          }
+
+          #[test]
+          fn works_inside_format() {
+              let line = LogLine { level: Level::Error, message: String::from("payment failed") };
+              assert_eq!(format!(">> {line}"), ">> [ERROR] payment failed", "format!(\">> {line}\")");
+          }
+        hints:
+          - "Copy the `impl fmt::Display for ... { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { ... } }` shape twice."
+          - "For Level, `match self` to pick the text, then `write!(f, \"{name}\")`."
+          - "For LogLine: `write!(f, \"[{}] {}\", self.level, self.message)`."
+      - task: |
+          Implement `Display` for `Grid` so it prints as a table: every number right-aligned in a field 4 characters wide, rows separated by newlines (no newline after the last row). For `[[1, 20], [300, -4]]`:
+
+          ```
+             1  20
+           300  -4
+          ```
+
+          Build the whole text in a `String` with `format!("{:>4}", n)` pieces, then `write!` it once.
+        seed: |
+          use std::fmt;
+
+          struct Grid {
+              rows: Vec<Vec<i32>>,
+          }
+
+          impl fmt::Display for Grid {
+              fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::fmt;
+
+          struct Grid {
+              rows: Vec<Vec<i32>>,
+          }
+
+          impl fmt::Display for Grid {
+              fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                  let mut out = String::new();
+                  for (i, row) in self.rows.iter().enumerate() {
+                      if i > 0 {
+                          out.push('\n');
+                      }
+                      for n in row {
+                          out.push_str(&format!("{:>4}", n));
+                      }
+                  }
+                  write!(f, "{out}")
+              }
+          }
+        harness: |
+          #[test]
+          fn two_by_two() {
+              let g = Grid { rows: vec![vec![1, 20], vec![300, -4]] };
+              assert_eq!(g.to_string(), "   1  20\n 300  -4", "Grid [[1, 20], [300, -4]]");
+          }
+
+          #[test]
+          fn one_row() {
+              let g = Grid { rows: vec![vec![7, 8, 9]] };
+              assert_eq!(g.to_string(), "   7   8   9", "Grid [[7, 8, 9]]");
+          }
+
+          #[test]
+          fn wide_numbers_are_not_cut() {
+              let g = Grid { rows: vec![vec![12345]] };
+              assert_eq!(g.to_string(), "12345", "Grid [[12345]]");
+          }
+
+          #[test]
+          fn empty_grid() {
+              let g = Grid { rows: vec![] };
+              assert_eq!(g.to_string(), "", "Grid []");
+          }
+        hints:
+          - "Loop over `self.rows.iter().enumerate()` and push `'\\n'` before every row except the first."
+          - "For each number, `out.push_str(&format!(\"{:>4}\", n));`"
+          - "Finish with `write!(f, \"{out}\")`."

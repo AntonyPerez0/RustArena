@@ -62,7 +62,10 @@ impl Captured {
     }
     /// The `order_id` field of the `process_order` span this event happened in.
     fn order_id(&self) -> Option<&str> {
-        self.span_named("process_order")?.fields.get("order_id").map(String::as_str)
+        self.span_named("process_order")?
+            .fields
+            .get("order_id")
+            .map(String::as_str)
     }
 }
 
@@ -97,7 +100,12 @@ where
                     .from_root()
                     .map(|span| SpanInfo {
                         name: span.name().to_string(),
-                        fields: span.extensions().get::<Fields>().cloned().unwrap_or_default().0,
+                        fields: span
+                            .extensions()
+                            .get::<Fields>()
+                            .cloned()
+                            .unwrap_or_default()
+                            .0,
                     })
                     .collect()
             })
@@ -116,12 +124,14 @@ fn run_and_capture() -> (Summary, Vec<Captured>) {
     let events = Arc::new(Mutex::new(Vec::new()));
     let subscriber = tracing_subscriber::registry().with(Capture(events.clone()));
     let config = Config {
-        payment: PaymentConfig { max_attempts: 3, backoff_ms: 0 },
+        payment: PaymentConfig {
+            max_attempts: 3,
+            backoff_ms: 0,
+        },
         ..Config::default()
     };
-    let summary = tracing::subscriber::with_default(subscriber, || {
-        process_batch(&sample_orders(), &config)
-    });
+    let summary =
+        tracing::subscriber::with_default(subscriber, || process_batch(&sample_orders(), &config));
     let events = events.lock().unwrap().clone();
     (summary, events)
 }
@@ -135,7 +145,10 @@ fn dump(events: &[Captured]) -> String {
         .iter()
         .map(|e| {
             let spans: Vec<&str> = e.spans.iter().map(|s| s.name.as_str()).collect();
-            format!("  {:5} {:?} {:?} in {:?}\n", e.level, e.message, e.fields, spans)
+            format!(
+                "  {:5} {:?} {:?} in {:?}\n",
+                e.level, e.message, e.fields, spans
+            )
         })
         .collect()
 }
@@ -147,7 +160,12 @@ fn the_business_logic_still_works() {
     let (summary, _) = run_and_capture();
     assert_eq!(
         summary,
-        Summary { accepted: 3, rejected: 2, failed: 1, revenue_cents: 13_393 }
+        Summary {
+            accepted: 3,
+            rejected: 2,
+            failed: 1,
+            revenue_cents: 13_393
+        }
     );
     assert_eq!(
         summary.to_string(),
@@ -168,7 +186,10 @@ fn every_event_about_an_order_is_inside_its_span() {
     );
     for event in &events {
         if let Some(span) = event.span_named("process_order") {
-            assert!(span.fields.contains_key("customer"), "the span should record `customer`");
+            assert!(
+                span.fields.contains_key("customer"),
+                "the span should record `customer`"
+            );
         }
     }
 }
@@ -177,15 +198,24 @@ fn every_event_about_an_order_is_inside_its_span() {
 fn accepted_orders_are_info_events_with_their_total() {
     let (_, events) = run_and_capture();
     let accepted = find(&events, "order accepted");
-    let got: Vec<(Option<&str>, Option<&str>)> =
-        accepted.iter().map(|e| (e.order_id(), e.field("total_cents"))).collect();
+    let got: Vec<(Option<&str>, Option<&str>)> = accepted
+        .iter()
+        .map(|e| (e.order_id(), e.field("total_cents")))
+        .collect();
     assert_eq!(
         got,
-        [(Some("1"), Some("8997")), (Some("4"), Some("1999")), (Some("6"), Some("2397"))],
+        [
+            (Some("1"), Some("8997")),
+            (Some("4"), Some("1999")),
+            (Some("6"), Some("2397"))
+        ],
         "\"order accepted\" events (order_id, total_cents). Everything logged:\n{}",
         dump(&events)
     );
-    assert!(accepted.iter().all(|e| e.level == Level::INFO), "use info! for accepted orders");
+    assert!(
+        accepted.iter().all(|e| e.level == Level::INFO),
+        "use info! for accepted orders"
+    );
 }
 
 #[test]
@@ -193,11 +223,19 @@ fn rejected_orders_are_warnings_with_a_reason() {
     let (_, events) = run_and_capture();
     let rejected = find(&events, "order rejected");
     let ids: Vec<Option<&str>> = rejected.iter().map(|e| e.order_id()).collect();
-    assert_eq!(ids, [Some("2"), Some("3")], "Everything logged:\n{}", dump(&events));
+    assert_eq!(
+        ids,
+        [Some("2"), Some("3")],
+        "Everything logged:\n{}",
+        dump(&events)
+    );
     for event in rejected {
         assert_eq!(event.level, Level::WARN, "use warn! for rejected orders");
         let reason = event.field("reason").unwrap_or_default();
-        assert!(!reason.is_empty(), "\"order rejected\" needs a `reason` field: {event:?}");
+        assert!(
+            !reason.is_empty(),
+            "\"order rejected\" needs a `reason` field: {event:?}"
+        );
     }
 }
 
@@ -210,7 +248,10 @@ fn line_pricing_is_logged_at_debug_level() {
     for event in priced {
         assert_eq!(event.level, Level::DEBUG);
         for field in ["sku", "quantity", "line_cents"] {
-            assert!(event.field(field).is_some(), "\"priced line\" needs `{field}`: {event:?}");
+            assert!(
+                event.field(field).is_some(),
+                "\"priced line\" needs `{field}`: {event:?}"
+            );
         }
     }
 }
@@ -218,23 +259,36 @@ fn line_pricing_is_logged_at_debug_level() {
 #[test]
 fn each_payment_attempt_has_its_own_span() {
     let (_, events) = run_and_capture();
-    let failed_attempts: Vec<(Option<&str>, Option<&str>)> = find(&events, "payment attempt failed")
-        .iter()
-        .map(|e| {
-            let attempt = e.innermost_span().filter(|s| s.name == "charge");
-            (e.order_id(), attempt.and_then(|s| s.fields.get("attempt")).map(String::as_str))
-        })
-        .collect();
+    let failed_attempts: Vec<(Option<&str>, Option<&str>)> =
+        find(&events, "payment attempt failed")
+            .iter()
+            .map(|e| {
+                let attempt = e.innermost_span().filter(|s| s.name == "charge");
+                (
+                    e.order_id(),
+                    attempt
+                        .and_then(|s| s.fields.get("attempt"))
+                        .map(String::as_str),
+                )
+            })
+            .collect();
     // flaky-co (order 4) times out twice before paying; broke-co (order 5) is declined once.
     assert_eq!(
         failed_attempts,
-        [(Some("4"), Some("1")), (Some("4"), Some("2")), (Some("5"), Some("1"))],
+        [
+            (Some("4"), Some("1")),
+            (Some("4"), Some("2")),
+            (Some("5"), Some("1"))
+        ],
         "\"payment attempt failed\" events (order_id, attempt of the `charge` span). Everything logged:\n{}",
         dump(&events)
     );
     for event in find(&events, "payment attempt failed") {
         assert_eq!(event.level, Level::WARN);
-        assert!(event.field("error").is_some(), "include the `error`: {event:?}");
+        assert!(
+            event.field("error").is_some(),
+            "include the `error`: {event:?}"
+        );
     }
 }
 
@@ -255,11 +309,24 @@ fn the_batch_ends_with_a_summary_event() {
     assert_eq!(finished.len(), 1, "Everything logged:\n{}", dump(&events));
     let event = finished[0];
     assert_eq!(event.level, Level::INFO);
-    for (field, value) in [("accepted", "3"), ("rejected", "2"), ("failed", "1"), ("revenue_cents", "13393")]
-    {
-        assert_eq!(event.field(field), Some(value), "field `{field}` of {event:?}");
+    for (field, value) in [
+        ("accepted", "3"),
+        ("rejected", "2"),
+        ("failed", "1"),
+        ("revenue_cents", "13393"),
+    ] {
+        assert_eq!(
+            event.field(field),
+            Some(value),
+            "field `{field}` of {event:?}"
+        );
     }
-    let batch = event.span_named("process_batch").expect("inside the `process_batch` span");
+    let batch = event
+        .span_named("process_batch")
+        .expect("inside the `process_batch` span");
     assert_eq!(batch.fields.get("orders").map(String::as_str), Some("6"));
-    assert_eq!(batch.fields.get("service").map(String::as_str), Some("orderd"));
+    assert_eq!(
+        batch.fields.get("service").map(String::as_str),
+        Some("orderd")
+    );
 }

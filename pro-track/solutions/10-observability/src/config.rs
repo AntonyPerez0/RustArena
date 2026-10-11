@@ -1,6 +1,8 @@
 //! Configuration: defaults, then a TOML file, then environment variables, validated into
 //! a typed [`Config`]. A bad setting stops the program at startup with a message that
 //! names it, instead of failing strangely an hour later.
+//!
+//! The types, the defaults and `load` are provided. You write `from_sources`.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -118,6 +120,18 @@ struct FilePayment {
 /// `env` looks up an environment variable. Passing it in (instead of calling
 /// `std::env::var` here) keeps this a pure function that tests can call with any
 /// environment they like.
+///
+/// | File key                | Environment variable          | Rule              |
+/// |-------------------------|-------------------------------|-------------------|
+/// | `service_name`          | `ORDERD_SERVICE_NAME`         | not blank         |
+/// | `log_format`            | `ORDERD_LOG_FORMAT`           | `text` or `json`  |
+/// | `max_order_cents`       | `ORDERD_MAX_ORDER_CENTS`      | greater than 0    |
+/// | `[payment] max_attempts`| `ORDERD_PAYMENT_MAX_ATTEMPTS` | 1 to 10           |
+/// | `[payment] backoff_ms`  | `ORDERD_PAYMENT_BACKOFF_MS`   | 0 to 10000        |
+///
+/// Errors: bad TOML, a wrong type or an unknown key in the file is `Parse`; an
+/// environment value that doesn't parse is `Env`; a value outside its rule is `Invalid`
+/// with `field` set to the file key (`"payment.max_attempts"` for nested ones).
 pub fn from_sources(
     file: Option<&str>,
     env: impl Fn(&str) -> Option<String>,
@@ -133,8 +147,14 @@ pub fn from_sources(
         log_format: file.log_format.unwrap_or(defaults.log_format),
         max_order_cents: file.max_order_cents.unwrap_or(defaults.max_order_cents),
         payment: PaymentConfig {
-            max_attempts: file.payment.max_attempts.unwrap_or(defaults.payment.max_attempts),
-            backoff_ms: file.payment.backoff_ms.unwrap_or(defaults.payment.backoff_ms),
+            max_attempts: file
+                .payment
+                .max_attempts
+                .unwrap_or(defaults.payment.max_attempts),
+            backoff_ms: file
+                .payment
+                .backoff_ms
+                .unwrap_or(defaults.payment.backoff_ms),
         },
     };
 
@@ -196,7 +216,10 @@ fn validate(config: Config) -> Result<Config, ConfigError> {
     if !(1..=10).contains(&config.payment.max_attempts) {
         return Err(invalid(
             "payment.max_attempts",
-            format!("must be between 1 and 10, got {}", config.payment.max_attempts),
+            format!(
+                "must be between 1 and 10, got {}",
+                config.payment.max_attempts
+            ),
         ));
     }
     if config.payment.backoff_ms > 10_000 {
