@@ -1,12 +1,12 @@
-// Service worker: lets the site open and work without a connection once it has
-// been visited. The compiler (public/toolchain) is cached separately by the
-// compiler worker, so it's left alone here.
+// Service worker: lets the site open without a connection once it has been visited
+// (lessons stay readable; running code needs the runner, which is online unless you
+// run your own). Requests to the runner are never cached here.
 //
 // scripts/prerender.mjs fills in BUILD when the site is built: the app's built files, saved
 // when this installs so that one visit is enough, and a version that changes whenever they
 // or the home page do, so the browser installs the new service worker and drops the old copies.
 const BUILD = { version: "dev", files: [] };
-const CACHE = "cpp-arena-app-" + BUILD.version;
+const CACHE = "rustarena-app-" + BUILD.version;
 const scope = new URL(self.registration.scope);
 const SHELL = new URL("./", scope).href;
 
@@ -23,7 +23,7 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("cpp-arena-app-") && k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("rustarena-app-") && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -67,7 +67,8 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
   const path = url.pathname.slice(scope.pathname.length);
-  if (path.startsWith("toolchain/")) return;
+  // The Pro Track starter download always comes fresh from the network.
+  if (path.startsWith("pro/")) return;
   if (req.mode === "navigate") return e.respondWith(networkFirst(req));
   // Built files have a content hash in their name, so a cached copy never goes stale.
   if (path.startsWith("assets/")) return e.respondWith(cacheFirst(req));

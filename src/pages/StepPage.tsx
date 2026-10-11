@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Play } from "lucide-react";
-import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Check, ChevronRight } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { moduleById, drills, findStep, stepPath } from "../content";
 import { getState, patchPart, patchStep, useStore, type StepProgress } from "../state/store";
 import Markdown from "../components/Markdown";
@@ -9,7 +9,6 @@ import TaskCard from "../components/TaskCard";
 import type { Challenge, Step } from "../content/types";
 import { useTitle } from "../lib/title";
 import { challengesNow, loadChallenges } from "../content/challenges";
-import { visualsForStep } from "../content/visuals";
 import ShareButton from "../components/ShareButton";
 
 /** The step's challenges: its own exercise first, then its extra ones (null until they've loaded). */
@@ -27,10 +26,8 @@ function challengeDone(p: StepProgress | undefined, k: number): boolean {
 export default function StepPage() {
   const { moduleId = "", stepKey = "" } = useParams();
   const nav = useNavigate();
-  const { hash } = useLocation();
   const m = moduleById.get(moduleId);
-  const found = m ? findStep(m, stepKey) : null;
-  const step = found?.step;
+  const step = m ? findStep(m, stepKey) : null;
   const idx = m && step ? m.steps.indexOf(step) : 0;
   const progress = useStore((s) => (step ? s.steps[step.id] : undefined));
   const [extra, setExtra] = useState(challengesNow);
@@ -111,9 +108,6 @@ export default function StepPage() {
     [step, m, challenges],
   );
 
-  // Old numbered addresses open the step they always did, at its permanent address.
-  if (m && step && found?.numbered) return <Navigate to={stepPath(m, step) + hash} replace />;
-
   if (!m || !step) {
     return (
       <div className="page-head">
@@ -144,17 +138,6 @@ export default function StepPage() {
           </div>
           <h1>{step.title}</h1>
           <Markdown text={step.text} top={2} />
-          {visualsForStep(step.id).map((v) => (
-            <Link key={v.id} to={`/visualize/${v.id}`} className="watch-card">
-              <span className="watch-icon" aria-hidden="true">
-                <Play className="icon" />
-              </span>
-              <span>
-                <b>Watch it run:</b> {v.title}
-                <span className="muted small"> · see the memory line by line</span>
-              </span>
-            </Link>
-          ))}
           <div className="step-dots">
             {m.steps.map((st, i) => (
               <Link
@@ -175,8 +158,8 @@ export default function StepPage() {
               </span>
               {finishedModule && (
                 <ShareButton
-                  card={{ kicker: "Module complete", title: m.title, lines: [`${m.steps.length} ${m.lang === "c" ? "C" : "C++"} exercises, compiled and passing`], file: `cpparena-${m.id}.png` }}
-                  text={`I just finished "${m.title}" on C/C++ Arena.`}
+                  card={{ kicker: "Module complete", title: m.title, lines: [`${m.steps.length} Rust lessons, compiled and passing`], file: `rustarena-${m.id}.png` }}
+                  text={`I just finished "${m.title}" on RustArena.`}
                 />
               )}
               {nextChallenge != null ? (

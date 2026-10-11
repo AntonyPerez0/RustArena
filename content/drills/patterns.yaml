@@ -1,0 +1,221 @@
+topic: patterns
+drills:
+  - type: predict
+    body: |
+      let n = 42;
+      let size = match n {
+          0 => "zero",
+          1..=9 => "small",
+          10..=99 => "medium",
+          _ => "large",
+      };
+      println!("{size}");
+    why: 42 is in the range 10..=99, and arms are tried from top to bottom.
+  - type: predict
+    body: |
+      let x = 5;
+      match x {
+          n if n % 2 == 0 => println!("even"),
+          1 | 3 | 5 => println!("small odd"),
+          _ => println!("other"),
+      }
+    why: The guard on the first arm is false for 5, so matching continues; 5 is one of the alternatives 1 | 3 | 5.
+  - type: predict
+    body: |
+      let reading = Some(7);
+      if let Some(n @ 5..=10) = reading {
+          println!("in range: {n}");
+      } else {
+          println!("out of range");
+      }
+    why: "n @ 5..=10 checks that the value is between 5 and 10 and also binds it to n."
+  - type: predict
+    body: |
+      let mut stack = vec![1, 2, 3];
+      while let Some(top) = stack.pop() {
+          print!("{top} ");
+      }
+      println!("done");
+    why: pop removes from the end and returns Some until the vector is empty, so the loop sees 3, 2, 1 and then stops on None.
+  - type: predict
+    pre: |
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+    body: |
+      let p = Point { x: 1, y: 2 };
+      let Point { x: a, y: b } = p;
+      println!("{b} {a}");
+    why: "In a struct pattern, `x: a` puts the field x into a new variable a, so a is 1 and b is 2."
+  - type: fill
+    prompt: Bind the matched number to n while checking the range.
+    body: |
+      let left = Some(3);
+      match left {
+          Some([[n @]] 1..=5) => println!("only {n} left"),
+          Some(n) => println!("{n} left"),
+          None => println!("none"),
+      }
+    why: "The syntax `name @ pattern` tests the pattern and keeps the value under that name."
+  - type: fill
+    prompt: Ignore the fields you don't need.
+    pre: |
+      struct Ticket {
+          id: u32,
+          title: String,
+          priority: u8,
+      }
+    body: |
+      let t = Ticket { id: 7, title: String::from("Login broken"), priority: 1 };
+      let Ticket { id, [[..]] } = t;
+      println!("ticket {id}");
+    why: "`..` at the end of a struct pattern skips all the remaining fields."
+  - type: fill
+    prompt: Keep popping until the vector is empty.
+    body: |
+      let mut tasks = vec!["write", "test"];
+      while [[let]] Some(t) = tasks.pop() {
+          println!("{t}");
+      }
+    why: "while let runs the loop as long as the pattern (here Some(t)) matches."
+  - type: bug
+    body: |
+      let n = 9;
+      let size = match n {
+          0 => "zero",
+          1..9 => "one digit", // BUG
+          _ => "several digits",
+      };
+      println!("{size}");
+    fix: '1..=9 => "one digit",'
+    prompt: "This should print `one digit` for 9. Click the line with the bug."
+    why: "1..9 excludes 9. Use the inclusive range 1..=9."
+  - type: bug
+    body: |
+      let limit = 100;
+      let speed = 80;
+      let verdict = match speed {
+          limit => "exactly the limit", // BUG
+          s if s > limit => "too fast",
+          _ => "fine",
+      };
+      println!("{verdict}");
+    fix: 's if s == limit => "exactly the limit",'
+    prompt: "This should print `fine` for 80 km/h. Click the line with the bug."
+    why: A plain name in a pattern is a new variable that matches everything; it doesn't compare with the outer limit. Compare in a guard.
+  - type: bug
+    body: |
+      let scores = [70, 85, 90, 64];
+      match scores.as_slice() {
+          [] => println!("none"),
+          [only] => println!("just {only}"),
+          [first, last] => println!("{first} then {last}"), // BUG
+          _ => println!("many"),
+      }
+    fix: '[first, .., last] => println!("{first} then {last}"),'
+    prompt: "This should print the first and last score: `70 then 64`. Click the line with the bug."
+    why: "[first, last] only matches slices of exactly two elements. [first, .., last] matches any slice with two or more."
+  - type: compiles
+    answer: no
+    body: |
+      let opt: Option<i32> = Some(5);
+      let Some(x) = opt;
+      println!("{x}");
+    why: Some(x) is refutable (opt could be None), and a plain let needs an irrefutable pattern. Use let ... else or if let.
+  - type: compiles
+    answer: yes
+    body: |
+      let n: u8 = 200;
+      let half = match n {
+          0..=127 => "low",
+          128..=255 => "high",
+      };
+      println!("{half}");
+    why: The two ranges cover every u8 value from 0 to 255, so the match is exhaustive without a _ arm.
+  - type: compiles
+    answer: no
+    body: |
+      let n: i32 = -4;
+      let sign = match n {
+          x if x < 0 => "negative",
+          x if x >= 0 => "not negative",
+      };
+      println!("{sign}");
+    why: The compiler doesn't reason about guard conditions, so it can't tell these two arms cover everything. End with an unguarded arm.
+  - type: compiles
+    answer: no
+    pre: |
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+    body: |
+      let p = Point { x: 1, y: 2 };
+      let Point { x } = p;
+      println!("{x}");
+    why: "A struct pattern must mention every field or end with `..`: write `let Point { x, .. } = p;`."
+  - type: choice
+    prompt: Which of these patterns is irrefutable (always matches)?
+    choices: ["`Some(x)` for an `Option<i32>`", "`(a, b)` for a `(i32, i32)`", "`1..=9` for an `i32`", "`[first, ..]` for a `&[i32]`"]
+    answer: 2
+    why: A pair always has exactly two parts. The others fail on None, on numbers outside 1 to 9, and on an empty slice.
+  - type: choice
+    prompt: "In `match name { Some(_) => ..., None => ... }` where `name: Option<String>`, what does `_` do differently from `_n`?"
+    choices: ["Nothing, they are the same", "`_` doesn't bind, so the String isn't moved out of `name`; `_n` binds it and moves it", "`_` only matches empty strings", "`_n` doesn't compile in a pattern"]
+    answer: 2
+    why: The wildcard _ never binds, so nothing is moved or borrowed. A name starting with an underscore is still a real binding; it only silences the unused-variable warning.
+  - type: boss
+    prompt: |
+      Write a tiny web router: `fn route(method: &str, path: &[&str]) -> String`. The path comes already split into segments (`/users/42` is `["users", "42"]`). Match on the tuple `(method, path)` with slice patterns:
+
+      - `GET` with no segments: `"home"`
+      - `GET ["users"]`: `"list users"`
+      - `POST ["users"]`: `"create user"`
+      - `GET ["users", id]`: `"show user ID"`
+      - `DELETE ["users", id]`: `"delete user ID"`
+      - anything else: `"404"`
+    seed: |
+      fn route(method: &str, path: &[&str]) -> String {
+          todo!()
+      }
+    solution: |
+      fn route(method: &str, path: &[&str]) -> String {
+          match (method, path) {
+              ("GET", []) => String::from("home"),
+              ("GET", ["users"]) => String::from("list users"),
+              ("POST", ["users"]) => String::from("create user"),
+              ("GET", ["users", id]) => format!("show user {id}"),
+              ("DELETE", ["users", id]) => format!("delete user {id}"),
+              _ => String::from("404"),
+          }
+      }
+    harness: |
+      #[test]
+      fn home_page() {
+          assert_eq!(route("GET", &[]), "home", "route(\"GET\", &[])");
+      }
+
+      #[test]
+      fn list_and_create_users() {
+          assert_eq!(route("GET", &["users"]), "list users", "route(\"GET\", &[\"users\"])");
+          assert_eq!(route("POST", &["users"]), "create user", "route(\"POST\", &[\"users\"])");
+      }
+
+      #[test]
+      fn show_and_delete_one_user() {
+          assert_eq!(route("GET", &["users", "42"]), "show user 42", "route(\"GET\", &[\"users\", \"42\"])");
+          assert_eq!(route("DELETE", &["users", "7"]), "delete user 7", "route(\"DELETE\", &[\"users\", \"7\"])");
+      }
+
+      #[test]
+      fn unknown_routes_are_404() {
+          assert_eq!(route("POST", &["users", "42"]), "404", "route(\"POST\", &[\"users\", \"42\"])");
+          assert_eq!(route("GET", &["users", "42", "edit"]), "404", "route(\"GET\", &[\"users\", \"42\", \"edit\"])");
+          assert_eq!(route("PUT", &[]), "404", "route(\"PUT\", &[])");
+      }
+    hints:
+      - "Match on the pair: `match (method, path) { (\"GET\", []) => ..., }`"
+      - "A segment you need becomes a binding: `(\"GET\", [\"users\", id]) => format!(\"show user {id}\")`."
+      - "Finish with `_ => String::from(\"404\")`."
+    why: Matching a tuple of a string and a slice lets one match express a whole routing table, and the final _ arm makes it exhaustive.

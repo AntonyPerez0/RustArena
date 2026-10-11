@@ -1,33 +1,58 @@
-// CodeMirror colors for the light theme, matching the site's own syntax colors
-// (every token keeps at least 4.5:1 contrast, including on the active line).
+// CodeMirror colors for both themes, matching the site's own syntax colors (components/highlight.tsx
+// and the --tk-* tokens in styles.css). Every token keeps at least 4.5:1 contrast, including on the
+// active line.
 import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 
-const style = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.modifier, t.operatorKeyword, t.definitionKeyword, t.bool, t.null, t.self], color: "#7a2fae" },
-  { tag: [t.typeName, t.standard(t.typeName), t.className, t.namespace], color: "#805300" },
-  { tag: [t.string, t.character, t.special(t.string)], color: "#2b6e1f" },
-  { tag: [t.number, t.integer, t.float], color: "#a8401b" },
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "#545c6a", fontStyle: "italic" },
-  { tag: [t.processingInstruction, t.meta, t.macroName], color: "#0a6590" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#2448a8" },
-  { tag: [t.escape, t.regexp], color: "#8a3a00" },
-  { tag: t.invalid, color: "#b8192c" },
-]);
+type Palette = { kw: string; type: string; str: string; num: string; com: string; macro: string; fn: string; esc: string; bad: string; life: string };
+
+function highlight(p: Palette) {
+  return HighlightStyle.define([
+    { tag: [t.keyword, t.controlKeyword, t.modifier, t.operatorKeyword, t.definitionKeyword, t.moduleKeyword, t.bool, t.null, t.self], color: p.kw },
+    { tag: [t.typeName, t.standard(t.typeName), t.className, t.namespace], color: p.type },
+    { tag: [t.string, t.character, t.special(t.string)], color: p.str },
+    { tag: [t.number, t.integer, t.float], color: p.num },
+    { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: p.com, fontStyle: "italic" },
+    { tag: [t.processingInstruction, t.meta, t.macroName, t.attributeName], color: p.macro },
+    { tag: [t.function(t.variableName), t.function(t.propertyName)], color: p.fn },
+    { tag: [t.labelName, t.special(t.variableName)], color: p.life },
+    { tag: [t.escape, t.regexp], color: p.esc },
+    { tag: t.invalid, color: p.bad },
+  ]);
+}
 
 export const lightEditorTheme = [
   EditorView.theme(
     {
-      "&": { backgroundColor: "#f7f8fa", color: "#1e232b" },
-      ".cm-content": { caretColor: "#1e232b" },
-      ".cm-gutters": { backgroundColor: "#f7f8fa", color: "#545c6a", borderRight: "1px solid #d3d8e0" },
-      ".cm-activeLine": { backgroundColor: "#eef1f5" },
-      ".cm-activeLineGutter": { backgroundColor: "#e6e9ee", color: "#1e232b" },
-      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "#cfe0f7" },
-      ".cm-matchingBracket": { backgroundColor: "#dde6f2", outline: "1px solid #a9b1bd" },
+      "&": { backgroundColor: "#fdf8f4", color: "#241811" },
+      ".cm-content": { caretColor: "#241811" },
+      ".cm-gutters": { backgroundColor: "#fdf8f4", color: "#6b5d53", borderRight: "1px solid #ecdfd4" },
+      ".cm-activeLine": { backgroundColor: "#f7ece3" },
+      ".cm-activeLineGutter": { backgroundColor: "#f2e4d8", color: "#241811" },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "#fcd9bd" },
+      ".cm-matchingBracket": { backgroundColor: "#f6e2d2", outline: "1px solid #c9b3a3" },
     },
     { dark: false },
   ),
-  syntaxHighlighting(style),
+  syntaxHighlighting(highlight({ kw: "#b4320b", type: "#805300", str: "#2b6e1f", num: "#9a4a00", com: "#6b5d53", macro: "#0a6590", fn: "#2448a8", esc: "#8a3a00", bad: "#b8192c", life: "#7a2fae" })),
+];
+
+export const darkEditorTheme = [
+  EditorView.theme(
+    {
+      "&": { backgroundColor: "#120d0a", color: "#ece3dc" },
+      ".cm-content": { caretColor: "#FF9A5C" },
+      ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#FF9A5C" },
+      ".cm-gutters": { backgroundColor: "#120d0a", color: "#9a8c82", borderRight: "1px solid #322620" },
+      ".cm-activeLine": { backgroundColor: "#1c1511" },
+      ".cm-activeLineGutter": { backgroundColor: "#241b16", color: "#ece3dc" },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "#4a2a17" },
+      ".cm-matchingBracket": { backgroundColor: "#3a2a20", outline: "1px solid #6b4a36" },
+      ".cm-tooltip": { backgroundColor: "#1f1814", border: "1px solid #4a3a31", color: "#ece3dc" },
+      ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "#4a2a17", color: "#fbf6f2" },
+    },
+    { dark: true },
+  ),
+  syntaxHighlighting(highlight({ kw: "#ff8f6b", type: "#ffcb6b", str: "#c3e88d", num: "#f9a11b", com: "#9a8c82", macro: "#89ddff", fn: "#82aaff", esc: "#f78c6c", bad: "#ff6b6b", life: "#d7a8ff" })),
 ];

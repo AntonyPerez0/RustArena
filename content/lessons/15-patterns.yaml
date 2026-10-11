@@ -1,0 +1,1546 @@
+id: patterns
+title: Patterns and matching
+phase: "Structuring data"
+summary: "Patterns check the shape of a value and take it apart in one move: literals, ranges, alternatives, guards, @ bindings, destructuring structs, tuples, nested enums and slices, while let, and where each kind of pattern is allowed."
+roadmap: [Pattern Matching, Destructuring]
+steps:
+  - title: Literals, ranges and |
+    id: patterns-1
+    text: |
+      In the enums module you used `match` to pick a branch for each variant. The left side of every arm (`Some(x)`, `None`, `_`) is a **pattern**: a description of a shape a value might have. Rust compares the value with each pattern from top to bottom and runs the first arm that **matches**. Patterns can do much more than name variants, and this module covers every kind you'll meet at work.
+
+      ### Literals, alternatives and ranges
+
+      ```rust run
+      fn main() {
+          for code in [200, 201, 301, 404, 418, 503] {
+              let meaning = match code {
+                  200 | 201 => "success",
+                  300..=399 => "redirect",
+                  404 => "not found",
+                  400..=499 => "client error",
+                  500..=599 => "server error",
+                  _ => "unknown",
+              };
+              println!("{code}: {meaning}");
+          }
+      }
+      ```
+
+      ```output
+      200: success
+      201: success
+      301: redirect
+      404: not found
+      418: client error
+      503: server error
+      ```
+
+      Piece by piece:
+
+      - `404` is a **literal pattern**: it matches exactly that value.
+      - `200 | 201` uses `|` (read it as "or") to let several patterns share one arm.
+      - `300..=399` is a **range pattern**: any value from 300 to 399, both ends included. `500..600` (no `=`) leaves out the end, just like ranges in `for` loops, and `600..` means "600 or more".
+      - **Order matters.** 404 is also inside `400..=499`, but the `404` arm comes first, so it wins. Put specific patterns before general ones.
+      - `_` is the **wildcard**: it matches anything and keeps nothing. Here it catches every code the other arms don't.
+
+      Ranges work on `char` too, which makes character classification short and readable:
+
+      ```rust run
+      fn kind(c: char) -> &'static str {
+          match c {
+              'a' | 'e' | 'i' | 'o' | 'u' => "vowel",
+              'a'..='z' => "consonant",
+              '0'..='9' => "digit",
+              ' ' | '\t' | '\n' => "whitespace",
+              _ => "other",
+          }
+      }
+
+      fn main() {
+          for c in ['e', 'k', '7', ' ', '!'] {
+              println!("{:?}: {}", c, kind(c));
+          }
+      }
+      ```
+
+      ```output
+      'e': vowel
+      'k': consonant
+      '7': digit
+      ' ': whitespace
+      '!': other
+      ```
+
+      The return type `&'static str` is the type of a string literal: text stored inside the program itself, which lives as long as the program does (that's what `'static` says; module 24 explains it fully). It's the usual return type for a function that picks one of several fixed labels.
+
+      ### The compiler checks every number
+
+      A `match` must be **exhaustive**: some arm has to match every possible value. For a number, that means every value of its type, and the compiler tells you exactly which ones you forgot:
+
+      ```rust compile_fail
+      fn main() {
+          let n: u8 = 7;
+          let size = match n {
+              0 => "none",
+              1..=9 => "a few",
+          };
+          println!("{size}");
+      }
+      ```
+
+      ```error
+      error[E0004]: non-exhaustive patterns: `10_u8..=u8::MAX` not covered
+      ```
+
+      Add `_ => "lots"` (or `10..=u8::MAX`) to cover the rest. This check is why `match` is safer than a chain of `if`s: when a new case appears, the compiler finds every place that must handle it.
+
+      ### Common mistakes
+
+      - **General arms before specific ones.** If `400..=499` came before `404`, the `404` arm could never run. The compiler warns `unreachable pattern`; that warning always means a bug.
+      - **`..` instead of `..=`.** `1..9` stops at 8. Grades, ages and percentages usually want both ends: `90..=100`.
+      - **Expecting a variable name to compare.** `match code { limit => ... }` does *not* compare with a variable called `limit`: a plain name in a pattern is a new variable that matches everything. The next step shows how to compare with a variable.
+
+      **Your turn:** fill in the blanks so `level` turns a battery percentage into a label: `0` is `"empty"`, `1` to `20` is `"low"`, `21` to `99` is `"ok"`, `100` is `"full"`, and anything above 100 is `"invalid"`.
+    fill: |
+      fn level(percent: u32) -> &'static str {
+          match percent {
+              [[0]] => "empty",
+              [[1..=20‖1..21]] => "low",
+              21..=99 => "ok",
+              100 => "full",
+              [[_‖101..]] => "invalid",
+          }
+      }
+
+      fn main() {
+          for p in [0, 7, 20, 21, 100, 150] {
+              println!("{p}% -> {}", level(p));
+          }
+      }
+    hints:
+      - The first blank is a literal pattern for exactly zero.
+      - "A range that includes both ends is written `start..=end`."
+      - "The last arm catches everything else: `_`."
+    tests:
+      - expect: "0% -> empty\n7% -> low\n20% -> low\n21% -> ok\n100% -> full\n150% -> invalid"
+    more:
+      - task: |
+          A cinema charges by age. Write `fn ticket_price(age: u32) -> u32` with a `match` and range patterns:
+
+          | Age | Price |
+          |---|---|
+          | 0 to 12 | 5 |
+          | 13 to 17 | 8 |
+          | 18 to 64 | 12 |
+          | 65 and up | 6 |
+        seed: |
+          fn ticket_price(age: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn ticket_price(age: u32) -> u32 {
+              match age {
+                  0..=12 => 5,
+                  13..=17 => 8,
+                  18..=64 => 12,
+                  _ => 6,
+              }
+          }
+        harness: |
+          #[test]
+          fn children_pay_5() {
+              assert_eq!(ticket_price(0), 5, "ticket_price(0)");
+              assert_eq!(ticket_price(12), 5, "ticket_price(12)");
+          }
+
+          #[test]
+          fn teens_pay_8() {
+              assert_eq!(ticket_price(13), 8, "ticket_price(13)");
+              assert_eq!(ticket_price(17), 8, "ticket_price(17)");
+          }
+
+          #[test]
+          fn adults_pay_12() {
+              assert_eq!(ticket_price(18), 12, "ticket_price(18)");
+              assert_eq!(ticket_price(64), 12, "ticket_price(64)");
+          }
+
+          #[test]
+          fn seniors_pay_6() {
+              assert_eq!(ticket_price(65), 6, "ticket_price(65)");
+              assert_eq!(ticket_price(101), 6, "ticket_price(101)");
+          }
+        require:
+          - pattern: '\bmatch\b'
+            message: Use a `match` on the age.
+          - pattern: '\.\.='
+            message: "Use range patterns such as `13..=17`."
+        hints:
+          - "Each arm is a range: `0..=12 => 5,`"
+          - "The last arm can be `_ => 6` (or `65.. => 6`), since every smaller age is already covered."
+      - task: |
+          Write a whole program that reads **one line** of text and counts its characters by kind, after turning the line into lowercase:
+
+          - vowels: `a e i o u`
+          - consonants: the other letters `a` to `z`
+          - digits: `0` to `9`
+          - spaces: `' '`
+          - other: everything else (punctuation and so on)
+
+          For the input `Hello World 42!` print:
+
+          ```
+          vowels: 3
+          consonants: 7
+          digits: 2
+          spaces: 2
+          other: 1
+          ```
+
+          Ignore the newline at the end of the line (use `trim_end()`, which removes whitespace at the end only).
+        seed: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("could not read input");
+              let text = line.trim_end().to_lowercase();
+
+              // count each kind of character with a match on c
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("could not read input");
+              let text = line.trim_end().to_lowercase();
+
+              // count each kind of character with a match on c
+              let mut vowels = 0;
+              let mut consonants = 0;
+              let mut digits = 0;
+              let mut spaces = 0;
+              let mut other = 0;
+              for c in text.chars() {
+                  match c {
+                      'a' | 'e' | 'i' | 'o' | 'u' => vowels += 1,
+                      'a'..='z' => consonants += 1,
+                      '0'..='9' => digits += 1,
+                      ' ' => spaces += 1,
+                      _ => other += 1,
+                  }
+              }
+              println!("vowels: {vowels}");
+              println!("consonants: {consonants}");
+              println!("digits: {digits}");
+              println!("spaces: {spaces}");
+              println!("other: {other}");
+          }
+        tests:
+          - stdin: "Hello World 42!\n"
+            expect: "vowels: 3\nconsonants: 7\ndigits: 2\nspaces: 2\nother: 1"
+          - stdin: "RUST 2024, crab-style\n"
+          - stdin: "Ferris says: GG wp 99?\n"
+            hidden: true
+        require:
+          - pattern: '\|'
+            message: "Use `|` to list the vowels in one pattern."
+          - pattern: "'a'\\s*\\.\\.=\\s*'z'"
+            strings: true
+            message: "Use a char range pattern like `'a'..='z'` for the consonants."
+        hints:
+          - "Keep five counters (`let mut vowels = 0;` and so on) and loop with `for c in text.chars()`."
+          - "Arms can be expressions: `'0'..='9' => digits += 1,`"
+          - "Put the vowel arm (`'a' | 'e' | 'i' | 'o' | 'u'`) before the `'a'..='z'` arm so vowels aren't counted as consonants."
+
+  - title: Match guards and @ bindings
+    id: patterns-2
+    text: |
+      A plain name in a pattern is a **binding**: it matches any value and gives it that name inside the arm. On its own that's not very selective, so you can add a **match guard**: `if condition` after the pattern. The arm only runs when the pattern matches *and* the condition is true.
+
+      ```rust run
+      fn describe(balance: i64, overdraft_limit: i64) -> String {
+          match balance {
+              0 => String::from("empty"),
+              b if b < -overdraft_limit => format!("{b}: over the limit!"),
+              b if b < 0 => format!("{b}: overdrawn"),
+              b => format!("{b}: in credit"),
+          }
+      }
+
+      fn main() {
+          println!("{}", describe(0, 100));
+          println!("{}", describe(-250, 100));
+          println!("{}", describe(-40, 100));
+          println!("{}", describe(900, 100));
+      }
+      ```
+
+      ```output
+      empty
+      -250: over the limit!
+      -40: overdrawn
+      900: in credit
+      ```
+
+      - `b if b < -overdraft_limit` binds the value to `b`, then checks the guard. A guard can use any expression, including other variables like `overdraft_limit`. Patterns alone can only contain fixed values, so guards are how you compare with a variable.
+      - The arms are tried in order, so the second guard only sees balances that aren't over the limit.
+      - The last arm `b` has no guard: it matches everything left, like `_`, but keeps the value.
+
+      ### @ bindings: test a pattern and keep the value
+
+      `name @ pattern` checks the value against the pattern **and** binds it to `name`. It shines when the value is buried inside something, like a number inside `Some`:
+
+      ```rust run
+      fn main() {
+          let readings = [Some(3), Some(42), Some(-1), Some(250), None];
+          for r in readings {
+              let text = match r {
+                  Some(n @ 0..=9) => format!("one digit: {n}"),
+                  Some(n @ 10..=99) => format!("two digits: {n}"),
+                  Some(n) if n < 0 => format!("sensor error {n}"),
+                  Some(n) => format!("large: {n}"),
+                  None => String::from("no reading"),
+              };
+              println!("{text}");
+          }
+      }
+      ```
+
+      ```output
+      one digit: 3
+      two digits: 42
+      sensor error -1
+      large: 250
+      no reading
+      ```
+
+      Without `@` you'd have to write `Some(n) if n >= 0 && n <= 9`, which is longer and easier to get wrong.
+
+      With `|`, a guard applies to **all** the alternatives: `1 | 2 if urgent =>` means "(1 or 2) and urgent".
+
+      ### Guards don't count for exhaustiveness
+
+      The compiler checks patterns, but it doesn't try to prove things about your guard conditions. To it, these two arms might both be false:
+
+      ```rust compile_fail
+      fn main() {
+          let n: i32 = 7;
+          let sign = match n {
+              x if x < 0 => "negative",
+              x if x >= 0 => "zero or positive",
+          };
+          println!("{sign}");
+      }
+      ```
+
+      ```error
+      error[E0004]: non-exhaustive patterns: `i32::MIN..=i32::MAX` not covered
+      ```
+
+      The fix is to make the last arm unguarded: `_ => "zero or positive"`.
+
+      ### Common mistakes
+
+      - **A name where you meant a comparison.** This doesn't check `guess == target`; `target` is a brand-new variable that matches anything, so the first arm always runs (the compiler warns about it):
+
+        ```rust
+        match guess {
+            target => println!("correct!"),
+            _ => println!("try again"),
+        }
+        ```
+
+        Write `g if g == target => ...` instead.
+      - **Guarding every arm.** End with an unguarded arm so the match is exhaustive.
+
+      **Your turn:** write `fn speed_check(speed: u32, limit: u32) -> String` using a `match` on `speed` with guards:
+
+      - at or under the limit: `"ok"`
+      - up to 10 km/h over: `"warning: N over"` (for example `"warning: 7 over"`)
+      - more than 10 over: `"fine: N over"`
+    seed: |
+      fn speed_check(speed: u32, limit: u32) -> String {
+          todo!()
+      }
+    solution: |
+      fn speed_check(speed: u32, limit: u32) -> String {
+          match speed {
+              s if s <= limit => String::from("ok"),
+              s if s <= limit + 10 => format!("warning: {} over", s - limit),
+              s => format!("fine: {} over", s - limit),
+          }
+      }
+    harness: |
+      #[test]
+      fn under_the_limit_is_ok() {
+          assert_eq!(speed_check(42, 50), "ok", "speed_check(42, 50)");
+      }
+
+      #[test]
+      fn exactly_the_limit_is_ok() {
+          assert_eq!(speed_check(50, 50), "ok", "speed_check(50, 50)");
+      }
+
+      #[test]
+      fn a_little_over_is_a_warning() {
+          assert_eq!(speed_check(57, 50), "warning: 7 over", "speed_check(57, 50)");
+          assert_eq!(speed_check(60, 50), "warning: 10 over", "speed_check(60, 50)");
+      }
+
+      #[test]
+      fn more_than_10_over_is_a_fine() {
+          assert_eq!(speed_check(61, 50), "fine: 11 over", "speed_check(61, 50)");
+          assert_eq!(speed_check(130, 100), "fine: 30 over", "speed_check(130, 100)");
+      }
+    require:
+      - pattern: '\bmatch\b'
+        message: Use a `match` on the speed.
+      - pattern: '\w+\s+if\s+.*=>'
+        message: "Use match guards: `s if s <= limit => ...`"
+    hints:
+      - "The first arm is `s if s <= limit => String::from(\"ok\"),`"
+      - "The second guard is `s if s <= limit + 10`. Compute how far over with `s - limit`."
+      - "The last arm needs no guard: `s => format!(\"fine: {} over\", s - limit),`"
+    more:
+      - task: |
+          Fill in the blank with an `@` binding so the first arm catches 1 to 5 tickets left and names the number `n`.
+        fill: |
+          fn stock_label(left: Option<u32>) -> String {
+              match left {
+                  Some([[n @]] 1..=5) => format!("only {n} left!"),
+                  Some(0) => String::from("sold out"),
+                  Some(n) => format!("{n} left"),
+                  None => String::from("not on sale yet"),
+              }
+          }
+
+          fn main() {
+              for left in [Some(3), Some(0), Some(40), None] {
+                  println!("{}", stock_label(left));
+              }
+          }
+        hints:
+          - "The syntax is `name @ pattern`, so the blank is the name followed by `@`."
+        tests:
+          - expect: "only 3 left!\nsold out\n40 left\nnot on sale yet"
+      - task: |
+          A smart thermostat reports `Option<i32>` (degrees Celsius, `None` when the sensor is offline). Write `fn room_status(temp: Option<i32>) -> String`:
+
+          - `None`: `"sensor offline"`
+          - 18 to 24 inclusive: `"comfortable at T"` (use an `@` binding)
+          - below 18: `"too cold at T"` (use a guard)
+          - anything else: `"too hot at T"`
+        seed: |
+          fn room_status(temp: Option<i32>) -> String {
+              todo!()
+          }
+        solution: |
+          fn room_status(temp: Option<i32>) -> String {
+              match temp {
+                  None => String::from("sensor offline"),
+                  Some(t @ 18..=24) => format!("comfortable at {t}"),
+                  Some(t) if t < 18 => format!("too cold at {t}"),
+                  Some(t) => format!("too hot at {t}"),
+              }
+          }
+        harness: |
+          #[test]
+          fn offline_sensor() {
+              assert_eq!(room_status(None), "sensor offline", "room_status(None)");
+          }
+
+          #[test]
+          fn comfortable_range_includes_both_ends() {
+              assert_eq!(room_status(Some(18)), "comfortable at 18", "room_status(Some(18))");
+              assert_eq!(room_status(Some(24)), "comfortable at 24", "room_status(Some(24))");
+          }
+
+          #[test]
+          fn cold_including_below_zero() {
+              assert_eq!(room_status(Some(17)), "too cold at 17", "room_status(Some(17))");
+              assert_eq!(room_status(Some(-3)), "too cold at -3", "room_status(Some(-3))");
+          }
+
+          #[test]
+          fn hot() {
+              assert_eq!(room_status(Some(25)), "too hot at 25", "room_status(Some(25))");
+          }
+        require:
+          - pattern: '@'
+            message: "Use an `@` binding for the comfortable range: `Some(t @ 18..=24)`."
+          - pattern: '\)\s*if\b'
+            message: "Use a match guard for the cold case: `Some(t) if t < 18`."
+        hints:
+          - "`Some(t @ 18..=24) => format!(\"comfortable at {t}\"),`"
+          - "`Some(t) if t < 18 => ...` then a final unguarded `Some(t) => ...`"
+
+  - title: Destructuring structs and tuples
+    id: patterns-3
+    text: |
+      **Destructuring** means taking a compound value apart into its pieces with a pattern. You've done it with tuples (`let (a, b) = pair;`). The same idea works for structs, and in every place a pattern can go: `let`, `match` arms, `for` loops and function parameters.
+
+      ```rust run
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      fn locate(p: &Point) -> String {
+          match p {
+              Point { x: 0, y: 0 } => String::from("at the origin"),
+              Point { x: 0, y } => format!("on the y axis at {y}"),
+              Point { x, y: 0 } => format!("on the x axis at {x}"),
+              Point { x, y } => format!("at ({x}, {y})"),
+          }
+      }
+
+      fn main() {
+          let p = Point { x: 3, y: -7 };
+          let Point { x, y } = p;
+          println!("x = {x}, y = {y}");
+
+          let Point { x: col, y: row } = p;
+          println!("col {col}, row {row}");
+
+          for q in [Point { x: 0, y: 0 }, Point { x: 0, y: 5 }, Point { x: 2, y: 0 }, p] {
+              println!("{}", locate(&q));
+          }
+      }
+      ```
+
+      ```output
+      x = 3, y = -7
+      col 3, row -7
+      at the origin
+      on the y axis at 5
+      on the x axis at 2
+      at (3, -7)
+      ```
+
+      Piece by piece:
+
+      - `let Point { x, y } = p;` is shorthand for `let Point { x: x, y: y } = p;`: it makes two variables named after the fields.
+      - `Point { x: col, y: row }` binds the fields to new names. Read `x: col` as "field `x` goes into `col`".
+      - In a `match`, a field can hold any pattern: `x: 0` only matches when `x` is zero, while plain `y` binds whatever is there.
+      - `locate` matches on a **reference** (`&Point`). Rust then makes the bindings references too (`y` is a `&i32`), so nothing is moved out of the borrowed struct. Printing works the same; for arithmetic or comparisons you may need `*y`.
+
+      ### Matching on several values at once
+
+      Put values in a tuple and match on the tuple. This replaces nested `if`s when a decision depends on two things:
+
+      ```rust run
+      fn main() {
+          for n in 9..=15 {
+              let text = match (n % 3, n % 5) {
+                  (0, 0) => String::from("FizzBuzz"),
+                  (0, _) => String::from("Fizz"),
+                  (_, 0) => String::from("Buzz"),
+                  _ => n.to_string(),
+              };
+              print!("{text} ");
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      Fizz Buzz 11 Fizz 13 14 FizzBuzz
+      ```
+
+      `(0, _)` means "first part is 0, second part is anything".
+
+      ### Ignoring fields with `..`
+
+      `..` means "and the rest, which I don't care about". It keeps patterns short when a struct has many fields:
+
+      ```rust
+      let Order { id, total, .. } = order;      // ignore every other field
+      let (first, ..) = (1, 2, 3, 4);           // just the first element
+      ```
+
+      ### Common mistakes
+
+      - **Leaving out a field.** A struct pattern must mention every field, or end with `..`:
+
+        ```rust compile_fail
+        struct Point {
+            x: i32,
+            y: i32,
+        }
+
+        fn main() {
+            let p = Point { x: 1, y: 2 };
+            let Point { x } = p;
+            println!("{x}");
+        }
+        ```
+
+        ```error
+        error[E0027]: pattern does not mention field `y`
+        ```
+
+        Write `let Point { x, .. } = p;`.
+      - **Wrong tuple size.** `let (a, b) = (1, 2, 3);` fails with `mismatched types`; the pattern must have the same number of parts (or use `..`).
+
+      **Your turn:** finish this rock-paper-scissors referee. Each input line holds two moves (`rock`, `paper` or `scissors`). Match on the tuple `(moves[0], moves[1])` and print `player 1`, `player 2` or `draw` for each line. String literals work as patterns: `("rock", "scissors") => ...`. Rock beats scissors, scissors beat paper, paper beats rock.
+    seed: |
+      use std::io::{self, BufRead};
+
+      fn main() {
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let moves: Vec<&str> = line.split_whitespace().collect();
+              // match on (moves[0], moves[1]) and print the winner
+          }
+      }
+    solution: |
+      use std::io::{self, BufRead};
+
+      fn main() {
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let moves: Vec<&str> = line.split_whitespace().collect();
+              // match on (moves[0], moves[1]) and print the winner
+              let result = match (moves[0], moves[1]) {
+                  (a, b) if a == b => "draw",
+                  ("rock", "scissors") | ("scissors", "paper") | ("paper", "rock") => "player 1",
+                  _ => "player 2",
+              };
+              println!("{result}");
+          }
+      }
+    tests:
+      - stdin: "rock scissors\npaper scissors\nrock rock\n"
+        expect: "player 1\nplayer 2\ndraw"
+      - stdin: "scissors paper\npaper rock\nscissors rock\npaper paper\n"
+        hidden: true
+    require:
+      - pattern: 'match\s*\(\s*moves\[0\]\s*,\s*moves\[1\]\s*\)'
+        message: "Match on the tuple `(moves[0], moves[1])`."
+    hints:
+      - "Start with `(a, b) if a == b => \"draw\",` to handle equal moves."
+      - "List the three winning pairs for player 1 in one arm with `|`: `(\"rock\", \"scissors\") | (\"scissors\", \"paper\") | (\"paper\", \"rock\")`."
+      - "Everything else means player 2 won: `_ => \"player 2\"`."
+    more:
+      - task: |
+          Write `fn summary(order: &Order) -> String` using struct patterns:
+
+          - quantity 0: `"order ID: empty"`
+          - express orders: `"order ID: TOTAL cents (express)"`, where TOTAL is `quantity * unit_cents + 500`
+          - other orders: `"order ID: TOTAL cents"`, where TOTAL is `quantity * unit_cents`
+
+          Because you match on `&Order`, the bound fields are references; `quantity * unit_cents` still works on them.
+        seed: |
+          struct Order {
+              id: u32,
+              quantity: u32,
+              unit_cents: u32,
+              express: bool,
+          }
+
+          fn summary(order: &Order) -> String {
+              todo!()
+          }
+        solution: |
+          struct Order {
+              id: u32,
+              quantity: u32,
+              unit_cents: u32,
+              express: bool,
+          }
+
+          fn summary(order: &Order) -> String {
+              match order {
+                  Order { id, quantity: 0, .. } => format!("order {id}: empty"),
+                  Order { id, quantity, unit_cents, express: true } => {
+                      format!("order {id}: {} cents (express)", quantity * unit_cents + 500)
+                  }
+                  Order { id, quantity, unit_cents, express: false } => {
+                      format!("order {id}: {} cents", quantity * unit_cents)
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn empty_order() {
+              let o = Order { id: 7, quantity: 0, unit_cents: 250, express: true };
+              assert_eq!(summary(&o), "order 7: empty", "summary of an order with quantity 0");
+          }
+
+          #[test]
+          fn express_order_adds_500() {
+              let o = Order { id: 12, quantity: 3, unit_cents: 250, express: true };
+              assert_eq!(summary(&o), "order 12: 1250 cents (express)", "summary of 3 x 250, express");
+          }
+
+          #[test]
+          fn normal_order() {
+              let o = Order { id: 13, quantity: 4, unit_cents: 99, express: false };
+              assert_eq!(summary(&o), "order 13: 396 cents", "summary of 4 x 99");
+          }
+        require:
+          - pattern: 'Order\s*\{[^}]*\.\.'
+            message: "Use `..` in a struct pattern to skip the fields you don't need."
+        hints:
+          - "The first arm: `Order { id, quantity: 0, .. } => format!(\"order {id}: empty\"),`"
+          - "The express arm lists the fields it needs and `express: true`: `Order { id, quantity, unit_cents, express: true } => ...`"
+      - task: |
+          Write `fn quadrant(point: (i32, i32)) -> &'static str` from scratch. Match on the tuple:
+
+          - `(0, 0)`: `"origin"`
+          - x is 0: `"y axis"`; y is 0: `"x axis"`
+          - otherwise `"I"`, `"II"`, `"III"` or `"IV"`: I is x and y positive, II is x negative and y positive, III both negative, IV x positive and y negative.
+        seed: |
+          // write fn quadrant here
+        solution: |
+          // write fn quadrant here
+          fn quadrant(point: (i32, i32)) -> &'static str {
+              match point {
+                  (0, 0) => "origin",
+                  (0, _) => "y axis",
+                  (_, 0) => "x axis",
+                  (x, y) if x > 0 && y > 0 => "I",
+                  (x, y) if x < 0 && y > 0 => "II",
+                  (x, y) if x < 0 && y < 0 => "III",
+                  _ => "IV",
+              }
+          }
+        harness: |
+          #[test]
+          fn origin_and_axes() {
+              assert_eq!(quadrant((0, 0)), "origin", "quadrant((0, 0))");
+              assert_eq!(quadrant((0, -4)), "y axis", "quadrant((0, -4))");
+              assert_eq!(quadrant((9, 0)), "x axis", "quadrant((9, 0))");
+          }
+
+          #[test]
+          fn first_and_second_quadrant() {
+              assert_eq!(quadrant((3, 4)), "I", "quadrant((3, 4))");
+              assert_eq!(quadrant((-3, 4)), "II", "quadrant((-3, 4))");
+          }
+
+          #[test]
+          fn third_and_fourth_quadrant() {
+              assert_eq!(quadrant((-1, -1)), "III", "quadrant((-1, -1))");
+              assert_eq!(quadrant((5, -2)), "IV", "quadrant((5, -2))");
+          }
+        require:
+          - pattern: '\bmatch\b'
+            message: Use a `match` on the tuple.
+        hints:
+          - "Start with the exact cases: `(0, 0) => \"origin\",` then `(0, _)` and `(_, 0)`."
+          - "Quadrants need comparisons, so use guards: `(x, y) if x > 0 && y > 0 => \"I\",`"
+          - "Write one guarded arm each for I, II and III, and finish with `_ => \"IV\"`."
+
+  - title: Nested enums and ignoring parts
+    id: patterns-4
+    text: |
+      Patterns nest exactly as deep as your data does. An enum variant can hold a struct-like set of fields, and those fields can hold other enums; one pattern can look at all of it.
+
+      ```rust run
+      enum Button {
+          Left,
+          Right,
+      }
+
+      enum Event {
+          Key(char),
+          Click { x: i32, y: i32, button: Button },
+          Scroll(i32),
+          Quit,
+      }
+
+      fn handle(event: &Event) -> String {
+          match event {
+              Event::Key('q') | Event::Quit => String::from("quit"),
+              Event::Key(c @ '0'..='9') => format!("digit {c}"),
+              Event::Key(c) => format!("key {c}"),
+              Event::Click { button: Button::Right, .. } => String::from("open menu"),
+              Event::Click { x, y, button: Button::Left } => format!("left click at ({x}, {y})"),
+              Event::Scroll(0) => String::from("no scroll"),
+              Event::Scroll(n) if *n > 0 => format!("scroll down {n}"),
+              Event::Scroll(n) => format!("scroll up {}", -n),
+          }
+      }
+
+      fn main() {
+          let events = [
+              Event::Key('7'),
+              Event::Key('w'),
+              Event::Click { x: 10, y: 20, button: Button::Left },
+              Event::Click { x: 5, y: 5, button: Button::Right },
+              Event::Scroll(-3),
+              Event::Scroll(4),
+              Event::Key('q'),
+              Event::Quit,
+          ];
+          for e in &events {
+              println!("{}", handle(e));
+          }
+      }
+      ```
+
+      ```output
+      digit 7
+      key w
+      left click at (10, 20)
+      open menu
+      scroll up 3
+      scroll down 4
+      quit
+      quit
+      ```
+
+      Piece by piece:
+
+      - `Event::Key('q') | Event::Quit` combines a variant with a literal inside it and another variant, with `|`.
+      - `Event::Click { button: Button::Right, .. }` looks *inside* the click at its `button` field and checks it's `Button::Right`. The `..` ignores `x` and `y`.
+      - `Event::Click { x, y, button: Button::Left }` binds `x` and `y` and requires a left button.
+      - `Event::Scroll(n) if *n > 0`: since `handle` takes `&Event`, `n` is a `&i32`. Comparing needs the number itself, so the guard says `*n`. Printing works on the reference directly.
+      - The compiler checks the whole nested structure for exhaustiveness: remove the `Button::Left` arm and it tells you that `Event::Click { button: Button::Left, .. }` isn't covered.
+
+      ### `_`, `_name` and `..`
+
+      | Pattern | Meaning |
+      |---|---|
+      | `_` | match one value, don't bind it (nothing is moved or borrowed) |
+      | `_name` | bind the value (it **is** moved or borrowed) but don't warn if it's unused |
+      | `..` | skip all remaining fields or elements |
+
+      ### Common mistake: moving out while matching
+
+      Matching on an owned value with a binding moves the data out of it:
+
+      ```rust compile_fail
+      fn main() {
+          let name: Option<String> = Some(String::from("Ferris"));
+          match name {
+              Some(n) => println!("hi {n}"),
+              None => println!("nobody"),
+          }
+          println!("{:?}", name);
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of partially moved value: `name`
+      ```
+
+      `Some(n)` moved the String into `n`, so `name` is no longer whole. Match on a reference instead (`match &name`), and `n` becomes a `&String`. If you don't need the value at all, `Some(_)` doesn't move anything.
+
+      **Your turn:** a checkout supports three payment methods. Write `fn total_charge(p: &Payment) -> u32`, the amount charged in cents including the card fee:
+
+      - `Cash(cents)`: just `cents`
+      - an `Amex` card: `cents + cents * 3 / 100` (3% fee)
+      - any other card: `cents + cents / 100` (1% fee)
+      - `Voucher`: 0
+    seed: |
+      enum Brand {
+          Visa,
+          Mastercard,
+          Amex,
+      }
+
+      enum Payment {
+          Cash(u32),
+          Card { brand: Brand, cents: u32 },
+          Voucher,
+      }
+
+      fn total_charge(p: &Payment) -> u32 {
+          todo!()
+      }
+    solution: |
+      enum Brand {
+          Visa,
+          Mastercard,
+          Amex,
+      }
+
+      enum Payment {
+          Cash(u32),
+          Card { brand: Brand, cents: u32 },
+          Voucher,
+      }
+
+      fn total_charge(p: &Payment) -> u32 {
+          match p {
+              Payment::Cash(cents) => *cents,
+              Payment::Card { brand: Brand::Amex, cents } => cents + cents * 3 / 100,
+              Payment::Card { brand: Brand::Visa | Brand::Mastercard, cents } => cents + cents / 100,
+              Payment::Voucher => 0,
+          }
+      }
+    harness: |
+      #[test]
+      fn cash_has_no_fee() {
+          assert_eq!(total_charge(&Payment::Cash(1000)), 1000, "Cash(1000)");
+      }
+
+      #[test]
+      fn visa_and_mastercard_add_1_percent() {
+          let visa = Payment::Card { brand: Brand::Visa, cents: 10_000 };
+          let mc = Payment::Card { brand: Brand::Mastercard, cents: 250 };
+          assert_eq!(total_charge(&visa), 10_100, "Visa card, 10000 cents");
+          assert_eq!(total_charge(&mc), 252, "Mastercard, 250 cents");
+      }
+
+      #[test]
+      fn amex_adds_3_percent() {
+          let amex = Payment::Card { brand: Brand::Amex, cents: 10_000 };
+          assert_eq!(total_charge(&amex), 10_300, "Amex card, 10000 cents");
+      }
+
+      #[test]
+      fn voucher_is_free() {
+          assert_eq!(total_charge(&Payment::Voucher), 0, "Voucher");
+      }
+    hints:
+      - "Because you match on `&Payment`, `cents` is a `&u32`. Return `*cents` in the cash arm; arithmetic like `cents + cents / 100` works on references directly."
+      - "Look inside the card variant: `Payment::Card { brand: Brand::Amex, cents } => ...`"
+      - "The other brands can share an arm: `Payment::Card { brand: Brand::Visa | Brand::Mastercard, cents } => cents + cents / 100,` (or `brand: _`, after the Amex arm)."
+    more:
+      - task: |
+          Fill in the three blanks: match the nested `Status::Active`, bind the `days` field of `Suspended`, and ignore the other fields of a closed account.
+        fill: |
+          enum Status {
+              Active,
+              Suspended { days: u32 },
+              Closed,
+          }
+
+          struct Account {
+              owner: String,
+              status: Status,
+          }
+
+          fn describe(acc: &Account) -> String {
+              match acc {
+                  Account { owner, status: [[Status::Active]] } => format!("{owner}: active"),
+                  Account { owner, status: Status::Suspended { [[days]] } } => format!("{owner}: suspended for {days} days"),
+                  Account { status: Status::Closed, [[..]] } => String::from("closed account"),
+              }
+          }
+
+          fn main() {
+              let accounts = [
+                  Account { owner: String::from("ana"), status: Status::Active },
+                  Account { owner: String::from("bo"), status: Status::Suspended { days: 3 } },
+                  Account { owner: String::from("cy"), status: Status::Closed },
+              ];
+              for a in &accounts {
+                  println!("{}", describe(a));
+              }
+          }
+        hints:
+          - "Enum variants are written with their enum name: `Status::Active`."
+          - "Field shorthand binds a field to a variable of the same name: `{ days }`."
+          - "Two dots skip the remaining fields."
+        tests:
+          - expect: "ana: active\nbo: suspended for 3 days\nclosed account"
+      - task: |
+          A warehouse robot gets commands. Write `fn command_label(cmd: &Command) -> String`:
+
+          - a `Move` with 0 steps (any direction): `"stay"`
+          - `Move` north N: `"up N"`; south: `"down N"`; east or west: `"sideways N"`
+          - `Wait(s)`: `"wait Ns"` (for example `"wait 5s"`)
+          - `Stop`: `"stop"`
+        seed: |
+          enum Direction {
+              North,
+              South,
+              East,
+              West,
+          }
+
+          enum Command {
+              Move { dir: Direction, steps: u32 },
+              Wait(u32),
+              Stop,
+          }
+
+          fn command_label(cmd: &Command) -> String {
+              todo!()
+          }
+        solution: |
+          enum Direction {
+              North,
+              South,
+              East,
+              West,
+          }
+
+          enum Command {
+              Move { dir: Direction, steps: u32 },
+              Wait(u32),
+              Stop,
+          }
+
+          fn command_label(cmd: &Command) -> String {
+              match cmd {
+                  Command::Move { steps: 0, .. } => String::from("stay"),
+                  Command::Move { dir: Direction::North, steps } => format!("up {steps}"),
+                  Command::Move { dir: Direction::South, steps } => format!("down {steps}"),
+                  Command::Move { dir: Direction::East | Direction::West, steps } => format!("sideways {steps}"),
+                  Command::Wait(s) => format!("wait {s}s"),
+                  Command::Stop => String::from("stop"),
+              }
+          }
+        harness: |
+          #[test]
+          fn zero_steps_means_stay() {
+              let c = Command::Move { dir: Direction::West, steps: 0 };
+              assert_eq!(command_label(&c), "stay", "Move West 0 steps");
+          }
+
+          #[test]
+          fn north_and_south() {
+              let up = Command::Move { dir: Direction::North, steps: 3 };
+              let down = Command::Move { dir: Direction::South, steps: 2 };
+              assert_eq!(command_label(&up), "up 3", "Move North 3");
+              assert_eq!(command_label(&down), "down 2", "Move South 2");
+          }
+
+          #[test]
+          fn east_and_west_are_sideways() {
+              let e = Command::Move { dir: Direction::East, steps: 4 };
+              let w = Command::Move { dir: Direction::West, steps: 1 };
+              assert_eq!(command_label(&e), "sideways 4", "Move East 4");
+              assert_eq!(command_label(&w), "sideways 1", "Move West 1");
+          }
+
+          #[test]
+          fn wait_and_stop() {
+              assert_eq!(command_label(&Command::Wait(5)), "wait 5s", "Wait(5)");
+              assert_eq!(command_label(&Command::Stop), "stop", "Stop");
+          }
+        hints:
+          - "Put the zero-steps arm first: `Command::Move { steps: 0, .. } => ...`"
+          - "Nest the direction inside the struct pattern: `Command::Move { dir: Direction::North, steps } => format!(\"up {steps}\"),`"
+          - "East and west share an arm with `|`: `dir: Direction::East | Direction::West`."
+
+  - title: while let and slice patterns
+    id: patterns-5
+    text: |
+      ### while let: loop while a pattern matches
+
+      `if let` runs a block once if a pattern matches. `while let` keeps running the block **as long as** the pattern matches, and stops the first time it doesn't. Its classic partner is `pop()`, which removes the last element of a vector and returns `Some(element)`, or `None` when the vector is empty:
+
+      ```rust run
+      fn main() {
+          let mut undo = vec!["type 'a'", "type 'b'", "make bold"];
+          while let Some(action) = undo.pop() {
+              println!("undo: {action}");
+          }
+          println!("nothing left to undo");
+      }
+      ```
+
+      ```output
+      undo: make bold
+      undo: type 'b'
+      undo: type 'a'
+      nothing left to undo
+      ```
+
+      That's a **stack**: last in, first out.
+
+      ### Slice patterns
+
+      Arrays and slices have their own patterns, written with square brackets. They match on the *length* and the *elements* at the same time:
+
+      ```rust run
+      fn describe(scores: &[u32]) -> String {
+          match scores {
+              [] => String::from("no games yet"),
+              [only] => format!("one game: {only}"),
+              [first, second] => format!("two games: {first} and {second}"),
+              [first, .., last] => format!("{} games, first {first}, last {last}", scores.len()),
+          }
+      }
+
+      fn main() {
+          println!("{}", describe(&[]));
+          println!("{}", describe(&[12]));
+          println!("{}", describe(&[12, 30]));
+          println!("{}", describe(&[12, 30, 7, 41]));
+      }
+      ```
+
+      ```output
+      no games yet
+      one game: 12
+      two games: 12 and 30
+      4 games, first 12, last 41
+      ```
+
+      - `[]` matches an empty slice, `[only]` exactly one element, `[first, second]` exactly two.
+      - `..` inside brackets matches **any number** of elements (including zero), so `[first, .., last]` means "at least two".
+      - `rest @ ..` keeps those elements as a slice: `[head, rest @ ..]` gives the first element and a `&[u32]` of everything after it.
+      - The compiler checks slice patterns for exhaustiveness too. Here every length is covered.
+
+      ### Parsing commands with slice patterns
+
+      Slice patterns are perfect for little command languages. Split a line into words, then match on the words:
+
+      ```rust run
+      fn run(line: &str) -> String {
+          let words: Vec<&str> = line.split_whitespace().collect();
+          match words.as_slice() {
+              [] => String::from("(empty line)"),
+              ["look"] => String::from("You see a crab."),
+              ["go", direction] => format!("You walk {direction}."),
+              ["say", rest @ ..] => format!("You say: {}", rest.join(" ")),
+              [command, ..] => format!("Unknown command: {command}"),
+          }
+      }
+
+      fn main() {
+          for line in ["look", "go north", "say hello there", "", "dance"] {
+              println!("{}", run(line));
+          }
+      }
+      ```
+
+      ```output
+      You see a crab.
+      You walk north.
+      You say: hello there
+      (empty line)
+      Unknown command: dance
+      ```
+
+      `.collect()` gathers the words into a `Vec<&str>` (module 27 covers it), `.as_slice()` views the vector as a slice so slice patterns apply, and `rest.join(" ")` glues the remaining words back together with spaces.
+
+      ### Common mistake: matching a Vec directly
+
+      Slice patterns need a slice or an array, not a `Vec`:
+
+      ```rust compile_fail
+      fn main() {
+          let v = vec![1, 2, 3];
+          match v {
+              [] => println!("empty"),
+              _ => println!("some"),
+          }
+      }
+      ```
+
+      ```error
+      error[E0529]: expected an array or slice, found `Vec<{integer}>`
+      ```
+
+      Write `match v.as_slice()` (or `match &v[..]`).
+
+      **Your turn:** write `fn trend(temps: &[i32]) -> String` with a slice pattern:
+
+      - empty: `"no data"`
+      - one reading: `"only T"`
+      - otherwise compare the first and last reading: `"rising from A to B"`, `"falling from A to B"`, or `"steady at A"` if they're equal.
+    seed: |
+      fn trend(temps: &[i32]) -> String {
+          todo!()
+      }
+    solution: |
+      fn trend(temps: &[i32]) -> String {
+          match temps {
+              [] => String::from("no data"),
+              [only] => format!("only {only}"),
+              [first, .., last] if last > first => format!("rising from {first} to {last}"),
+              [first, .., last] if last < first => format!("falling from {first} to {last}"),
+              [first, ..] => format!("steady at {first}"),
+          }
+      }
+    harness: |
+      #[test]
+      fn empty_slice_has_no_data() {
+          assert_eq!(trend(&[]), "no data", "trend(&[])");
+      }
+
+      #[test]
+      fn one_reading() {
+          assert_eq!(trend(&[21]), "only 21", "trend(&[21])");
+      }
+
+      #[test]
+      fn rising_with_two_readings() {
+          assert_eq!(trend(&[18, 22]), "rising from 18 to 22", "trend(&[18, 22])");
+      }
+
+      #[test]
+      fn falling_ignores_the_middle() {
+          assert_eq!(trend(&[30, 50, 10, 25]), "falling from 30 to 25", "trend(&[30, 50, 10, 25])");
+      }
+
+      #[test]
+      fn steady_when_first_equals_last() {
+          assert_eq!(trend(&[-2, 5, -2]), "steady at -2", "trend(&[-2, 5, -2])");
+      }
+    require:
+      - pattern: '\[\s*\w+\s*,\s*\.\.'
+        message: "Use a slice pattern like `[first, .., last]`."
+    hints:
+      - "Start with `[] => ...` and `[only] => ...`."
+      - "`[first, .., last]` matches two or more readings. Add a guard to compare: `[first, .., last] if last > first => ...`"
+      - "Finish with an unguarded arm such as `[first, ..] => format!(\"steady at {first}\")` so the match is exhaustive."
+    more:
+      - task: |
+          Write a program for a tiny bank terminal. Each input line is a command:
+
+          - `deposit N`: add N to the balance and print `balance: B`
+          - `withdraw N`: if N is more than the balance print `insufficient funds`, otherwise subtract and print `balance: B`
+          - `balance`: print `balance: B`
+          - anything else (including a non-number amount): print `unknown command`
+
+          The balance starts at 0. Match on `words.as_slice()` with patterns like `["deposit", amount]`, and parse the amount with `amount.parse::<u32>()`, matching on `Ok(n)` / `Err(_)`.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut balance: u32 = 0;
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let words: Vec<&str> = line.split_whitespace().collect();
+                  // match words.as_slice() { ... }
+              }
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut balance: u32 = 0;
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let words: Vec<&str> = line.split_whitespace().collect();
+                  // match words.as_slice() { ... }
+                  match words.as_slice() {
+                      ["deposit", amount] => match amount.parse::<u32>() {
+                          Ok(n) => {
+                              balance += n;
+                              println!("balance: {balance}");
+                          }
+                          Err(_) => println!("unknown command"),
+                      },
+                      ["withdraw", amount] => match amount.parse::<u32>() {
+                          Ok(n) if n > balance => println!("insufficient funds"),
+                          Ok(n) => {
+                              balance -= n;
+                              println!("balance: {balance}");
+                          }
+                          Err(_) => println!("unknown command"),
+                      },
+                      ["balance"] => println!("balance: {balance}"),
+                      _ => println!("unknown command"),
+                  }
+              }
+          }
+        tests:
+          - stdin: "deposit 100\nwithdraw 30\nwithdraw 500\nbalance\n"
+            expect: "balance: 100\nbalance: 70\ninsufficient funds\nbalance: 70"
+          - stdin: "balance\ndeposit ten\nfly away\ndeposit 5\nwithdraw 5\n"
+          - stdin: "deposit 40\ndeposit 2\nwithdraw 42\nwithdraw 1\nbalance please\n"
+            hidden: true
+        require:
+          - pattern: 'as_slice\(\)|\[\.\.\]'
+            message: "Match on `words.as_slice()` so you can use slice patterns."
+        hints:
+          - "Arms look like `[\"deposit\", amount] => ...` where `amount` binds the second word."
+          - "Inside, `match amount.parse::<u32>() { Ok(n) => ..., Err(_) => ... }`."
+          - "For withdraw, a guard handles the not-enough-money case: `Ok(n) if n > balance => println!(\"insufficient funds\"),`"
+      - task: |
+          Two sensors take turns writing into one list, so readings come in pairs. Write `fn pair_sums(values: &[i32]) -> Vec<i32>` that adds each pair: `[1, 2, 3, 4, 5]` gives `[3, 7, 5]` (a leftover last value is kept as it is).
+
+          Use `while let` with a slice pattern: keep a variable `rest` (starting as `values`), and while it matches `[a, b, tail @ ..]`, push `a + b` and set `rest = tail`.
+        seed: |
+          fn pair_sums(values: &[i32]) -> Vec<i32> {
+              todo!()
+          }
+        solution: |
+          fn pair_sums(values: &[i32]) -> Vec<i32> {
+              let mut sums = Vec::new();
+              let mut rest = values;
+              while let [a, b, tail @ ..] = rest {
+                  sums.push(a + b);
+                  rest = tail;
+              }
+              if let [last] = rest {
+                  sums.push(*last);
+              }
+              sums
+          }
+        harness: |
+          #[test]
+          fn even_number_of_values() {
+              assert_eq!(pair_sums(&[1, 2, 3, 4]), vec![3, 7], "pair_sums(&[1, 2, 3, 4])");
+          }
+
+          #[test]
+          fn odd_number_keeps_the_last_value() {
+              assert_eq!(pair_sums(&[1, 2, 3, 4, 5]), vec![3, 7, 5], "pair_sums(&[1, 2, 3, 4, 5])");
+          }
+
+          #[test]
+          fn empty_gives_empty() {
+              assert_eq!(pair_sums(&[]), Vec::<i32>::new(), "pair_sums(&[])");
+          }
+
+          #[test]
+          fn single_value() {
+              assert_eq!(pair_sums(&[-8]), vec![-8], "pair_sums(&[-8])");
+          }
+
+          #[test]
+          fn negative_values() {
+              assert_eq!(pair_sums(&[-1, 1, 10, -20]), vec![0, -10], "pair_sums(&[-1, 1, 10, -20])");
+          }
+        require:
+          - pattern: 'while\s+let\s*\['
+            message: "Use `while let [a, b, tail @ ..] = rest`."
+        hints:
+          - "`let mut rest = values;` then `while let [a, b, tail @ ..] = rest { ... }`"
+          - "Inside the loop: `sums.push(a + b); rest = tail;`"
+          - "After the loop, `if let [last] = rest { sums.push(*last); }` keeps a leftover value."
+
+  - title: Refutable and irrefutable patterns
+    id: patterns-6
+    text: |
+      Some patterns can fail to match: `Some(x)` fails on `None`, `0..=9` fails on 42, `[first, ..]` fails on an empty slice. They're called **refutable**. Others match every possible value: `x`, `_`, `(a, b)` for a pair, `Point { x, y }` for a Point. They're **irrefutable**.
+
+      Where a pattern appears decides which kind is allowed:
+
+      | Place | Allowed patterns | Why |
+      |---|---|---|
+      | `let`, function parameters, `for` loops | irrefutable only | there's nowhere to go if the match fails |
+      | `if let`, `while let`, `let ... else`, `match` arms | refutable | they say what happens on a failed match (skip, stop, `else`, the next arm) |
+
+      Try a refutable pattern in a plain `let`:
+
+      ```rust compile_fail
+      fn main() {
+          let opt: Option<i32> = Some(3);
+          let Some(x) = opt;
+          println!("{x}");
+      }
+      ```
+
+      ```error
+      error[E0005]: refutable pattern in local binding
+      ```
+
+      The compiler even suggests the fix: `let ... else`, which you met in the enums module. The `else` block runs when the pattern fails and must leave the current block (`return`, `break`, `continue` or a panic), so code after it can rely on `x` existing.
+
+      ### let ... else for parsing
+
+      `let ... else` keeps the "happy path" flat when several steps can fail. This parses settings like `port = 8080`:
+
+      ```rust run
+      fn parse_setting(line: &str) -> Option<(String, u32)> {
+          let Some((key, value)) = line.split_once('=') else {
+              return None;
+          };
+          let Ok(number) = value.trim().parse::<u32>() else {
+              return None;
+          };
+          Some((key.trim().to_string(), number))
+      }
+
+      fn main() {
+          for line in ["port = 8080", "workers=4", "debug", "timeout = soon"] {
+              match parse_setting(line) {
+                  Some((key, value)) => println!("{key} -> {value}"),
+                  None => println!("skipped: {line}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      port -> 8080
+      workers -> 4
+      skipped: debug
+      skipped: timeout = soon
+      ```
+
+      - `line.split_once('=')` splits at the first `=` and returns `Some((before, after))`, or `None` if there's no `=` (more string tools in module 18).
+      - `let Some((key, value)) = ... else { return None; };` destructures two levels at once: the `Option` and the tuple inside it.
+      - `parse` returns a `Result`, so the second step uses `let Ok(number) = ... else`.
+
+      ### Irrefutable patterns you use all the time
+
+      ```rust run
+      fn print_score((name, points): (&str, u32)) {
+          println!("{name} has {points} points");
+      }
+
+      fn main() {
+          let scores = [("ana", 91), ("bo", 78)];
+          for (name, points) in scores {
+              print_score((name, points + 1));
+          }
+          let (best, _) = scores[0];
+          println!("first listed: {best}");
+      }
+      ```
+
+      ```output
+      ana has 92 points
+      bo has 79 points
+      first listed: ana
+      ```
+
+      A function parameter can be a pattern (`(name, points): (&str, u32)`), and so can the variable of a `for` loop. Both are irrefutable: a pair always has two parts.
+
+      The opposite mistake, using `if let` with a pattern that can't fail (`if let x = 5`), compiles but warns `irrefutable if let pattern`: the `if` is pointless.
+
+      **Your turn:** write `fn parse_point(text: &str) -> Option<(i32, i32)>` that reads a point written as `"x,y"` (spaces around the numbers are allowed). Return `None` if there's no comma or either number doesn't parse. Use `let ... else` for each step that can fail.
+    seed: |
+      fn parse_point(text: &str) -> Option<(i32, i32)> {
+          todo!()
+      }
+    solution: |
+      fn parse_point(text: &str) -> Option<(i32, i32)> {
+          let Some((left, right)) = text.split_once(',') else {
+              return None;
+          };
+          let Ok(x) = left.trim().parse::<i32>() else {
+              return None;
+          };
+          let Ok(y) = right.trim().parse::<i32>() else {
+              return None;
+          };
+          Some((x, y))
+      }
+    harness: |
+      #[test]
+      fn parses_two_numbers() {
+          assert_eq!(parse_point("3,4"), Some((3, 4)), "parse_point(\"3,4\")");
+      }
+
+      #[test]
+      fn allows_spaces_and_negatives() {
+          assert_eq!(parse_point(" -7 , 12 "), Some((-7, 12)), "parse_point(\" -7 , 12 \")");
+      }
+
+      #[test]
+      fn no_comma_gives_none() {
+          assert_eq!(parse_point("34"), None, "parse_point(\"34\")");
+      }
+
+      #[test]
+      fn bad_number_gives_none() {
+          assert_eq!(parse_point("a,1"), None, "parse_point(\"a,1\")");
+          assert_eq!(parse_point("1,"), None, "parse_point(\"1,\")");
+      }
+
+      #[test]
+      fn three_parts_gives_none() {
+          assert_eq!(parse_point("1,2,3"), None, "parse_point(\"1,2,3\")");
+      }
+    require:
+      - pattern: '\belse\s*\{'
+        message: "Use `let ... else { return None; };` for the steps that can fail."
+    forbid:
+      - pattern: '\.unwrap\(\)|\.expect\('
+        message: "Bad input is expected here: return `None` instead of using unwrap/expect."
+    hints:
+      - "`let Some((left, right)) = text.split_once(',') else { return None; };`"
+      - "Then `let Ok(x) = left.trim().parse::<i32>() else { return None; };` and the same for `y`."
+      - "`\"1,2,3\"` splits into `\"1\"` and `\"2,3\"`, and `\"2,3\"` doesn't parse as a number, so it gives `None` on its own."
+    more:
+      - task: |
+          This program doesn't compile: `let Some(percent) = ...;` is a refutable pattern in a plain `let`. Fix it with `let ... else` so an unknown code gives no discount (the function returns the price unchanged). It should print `180`, `150` and `200`.
+        seed: |
+          fn discount_percent(code: &str) -> Option<u32> {
+              match code {
+                  "CRAB10" => Some(10),
+                  "ARENA25" => Some(25),
+                  _ => None,
+              }
+          }
+
+          fn price_after(code: &str, price: u32) -> u32 {
+              let Some(percent) = discount_percent(code);
+              price - price * percent / 100
+          }
+
+          fn main() {
+              println!("{}", price_after("CRAB10", 200));
+              println!("{}", price_after("ARENA25", 200));
+              println!("{}", price_after("nope", 200));
+          }
+        solution: |
+          fn discount_percent(code: &str) -> Option<u32> {
+              match code {
+                  "CRAB10" => Some(10),
+                  "ARENA25" => Some(25),
+                  _ => None,
+              }
+          }
+
+          fn price_after(code: &str, price: u32) -> u32 {
+              let Some(percent) = discount_percent(code) else {
+                  return price;
+              };
+              price - price * percent / 100
+          }
+
+          fn main() {
+              println!("{}", price_after("CRAB10", 200));
+              println!("{}", price_after("ARENA25", 200));
+              println!("{}", price_after("nope", 200));
+          }
+        tests:
+          - expect: "180\n150\n200"
+        require:
+          - pattern: '\belse\s*\{'
+            message: "Use `let ... else` to handle the missing discount."
+        hints:
+          - "Add `else { ... };` after the `let Some(percent) = discount_percent(code)`."
+          - "The `else` block must leave the function: `else { return price; };`"
+      - task: |
+          Write a program that reads score lines like `ana: 91`. For each valid line print `ana scored 91`. Skip lines without a `:` or with a score that isn't a number, and at the end print `skipped N lines`. Trim spaces around the name and the score.
+
+          Use `let ... else { continue; };` inside the loop for each step that can fail.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+              }
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut skipped = 0;
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let Some((name, score)) = line.split_once(':') else {
+                      skipped += 1;
+                      continue;
+                  };
+                  let Ok(score) = score.trim().parse::<u32>() else {
+                      skipped += 1;
+                      continue;
+                  };
+                  println!("{} scored {}", name.trim(), score);
+              }
+              println!("skipped {skipped} lines");
+          }
+        tests:
+          - stdin: "ana: 91\nbo 78\ncy: 85\ndee: abc\n"
+            expect: "ana scored 91\ncy scored 85\nskipped 2 lines"
+          - stdin: "  eli :100\n"
+          - stdin: "x\ny: 3\nz:\n w : 12 \n"
+            hidden: true
+        require:
+          - pattern: '\belse\s*\{'
+            message: "Use `let ... else { ...; continue; };` to skip bad lines."
+        hints:
+          - "`let Some((name, score)) = line.split_once(':') else { skipped += 1; continue; };`"
+          - "Then parse with `let Ok(score) = score.trim().parse::<u32>() else { ... };` (shadowing `score` with the number is fine)."
+          - "Print with `name.trim()` so spaces around the name disappear."

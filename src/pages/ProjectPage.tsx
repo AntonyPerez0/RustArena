@@ -45,7 +45,7 @@ export default function ProjectPage() {
       <div className="step-grid">
         <aside className="step-text">
           <div className="step-count">
-            {p.level} · {p.lang === "c" ? "C" : "C++"}
+            {p.level}
             {p.after && <> · best after {moduleById.get(p.after)?.title}</>}
           </div>
           <h1>{p.title}</h1>

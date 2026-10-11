@@ -1,0 +1,1647 @@
+id: serde
+title: JSON and Serialization with serde
+phase: "Rust at work"
+summary: Turn your structs and enums into JSON and back with serde and serde_json, shape the JSON with attributes, work with dynamic JSON, and handle bad input the way production code does.
+roadmap: [Serialization/Deserialization, Serde, toml-rs]
+steps:
+  - title: From structs to JSON
+    id: serde-1
+    text: |
+      Programs at work constantly swap data with other programs: a web API answers in JSON, a config file is TOML, a message on a queue is JSON again. Turning a value in memory into text (or bytes) like that is called **serialization**; reading it back into a value is **deserialization**. In Rust nearly every team uses one library for both: **serde** (from SERialize and DEserialize).
+
+      serde comes in two halves:
+
+      - The `serde` crate defines two traits, `Serialize` and `Deserialize`, plus **derive macros** that write those trait impls for your own types.
+      - A **format crate** knows one data format: `serde_json` for JSON, `toml` for TOML, and many more. Every format works with every type that derives the traits, so you learn serde once and use it everywhere.
+
+      In a real project you add both to `Cargo.toml` (the `derive` feature switches on the derive macros):
+
+      ```toml
+      [dependencies]
+      serde = { version = "1", features = ["derive"] }
+      serde_json = "1"
+      ```
+
+      On this site both are already available.
+
+      ### Your first JSON
+
+      ```rust run
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      struct Player {
+          name: String,
+          level: u32,
+          online: bool,
+      }
+
+      fn main() {
+          let p = Player { name: String::from("Ferris"), level: 7, online: true };
+          let json = serde_json::to_string(&p).unwrap();
+          println!("{json}");
+      }
+      ```
+
+      ```output
+      {"name":"Ferris","level":7,"online":true}
+      ```
+
+      Piece by piece:
+
+      - `use serde::Serialize;` brings in the derive macro (it has the same name as the trait).
+      - `#[derive(Serialize)]` generates `impl Serialize for Player` at compile time, the same way `#[derive(Debug)]` generates `Debug`. You never write that impl by hand for ordinary structs.
+      - `serde_json::to_string(&p)` takes a reference (serializing only reads the value) and returns `Result<String, serde_json::Error>`. Field names become JSON keys, **in the order the fields are declared**.
+      - Why a `Result`? Serialization can fail in rare cases, for example a map whose keys aren't strings, which JSON can't represent. For a plain struct like this it never fails, so `unwrap` (or better, `expect` with a reason) is accepted practice. In functions that already return a `Result`, use `?`.
+
+      ### How Rust types map to JSON
+
+      | Rust | JSON |
+      |---|---|
+      | `String`, `&str`, `char` | string `"..."` |
+      | integers, floats | number |
+      | `bool` | `true` / `false` |
+      | `Vec<T>`, arrays, slices, tuples | array `[...]` |
+      | `Option<T>` | the value, or `null` for `None` |
+      | structs, `BTreeMap<String, T>`, `HashMap<String, T>` | object `{...}` |
+
+      Structs can contain other structs, as long as every type inside also implements `Serialize`. For humans, `to_string_pretty` adds newlines and two-space indentation:
+
+      ```rust run
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      struct Item {
+          sku: String,
+          qty: u32,
+      }
+
+      #[derive(Serialize)]
+      struct Order {
+          id: u64,
+          items: Vec<Item>,
+          note: Option<String>,
+      }
+
+      fn main() {
+          let order = Order {
+              id: 1001,
+              items: vec![Item { sku: String::from("CRAB-01"), qty: 2 }],
+              note: None,
+          };
+          println!("{}", serde_json::to_string_pretty(&order).expect("orders always serialize"));
+      }
+      ```
+
+      ```output
+      {
+        "id": 1001,
+        "items": [
+          {
+            "sku": "CRAB-01",
+            "qty": 2
+          }
+        ],
+        "note": null
+      }
+      ```
+
+      ### Common mistakes
+
+      **Forgetting the derive on an inner type.** `Order` derives `Serialize`, but `Item` doesn't:
+
+      ```rust compile_fail
+      use serde::Serialize;
+
+      struct Item {
+          sku: String,
+      }
+
+      #[derive(Serialize)]
+      struct Order {
+          items: Vec<Item>,
+      }
+
+      fn main() {
+          let o = Order { items: vec![Item { sku: String::from("A") }] };
+          println!("{}", serde_json::to_string(&o).unwrap());
+      }
+      ```
+
+      ```error
+      error[E0277]: the trait bound `Item: serde::Serialize` is not satisfied
+      ```
+
+      The note under the error even suggests the fix: add `#[derive(Serialize)]` to `Item`. Two more:
+
+      - **Forgetting `features = ["derive"]`** in `Cargo.toml`: then `#[derive(Serialize)]` fails with "cannot find derive macro `Serialize` in this scope".
+      - **Using `{:?}` and calling it JSON.** Debug output (`Player { name: "Ferris", .. }`) is for developers; other programs can't parse it. JSON comes from `serde_json`.
+
+      **Your turn:** fill in the blanks so the program derives the trait and prints the ticket as compact JSON: `{"id":42,"title":"Login button broken","open":true}`.
+    fill: |
+      use serde::Serialize;
+
+      #[derive([[Serialize]])]
+      struct Ticket {
+          id: u32,
+          title: String,
+          open: bool,
+      }
+
+      fn main() {
+          let t = Ticket { id: 42, title: String::from("Login button broken"), open: true };
+          let json = serde_json::[[to_string]](&t).unwrap();
+          println!("{json}");
+      }
+    hints:
+      - The derive macro has the same name as the trait you imported.
+      - "The compact (one-line) function is `serde_json::to_string`."
+    tests:
+      - expect: '{"id":42,"title":"Login button broken","open":true}'
+    more:
+      - task: |
+          The starter code doesn't compile: one type is missing its derive. Fix it, then print the inventory with `serde_json::to_string_pretty` so the output is indented over several lines.
+        seed: |
+          use serde::Serialize;
+
+          struct Shelf {
+              label: String,
+              slots: u32,
+          }
+
+          #[derive(Serialize)]
+          struct Inventory {
+              warehouse: String,
+              shelves: Vec<Shelf>,
+              manager: Option<String>,
+          }
+
+          fn main() {
+              let inv = Inventory {
+                  warehouse: String::from("North"),
+                  shelves: vec![
+                      Shelf { label: String::from("A1"), slots: 12 },
+                      Shelf { label: String::from("B4"), slots: 8 },
+                  ],
+                  manager: None,
+              };
+              println!("{}", serde_json::to_string(&inv).unwrap());
+          }
+        solution: |
+          use serde::Serialize;
+
+          #[derive(Serialize)]
+          struct Shelf {
+              label: String,
+              slots: u32,
+          }
+
+          #[derive(Serialize)]
+          struct Inventory {
+              warehouse: String,
+              shelves: Vec<Shelf>,
+              manager: Option<String>,
+          }
+
+          fn main() {
+              let inv = Inventory {
+                  warehouse: String::from("North"),
+                  shelves: vec![
+                      Shelf { label: String::from("A1"), slots: 12 },
+                      Shelf { label: String::from("B4"), slots: 8 },
+                  ],
+                  manager: None,
+              };
+              println!("{}", serde_json::to_string_pretty(&inv).unwrap());
+          }
+        require:
+          - pattern: 'to_string_pretty'
+            message: Print it with `serde_json::to_string_pretty`.
+        hints:
+          - "Every type inside a serialized struct needs `#[derive(Serialize)]` too, including `Shelf`."
+          - "Then swap `to_string` for `to_string_pretty`."
+      - task: |
+          Logs are often written as **JSON Lines**: one compact JSON object per line, so tools can process them line by line. Derive what `Event` needs and write `fn to_json_lines(events: &[Event]) -> String` that serializes each event with `serde_json::to_string` and joins them with `\n` (no newline after the last one; an empty slice gives an empty string).
+        seed: |
+          use serde::Serialize;
+
+          struct Event {
+              level: String,
+              message: String,
+              code: u16,
+          }
+
+          fn to_json_lines(events: &[Event]) -> String {
+              todo!()
+          }
+        solution: |
+          use serde::Serialize;
+
+          #[derive(Serialize)]
+          struct Event {
+              level: String,
+              message: String,
+              code: u16,
+          }
+
+          fn to_json_lines(events: &[Event]) -> String {
+              events
+                  .iter()
+                  .map(|e| serde_json::to_string(e).expect("events always serialize"))
+                  .collect::<Vec<_>>()
+                  .join("\n")
+          }
+        harness: |
+          fn ev(level: &str, message: &str, code: u16) -> Event {
+              Event { level: level.to_string(), message: message.to_string(), code }
+          }
+
+          #[test]
+          fn one_event_is_one_compact_line() {
+              assert_eq!(to_json_lines(&[ev("info", "started", 0)]), r#"{"level":"info","message":"started","code":0}"#, "to_json_lines(one event)");
+          }
+
+          #[test]
+          fn events_are_joined_with_newlines() {
+              let out = to_json_lines(&[ev("info", "up", 0), ev("error", "disk full", 507)]);
+              assert_eq!(out, "{\"level\":\"info\",\"message\":\"up\",\"code\":0}\n{\"level\":\"error\",\"message\":\"disk full\",\"code\":507}", "to_json_lines(two events)");
+          }
+
+          #[test]
+          fn quotes_in_messages_are_escaped() {
+              assert_eq!(to_json_lines(&[ev("warn", "say \"hi\"", 1)]), r#"{"level":"warn","message":"say \"hi\"","code":1}"#, "to_json_lines(message with quotes)");
+          }
+
+          #[test]
+          fn no_events_gives_an_empty_string() {
+              assert_eq!(to_json_lines(&[]), "", "to_json_lines(&[])");
+          }
+        hints:
+          - "Add `#[derive(Serialize)]` to `Event`."
+          - "`events.iter().map(|e| serde_json::to_string(e).unwrap())` gives one String per event."
+          - "Collect into a `Vec<String>` and call `.join(\"\\n\")`."
+
+  - title: From JSON back into structs
+    id: serde-2
+    text: |
+      The other direction is **deserialization**: you derive `Deserialize` and ask `serde_json::from_str` for a value of your type.
+
+      ```rust run
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Reading {
+          sensor: String,
+          celsius: f64,
+      }
+
+      fn main() {
+          let text = r#"{"sensor": "greenhouse", "celsius": 21.5, "battery": 87}"#;
+          let r: Reading = serde_json::from_str(text).unwrap();
+          println!("{} reads {:.1} C", r.sensor, r.celsius);
+      }
+      ```
+
+      ```output
+      greenhouse reads 21.5 C
+      ```
+
+      Piece by piece:
+
+      - `r#"..."#` is a **raw string literal**: backslashes and double quotes inside it are taken literally, so JSON can be pasted in without escaping every `"`. (The number of `#` can grow if the text itself contains `"#`.)
+      - `from_str` is generic: it can produce any type that implements `Deserialize`, so you must say which one. Here the annotation `let r: Reading` does it; the turbofish `serde_json::from_str::<Reading>(text)` works too.
+      - It returns `Result<Reading, serde_json::Error>`, because input from outside can be anything.
+      - The JSON has a `battery` field that `Reading` doesn't. **Unknown fields are ignored** by default, which makes your program robust when an API adds fields later.
+      - Use owned types like `String` in structs you deserialize. (Borrowing `&str` fields from the input is possible but needs lifetimes and fails on strings with escapes; reach for it only when profiling says so.)
+
+      ### What can go wrong
+
+      serde checks the shape of the data against your type: every field present, every value the right type and in range. Anything else is an `Err` whose message says what and where:
+
+      ```rust run
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Reading {
+          sensor: String,
+          celsius: f64,
+      }
+
+      fn main() {
+          let inputs = [
+              r#"{"sensor": "attic", "celsius": 30}"#,
+              r#"{"sensor": "attic"}"#,
+              r#"{"sensor": "attic", "celsius": "hot"}"#,
+              r#"{"sensor": "attic", "celsius": 30"#,
+          ];
+          for text in inputs {
+              match serde_json::from_str::<Reading>(text) {
+                  Ok(r) => println!("ok: {} = {}", r.sensor, r.celsius),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      ok: attic = 30
+      error: missing field `celsius` at line 1 column 19
+      error: invalid type: string "hot", expected f64 at line 1 column 36
+      error: EOF while parsing an object at line 1 column 33
+      ```
+
+      A JSON integer like `30` is fine for an `f64` field. The reverse isn't: `2.5` for a `u32` is an error, and so is `-3` for a `u32` or `300` for a `u8`. Your Rust types are the validation: pick them carefully.
+
+      ### Common mistakes
+
+      - **No type for `from_str`.** `let r = serde_json::from_str(text).unwrap();` with nothing telling Rust the target type fails with `error[E0282]: type annotations needed`.
+      - **Unwrapping input you don't control.** `from_str(...).unwrap()` on data from a user, a file or the network turns a typo into a crash. Return the error with `?` or handle it with `match`.
+      - **Deriving `Deserialize` but not `Serialize`** and then calling `to_string`: they're separate traits. Derive both when you need both directions: `#[derive(Serialize, Deserialize)]`.
+
+      **Your turn:** a shop sends carts as JSON like `{"items": [{"name": "mug", "price": 2.5, "qty": 2}]}`. Derive what's needed and write `fn cart_total(json: &str) -> Result<f64, serde_json::Error>` that parses the cart and returns the sum of `price * qty` over all items. Invalid JSON must give an `Err` (use `?`).
+    seed: |
+      use serde::Deserialize;
+
+      struct Line {
+          price: f64,
+          qty: u32,
+      }
+
+      struct Cart {
+          items: Vec<Line>,
+      }
+
+      fn cart_total(json: &str) -> Result<f64, serde_json::Error> {
+          todo!()
+      }
+    solution: |
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Line {
+          price: f64,
+          qty: u32,
+      }
+
+      #[derive(Deserialize)]
+      struct Cart {
+          items: Vec<Line>,
+      }
+
+      fn cart_total(json: &str) -> Result<f64, serde_json::Error> {
+          let cart: Cart = serde_json::from_str(json)?;
+          Ok(cart.items.iter().map(|l| l.price * l.qty as f64).sum())
+      }
+    harness: |
+      #[test]
+      fn adds_price_times_quantity() {
+          let json = r#"{"items": [{"name": "mug", "price": 2.5, "qty": 2}, {"name": "tea", "price": 1.25, "qty": 4}]}"#;
+          assert_eq!(cart_total(json).unwrap(), 10.0, "cart_total(mug x2 + tea x4)");
+      }
+
+      #[test]
+      fn an_empty_cart_costs_nothing() {
+          assert_eq!(cart_total(r#"{"items": []}"#).unwrap(), 0.0, "cart_total(no items)");
+      }
+
+      #[test]
+      fn extra_fields_are_ignored() {
+          let json = r#"{"items": [{"price": 3.0, "qty": 3, "color": "red"}], "coupon": null}"#;
+          assert_eq!(cart_total(json).unwrap(), 9.0, "cart_total(with extra fields)");
+      }
+
+      #[test]
+      fn broken_json_is_an_error() {
+          assert!(cart_total(r#"{"items": [}"#).is_err(), "cart_total(broken JSON) should be Err");
+      }
+
+      #[test]
+      fn a_missing_price_is_an_error() {
+          assert!(cart_total(r#"{"items": [{"qty": 1}]}"#).is_err(), "cart_total(item without price) should be Err");
+      }
+    hints:
+      - "Both `Line` and `Cart` need `#[derive(Deserialize)]`."
+      - "`let cart: Cart = serde_json::from_str(json)?;` parses or returns the error."
+      - "`Ok(cart.items.iter().map(|l| l.price * l.qty as f64).sum())`"
+    more:
+      - task: |
+          Read a JSON array of players from standard input, like `[{"name": "Ferris", "score": 950}, ...]`, and print the best one as `top: Ferris (950)`. If the array is empty, print `no players`. You can assume the input is valid JSON.
+        seed: |
+          use serde::Deserialize;
+          use std::io::Read;
+
+          #[derive(Deserialize)]
+          struct Player {
+              name: String,
+              score: u32,
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              // parse `input` into a Vec<Player> and print the top scorer
+          }
+        solution: |
+          use serde::Deserialize;
+          use std::io::Read;
+
+          #[derive(Deserialize)]
+          struct Player {
+              name: String,
+              score: u32,
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              // parse `input` into a Vec<Player> and print the top scorer
+              let players: Vec<Player> = serde_json::from_str(&input).expect("valid JSON");
+              match players.iter().max_by_key(|p| p.score) {
+                  Some(p) => println!("top: {} ({})", p.name, p.score),
+                  None => println!("no players"),
+              }
+          }
+        tests:
+          - stdin: '[{"name": "Ferris", "score": 950}, {"name": "Corro", "score": 720}]'
+          - stdin: '[]'
+          - stdin: |
+              [
+                {"name": "Ana", "score": 10},
+                {"name": "Bo", "score": 99, "team": "red"},
+                {"name": "Cy", "score": 42}
+              ]
+            hidden: true
+        hints:
+          - "A JSON array deserializes into a `Vec<T>`: `let players: Vec<Player> = serde_json::from_str(&input).unwrap();`"
+          - "`players.iter().max_by_key(|p| p.score)` gives an `Option<&Player>`."
+      - task: |
+          A **round trip**: write `fn rename_sensor(json: &str, new_name: &str) -> Result<String, serde_json::Error>` that parses a sensor reading, changes its `sensor` field to `new_name`, and returns it serialized again as compact JSON. The struct needs both derives. Errors go back to the caller with `?`.
+        seed: |
+          struct Reading {
+              sensor: String,
+              celsius: f64,
+          }
+
+          fn rename_sensor(json: &str, new_name: &str) -> Result<String, serde_json::Error> {
+              todo!()
+          }
+        solution: |
+          use serde::{Deserialize, Serialize};
+
+          #[derive(Serialize, Deserialize)]
+          struct Reading {
+              sensor: String,
+              celsius: f64,
+          }
+
+          fn rename_sensor(json: &str, new_name: &str) -> Result<String, serde_json::Error> {
+              let mut r: Reading = serde_json::from_str(json)?;
+              r.sensor = new_name.to_string();
+              serde_json::to_string(&r)
+          }
+        harness: |
+          #[test]
+          fn renames_and_keeps_the_temperature() {
+              assert_eq!(rename_sensor(r#"{"sensor": "a1", "celsius": 19.5}"#, "kitchen").unwrap(), r#"{"sensor":"kitchen","celsius":19.5}"#, "rename_sensor(a1 -> kitchen)");
+          }
+
+          #[test]
+          fn output_is_compact_and_in_field_order() {
+              assert_eq!(rename_sensor(r#"{ "celsius": -4.0, "sensor": "x" }"#, "porch").unwrap(), r#"{"sensor":"porch","celsius":-4.0}"#, "rename_sensor(fields in other order)");
+          }
+
+          #[test]
+          fn invalid_input_is_an_error() {
+              assert!(rename_sensor("not json", "x").is_err(), "rename_sensor(\"not json\") should be Err");
+          }
+        hints:
+          - "`use serde::{Deserialize, Serialize};` and `#[derive(Serialize, Deserialize)]` on the struct."
+          - "Parse into a `mut` variable, assign `r.sensor = new_name.to_string();`, then `serde_json::to_string(&r)` (it already returns the right Result type)."
+
+  - title: "Shaping the JSON: rename, default, skip"
+    id: serde-3
+    text: |
+      The JSON you exchange is often designed by someone else: a JavaScript frontend uses `camelCase`, an API has a field called `type` (a Rust keyword), a config file leaves out settings that have sensible defaults. **serde attributes** let your Rust structs keep Rust names and still match the JSON exactly.
+
+      ```rust run
+      use serde::{Deserialize, Serialize};
+
+      #[derive(Serialize, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct ServerConfig {
+          host_name: String,
+          #[serde(default = "default_port")]
+          port: u16,
+          #[serde(default)]
+          max_connections: u32,
+          #[serde(skip_serializing_if = "Option::is_none")]
+          admin_email: Option<String>,
+      }
+
+      fn default_port() -> u16 {
+          8080
+      }
+
+      fn main() {
+          let cfg: ServerConfig = serde_json::from_str(r#"{"hostName": "arena.local"}"#).unwrap();
+          println!("{} {} {} {:?}", cfg.host_name, cfg.port, cfg.max_connections, cfg.admin_email);
+          println!("{}", serde_json::to_string(&cfg).unwrap());
+      }
+      ```
+
+      ```output
+      arena.local 8080 0 None
+      {"hostName":"arena.local","port":8080,"maxConnections":0}
+      ```
+
+      Piece by piece:
+
+      - `#[serde(rename_all = "camelCase")]` on the struct renames every field in both directions: `host_name` is `hostName` in JSON. Other choices: `"snake_case"`, `"kebab-case"`, `"SCREAMING_SNAKE_CASE"`, `"PascalCase"`, `"lowercase"`, `"UPPERCASE"`.
+      - `#[serde(rename = "type")]` on one field renames just that field. It's how you handle JSON keys that are Rust keywords: name the field `kind` and rename it.
+      - `Option<T>` fields are special: a **missing** key (or `null`) becomes `None`. No attribute needed.
+      - `#[serde(default)]` fills a missing field with `Default::default()` (0, `""`, empty `Vec`, `false`). `#[serde(default = "default_port")]` calls your function instead; the string is a path to a function with no arguments.
+      - `#[serde(skip_serializing_if = "Option::is_none")]` leaves the key out of the output instead of writing `null`. It takes any function `fn(&T) -> bool`; `"Vec::is_empty"` is another favorite.
+      - `#[serde(skip)]` ignores a field completely (it must implement `Default`, since it's filled with the default when reading).
+
+      ### Strict configs: deny_unknown_fields
+
+      Ignoring unknown fields is great for APIs, bad for config files: a typo like `"prot": 9000` would silently be ignored and you'd run on the default port. `#[serde(deny_unknown_fields)]` turns it into an error:
+
+      ```rust run
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      #[serde(deny_unknown_fields)]
+      struct Limits {
+          users: u32,
+          rooms: u32,
+      }
+
+      fn main() {
+          match serde_json::from_str::<Limits>(r#"{"users": 50, "roms": 4}"#) {
+              Ok(l) => println!("{} users, {} rooms", l.users, l.rooms),
+              Err(e) => println!("config error: {e}"),
+          }
+      }
+      ```
+
+      ```output
+      config error: unknown field `roms`, expected `users` or `rooms` at line 1 column 20
+      ```
+
+      ### Common mistakes
+
+      - **`#[serde(default)]` on a type without `Default`.** The derive expands to a call to `Default::default()`, so you get `the trait bound ... Default is not satisfied`. Derive or implement `Default`, or use `default = "some_fn"`.
+      - **Writing the function instead of its path**: `default = "default_port()"` is an error; it's `default = "default_port"`.
+      - **Mixing up the two renames.** `rename_all` goes on the struct (or enum) and applies a casing rule; `rename` goes on one field and gives it an exact name.
+
+      **Your turn:** a payment provider sends webhooks like `{"eventId": "ev_1", "type": "charge", "amountCents": 1299, "currency": "EUR", "customerEmail": "a@b.io"}`. Complete `Webhook` so that:
+      - keys are camelCase (`event_id` is `eventId`), and the field `kind` is the JSON key `type`,
+      - a missing `currency` means `"USD"` (write `fn default_currency() -> String`),
+      - `customer_email` is optional, and when it's `None` the key is left out of the output entirely.
+    seed: |
+      use serde::{Deserialize, Serialize};
+
+      #[derive(Debug, Serialize, Deserialize)]
+      struct Webhook {
+          event_id: String,
+          kind: String,
+          amount_cents: u64,
+          currency: String,
+          customer_email: Option<String>,
+      }
+    solution: |
+      use serde::{Deserialize, Serialize};
+
+      #[derive(Debug, Serialize, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Webhook {
+          event_id: String,
+          #[serde(rename = "type")]
+          kind: String,
+          amount_cents: u64,
+          #[serde(default = "default_currency")]
+          currency: String,
+          #[serde(skip_serializing_if = "Option::is_none")]
+          customer_email: Option<String>,
+      }
+
+      fn default_currency() -> String {
+          String::from("USD")
+      }
+    harness: |
+      #[test]
+      fn reads_camel_case_keys_and_type() {
+          let w: Webhook = serde_json::from_str(r#"{"eventId": "ev_1", "type": "charge", "amountCents": 1299, "currency": "EUR", "customerEmail": "a@b.io"}"#).unwrap();
+          assert_eq!(w.event_id, "ev_1", "event_id");
+          assert_eq!(w.kind, "charge", "kind (JSON key \"type\")");
+          assert_eq!(w.amount_cents, 1299, "amount_cents");
+          assert_eq!(w.customer_email.as_deref(), Some("a@b.io"), "customer_email");
+      }
+
+      #[test]
+      fn missing_currency_defaults_to_usd() {
+          let w: Webhook = serde_json::from_str(r#"{"eventId": "ev_2", "type": "refund", "amountCents": 500}"#).unwrap();
+          assert_eq!(w.currency, "USD", "currency when missing");
+          assert_eq!(w.customer_email, None, "customer_email when missing");
+      }
+
+      #[test]
+      fn none_email_is_left_out_of_the_output() {
+          let w: Webhook = serde_json::from_str(r#"{"eventId": "ev_3", "type": "charge", "amountCents": 1, "currency": "JPY"}"#).unwrap();
+          assert_eq!(serde_json::to_string(&w).unwrap(), r#"{"eventId":"ev_3","type":"charge","amountCents":1,"currency":"JPY"}"#, "to_string(webhook without email)");
+      }
+
+      #[test]
+      fn some_email_is_written() {
+          let w: Webhook = serde_json::from_str(r#"{"eventId": "e", "type": "t", "amountCents": 2, "customerEmail": "x@y.z"}"#).unwrap();
+          assert_eq!(serde_json::to_string(&w).unwrap(), r#"{"eventId":"e","type":"t","amountCents":2,"currency":"USD","customerEmail":"x@y.z"}"#, "to_string(webhook with email)");
+      }
+    hints:
+      - "Put `#[serde(rename_all = \"camelCase\")]` on the struct and `#[serde(rename = \"type\")]` on `kind`."
+      - "`#[serde(default = \"default_currency\")]` on `currency`, plus `fn default_currency() -> String { String::from(\"USD\") }`."
+      - "`#[serde(skip_serializing_if = \"Option::is_none\")]` on `customer_email`."
+    more:
+      - task: |
+          Game settings files only list what the player changed. Put `#[serde(default)]` on the **struct** itself (not on a field): then every missing field comes from the struct's `Default` impl. Write that `impl Default for Settings` with volume `80`, difficulty `"normal"` and subtitles `true`, and add the attribute.
+        seed: |
+          use serde::Deserialize;
+
+          #[derive(Debug, Deserialize)]
+          struct Settings {
+              volume: u8,
+              difficulty: String,
+              subtitles: bool,
+          }
+        solution: |
+          use serde::Deserialize;
+
+          #[derive(Debug, Deserialize)]
+          #[serde(default)]
+          struct Settings {
+              volume: u8,
+              difficulty: String,
+              subtitles: bool,
+          }
+
+          impl Default for Settings {
+              fn default() -> Self {
+                  Settings { volume: 80, difficulty: String::from("normal"), subtitles: true }
+              }
+          }
+        harness: |
+          #[test]
+          fn an_empty_object_gives_all_defaults() {
+              let s: Settings = serde_json::from_str("{}").unwrap();
+              assert_eq!((s.volume, s.difficulty.as_str(), s.subtitles), (80, "normal", true), "Settings from {{}}");
+          }
+
+          #[test]
+          fn given_fields_win_over_defaults() {
+              let s: Settings = serde_json::from_str(r#"{"volume": 30, "subtitles": false}"#).unwrap();
+              assert_eq!((s.volume, s.difficulty.as_str(), s.subtitles), (30, "normal", false), "Settings with volume and subtitles");
+          }
+
+          #[test]
+          fn default_matches_the_spec() {
+              let s = Settings::default();
+              assert_eq!((s.volume, s.difficulty.as_str(), s.subtitles), (80, "normal", true), "Settings::default()");
+          }
+        hints:
+          - "Add `#[serde(default)]` on the line after the derive, above `struct Settings`."
+          - "`impl Default for Settings { fn default() -> Self { Settings { volume: 80, ... } } }`"
+      - task: |
+          Write `fn load_limits(json: &str) -> Result<Limits, String>` for a strict config. The JSON keys are kebab-case (`max-users`, `max-rooms`), unknown keys must be **rejected** (so a typo is caught), and on error return the serde message as a String with `config: ` in front, for example `config: unknown field ...`.
+        seed: |
+          use serde::Deserialize;
+
+          #[derive(Debug, Deserialize)]
+          struct Limits {
+              max_users: u32,
+              max_rooms: u32,
+          }
+
+          fn load_limits(json: &str) -> Result<Limits, String> {
+              todo!()
+          }
+        solution: |
+          use serde::Deserialize;
+
+          #[derive(Debug, Deserialize)]
+          #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+          struct Limits {
+              max_users: u32,
+              max_rooms: u32,
+          }
+
+          fn load_limits(json: &str) -> Result<Limits, String> {
+              serde_json::from_str(json).map_err(|e| format!("config: {e}"))
+          }
+        harness: |
+          #[test]
+          fn reads_kebab_case_keys() {
+              let l = load_limits(r#"{"max-users": 100, "max-rooms": 8}"#).unwrap();
+              assert_eq!((l.max_users, l.max_rooms), (100, 8), "load_limits(valid)");
+          }
+
+          #[test]
+          fn a_typo_is_rejected() {
+              let e = load_limits(r#"{"max-users": 100, "max-roms": 8}"#).unwrap_err();
+              assert!(e.starts_with("config: unknown field `max-roms`"), "error was: {e}");
+          }
+
+          #[test]
+          fn a_missing_key_is_rejected() {
+              let e = load_limits(r#"{"max-users": 1}"#).unwrap_err();
+              assert!(e.starts_with("config: missing field `max-rooms`"), "error was: {e}");
+          }
+        hints:
+          - "Several options go in one attribute, separated by a comma: `#[serde(rename_all = \"kebab-case\", deny_unknown_fields)]`."
+          - "`serde_json::from_str(json).map_err(|e| format!(\"config: {e}\"))`"
+
+  - title: Enums in JSON
+    id: serde-4
+    text: |
+      Enums are where serde shines: a message that can be one of several kinds maps naturally onto a Rust enum, and `match` then forces you to handle every kind. The question is how the variant name appears in JSON. serde supports four **representations**.
+
+      ### The default: externally tagged
+
+      ```rust run
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      enum Shape {
+          Circle { r: f64 },
+          Square(f64),
+          Empty,
+      }
+
+      fn main() {
+          for s in [Shape::Circle { r: 1.5 }, Shape::Square(2.0), Shape::Empty] {
+              println!("{}", serde_json::to_string(&s).unwrap());
+          }
+      }
+      ```
+
+      ```output
+      {"Circle":{"r":1.5}}
+      {"Square":2.0}
+      "Empty"
+      ```
+
+      A variant with data becomes an object with one key, the variant name. A **unit variant** (no data) becomes just a string. That makes unit-only enums perfect for fields with a fixed set of values, instead of a `String` that could hold anything:
+
+      ```rust run
+      use serde::Deserialize;
+
+      #[derive(Deserialize, PartialEq)]
+      #[serde(rename_all = "lowercase")]
+      enum Status {
+          Open,
+          Closed,
+      }
+
+      fn main() {
+          let s: Status = serde_json::from_str(r#""closed""#).unwrap();
+          println!("{}", s == Status::Closed);
+          match serde_json::from_str::<Status>(r#""archived""#) {
+              Ok(_) => println!("parsed"),
+              Err(e) => println!("{e}"),
+          }
+      }
+      ```
+
+      ```output
+      true
+      unknown variant `archived`, expected `open` or `closed` at line 1 column 10
+      ```
+
+      On an enum, `rename_all` renames the **variants**.
+
+      ### Internally tagged: `#[serde(tag = "type")]`
+
+      Most JSON APIs put the kind *inside* the object: `{"type": "purchase", "user": "ana", "cents": 1299}`. That's the **internally tagged** representation:
+
+      ```rust run
+      use serde::{Deserialize, Serialize};
+
+      #[derive(Serialize, Deserialize)]
+      #[serde(tag = "type", rename_all = "snake_case")]
+      enum Event {
+          Login { user: String },
+          Purchase { user: String, cents: u64 },
+          PasswordReset { user: String },
+      }
+
+      fn main() {
+          let e = Event::PasswordReset { user: String::from("ana") };
+          println!("{}", serde_json::to_string(&e).unwrap());
+
+          let text = r#"{"type": "purchase", "user": "bo", "cents": 1299}"#;
+          match serde_json::from_str::<Event>(text).unwrap() {
+              Event::Login { user } => println!("{user} logged in"),
+              Event::Purchase { user, cents } => println!("{user} spent {cents} cents"),
+              Event::PasswordReset { user } => println!("{user} reset a password"),
+          }
+      }
+      ```
+
+      ```output
+      {"type":"password_reset","user":"ana"}
+      bo spent 1299 cents
+      ```
+
+      ### The other two
+
+      - **Adjacently tagged**, `#[serde(tag = "t", content = "c")]`: `{"t": "Square", "c": 2.0}`. The tag and the data sit side by side; works for every kind of variant.
+      - **Untagged**, `#[serde(untagged)]`: no tag at all; when reading, serde tries each variant in order and takes the first that fits. Handy for "a number or a string" fields, but error messages get vague ("data did not match any variant").
+
+      ### Common mistakes
+
+      - **Internally tagged tuple variants.** `#[serde(tag = "type")]` can't put a tag inside a bare number, so serializing `Square(2.0)` fails at **run time** with `cannot serialize tagged newtype variant Shape::Square containing a float`. Use struct variants (`Square { side: f64 }`) or adjacent tagging.
+      - **Forgetting `rename_all` on the enum** and getting `"PasswordReset"` when the API expects `"password_reset"`: the error says `unknown variant`, and lists the names it expected, which is the clue.
+      - **Stringly typed fields.** A `status: String` accepts `"Open"`, `"open "` and `"opne"`. An enum rejects all but the real values at the edge of your program.
+
+      **Your turn:** each line of standard input is one JSON event: `{"type": "login", "user": "ana"}`, `{"type": "purchase", "user": "bo", "cents": 1299}` or `{"type": "logout", "user": "ana"}`. Define the internally tagged enum and print three lines: the number of logins, the total revenue in dollars with two decimals, and how many lines couldn't be parsed (skip empty lines):
+
+      ```
+      logins: 2
+      revenue: 15.49
+      skipped: 1
+      ```
+    seed: |
+      use serde::Deserialize;
+      use std::io::Read;
+
+      // Define `enum Event` here
+
+      fn main() {
+          let mut input = String::new();
+          std::io::stdin().read_to_string(&mut input).unwrap();
+          let mut logins = 0;
+          let mut cents = 0;
+          let mut skipped = 0;
+          for line in input.lines() {
+              if line.trim().is_empty() {
+                  continue;
+              }
+              // parse the line and update the counters
+          }
+          println!("logins: {logins}");
+          println!("revenue: {:.2}", cents as f64 / 100.0);
+          println!("skipped: {skipped}");
+      }
+    solution: |
+      use serde::Deserialize;
+      use std::io::Read;
+
+      #[derive(Deserialize)]
+      #[serde(tag = "type", rename_all = "lowercase")]
+      enum Event {
+          Login,
+          Purchase { cents: u64 },
+          Logout,
+      }
+
+      fn main() {
+          let mut input = String::new();
+          std::io::stdin().read_to_string(&mut input).unwrap();
+          let mut logins = 0;
+          let mut cents = 0;
+          let mut skipped = 0;
+          for line in input.lines() {
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match serde_json::from_str::<Event>(line) {
+                  Ok(Event::Login) => logins += 1,
+                  Ok(Event::Purchase { cents: c }) => cents += c,
+                  Ok(Event::Logout) => {}
+                  Err(_) => skipped += 1,
+              }
+          }
+          println!("logins: {logins}");
+          println!("revenue: {:.2}", cents as f64 / 100.0);
+          println!("skipped: {skipped}");
+      }
+    require:
+      - pattern: 'tag\s*='
+        strings: true
+        message: 'Use an internally tagged enum: `#[serde(tag = "type")]`.'
+    tests:
+      - stdin: |
+          {"type": "login", "user": "ana"}
+          {"type": "purchase", "user": "ana", "cents": 1299}
+          {"type": "login", "user": "bo"}
+          {"type": "purchase", "user": "bo", "cents": 250}
+          {"type": "refund", "user": "bo", "cents": 250}
+          {"type": "logout", "user": "ana"}
+        expect: "logins: 2\nrevenue: 15.49\nskipped: 1"
+      - stdin: |
+          {"type": "purchase", "user": "cy", "cents": 5}
+
+          not json at all
+          {"type": "purchase", "user": "cy"}
+          {"type": "logout", "user": "cy"}
+        hidden: true
+      - stdin: ""
+        hidden: true
+    hints:
+      - "Unit variants work with internal tagging: `{\"type\": \"login\", \"user\": \"ana\"}` matches `Login` (the extra `user` key is ignored). Only keep the data you use."
+      - "`#[derive(Deserialize)] #[serde(tag = \"type\", rename_all = \"lowercase\")] enum Event { Login, Purchase { cents: u64 }, Logout }`"
+      - "`match serde_json::from_str::<Event>(line) { Ok(Event::Login) => logins += 1, Ok(Event::Purchase { cents: c }) => cents += c, Ok(Event::Logout) => {}, Err(_) => skipped += 1 }`"
+    more:
+      - task: |
+          Tickets come as a JSON array: `[{"id": 1, "status": "open"}, {"id": 2, "status": "closed"}]`. Make `Status` a lowercase unit enum, derive what's needed, and write `fn open_ids(json: &str) -> Result<Vec<u32>, serde_json::Error>` returning the ids of open tickets in order. A status other than `open`, `closed` or `blocked` must make the whole parse fail.
+        seed: |
+          use serde::Deserialize;
+
+          enum Status {
+              Open,
+              Closed,
+              Blocked,
+          }
+
+          struct Ticket {
+              id: u32,
+              status: Status,
+          }
+
+          fn open_ids(json: &str) -> Result<Vec<u32>, serde_json::Error> {
+              todo!()
+          }
+        solution: |
+          use serde::Deserialize;
+
+          #[derive(Deserialize, PartialEq)]
+          #[serde(rename_all = "lowercase")]
+          enum Status {
+              Open,
+              Closed,
+              Blocked,
+          }
+
+          #[derive(Deserialize)]
+          struct Ticket {
+              id: u32,
+              status: Status,
+          }
+
+          fn open_ids(json: &str) -> Result<Vec<u32>, serde_json::Error> {
+              let tickets: Vec<Ticket> = serde_json::from_str(json)?;
+              Ok(tickets.iter().filter(|t| t.status == Status::Open).map(|t| t.id).collect())
+          }
+        harness: |
+          #[test]
+          fn keeps_only_open_tickets() {
+              let json = r#"[{"id": 1, "status": "open"}, {"id": 2, "status": "closed"}, {"id": 3, "status": "blocked"}, {"id": 4, "status": "open"}]"#;
+              assert_eq!(open_ids(json).unwrap(), vec![1, 4], "open_ids(mixed)");
+          }
+
+          #[test]
+          fn no_tickets_gives_no_ids() {
+              assert_eq!(open_ids("[]").unwrap(), Vec::<u32>::new(), "open_ids([])");
+          }
+
+          #[test]
+          fn an_unknown_status_is_an_error() {
+              assert!(open_ids(r#"[{"id": 9, "status": "archived"}]"#).is_err(), "status \"archived\" should be rejected");
+          }
+
+          #[test]
+          fn capitalized_status_is_an_error() {
+              assert!(open_ids(r#"[{"id": 9, "status": "Open"}]"#).is_err(), "status \"Open\" should be rejected (it's lowercase in this API)");
+          }
+        hints:
+          - "`#[derive(Deserialize, PartialEq)] #[serde(rename_all = \"lowercase\")]` on `Status`, `#[derive(Deserialize)]` on `Ticket`."
+          - "Parse into `Vec<Ticket>` with `?`, then `filter` on `t.status == Status::Open` and `map` to `t.id`."
+      - task: |
+          A game server's commands use **adjacent tagging**: `{"cmd": "Move", "args": {"x": 1, "y": -2}}`, `{"cmd": "Say", "args": "gg"}` and `{"cmd": "Quit"}`. Derive both traits on `Command` with `tag = "cmd"` and `content = "args"`, then write `fn encode(cmds: &[Command]) -> String` that serializes the whole slice as one JSON array.
+        seed: |
+          use serde::{Deserialize, Serialize};
+
+          #[derive(Debug, PartialEq)]
+          enum Command {
+              Move { x: i32, y: i32 },
+              Say(String),
+              Quit,
+          }
+
+          fn encode(cmds: &[Command]) -> String {
+              todo!()
+          }
+        solution: |
+          use serde::{Deserialize, Serialize};
+
+          #[derive(Debug, PartialEq, Serialize, Deserialize)]
+          #[serde(tag = "cmd", content = "args")]
+          enum Command {
+              Move { x: i32, y: i32 },
+              Say(String),
+              Quit,
+          }
+
+          fn encode(cmds: &[Command]) -> String {
+              serde_json::to_string(cmds).expect("commands always serialize")
+          }
+        harness: |
+          #[test]
+          fn encodes_each_kind_of_variant() {
+              let out = encode(&[Command::Move { x: 1, y: -2 }, Command::Say("gg".to_string()), Command::Quit]);
+              assert_eq!(out, r#"[{"cmd":"Move","args":{"x":1,"y":-2}},{"cmd":"Say","args":"gg"},{"cmd":"Quit"}]"#, "encode(Move, Say, Quit)");
+          }
+
+          #[test]
+          fn an_empty_slice_is_an_empty_array() {
+              assert_eq!(encode(&[]), "[]", "encode(&[])");
+          }
+
+          #[test]
+          fn decoding_works_too() {
+              let c: Command = serde_json::from_str(r#"{"cmd": "Say", "args": "hello"}"#).unwrap();
+              assert_eq!(c, Command::Say("hello".to_string()), "from_str(Say)");
+          }
+        hints:
+          - "`#[serde(tag = \"cmd\", content = \"args\")]` under the derive line."
+          - "A slice serializes as a JSON array: `serde_json::to_string(cmds)`."
+
+  - title: Dynamic JSON with Value and json!
+    id: serde-5
+    text: |
+      Sometimes you don't want a struct: you only need one field from a big document, the shape varies, or you're building a quick response. For that, serde_json has `serde_json::Value`, an enum that can hold **any** JSON:
+
+      ```rust
+      enum Value {
+          Null,
+          Bool(bool),
+          Number(Number),
+          String(String),
+          Array(Vec<Value>),
+          Object(Map<String, Value>),
+      }
+      ```
+
+      ```rust run
+      use serde_json::{json, Value};
+
+      fn main() {
+          let text = r#"{"user": {"name": "Ferris", "tags": ["crab", "admin"]}, "visits": 12}"#;
+          let v: Value = serde_json::from_str(text).unwrap();
+
+          println!("{}", v["user"]["name"]);
+          println!("{:?}", v["user"]["name"].as_str());
+          println!("{}", v["visits"].as_u64().unwrap_or(0) + 1);
+          println!("{}", v["user"]["email"]);
+          println!("{}", v["user"]["tags"][1]);
+
+          let reply = json!({ "ok": true, "visits": v["visits"], "id": 7 });
+          println!("{reply}");
+      }
+      ```
+
+      ```output
+      "Ferris"
+      Some("Ferris")
+      13
+      null
+      "admin"
+      {"id":7,"ok":true,"visits":12}
+      ```
+
+      Piece by piece:
+
+      - `v["user"]["name"]` indexes into objects by key and arrays by position. A missing key or index gives `Value::Null` instead of panicking, so you can chain lookups safely.
+      - Printing a `Value` prints **JSON**: a string comes out with its quotes, `"Ferris"`. To get the Rust text, use the accessors: `as_str()`, `as_u64()`, `as_i64()`, `as_f64()`, `as_bool()`, `as_array()`, `as_object()`. Each returns an `Option`: `None` if the value is missing or of another type.
+      - `v.get("user")` is the `Option`-returning lookup: `None` when the key isn't there.
+      - The `json!` macro builds a `Value` with JSON syntax, and you can put Rust expressions inside (`v["visits"]` here, or any variable that implements `Serialize`).
+      - Object keys come out **sorted** (`id`, `ok`, `visits`): serde_json's `Map` is a `BTreeMap` unless you enable its `preserve_order` feature. Sorted is deterministic, which tests like.
+
+      `Value` is an ordinary enum, so you can `match` on it:
+
+      ```rust run
+      use serde_json::Value;
+
+      fn describe(v: &Value) -> String {
+          match v {
+              Value::Null => String::from("nothing"),
+              Value::Bool(b) => format!("yes/no: {b}"),
+              Value::Number(n) => format!("number {n}"),
+              Value::String(s) => format!("text {s}"),
+              Value::Array(items) => format!("list of {}", items.len()),
+              Value::Object(map) => format!("object with {} keys", map.len()),
+          }
+      }
+
+      fn main() {
+          let v: Value = serde_json::from_str(r#"[null, true, 2.5, "hi", [1, 2], {"a": 1}]"#).unwrap();
+          for item in v.as_array().unwrap() {
+              println!("{}", describe(item));
+          }
+      }
+      ```
+
+      ```output
+      nothing
+      yes/no: true
+      number 2.5
+      text hi
+      list of 2
+      object with 1 keys
+      ```
+
+      You can also convert between the two worlds: `serde_json::to_value(&my_struct)` and `serde_json::from_value::<MyStruct>(value)`.
+
+      ### When to use which
+
+      Prefer structs: the compiler checks every field access, and a wrong shape is reported in one place, at parse time. Use `Value` for genuinely dynamic data (arbitrary user metadata, proxying JSON you don't own, picking one field out of a huge response) and for tests, where `json!` makes expected values easy to write.
+
+      ### Common mistakes
+
+      - **Printing `v["name"]` and getting quotes.** Use `v["name"].as_str()`.
+      - **`unwrap()` on accessors** for data you don't control: `v["age"].as_u64().unwrap()` panics if age is missing or `"12"` (a string). Use `unwrap_or`, `if let`, or `?` on an `Option`.
+      - **Typos are silent.** `v["usr"]["name"]` is just `Null`, no error. That's the price of skipping structs.
+
+      **Your turn:** write `fn extract_emails(json: &str) -> Vec<String>`. The input looks like `{"users": [{"email": "a@x.io"}, {"name": "no email"}, ...]}`. Return every `email` that is a string, in order, skipping users without one. If the input isn't valid JSON, or `users` isn't an array, return an empty Vec.
+    seed: |
+      use serde_json::Value;
+
+      fn extract_emails(json: &str) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      use serde_json::Value;
+
+      fn extract_emails(json: &str) -> Vec<String> {
+          let Ok(v) = serde_json::from_str::<Value>(json) else {
+              return Vec::new();
+          };
+          let Some(users) = v["users"].as_array() else {
+              return Vec::new();
+          };
+          users
+              .iter()
+              .filter_map(|u| u["email"].as_str())
+              .map(|s| s.to_string())
+              .collect()
+      }
+    forbid:
+      - pattern: '#\[derive'
+        message: Solve it with `serde_json::Value`, without defining structs.
+    harness: |
+      #[test]
+      fn collects_emails_in_order() {
+          let json = r#"{"users": [{"email": "a@x.io"}, {"email": "b@y.io", "admin": true}]}"#;
+          assert_eq!(extract_emails(json), vec!["a@x.io", "b@y.io"], "extract_emails(two users)");
+      }
+
+      #[test]
+      fn skips_users_without_an_email() {
+          let json = r#"{"users": [{"name": "no email"}, {"email": "c@z.io"}, {"email": null}, {"email": 42}]}"#;
+          assert_eq!(extract_emails(json), vec!["c@z.io"], "extract_emails(some missing)");
+      }
+
+      #[test]
+      fn invalid_json_gives_nothing() {
+          assert_eq!(extract_emails("{users: oops"), Vec::<String>::new(), "extract_emails(invalid JSON)");
+      }
+
+      #[test]
+      fn users_must_be_an_array() {
+          assert_eq!(extract_emails(r#"{"users": "everyone"}"#), Vec::<String>::new(), "extract_emails(users is a string)");
+          assert_eq!(extract_emails(r#"{"people": []}"#), Vec::<String>::new(), "extract_emails(no users key)");
+      }
+    hints:
+      - "Parse with `serde_json::from_str::<Value>(json)`; on `Err`, return `Vec::new()` (`let ... else` is neat here)."
+      - "`v[\"users\"].as_array()` is `Some(&Vec<Value>)` only when it's an array."
+      - "`users.iter().filter_map(|u| u[\"email\"].as_str()).map(|s| s.to_string()).collect()`"
+    more:
+      - task: |
+          Build a response with `json!`. Write `fn stats(scores: &[i64]) -> Value` returning `{"count": <number of scores>, "max": <largest score>, "min": <smallest score>}`, where `max` and `min` are `null` when the slice is empty. (Hint: an `Option` inside `json!` becomes the value or `null`.)
+        seed: |
+          use serde_json::{json, Value};
+
+          fn stats(scores: &[i64]) -> Value {
+              todo!()
+          }
+        solution: |
+          use serde_json::{json, Value};
+
+          fn stats(scores: &[i64]) -> Value {
+              json!({
+                  "count": scores.len(),
+                  "max": scores.iter().max(),
+                  "min": scores.iter().min(),
+              })
+          }
+        harness: |
+          #[test]
+          fn reports_count_max_and_min() {
+              assert_eq!(stats(&[3, 9, -2]), json!({"count": 3, "max": 9, "min": -2}), "stats(&[3, 9, -2])");
+          }
+
+          #[test]
+          fn empty_scores_give_nulls() {
+              assert_eq!(stats(&[]), json!({"count": 0, "max": null, "min": null}), "stats(&[])");
+          }
+
+          #[test]
+          fn prints_with_sorted_keys() {
+              assert_eq!(stats(&[5]).to_string(), r#"{"count":1,"max":5,"min":5}"#, "stats(&[5]).to_string()");
+          }
+        hints:
+          - "`scores.iter().max()` is an `Option<&i64>`, and `json!` turns `None` into `null`."
+          - "`json!({ \"count\": scores.len(), \"max\": scores.iter().max(), \"min\": scores.iter().min() })`"
+      - task: |
+          Write a program that reads one JSON object from standard input and prints each top-level key with the kind of its value (`null`, `bool`, `number`, `string`, `array` or `object`), one per line as `key: kind`, in sorted key order. If the input isn't a JSON object, print `not an object`.
+        seed: |
+          use std::io::Read;
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+          }
+        solution: |
+          use serde_json::Value;
+          use std::io::Read;
+
+          fn kind(v: &Value) -> &'static str {
+              match v {
+                  Value::Null => "null",
+                  Value::Bool(_) => "bool",
+                  Value::Number(_) => "number",
+                  Value::String(_) => "string",
+                  Value::Array(_) => "array",
+                  Value::Object(_) => "object",
+              }
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              match serde_json::from_str::<Value>(&input) {
+                  Ok(Value::Object(map)) => {
+                      for (key, value) in &map {
+                          println!("{key}: {}", kind(value));
+                      }
+                  }
+                  _ => println!("not an object"),
+              }
+          }
+        tests:
+          - stdin: '{"name": "arena", "port": 8080, "debug": false, "tags": ["a"], "owner": null, "db": {"url": "x"}}'
+          - stdin: '[1, 2, 3]'
+          - stdin: '{"zeta": "last", "alpha": 1.5}'
+            hidden: true
+          - stdin: '{"broken": '
+            hidden: true
+        hints:
+          - "Match on the parse result directly: `Ok(Value::Object(map)) => ...`, `_ => println!(\"not an object\")`."
+          - "Iterating `&map` gives `(key, value)` pairs in sorted key order."
+          - "A helper `fn kind(v: &Value) -> &'static str` with one `match` arm per `Value` variant keeps `main` short."
+
+  - title: Bad input, validation and other formats
+    id: serde-6
+    text: |
+      At work, the JSON you parse comes from users, other teams and the internet. Three habits make that safe.
+
+      ### 1. Report errors helpfully
+
+      A `serde_json::Error` knows where it happened and what kind of problem it was:
+
+      - `e.line()` and `e.column()`: the position in the input.
+      - `e.is_syntax()`: not valid JSON at all (a stray character, a missing comma).
+      - `e.is_eof()`: the input ended too early (truncated file, empty input).
+      - `e.is_data()`: valid JSON, wrong shape for your type (missing field, wrong type, unknown variant).
+
+      ```rust run
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Job {
+          name: String,
+          retries: u8,
+      }
+
+      fn check(text: &str) {
+          match serde_json::from_str::<Job>(text) {
+              Ok(job) => println!("ok: {} x{}", job.name, job.retries),
+              Err(e) if e.is_syntax() || e.is_eof() => {
+                  println!("not JSON (line {}, column {})", e.line(), e.column())
+              }
+              Err(e) => println!("wrong shape: {e}"),
+          }
+      }
+
+      fn main() {
+          check(r#"{"name": "backup", "retries": 3}"#);
+          check(r#"{"name": "backup" "retries": 3}"#);
+          check(r#"{"name": "backup", "retries": 999}"#);
+          check("");
+      }
+      ```
+
+      ```output
+      ok: backup x3
+      not JSON (line 1, column 19)
+      wrong shape: invalid value: integer `999`, expected u8 at line 1 column 33
+      not JSON (line 1, column 0)
+      ```
+
+      ### 2. Validate after parsing
+
+      serde checks the **shape**; your **business rules** (a port isn't 0, an email has an `@`, a date range doesn't run backwards) are your job. Two common patterns:
+
+      - Parse into a struct, then check it in a function that returns `Result` (simple and explicit; the next exercise does this).
+      - Make the type validate itself: `#[serde(try_from = "String")]` on a newtype tells serde to deserialize a `String` first and then call your `TryFrom<String>` impl. Invalid values never exist as your type at all.
+
+      ```rust run
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      #[serde(try_from = "String")]
+      struct Email(String);
+
+      impl TryFrom<String> for Email {
+          type Error = String;
+          fn try_from(s: String) -> Result<Self, Self::Error> {
+              if s.contains('@') { Ok(Email(s)) } else { Err(format!("invalid email: {s}")) }
+          }
+      }
+
+      #[derive(Deserialize)]
+      struct Signup {
+          email: Email,
+      }
+
+      fn main() {
+          for text in [r#"{"email": "ana@arena.dev"}"#, r#"{"email": "ana"}"#] {
+              match serde_json::from_str::<Signup>(text) {
+                  Ok(s) => println!("welcome {}", s.email.0),
+                  Err(e) => println!("rejected: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      welcome ana@arena.dev
+      rejected: invalid email: ana at line 1 column 16
+      ```
+
+      ### 3. Don't `unwrap` outside input
+
+      Inside a function, propagate with `?` (next module: with context attached). In `main`, print a clear message and exit with a failure code (the CLI module). Never let a malformed request crash a server.
+
+      ### Other formats: same derives
+
+      Because the derives are format-independent, switching formats is a one-line change. With the `toml` crate (not available on this site, so shown only):
+
+      ```rust
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Config {
+          name: String,
+          port: u16,
+      }
+
+      fn load(text: &str) -> Result<Config, toml::de::Error> {
+          toml::from_str(text) // text is: name = "arena"\nport = 8080
+      }
+      ```
+
+      The same `Config` reads JSON with `serde_json::from_str`. Other format crates you'll meet: YAML (several crates exist; the original `serde_yaml` is no longer maintained, so check what your team uses), `csv` for spreadsheets, and binary formats like MessagePack (`rmp-serde`), `bincode` and `postcard` for compact messages between services and devices.
+
+      **Your turn:** write a config loader. Read all of standard input and parse it into `Config { name: String, port: u16, workers: u32 }`. Print exactly one line:
+      - not valid JSON (syntax error or input ending early): `syntax error at line L, column C`
+      - valid JSON, wrong shape: `bad config: ` followed by serde's message
+      - port `0`: `invalid: port must not be 0`
+      - workers outside `1..=64`: `invalid: workers must be 1 to 64`
+      - otherwise: `starting <name> on port <port> with <workers> workers`
+    seed: |
+      use serde::Deserialize;
+      use std::io::Read;
+
+      #[derive(Deserialize)]
+      struct Config {
+          name: String,
+          port: u16,
+          workers: u32,
+      }
+
+      fn main() {
+          let mut input = String::new();
+          std::io::stdin().read_to_string(&mut input).unwrap();
+          let cfg: Config = serde_json::from_str(&input).unwrap();
+          println!("starting {} on port {} with {} workers", cfg.name, cfg.port, cfg.workers);
+      }
+    solution: |
+      use serde::Deserialize;
+      use std::io::Read;
+
+      #[derive(Deserialize)]
+      struct Config {
+          name: String,
+          port: u16,
+          workers: u32,
+      }
+
+      fn validate(cfg: &Config) -> Result<(), &'static str> {
+          if cfg.port == 0 {
+              return Err("port must not be 0");
+          }
+          if !(1..=64).contains(&cfg.workers) {
+              return Err("workers must be 1 to 64");
+          }
+          Ok(())
+      }
+
+      fn main() {
+          let mut input = String::new();
+          std::io::stdin().read_to_string(&mut input).unwrap();
+          let cfg: Config = match serde_json::from_str(&input) {
+              Ok(cfg) => cfg,
+              Err(e) if e.is_syntax() || e.is_eof() => {
+                  println!("syntax error at line {}, column {}", e.line(), e.column());
+                  return;
+              }
+              Err(e) => {
+                  println!("bad config: {e}");
+                  return;
+              }
+          };
+          match validate(&cfg) {
+              Ok(()) => println!("starting {} on port {} with {} workers", cfg.name, cfg.port, cfg.workers),
+              Err(msg) => println!("invalid: {msg}"),
+          }
+      }
+    forbid:
+      - pattern: 'from_str[^;]*\)\s*\.\s*unwrap\(\)'
+        message: "Don't unwrap the parse result: input from outside must not crash the program."
+    tests:
+      - stdin: '{"name": "api", "port": 8080, "workers": 4}'
+      - stdin: '{"name": "api", "port": 8080 "workers": 4}'
+      - stdin: '{"name": "api", "port": 70000, "workers": 4}'
+      - stdin: '{"name": "api", "port": 0, "workers": 4}'
+      - stdin: '{"name": "api", "port": 80, "workers": 0}'
+        hidden: true
+      - stdin: '{"name": "api", "port": 80, "workers": 65}'
+        hidden: true
+      - stdin: |
+          {
+            "name": "worker",
+            "port": 9000,
+        hidden: true
+      - stdin: '{"name": "api", "workers": 2}'
+        hidden: true
+      - stdin: '{"name": "edge", "port": 443, "workers": 64}'
+        hidden: true
+    hints:
+      - "`match serde_json::from_str::<Config>(&input)` with three arms: `Ok(cfg)`, `Err(e) if e.is_syntax() || e.is_eof()`, and `Err(e)`."
+      - "Check the rules after parsing: `cfg.port == 0`, then `!(1..=64).contains(&cfg.workers)`."
+      - "In the error arms, print and `return;` so the rest of `main` only runs with a valid config."
+    more:
+      - task: |
+          Make the type validate itself. Complete `Username` so that serde reads a `String` and then calls `TryFrom<String>`: a username must be 3 to 16 characters long (count `chars()`) and contain only ASCII letters, digits and `_`. The error messages are `username too short`, `username too long` and `username has invalid characters`. `Account` must then reject bad usernames while parsing.
+        seed: |
+          use serde::Deserialize;
+
+          #[derive(Debug, Deserialize)]
+          struct Username(String);
+
+          #[derive(Debug, Deserialize)]
+          struct Account {
+              username: Username,
+              level: u8,
+          }
+        solution: |
+          use serde::Deserialize;
+
+          #[derive(Debug, Deserialize)]
+          #[serde(try_from = "String")]
+          struct Username(String);
+
+          impl TryFrom<String> for Username {
+              type Error = String;
+              fn try_from(s: String) -> Result<Self, Self::Error> {
+                  let n = s.chars().count();
+                  if n < 3 {
+                      return Err(String::from("username too short"));
+                  }
+                  if n > 16 {
+                      return Err(String::from("username too long"));
+                  }
+                  if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                      return Err(String::from("username has invalid characters"));
+                  }
+                  Ok(Username(s))
+              }
+          }
+
+          #[derive(Debug, Deserialize)]
+          struct Account {
+              username: Username,
+              level: u8,
+          }
+        harness: |
+          fn parse(json: &str) -> Result<Account, String> {
+              serde_json::from_str::<Account>(json).map_err(|e| e.to_string())
+          }
+
+          #[test]
+          fn accepts_a_good_username() {
+              let a = parse(r#"{"username": "ferris_99", "level": 3}"#).unwrap();
+              assert_eq!((a.username.0.as_str(), a.level), ("ferris_99", 3), "parse(ferris_99)");
+          }
+
+          #[test]
+          fn rejects_short_names() {
+              let e = parse(r#"{"username": "fe", "level": 1}"#).unwrap_err();
+              assert!(e.starts_with("username too short"), "error was: {e}");
+          }
+
+          #[test]
+          fn rejects_long_names() {
+              let e = parse(r#"{"username": "abcdefghijklmnopq", "level": 1}"#).unwrap_err();
+              assert!(e.starts_with("username too long"), "error was: {e}");
+          }
+
+          #[test]
+          fn rejects_spaces_and_symbols() {
+              let e = parse(r#"{"username": "bad name!", "level": 1}"#).unwrap_err();
+              assert!(e.starts_with("username has invalid characters"), "error was: {e}");
+          }
+
+          #[test]
+          fn try_from_works_on_its_own() {
+              assert!(Username::try_from(String::from("crab")).is_ok(), "Username::try_from(\"crab\")");
+              assert!(Username::try_from(String::from("cräb")).is_err(), "Username::try_from(\"cräb\") (not ASCII)");
+          }
+        hints:
+          - "Add `#[serde(try_from = \"String\")]` under the derive on `Username`."
+          - "`impl TryFrom<String> for Username { type Error = String; fn try_from(s: String) -> Result<Self, Self::Error> { ... } }`"
+          - "`s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')` checks the characters."
+      - task: |
+          Orders arrive as JSON Lines on standard input, one `{"id": 7, "cents": 1250}` per line. Parse each non-empty line. For every line that fails, print `line N: <serde message>` (N counts from 1, including empty lines). At the end print `total: X.YZ` (the sum of the valid orders' cents, in dollars with two decimals) and `valid: V of T` (T counts non-empty lines).
+        seed: |
+          use serde::Deserialize;
+          use std::io::Read;
+
+          #[derive(Deserialize)]
+          struct Order {
+              cents: u64,
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+          }
+        solution: |
+          use serde::Deserialize;
+          use std::io::Read;
+
+          #[derive(Deserialize)]
+          struct Order {
+              cents: u64,
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              let mut total = 0;
+              let mut valid = 0;
+              let mut seen = 0;
+              for (i, line) in input.lines().enumerate() {
+                  if line.trim().is_empty() {
+                      continue;
+                  }
+                  seen += 1;
+                  match serde_json::from_str::<Order>(line) {
+                      Ok(order) => {
+                          total += order.cents;
+                          valid += 1;
+                      }
+                      Err(e) => println!("line {}: {e}", i + 1),
+                  }
+              }
+              println!("total: {:.2}", total as f64 / 100.0);
+              println!("valid: {valid} of {seen}");
+          }
+        tests:
+          - stdin: |
+              {"id": 1, "cents": 1250}
+              {"id": 2, "cents": "free"}
+
+              {"id": 3, "cents": 99}
+              {"id": 4,
+          - stdin: |
+              {"id": 10, "cents": 5}
+              {"id": 11, "cents": -5}
+              {"cents": 100000}
+            hidden: true
+          - stdin: ""
+            hidden: true
+        hints:
+          - "`input.lines().enumerate()` gives `(index, line)`; the line number is `index + 1`."
+          - "Skip lines where `line.trim().is_empty()`; count the others."
+          - "Print serde's error with `{e}`: it already says what and where."

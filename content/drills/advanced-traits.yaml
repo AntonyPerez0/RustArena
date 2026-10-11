@@ -1,0 +1,405 @@
+topic: advanced-traits
+drills:
+  - type: predict
+    after: advanced-traits-1
+    pre: |
+      trait Container {
+          type Item;
+          fn first(&self) -> Option<&Self::Item>;
+      }
+
+      struct Shelf(Vec<&'static str>);
+
+      impl Container for Shelf {
+          type Item = &'static str;
+          fn first(&self) -> Option<&&'static str> {
+              self.0.first()
+          }
+      }
+    body: |
+      let s = Shelf(vec!["potion", "map"]);
+      println!("{:?}", s.first());
+    why: The impl sets Item to &'static str, so first returns a reference to the first string. Debug prints it with its quotes, inside Some.
+  - type: predict
+    after: advanced-traits-2
+    pre: |
+      use std::ops::{Add, Mul};
+
+      #[derive(Debug, Clone, Copy)]
+      struct Money(u32);
+
+      impl Add for Money {
+          type Output = Money;
+          fn add(self, r: Money) -> Money { Money(self.0 + r.0) }
+      }
+
+      impl Mul<u32> for Money {
+          type Output = Money;
+          fn mul(self, n: u32) -> Money { Money(self.0 * n) }
+      }
+    body: |
+      let total = Money(150) * 3 + Money(50);
+      println!("{:?}", total);
+    why: "Overloaded operators keep their normal precedence: Money(150) * 3 runs first (Mul<u32>, giving Money(450)), then + Money(50) uses Add."
+  - type: predict
+    after: advanced-traits-3
+    pre: |
+      trait Greet {
+          fn hello(&self) -> String;
+      }
+
+      struct Bot;
+
+      impl Bot {
+          fn hello(&self) -> String { "inherent".to_string() }
+      }
+
+      impl Greet for Bot {
+          fn hello(&self) -> String { "trait".to_string() }
+      }
+    body: |
+      let b = Bot;
+      println!("{} {}", b.hello(), Greet::hello(&b));
+    why: A method call prefers the type's own (inherent) method. Naming the trait, Greet::hello(&b), calls the trait's version.
+  - type: predict
+    after: advanced-traits-4
+    pre: |
+      use std::fmt::Display;
+
+      trait Twice {
+          fn twice(&self) -> String;
+      }
+
+      impl<T: Display> Twice for T {
+          fn twice(&self) -> String { format!("{self}{self}") }
+      }
+    body: |
+      println!("{} {}", 4.twice(), "ab".twice());
+    why: The blanket impl gives twice() to every Display type, so both the integer and the string slice have it.
+  - type: predict
+    after: advanced-traits-7
+    body: |
+      let mut total = 0;
+      for s in ["3", "x", "4", "stop", "5"] {
+          let n: i32 = match s {
+              "stop" => break,
+              _ => match s.parse() {
+                  Ok(n) => n,
+                  Err(_) => continue,
+              },
+          };
+          total += n;
+      }
+      println!("{total}");
+    why: "break and continue have the never type !, so they fit in arms that must produce an i32. \"x\" is skipped, \"stop\" ends the loop before 5: 3 + 4 = 7."
+  - type: predict
+    after: advanced-traits-7
+    body: |
+      use std::mem::size_of;
+      println!("{} {}", size_of::<&[u8; 4]>(), size_of::<&[u8]>());
+    why: "A reference to an array of known size is a plain 8-byte pointer. A slice [u8] is dynamically sized, so &[u8] is a fat pointer: address plus length, 16 bytes."
+  - type: fill
+    after: advanced-traits-2
+    prompt: Give the Add impl its output type.
+    pre: |
+      use std::ops::Add;
+
+      #[derive(Debug)]
+      struct Points(u32);
+
+      impl Add for Points {
+          type Output = [[Points‖Self]];
+          fn add(self, other: Points) -> Points {
+              Points(self.0 + other.0)
+          }
+      }
+    body: |
+      println!("{:?}", Points(3) + Points(4));
+    why: Add's associated type Output says what a + b produces. Adding points gives points.
+  - type: fill
+    after: advanced-traits-3
+    prompt: Call the trait's associated function, not the type's own one.
+    pre: |
+      trait Animal {
+          fn name() -> String;
+      }
+
+      struct Dog;
+
+      impl Dog {
+          fn name() -> String { "Spot".to_string() }
+      }
+
+      impl Animal for Dog {
+          fn name() -> String { "puppy".to_string() }
+      }
+    body: |
+      println!("{}", <Dog as [[Animal]]>::name());
+    why: An associated function has no self to pick the trait from, so fully qualified syntax names both the type and the trait.
+  - type: fill
+    after: advanced-traits-7
+    prompt: Let shout accept a str directly.
+    pre: |
+      use std::fmt::Display;
+
+      fn shout<T: [[?Sized]] + Display>(x: &T) -> String {
+          format!("{x}!")
+      }
+    body: |
+      println!("{}", shout("hey"));
+    why: Generic parameters are Sized by default. Passing a &str makes T = str, which is unsized, so the bound must be relaxed with ?Sized.
+  - type: bug
+    after: advanced-traits-3
+    pre: |
+      use std::fmt::Display;
+
+      trait Loggable { // BUG
+          fn log(&self) -> String {
+              format!("[log] {self}")
+          }
+      }
+
+      impl Loggable for u32 {}
+    body: |
+      println!("{}", 7u32.log());
+    fix: 'trait Loggable: Display {'
+    prompt: This should print `[log] 7`, but it doesn't compile. Click the line with the bug.
+    why: The default method prints self with {}, which only works if every Loggable type is Display. Making Display a supertrait guarantees it.
+  - type: bug
+    after: advanced-traits-2
+    pre: |
+      use std::ops::Sub;
+
+      #[derive(Debug, Clone, Copy)]
+      struct Celsius(i32);
+
+      impl Sub for Celsius {
+          type Output = Celsius;
+          fn sub(self, other: Celsius) -> Celsius {
+              Celsius(other.0 - self.0) // BUG
+          }
+      }
+    body: |
+      println!("{:?}", Celsius(30) - Celsius(12));
+    fix: 'Celsius(self.0 - other.0)'
+    why: In a - b, self is the left operand and the parameter is the right one. The impl had them swapped, giving -18.
+  - type: bug
+    after: advanced-traits-6
+    pre: |
+      use std::marker::PhantomData;
+
+      struct Locked;
+      struct Unlocked;
+
+      struct Safe<S> {
+          _s: PhantomData<S>,
+      }
+
+      impl Safe<Locked> {
+          fn new() -> Self {
+              Safe { _s: PhantomData }
+          }
+          fn unlock(self, pin: u32) -> Safe<Locked> { // BUG
+              let _ = pin;
+              Safe { _s: PhantomData }
+          }
+      }
+
+      impl Safe<Unlocked> {
+          fn contents(&self) -> &str {
+              "gold"
+          }
+      }
+    body: |
+      let safe = Safe::new().unlock(1234);
+      println!("{}", safe.contents());
+    fix: 'fn unlock(self, pin: u32) -> Safe<Unlocked> {'
+    prompt: This should print `gold`, but it doesn't compile. Click the line with the bug.
+    why: The state lives in the type. unlock returned Safe<Locked>, which has no contents method; it has to return Safe<Unlocked>.
+  - type: compiles
+    after: advanced-traits-5
+    answer: no
+    pre: |
+      use std::fmt;
+
+      impl fmt::Display for Vec<u8> {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{} bytes", self.len())
+          }
+      }
+    body: |
+      println!("{}", vec![1u8, 2]);
+    why: The orphan rule (E0117) forbids implementing a foreign trait (Display) for a foreign type (Vec). Wrap the Vec in a newtype instead.
+  - type: compiles
+    after: advanced-traits-5
+    answer: yes
+    pre: |
+      use std::fmt;
+
+      struct Bytes(Vec<u8>);
+
+      impl fmt::Display for Bytes {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{} bytes", self.0.len())
+          }
+      }
+    body: |
+      println!("{}", Bytes(vec![1, 2, 3]));
+    why: Bytes is a newtype defined in this crate, so implementing Display for it is allowed. This is the standard way around the orphan rule.
+  - type: compiles
+    after: advanced-traits-4
+    answer: no
+    pre: |
+      use std::fmt::Debug;
+
+      trait Describe {
+          fn describe(&self) -> String;
+      }
+
+      impl<T: Debug> Describe for T {
+          fn describe(&self) -> String { format!("{self:?}") }
+      }
+
+      impl Describe for String {
+          fn describe(&self) -> String { self.clone() }
+      }
+    body: |
+      println!("{}", "x".to_string().describe());
+    why: String is Debug, so the blanket impl already covers it. A second impl for String conflicts (E0119); Rust needs exactly one impl per type.
+  - type: choice
+    after: advanced-traits-1
+    prompt: Each parser type should produce exactly one kind of output, and callers shouldn't need type annotations. Which design fits?
+    choices: ["trait Parser<T> { fn parse(&self, s: &str) -> T; }", "trait Parser { type Output; fn parse(&self, s: &str) -> Self::Output; }", "trait Parser { fn parse(&self, s: &str) -> String; } and convert later"]
+    answer: 2
+    why: An associated type allows one impl per type, so the type alone tells the compiler what Output is. A generic parameter allows many impls per type, which forces callers to annotate.
+  - type: choice
+    after: advanced-traits-6
+    prompt: What does a PhantomData<State> field cost at runtime?
+    choices: ["Nothing: it's zero-sized and only exists for the type checker", "One byte to remember which state the value is in", "A pointer to a State value on the heap"]
+    answer: 1
+    why: PhantomData has size zero. It tells the compiler the struct is generic over State without storing anything, which is what makes typestate free.
+  - type: boss
+    after: advanced-traits-6
+    prompt: |
+      Model an order with typestate. `Order<Cart>` can `add_item(&mut self, name: &str)` and `pay(self) -> Order<Paid>`; `Order<Paid>` can `ship(self) -> Order<Shipped>`. Every state has `summary(&self) -> String`, like `2 items, paid`, where the state's name comes from the `State` trait's associated function: write one generic impl `impl<S: State> Order<S>` and call `S::name()` in it.
+    seed: |
+      use std::marker::PhantomData;
+
+      trait State {
+          fn name() -> &'static str;
+      }
+
+      struct Cart;
+      struct Paid;
+      struct Shipped;
+
+      // TODO: impl State for Cart ("cart"), Paid ("paid") and Shipped ("shipped")
+
+      struct Order<S> {
+          items: Vec<String>,
+          _state: PhantomData<S>,
+      }
+
+      impl Order<Cart> {
+          fn new() -> Self {
+              Order { items: Vec::new(), _state: PhantomData }
+          }
+
+          // TODO: add_item and pay
+      }
+
+      // TODO: impl Order<Paid> with ship
+      // TODO: impl<S: State> Order<S> with summary
+    solution: |
+      use std::marker::PhantomData;
+
+      trait State {
+          fn name() -> &'static str;
+      }
+
+      struct Cart;
+      struct Paid;
+      struct Shipped;
+
+      impl State for Cart {
+          fn name() -> &'static str {
+              "cart"
+          }
+      }
+
+      impl State for Paid {
+          fn name() -> &'static str {
+              "paid"
+          }
+      }
+
+      impl State for Shipped {
+          fn name() -> &'static str {
+              "shipped"
+          }
+      }
+
+      struct Order<S> {
+          items: Vec<String>,
+          _state: PhantomData<S>,
+      }
+
+      impl Order<Cart> {
+          fn new() -> Self {
+              Order { items: Vec::new(), _state: PhantomData }
+          }
+
+          fn add_item(&mut self, name: &str) {
+              self.items.push(name.to_string());
+          }
+
+          fn pay(self) -> Order<Paid> {
+              Order { items: self.items, _state: PhantomData }
+          }
+      }
+
+      impl Order<Paid> {
+          fn ship(self) -> Order<Shipped> {
+              Order { items: self.items, _state: PhantomData }
+          }
+      }
+
+      impl<S: State> Order<S> {
+          fn summary(&self) -> String {
+              format!("{} items, {}", self.items.len(), S::name())
+          }
+      }
+    harness: |
+      #[test]
+      fn a_new_order_is_an_empty_cart() {
+          assert_eq!(Order::new().summary(), "0 items, cart", "Order::new().summary()");
+      }
+
+      #[test]
+      fn items_are_counted_in_the_cart() {
+          let mut order = Order::new();
+          order.add_item("rope");
+          order.add_item("lamp");
+          assert_eq!(order.summary(), "2 items, cart", "after two add_item calls");
+      }
+
+      #[test]
+      fn paying_changes_the_state() {
+          let mut order = Order::new();
+          order.add_item("rope");
+          assert_eq!(order.pay().summary(), "1 items, paid", "after pay");
+      }
+
+      #[test]
+      fn shipping_keeps_the_items() {
+          let mut order = Order::new();
+          order.add_item("a");
+          order.add_item("b");
+          order.add_item("c");
+          assert_eq!(order.pay().ship().summary(), "3 items, shipped", "after pay and ship");
+      }
+    hints:
+      - "Each marker gets a tiny impl: `impl State for Paid { fn name() -> &'static str { \"paid\" } }`."
+      - "Transitions move the items into the next state: `Order { items: self.items, _state: PhantomData }`."
+      - "`impl<S: State> Order<S> { fn summary(&self) -> String { format!(\"{} items, {}\", self.items.len(), S::name()) } }`"
+    why: The State trait's associated function lets one generic impl ask the type parameter for its name, while the per-state impls decide which transitions exist.

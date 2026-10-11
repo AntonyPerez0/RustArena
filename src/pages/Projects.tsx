@@ -27,7 +27,7 @@ export default function Projects() {
                 return (
                   <Link key={p.id} to={`/projects/${p.id}`} className={"card card-link project-card" + (done >= total ? " project-done" : "")}>
                     <div className="row-between">
-                      <span className={"lang-tag lang-" + p.lang}>{p.lang === "c" ? "C" : "C++"}</span>
+                      <span className="lang-tag lang-rs">{p.milestones.length} milestones</span>
                       <span className="muted small">
                         {done}/{total} milestones
                       </span>

@@ -1,0 +1,1030 @@
+id: compound
+title: Tuples, Arrays and a First Vec
+phase: "Foundations"
+summary: Group values together. Tuples bundle a few values of any type, arrays hold a fixed row of values of one type, and Vec is a list that grows while the program runs.
+roadmap: [Tuple, Array, Vector]
+steps:
+  - title: "Tuples: several values in one"
+    id: compound-1
+    text: |
+      So far every variable has held one value: one number, one `bool`, one `char`. Real data comes in groups. A point has an x and a y; an order has a number, a quantity and a price. Rust has two built-in **compound types** for grouping values, **tuples** and **arrays**, and this module covers both. At the end you'll get a first look at `Vec`, a list that can grow.
+
+      ### Making a tuple
+
+      A **tuple** groups a fixed number of values, and the values can have different types. Write them in parentheses, separated by commas:
+
+      ```rust run
+      fn main() {
+          let order = (1042, 3, 19.99);
+          println!("order {} has {} items at {} each", order.0, order.1, order.2);
+          println!("{:?}", order);
+      }
+      ```
+
+      ```output
+      order 1042 has 3 items at 19.99 each
+      (1042, 3, 19.99)
+      ```
+
+      Piece by piece:
+
+      - `order` holds three values at once. Its type is written like the value, with types in place of values: `(i32, i32, f64)`. Rust infers it, but you can write it yourself: `let order: (i32, i32, f64) = (1042, 3, 19.99);`
+      - `order.0`, `order.1` and `order.2` read the parts. Positions start at **0**, as almost everywhere in programming. The number after the dot is part of your code: you can't put a variable there (`order.i` doesn't work).
+      - `{}` can't print a whole tuple, but `{:?}`, the **debug format** you met with variables, can.
+
+      ### Changing a part
+
+      A tuple's length and the types of its parts never change, but with `let mut` you can change the values:
+
+      ```rust run
+      fn main() {
+          let mut score = (0, 0); // (home, away)
+          score.0 += 2;
+          score.1 += 1;
+          println!("Home {} - {} Away", score.0, score.1);
+      }
+      ```
+
+      ```output
+      Home 2 - 1 Away
+      ```
+
+      A comment like `// (home, away)` is worth writing, because `.0` and `.1` don't say what they mean. When a group of values deserves real names, you'll use a **struct** (module 12). Tuples are best for small groups that don't live long, like a function returning two results (next step).
+
+      ### Common mistakes
+
+      - **Asking for a part that doesn't exist.** A three-value tuple has `.0`, `.1` and `.2`. The compiler catches `.3`:
+
+      ```rust compile_fail
+      fn main() {
+          let order = (1042, 3, 19.99);
+          println!("{}", order.3);
+      }
+      ```
+
+      ```error
+      error[E0609]: no field `3` on type `({integer}, {integer}, {float})`
+      ```
+
+      `{integer}` and `{float}` mean "some integer (or float) type, not pinned down yet". The note below the error lists the fields that do exist: `` `0`, `1`, `2` ``.
+      - **Printing a tuple with `{}`.** Error E0277 says the tuple "doesn't implement `std::fmt::Display`", and a note suggests `{:?}`. `{}` is for values with one obvious human-readable form, like a number. A tuple only has the debug form.
+      - **A one-value tuple** needs a trailing comma: `(5,)` is a tuple, while `(5)` is just the number 5 in parentheses. You'll rarely need one.
+
+      **Your turn:** fill in the blanks so the program prints the player's name and level from the tuple, then the whole tuple in the debug format:
+
+      ```
+      Ferris is level 7
+      ("Ferris", 7, true)
+      ```
+    fill: |
+      fn main() {
+          let player = ("Ferris", 7, true);
+          println!("{} is level {}", player.[[0]], player.[[1]]);
+          println!("[[{:?}]]", player);
+      }
+    hints:
+      - "Parts are numbered from 0: the name is `.0` and the level is `.1`."
+      - "Print a whole tuple with the debug placeholder `{:?}`."
+    tests:
+      - expect: "Ferris is level 7\n(\"Ferris\", 7, true)"
+    more:
+      - task: |
+          A shop tracks `(product, count)` in a tuple. Five apples were just sold. Fill the blanks: make the tuple changeable, and subtract from the right part so the program prints `apples left: 7`.
+        fill: |
+          fn main() {
+              let [[mut]] stock = ("apples", 12);
+              stock.[[1]] -= 5;
+              println!("{} left: {}", stock.0, stock.1);
+          }
+        hints:
+          - Changing any part of a tuple needs `let mut`.
+          - The count is the second part, which is number 1.
+        tests:
+          - expect: "apples left: 7"
+      - task: |
+          The tuple `rect` holds a rectangle's width and height. Print its area and perimeter, computing both from `rect.0` and `rect.1` (don't type the answers):
+
+          ```
+          area: 40
+          perimeter: 26
+          ```
+        seed: |
+          fn main() {
+              let rect = (8, 5); // (width, height)
+          }
+        solution: |
+          fn main() {
+              let rect = (8, 5); // (width, height)
+              println!("area: {}", rect.0 * rect.1);
+              println!("perimeter: {}", 2 * (rect.0 + rect.1));
+          }
+        require:
+          - pattern: 'rect\.0'
+            message: "Read the width with `rect.0`."
+          - pattern: 'rect\.1'
+            message: "Read the height with `rect.1`."
+        hints:
+          - The area is width times height. The perimeter is twice the sum of width and height.
+          - "`println!(\"area: {}\", rect.0 * rect.1);`"
+        tests:
+          - expect: "area: 40\nperimeter: 26"
+
+  - title: Destructuring, and returning several values
+    id: compound-2
+    text: |
+      Writing `.0` and `.1` everywhere gets tiring, and it hides what the values mean. **Destructuring** unpacks a tuple into separate, well-named variables in one `let`:
+
+      ```rust run
+      fn main() {
+          let point = (3, -7);
+          let (x, y) = point;
+          println!("x = {x}, y = {y}");
+      }
+      ```
+
+      ```output
+      x = 3, y = -7
+      ```
+
+      The left side, `(x, y)`, is a **pattern**: it has the same shape as the value, and each name receives the part in its position. If you don't need a part, put `_` in its place: `let (x, _) = point;` takes only the x.
+
+      ### Returning several values from a function
+
+      A function returns exactly one value, but that value can be a tuple. This is the everyday use of tuples: a function that works out two or three related results at once.
+
+      ```rust run
+      fn sum_and_average(a: f64, b: f64, c: f64) -> (f64, f64) {
+          let sum = a + b + c;
+          (sum, sum / 3.0)
+      }
+
+      fn main() {
+          let (total, avg) = sum_and_average(4.0, 7.5, 9.5);
+          println!("total {total:.1}, average {avg:.2}");
+      }
+      ```
+
+      ```output
+      total 21.0, average 7.00
+      ```
+
+      - The return type `(f64, f64)` says "two floats". The parentheses are required: `-> f64, f64` is a syntax error.
+      - The last line of the body, `(sum, sum / 3.0)`, builds the tuple. With no `;` it's the function's return value, as you saw in the functions module.
+      - The caller destructures the result straight away, so each value gets a meaningful name.
+
+      Two more things tuples explain:
+
+      - The **unit type** `()` from the functions module is a tuple with **zero** values. A function with no `->` returns it.
+      - Swapping two values is one line: `let (a, b) = (b, a);` builds a tuple from the old values, then unpacks it into new (shadowing) variables.
+
+      ### Common mistakes
+
+      - **A pattern with the wrong shape.** The pattern must have exactly as many names as the tuple has values:
+
+      ```rust compile_fail
+      fn main() {
+          let (x, y) = (1, 2, 3);
+          println!("{x} {y}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      The full message says `expected a tuple with 3 elements, found one with 2 elements`. Use `_` for a value you want to skip: `let (x, y, _) = (1, 2, 3);`
+      - **Getting the order wrong.** `let (avg, total) = sum_and_average(...)` compiles fine (both are `f64`) but swaps the meanings. Tuple parts have no names, so the order is the only thing that tells them apart. Keep the order consistent and say it in a comment or the function's name.
+
+      **Your turn:** write `div_rem(a, b)`, which returns the **quotient** (how many times `b` fits into `a`) and the **remainder** as a tuple. For example `div_rem(17, 5)` returns `(3, 2)` because 17 = 3 × 5 + 2. Integer `/` and `%` do the work.
+    seed: |
+      fn div_rem(a: u32, b: u32) -> (u32, u32) {
+          todo!()
+      }
+    solution: |
+      fn div_rem(a: u32, b: u32) -> (u32, u32) {
+          (a / b, a % b)
+      }
+    harness: |
+      #[test]
+      fn divides_17_by_5() {
+          assert_eq!(div_rem(17, 5), (3, 2), "div_rem(17, 5)");
+      }
+
+      #[test]
+      fn exact_division_has_no_remainder() {
+          assert_eq!(div_rem(20, 4), (5, 0), "div_rem(20, 4)");
+      }
+
+      #[test]
+      fn a_smaller_number_gives_quotient_zero() {
+          assert_eq!(div_rem(3, 10), (0, 3), "div_rem(3, 10)");
+      }
+
+      #[test]
+      fn dividing_by_one_keeps_the_number() {
+          assert_eq!(div_rem(9, 1), (9, 0), "div_rem(9, 1)");
+      }
+    hints:
+      - "`a / b` is the quotient and `a % b` the remainder."
+      - "Return both in parentheses as the last expression: `(a / b, a % b)`."
+    more:
+      - task: |
+          Write `split_time(total_seconds)`, which returns `(hours, minutes, seconds)`. For example `split_time(3725)` returns `(1, 2, 5)`: one hour, two minutes and five seconds.
+        seed: |
+          fn split_time(total_seconds: u32) -> (u32, u32, u32) {
+              todo!()
+          }
+        solution: |
+          fn split_time(total_seconds: u32) -> (u32, u32, u32) {
+              let hours = total_seconds / 3600;
+              let minutes = total_seconds % 3600 / 60;
+              let seconds = total_seconds % 60;
+              (hours, minutes, seconds)
+          }
+        harness: |
+          #[test]
+          fn splits_3725_seconds() {
+              assert_eq!(split_time(3725), (1, 2, 5), "split_time(3725)");
+          }
+
+          #[test]
+          fn under_a_minute_is_only_seconds() {
+              assert_eq!(split_time(59), (0, 0, 59), "split_time(59)");
+          }
+
+          #[test]
+          fn exactly_two_hours() {
+              assert_eq!(split_time(7200), (2, 0, 0), "split_time(7200)");
+          }
+
+          #[test]
+          fn zero_seconds() {
+              assert_eq!(split_time(0), (0, 0, 0), "split_time(0)");
+          }
+
+          #[test]
+          fn one_second_before_midnight() {
+              assert_eq!(split_time(86399), (23, 59, 59), "split_time(86399)");
+          }
+        hints:
+          - An hour has 3600 seconds and a minute has 60.
+          - "Hours: `total_seconds / 3600`. Minutes: what's left after the hours (`total_seconds % 3600`), divided by 60. Seconds: `total_seconds % 60`."
+      - task: |
+          Two weather stations report `(name, temperature, online)`. Destructure each tuple into three named variables with `let (...) = ...;` and print one line per station:
+
+          ```
+          north: 21.5 C (online)
+          south: 18 C (offline)
+          ```
+
+          (A float like `18.0` prints as `18` with `{}`.)
+        seed: |
+          fn main() {
+              let station_a = ("north", 21.5, true);
+              let station_b = ("south", 18.0, false);
+          }
+        solution: |
+          fn main() {
+              let station_a = ("north", 21.5, true);
+              let station_b = ("south", 18.0, false);
+
+              let (name, temp, online) = station_a;
+              let status = if online { "online" } else { "offline" };
+              println!("{name}: {temp} C ({status})");
+
+              let (name, temp, online) = station_b;
+              let status = if online { "online" } else { "offline" };
+              println!("{name}: {temp} C ({status})");
+          }
+        require:
+          - pattern: 'let\s*\(\s*\w+\s*,\s*\w+\s*,\s*\w+\s*\)\s*=\s*station_a'
+            message: "Destructure the first station: `let (name, temp, online) = station_a;`"
+          - pattern: 'let\s*\(\s*\w+\s*,\s*\w+\s*,\s*\w+\s*\)\s*=\s*station_b'
+            message: "Destructure the second station the same way."
+        forbid:
+          - pattern: 'station_[ab]\.\d'
+            message: "Use destructuring instead of `.0`, `.1` and `.2`."
+        hints:
+          - "`let (name, temp, online) = station_a;` gives you three variables. You can reuse the same names for the second station (shadowing)."
+          - "`online` is a `bool`. Turn it into text with an if expression: `let status = if online { \"online\" } else { \"offline\" };`"
+        tests:
+          - expect: "north: 21.5 C (online)\nsouth: 18 C (offline)"
+
+  - title: "Arrays: a fixed row of values"
+    id: compound-3
+    text: |
+      A tuple groups a few values of different types. An **array** holds a fixed number of values of the **same** type, in a row: seven daily temperatures, twelve monthly totals, the 64 squares of a chessboard.
+
+      ```rust run
+      fn main() {
+          let temps = [18, 21, 19, 25, 23];
+          println!("first: {}", temps[0]);
+          println!("third: {}", temps[2]);
+          println!("count: {}", temps.len());
+          println!("all: {:?}", temps);
+      }
+      ```
+
+      ```output
+      first: 18
+      third: 19
+      count: 5
+      all: [18, 21, 19, 25, 23]
+      ```
+
+      - Square brackets make an array. Its type is written `[i32; 5]`: the element type, a semicolon, and the length. The length is part of the type, so `[i32; 5]` and `[i32; 6]` are different types.
+      - `temps[0]` is **indexing**: the element at position 0. The position is called the **index**. Indexes start at 0, so the five elements are at indexes 0 to 4, and the last one is at `temps.len() - 1`.
+      - `.len()` gives the number of elements, as a `usize` (the unsigned integer type Rust uses for sizes and positions).
+      - `{:?}` prints the whole array.
+
+      ### The same value many times
+
+      `[0; 10]` is an array of ten zeros: `[value; count]`. It's handy for counters:
+
+      ```rust run
+      fn main() {
+          let mut votes = [0; 3];
+          votes[1] += 1;
+          votes[1] += 1;
+          votes[2] += 1;
+          println!("{:?}", votes);
+      }
+      ```
+
+      ```output
+      [0, 2, 1]
+      ```
+
+      Changing an element changes the array, so it needs `let mut`. Even then the **length** can't change: an array can't grow or shrink. (That's what `Vec` is for, at the end of this module.)
+
+      ### Out of bounds
+
+      What if you ask for an element that isn't there? Rust always checks. If the compiler can see the mistake, it refuses to compile (`error: this operation will panic at runtime`). If the index is only known when the program runs, the program **panics**: it stops at once with a message, instead of carrying on with garbage.
+
+      ```rust panics
+      fn main() {
+          let scores = [10, 20, 30];
+          let last = scores.len(); // a classic slip: the last index is len() - 1
+          println!("checking...");
+          println!("{}", scores[last]);
+      }
+      ```
+
+      ```output
+      checking...
+      ```
+
+      The panic message reads `index out of bounds: the len is 3 but the index is 3`, with the line number. In C, the same mistake silently reads whatever memory comes next, which is a classic source of security holes. In Rust it's a clear crash at the exact spot.
+
+      ### Common mistakes
+
+      - **Using `len()` as the last index.** The last element is at `len() - 1`.
+      - **Forgetting `mut`**: `temps[0] = 5;` on a non-`mut` array gives error E0594, ``cannot assign to `temps[_]`, as `temps` is not declared as mutable``.
+      - **The wrong length in a type**: `let temps: [i32; 3] = [18, 21];` gives `expected an array with a size of 3, found one with a size of 2`.
+      - **Indexing with an `i32`.** Indexes must be `usize`:
+
+      ```rust compile_fail
+      fn main() {
+          let temps = [18, 21, 19];
+          let i: i32 = 2;
+          println!("{}", temps[i]);
+      }
+      ```
+
+      ```error
+      error[E0277]: the type `[{integer}]` cannot be indexed by `i32`
+      ```
+
+      Declare the index as `usize`, or convert it with `temps[i as usize]` (only when you know it isn't negative).
+
+      **Your turn:** the array holds a week of daily sales. Print the first day's sales, the last day's sales, and the number of days. Find the last index with `.len()` so the code would still work if the array had a different length:
+
+      ```
+      first day: 120
+      last day: 66
+      days: 7
+      ```
+    seed: |
+      fn main() {
+          let sales = [120, 95, 143, 80, 210, 175, 66];
+      }
+    solution: |
+      fn main() {
+          let sales = [120, 95, 143, 80, 210, 175, 66];
+          println!("first day: {}", sales[0]);
+          println!("last day: {}", sales[sales.len() - 1]);
+          println!("days: {}", sales.len());
+      }
+    require:
+      - pattern: 'sales\.len\(\)\s*-\s*1'
+        message: "Find the last index with `sales.len() - 1`."
+    forbid:
+      - pattern: 'sales\[\s*6\s*\]'
+        message: "Don't hard-code index 6: compute the last index from `.len()`."
+    hints:
+      - "The first element is `sales[0]`. The number of days is `sales.len()`."
+      - "The last element is at index `sales.len() - 1`, so write `sales[sales.len() - 1]`."
+    tests:
+      - expect: "first day: 120\nlast day: 66\ndays: 7"
+    more:
+      - task: |
+          Four checkout lanes count waiting customers. Fill the blanks so the array can be changed and the last index is computed from the length. The program should print `[3, 0, 5, 1]`.
+        fill: |
+          fn main() {
+              let [[mut]] lanes = [0; 4];
+              lanes[0] += 3;
+              lanes[2] += 5;
+              let last = lanes.[[len()]] - 1;
+              lanes[last] += 1;
+              println!("{:?}", lanes);
+          }
+        hints:
+          - Changing elements needs a mutable array.
+          - "The method that gives the number of elements is `len()`."
+        tests:
+          - expect: "[3, 0, 5, 1]"
+      - task: |
+          Write `first_and_last(values)`, which returns the first and the last element of a five-element array as a tuple. For example `first_and_last([4, 8, 15, 16, 23])` returns `(4, 23)`.
+
+          Passing an array of numbers to a function copies the whole array, so the function can read it freely. (Module 11 shows **slices**, which let one function accept arrays of any length.)
+        seed: |
+          fn first_and_last(values: [i32; 5]) -> (i32, i32) {
+              todo!()
+          }
+        solution: |
+          fn first_and_last(values: [i32; 5]) -> (i32, i32) {
+              (values[0], values[values.len() - 1])
+          }
+        harness: |
+          #[test]
+          fn returns_the_first_and_last_element() {
+              assert_eq!(first_and_last([4, 8, 15, 16, 23]), (4, 23), "first_and_last([4, 8, 15, 16, 23])");
+          }
+
+          #[test]
+          fn works_with_negative_numbers() {
+              assert_eq!(first_and_last([-1, 0, 1, 2, -9]), (-1, -9), "first_and_last([-1, 0, 1, 2, -9])");
+          }
+
+          #[test]
+          fn all_equal_values() {
+              assert_eq!(first_and_last([7; 5]), (7, 7), "first_and_last([7; 5])");
+          }
+        hints:
+          - "The first element is `values[0]` and the last is `values[values.len() - 1]` (or `values[4]`)."
+          - "Return them as a tuple: `(values[0], values[values.len() - 1])`."
+
+  - title: Looping over an array
+    id: compound-4
+    text: |
+      Arrays shine when you combine them with loops: one piece of code that handles every element, however many there are. There are two ways to loop.
+
+      ### Loop over the elements
+
+      ```rust run
+      fn main() {
+          let temps = [18, 21, 19, 25, 23];
+          let mut sum = 0;
+          for t in temps {
+              sum += t;
+          }
+          println!("sum: {sum}");
+          println!("average: {:.1}", sum as f64 / temps.len() as f64);
+      }
+      ```
+
+      ```output
+      sum: 106
+      average: 21.2
+      ```
+
+      `for t in temps` runs the body once per element, in order, with `t` set to each one. No index, so no way to go out of bounds. This is the pattern for totals, counts and searches. Note the average: both numbers are converted to `f64` with `as` so the division keeps its fraction.
+
+      ### Loop over the indexes
+
+      When you need the **position** as well as the value, loop over the range `0..temps.len()`, which is exactly the valid indexes (0, 1, 2, 3, 4):
+
+      ```rust run
+      fn main() {
+          let temps = [18, 21, 19, 25, 23];
+          let mut hottest = 0; // index of the hottest day so far
+          for i in 0..temps.len() {
+              if temps[i] > temps[hottest] {
+                  hottest = i;
+              }
+          }
+          println!("hottest: day {} with {} degrees", hottest + 1, temps[hottest]);
+      }
+      ```
+
+      ```output
+      hottest: day 4 with 25 degrees
+      ```
+
+      ### Changing every element
+
+      In `for t in temps`, `t` is a **copy** of each element: changing `t` doesn't touch the array. To change the elements, use the index:
+
+      ```rust run
+      fn main() {
+          let mut prices = [120, 75, 300];
+          for i in 0..prices.len() {
+              prices[i] = prices[i] * 110 / 100; // +10%, in whole cents
+          }
+          println!("{:?}", prices);
+      }
+      ```
+
+      ```output
+      [132, 82, 330]
+      ```
+
+      **At work:** Rust programmers write `for x in array` whenever they don't need the index. Clippy's `needless_range_loop` lint points out index loops that could be simpler, and suggests iterator methods (`.iter()`, `.iter_mut()`, `.enumerate()`) that you'll learn in modules 16 and 27. Until then, index loops are the right tool when you need the position or want to change elements.
+
+      ### Common mistakes
+
+      - **`0..=temps.len()`** goes one step too far: the last round asks for `temps[5]` and panics. Use `0..temps.len()`.
+      - **Starting a maximum at 0.** If every value is negative (a cold week: -5, -2, -9), a "max" that starts at 0 never changes and reports 0, which isn't even in the array. Start from the first element instead: `let mut max = temps[0];`
+      - **Expecting `for t in temps` to change the array.** It works on copies; use the index form.
+
+      **Your turn:** write `count_above(temps, limit)`, which returns how many of the seven days were **strictly** warmer than `limit`. For example, with temperatures `[18, 25, 30, 22, 31, 19, 26]` and limit `25`, three days (30, 31 and 26) count.
+    seed: |
+      fn count_above(temps: [i32; 7], limit: i32) -> u32 {
+          todo!()
+      }
+    solution: |
+      fn count_above(temps: [i32; 7], limit: i32) -> u32 {
+          let mut count = 0;
+          for t in temps {
+              if t > limit {
+                  count += 1;
+              }
+          }
+          count
+      }
+    harness: |
+      #[test]
+      fn counts_days_above_the_limit() {
+          assert_eq!(count_above([18, 25, 30, 22, 31, 19, 26], 25), 3, "count_above([18, 25, 30, 22, 31, 19, 26], 25)");
+      }
+
+      #[test]
+      fn a_day_equal_to_the_limit_does_not_count() {
+          assert_eq!(count_above([25; 7], 25), 0, "count_above([25; 7], 25)");
+      }
+
+      #[test]
+      fn every_day_can_count() {
+          assert_eq!(count_above([10; 7], 0), 7, "count_above([10; 7], 0)");
+      }
+
+      #[test]
+      fn works_with_negative_temperatures() {
+          assert_eq!(count_above([-5, -12, 0, 3, -1, -8, -20], -6), 4, "count_above([-5, -12, 0, 3, -1, -8, -20], -6)");
+      }
+    hints:
+      - "Start a counter at 0, loop with `for t in temps`, and add 1 when `t > limit`."
+      - "Return the counter as the last expression of the function (no `;`)."
+    more:
+      - task: |
+          Write `max_value(values)`, which returns the largest of six numbers. Careful: the numbers can all be negative.
+        seed: |
+          fn max_value(values: [i32; 6]) -> i32 {
+              todo!()
+          }
+        solution: |
+          fn max_value(values: [i32; 6]) -> i32 {
+              let mut max = values[0];
+              for v in values {
+                  if v > max {
+                      max = v;
+                  }
+              }
+              max
+          }
+        harness: |
+          #[test]
+          fn finds_the_largest_number() {
+              assert_eq!(max_value([3, 9, 2, 7, 4, 1]), 9, "max_value([3, 9, 2, 7, 4, 1])");
+          }
+
+          #[test]
+          fn all_negative_numbers() {
+              assert_eq!(max_value([-4, -2, -9, -3, -8, -5]), -2, "max_value([-4, -2, -9, -3, -8, -5])");
+          }
+
+          #[test]
+          fn the_largest_is_first() {
+              assert_eq!(max_value([50, 1, 2, 3, 4, 5]), 50, "max_value([50, 1, 2, 3, 4, 5])");
+          }
+
+          #[test]
+          fn the_largest_is_last() {
+              assert_eq!(max_value([1, 2, 3, 4, 5, 60]), 60, "max_value([1, 2, 3, 4, 5, 60])");
+          }
+        hints:
+          - "Don't start the maximum at 0: with all-negative numbers it would stay 0. Start at `values[0]`."
+          - "Loop over the values and replace the maximum whenever you see a bigger one."
+      - task: |
+          A sale takes 20% off every price. Prices are whole cents, so compute the new price with integer math: `price * 80 / 100`. Change the array **itself** with an index loop, then print the array and the new total:
+
+          ```
+          [96, 60, 240, 36]
+          total: 432
+          ```
+        seed: |
+          fn main() {
+              let mut prices = [120, 75, 300, 45];
+          }
+        solution: |
+          fn main() {
+              let mut prices = [120, 75, 300, 45];
+              for i in 0..prices.len() {
+                  prices[i] = prices[i] * 80 / 100;
+              }
+              let mut total = 0;
+              for p in prices {
+                  total += p;
+              }
+              println!("{:?}", prices);
+              println!("total: {total}");
+          }
+        require:
+          - pattern: 'prices\[\s*\w+\s*\]\s*=[^=]'
+            message: "Change each element in place: `prices[i] = ...` inside a loop over `0..prices.len()`."
+        hints:
+          - "`for i in 0..prices.len() { prices[i] = prices[i] * 80 / 100; }` changes the array."
+          - "Then add up the new prices in a second loop and print with `{:?}` and `total: {}`."
+        tests:
+          - expect: "[96, 60, 240, 36]\ntotal: 432"
+
+  - title: "Grids: arrays of arrays"
+    id: compound-5
+    text: |
+      An array's elements can themselves be arrays. That gives you a **grid** (a 2D array): rows, each made of columns. Game boards, seating charts and spreadsheets all look like this.
+
+      ```rust run
+      fn main() {
+          let board = [
+              ['X', 'O', 'X'],
+              ['.', 'X', 'O'],
+              ['O', '.', 'X'],
+          ];
+          println!("center: {}", board[1][1]);
+          println!("bottom left: {}", board[2][0]);
+          for row in board {
+              println!("{} {} {}", row[0], row[1], row[2]);
+          }
+      }
+      ```
+
+      ```output
+      center: X
+      bottom left: O
+      X O X
+      . X O
+      O . X
+      ```
+
+      - The type of `board` is `[[char; 3]; 3]`: an array of 3 elements, where each element is a `[char; 3]` (one row).
+      - `board[1][1]` reads in two steps: `board[1]` is the second row, and `[1]` picks the second cell in that row. By convention the **row comes first**, then the column.
+      - `for row in board` hands you one row (a `[char; 3]`) per round.
+      - `[[0; 4]; 3]` builds 3 rows of 4 zeros: an array of value `[0; 4]`, repeated 3 times.
+
+      ### Nested loops
+
+      To visit every cell, put one loop inside another: the outer loop picks the row, the inner one walks across it.
+
+      ```rust run
+      fn main() {
+          let mut seats = [[0; 4]; 3]; // 3 rows of 4 seats, 0 = free, 1 = taken
+          seats[0][1] = 1;
+          seats[2][0] = 1;
+          seats[2][3] = 1;
+
+          let mut taken = 0;
+          for row in 0..seats.len() {
+              for col in 0..seats[row].len() {
+                  taken += seats[row][col];
+              }
+          }
+          println!("taken: {taken}");
+          for row in seats {
+              println!("{:?}", row);
+          }
+      }
+      ```
+
+      ```output
+      taken: 3
+      [0, 1, 0, 0]
+      [0, 0, 0, 0]
+      [1, 0, 0, 1]
+      ```
+
+      `seats.len()` is the number of **rows** (3) and `seats[row].len()` the number of **columns** in that row (4). Printing the whole grid with `{:?}` puts everything on one line (`[[0, 1, 0, 0], [0, 0, 0, 0], [1, 0, 0, 1]]`), so print it row by row when people need to read it.
+
+      ### Common mistakes
+
+      - **Swapping row and column.** `seats[3][0]` is out of bounds (there are only 3 rows) even though `seats[0][3]` is fine. Decide "row first" and stick to it.
+      - **Rows of different lengths.** Every row has the same type, so the same length: `[[1, 2, 3], [4, 5]]` fails with `expected an array with a size of 3, found one with a size of 2`.
+      - **Using `seats.len()` for the columns.** It counts rows. Here it would happen to work if the grid were square, and break as soon as it isn't.
+
+      **Your turn:** print the tic-tac-toe board one row per line with the cells separated by spaces, then count the cells with nested loops (compare each cell with `'X'`, `'O'` and `'.'`) and print the totals:
+
+      ```
+      O X .
+      X X O
+      . O X
+      X: 4, O: 3, empty: 2
+      ```
+    seed: |
+      fn main() {
+          let board = [
+              ['O', 'X', '.'],
+              ['X', 'X', 'O'],
+              ['.', 'O', 'X'],
+          ];
+      }
+    solution: |
+      fn main() {
+          let board = [
+              ['O', 'X', '.'],
+              ['X', 'X', 'O'],
+              ['.', 'O', 'X'],
+          ];
+          let mut x = 0;
+          let mut o = 0;
+          let mut empty = 0;
+          for row in board {
+              println!("{} {} {}", row[0], row[1], row[2]);
+              for cell in row {
+                  if cell == 'X' {
+                      x += 1;
+                  } else if cell == 'O' {
+                      o += 1;
+                  } else {
+                      empty += 1;
+                  }
+              }
+          }
+          println!("X: {x}, O: {o}, empty: {empty}");
+      }
+    require:
+      - pattern: 'for[\s\S]*for'
+        message: Count the cells with two nested `for` loops.
+    hints:
+      - "`for row in board` gives you each row; inside it, `for cell in row` gives you each `char`."
+      - "Keep three counters (`let mut x = 0;` and so on) and use `if cell == 'X' { ... } else if cell == 'O' { ... } else { ... }`."
+      - "Print each row with `println!(\"{} {} {}\", row[0], row[1], row[2]);` inside the outer loop, and the totals after both loops."
+    tests:
+      - expect: "O X .\nX X O\n. O X\nX: 4, O: 3, empty: 2"
+    more:
+      - task: |
+          Write `row_sums(grid)`, which returns an array with the sum of each row of a 3 × 4 grid. For example, the grid `[[1, 2, 3, 4], [5, 5, 5, 5], [0, 0, 0, 9]]` gives `[10, 20, 9]`.
+        seed: |
+          fn row_sums(grid: [[i32; 4]; 3]) -> [i32; 3] {
+              todo!()
+          }
+        solution: |
+          fn row_sums(grid: [[i32; 4]; 3]) -> [i32; 3] {
+              let mut sums = [0; 3];
+              for row in 0..grid.len() {
+                  for col in 0..grid[row].len() {
+                      sums[row] += grid[row][col];
+                  }
+              }
+              sums
+          }
+        harness: |
+          #[test]
+          fn sums_each_row() {
+              assert_eq!(row_sums([[1, 2, 3, 4], [5, 5, 5, 5], [0, 0, 0, 9]]), [10, 20, 9], "row_sums([[1, 2, 3, 4], [5, 5, 5, 5], [0, 0, 0, 9]])");
+          }
+
+          #[test]
+          fn a_grid_of_zeros() {
+              assert_eq!(row_sums([[0; 4]; 3]), [0, 0, 0], "row_sums([[0; 4]; 3])");
+          }
+
+          #[test]
+          fn negative_numbers_cancel_out() {
+              assert_eq!(row_sums([[1, -1, 2, -2], [-3, -3, -3, -3], [7, 0, 0, 0]]), [0, -12, 7], "row_sums([[1, -1, 2, -2], [-3, -3, -3, -3], [7, 0, 0, 0]])");
+          }
+        hints:
+          - "Start with `let mut sums = [0; 3];` (one total per row) and return it at the end."
+          - "Loop over the row indexes, and inside, over the column indexes: `sums[row] += grid[row][col];`"
+      - task: |
+          `temps[day][reading]` holds four readings for each of three days. Find the highest reading and where it is, then print it with **day and reading numbered from 1** (as people count):
+
+          ```
+          max 31 at day 2, reading 3
+          ```
+
+          Find the position with loops; don't type the answer.
+        seed: |
+          fn main() {
+              let temps = [
+                  [12, 18, 24, 17],
+                  [14, 22, 31, 20],
+                  [11, 19, 27, 16],
+              ];
+          }
+        solution: |
+          fn main() {
+              let temps = [
+                  [12, 18, 24, 17],
+                  [14, 22, 31, 20],
+                  [11, 19, 27, 16],
+              ];
+              let mut best = (0, 0); // (day, reading) of the highest so far
+              for day in 0..temps.len() {
+                  for reading in 0..temps[day].len() {
+                      if temps[day][reading] > temps[best.0][best.1] {
+                          best = (day, reading);
+                      }
+                  }
+              }
+              let (day, reading) = best;
+              println!("max {} at day {}, reading {}", temps[day][reading], day + 1, reading + 1);
+          }
+        require:
+          - pattern: 'for[\s\S]*for'
+            message: Search the grid with two nested `for` loops.
+        hints:
+          - "Remember the position of the best reading so far, for example in a tuple `let mut best = (0, 0);` (day, reading)."
+          - "Loop over `0..temps.len()` and `0..temps[day].len()`. When `temps[day][reading]` beats the reading at `best`, set `best = (day, reading);`"
+          - "Add 1 to both indexes when printing, because people count from 1."
+        tests:
+          - expect: "max 31 at day 2, reading 3"
+
+  - title: "A first look at Vec: a list that grows"
+    id: compound-6
+    text: |
+      An array's length is fixed when you write the program. Often you don't know it in advance: orders arrive, players join, a file has however many lines it has. For that, Rust has **`Vec<T>`**, called a **vector**: a list of values of one type that can grow and shrink while the program runs. It's the collection you'll use most in Rust. Module 16 covers it in depth; here are the basics.
+
+      ```rust run
+      fn main() {
+          let mut queue = vec![101, 102];
+          queue.push(103);
+          queue.push(104);
+          println!("{:?}", queue);
+          println!("{} tickets, first is {}", queue.len(), queue[0]);
+      }
+      ```
+
+      ```output
+      [101, 102, 103, 104]
+      4 tickets, first is 101
+      ```
+
+      - `vec![...]` is a macro (note the `!`) that creates a vector holding those values. It looks like an array with `vec!` in front.
+      - `.push(value)` adds a value at the end. Pushing changes the vector, so it must be `let mut`.
+      - Indexing, `.len()` and `{:?}` work just like with arrays, and an out-of-bounds index panics the same way.
+      - The type is written `Vec<i32>`: the angle brackets hold the element type.
+
+      ### Starting empty
+
+      `Vec::new()` creates an empty vector, ready to be filled in a loop:
+
+      ```rust run
+      fn main() {
+          let mut squares = Vec::new();
+          for n in 1..=5 {
+              squares.push(n * n);
+          }
+          println!("{:?}", squares);
+      }
+      ```
+
+      ```output
+      [1, 4, 9, 16, 25]
+      ```
+
+      Rust works out the element type from what you push. If you never push anything, it can't tell, and asks you (error E0282, ``type annotations needed for `Vec<_>` ``). Then write the type: `let scores: Vec<i32> = Vec::new();`
+
+      ### Array or Vec?
+
+      | | Array `[T; N]` | Vector `Vec<T>` |
+      |---|---|---|
+      | Length | fixed, part of the type | changes at run time |
+      | Typical use | days of the week, a 3×3 board | orders, lines of input, search results |
+      | Adding elements | impossible | `push` |
+
+      Under the hood, a vector keeps its elements in a block of memory it can grow (on the **heap**, which module 09 explains), while an array is stored directly where it's declared.
+
+      ### Looping over a vector
+
+      You can loop over the indexes, `for i in 0..v.len()`, exactly as with arrays. In real code you'll more often see this form:
+
+      ```rust run
+      fn main() {
+          let lap_times = vec![62, 58, 60];
+          let mut total = 0;
+          for t in &lap_times {
+              total += t;
+          }
+          println!("{} laps, total {} s", lap_times.len(), total);
+      }
+      ```
+
+      ```output
+      3 laps, total 180 s
+      ```
+
+      The `&` in `&lap_times` lets the loop **look at** the elements without using up the vector. Without it, `for t in lap_times` takes the vector over, and using `lap_times` after the loop is an error (E0382, ``borrow of moved value: `lap_times` ``). Why that happens is the topic of the next phase: **ownership** (module 09) and **borrowing** with `&` (module 10). For now, loop over `&v` (or over the indexes) when you still need `v` afterwards.
+
+      ### Common mistakes
+
+      - **Forgetting `mut`**: `v.push(3)` on a non-`mut` vector gives error E0596, ``cannot borrow `v` as mutable, as it is not declared as mutable``.
+      - **Pushing the wrong type**: a `Vec` of integers can't take `"three"` (`expected integer, found &str`). Every element has the same type.
+      - **Confusing arrays and vectors in types**: `[i32; 3]` is an array, `Vec<i32>` a vector. `vec![1, 2, 3]` makes a vector, `[1, 2, 3]` an array.
+
+      **Your turn:** start from an empty vector and use a loop with `push` to collect the multiples of 7 from 7 up to 49. Then print the vector and how many numbers it holds:
+
+      ```
+      [7, 14, 21, 28, 35, 42, 49]
+      count: 7
+      ```
+    seed: |
+      fn main() {
+          let mut multiples = Vec::new();
+          // fill it with a loop and push, then print
+      }
+    solution: |
+      fn main() {
+          let mut multiples = Vec::new();
+          // fill it with a loop and push, then print
+          for n in 1..=7 {
+              multiples.push(n * 7);
+          }
+          println!("{:?}", multiples);
+          println!("count: {}", multiples.len());
+      }
+    require:
+      - pattern: '\.push\('
+        message: "Add the numbers with `.push(...)`."
+      - pattern: '\b(for|while|loop)\b'
+        message: Use a loop to push the numbers.
+      - pattern: '\.len\(\)'
+        message: "Print the count with `.len()`."
+    hints:
+      - "`for n in 1..=7 { multiples.push(n * 7); }` pushes 7, 14, ... 49. (`(7..=49).step_by(7)` works too.)"
+      - "Print with `println!(\"{:?}\", multiples);` and the count with `multiples.len()`."
+    tests:
+      - expect: "[7, 14, 21, 28, 35, 42, 49]\ncount: 7"
+    more:
+      - task: |
+          Fill the blanks: create an empty cart, add a price to it, and print how many items it holds. The program should print `2 items: [499, 1250]`.
+        fill: |
+          fn main() {
+              let mut cart = Vec::[[new]]();
+              cart.[[push]](499);
+              cart.push(1250);
+              println!("{} items: {:?}", cart.[[len()]], cart);
+          }
+        hints:
+          - "`Vec::new()` makes an empty vector."
+          - "`push` adds to the end, and `len()` counts the elements."
+        tests:
+          - expect: "2 items: [499, 1250]"
+      - task: |
+          Write `evens_up_to(n)`, which returns a vector of the even numbers from 2 up to and including `n`. For example `evens_up_to(10)` returns `[2, 4, 6, 8, 10]`, and `evens_up_to(1)` returns an empty vector.
+        seed: |
+          fn evens_up_to(n: u32) -> Vec<u32> {
+              todo!()
+          }
+        solution: |
+          fn evens_up_to(n: u32) -> Vec<u32> {
+              let mut evens = Vec::new();
+              for x in 1..=n {
+                  if x % 2 == 0 {
+                      evens.push(x);
+                  }
+              }
+              evens
+          }
+        harness: |
+          #[test]
+          fn evens_up_to_10() {
+              assert_eq!(evens_up_to(10), vec![2, 4, 6, 8, 10], "evens_up_to(10)");
+          }
+
+          #[test]
+          fn an_odd_limit_is_not_included() {
+              assert_eq!(evens_up_to(7), vec![2, 4, 6], "evens_up_to(7)");
+          }
+
+          #[test]
+          fn exactly_two() {
+              assert_eq!(evens_up_to(2), vec![2], "evens_up_to(2)");
+          }
+
+          #[test]
+          fn nothing_below_two() {
+              assert_eq!(evens_up_to(1), Vec::<u32>::new(), "evens_up_to(1)");
+              assert_eq!(evens_up_to(0), Vec::<u32>::new(), "evens_up_to(0)");
+          }
+        hints:
+          - "Create `let mut evens = Vec::new();`, push the right numbers, and return `evens` as the last expression."
+          - "Loop over `1..=n` and push `x` when `x % 2 == 0`. (Or loop over `(2..=n).step_by(2)`.)"

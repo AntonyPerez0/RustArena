@@ -1,0 +1,225 @@
+topic: borrowing
+drills:
+  - type: predict
+    body: |
+      let mut count = 1;
+      let r = &mut count;
+      *r += 10;
+      println!("{}", count);
+    why: r points at count, so `*r += 10` changes count itself. The borrow ends after its last use, so count can be printed.
+
+  - type: predict
+    pre: |
+      fn add_suffix(s: &mut String) {
+          s.push_str("-ok");
+      }
+    body: |
+      let mut id = String::from("job7");
+      add_suffix(&mut id);
+      add_suffix(&mut id);
+      println!("{}", id);
+    why: Each call borrows id mutably and appends to the caller's String; the borrow ends when the call returns, so it can be lent again.
+
+  - type: predict
+    body: |
+      let mut v = vec![1, 2, 3];
+      for x in &mut v {
+          *x *= 10;
+      }
+      println!("{:?}", v);
+    why: "`for x in &mut v` gives a &mut to each element, and `*x *= 10` changes the element in place."
+
+  - type: predict
+    pre: |
+      fn reset(name: &mut String) {
+          *name = String::from("none");
+      }
+    body: |
+      let mut slot = String::from("Ferris");
+      let before = slot.len();
+      reset(&mut slot);
+      println!("{} {}", before, slot);
+    why: before is a copy of the length (6) taken before the call. Assigning through `*name` replaces the caller's String with "none".
+
+  - type: fill
+    prompt: Lend `lives` to the function so it can change it.
+    pre: |
+      fn add_one(n: &mut i32) {
+          *n += 1;
+      }
+    body: |
+      let mut lives = 2;
+      add_one([[&mut lives]]);
+      println!("{}", lives);
+    why: "A `&mut i32` parameter needs a mutable reference at the call: `&mut lives`."
+
+  - type: fill
+    prompt: Change the number behind the reference.
+    pre: |
+      fn double(n: &mut u32) {
+          [[*n]] *= 2;
+      }
+    body: |
+      let mut x = 21;
+      double(&mut x);
+      println!("{}", x);
+    why: "Operators act on the value only through the dereference operator: `*n *= 2`. Without the `*` it's E0368."
+
+  - type: fill
+    prompt: Give the parameter a type that borrows the String instead of taking it.
+    pre: |
+      fn shout(text: [[&String‖&str]]) -> String {
+          text.to_uppercase()
+      }
+    body: |
+      let s = String::from("hey");
+      println!("{} {}", shout(&s), s);
+    why: "The call passes `&s`, and s is used afterwards, so the function must borrow: `&String` (or `&str`)."
+
+  - type: bug
+    body: |
+      let mut total = 0;
+      let r = &mut total;
+      *r += 5;
+      r += 5; // BUG
+      println!("{}", total);
+    fix: '*r += 5;'
+    why: "r is a &mut i32. To add to the number it points at, you need `*r`; `r += 5` is error E0368."
+
+  - type: bug
+    pre: |
+      fn add_item(list: &Vec<String>, item: &str) { // BUG
+          list.push(item.to_string());
+      }
+    body: |
+      let mut cart = Vec::new();
+      add_item(&mut cart, "milk");
+      println!("{:?}", cart);
+    fix: 'fn add_item(list: &mut Vec<String>, item: &str) {'
+    why: "push changes the vector, which you can't do through a shared & reference (E0596). The parameter must be `&mut Vec<String>`."
+
+  - type: compiles
+    answer: no
+    body: |
+      let mut s = String::from("a");
+      let r1 = &mut s;
+      let r2 = &mut s;
+      r1.push('b');
+      r2.push('c');
+    why: "Two mutable references to s are alive at once (r1 is still used after r2 is created): E0499, one writer at a time."
+
+  - type: compiles
+    answer: yes
+    body: |
+      let s = String::from("crab");
+      let r1 = &s;
+      let r2 = &s;
+      println!("{} {}", r1, r2);
+    why: Any number of shared (&) references can exist together, because none of them can change the value.
+
+  - type: compiles
+    answer: no
+    body: |
+      let mut v = vec![1, 2, 3];
+      let first = &v[0];
+      v.push(4);
+      println!("{}", first);
+    why: "first borrows v and is used after the push. push might move the elements to a new heap block, so this is E0502."
+
+  - type: compiles
+    answer: yes
+    body: |
+      let mut v = vec![1, 2, 3];
+      let first = &v[0];
+      println!("{}", first);
+      v.push(4);
+    why: A borrow ends at its last use. first is last used before the push, so no borrow is active when v changes.
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn make_label() -> &String {
+          let label = String::from("VIP");
+          &label
+      }
+    body: |
+      println!("{}", make_label());
+    why: "label is dropped when the function returns, so the reference would dangle. Rust rejects it (E0106 missing lifetime specifier); return String instead."
+
+  - type: compiles
+    answer: no
+    body: |
+      let r;
+      {
+          let s = String::from("hi");
+          r = &s;
+      }
+      println!("{}", r);
+    why: "s is dropped at the end of the inner block while r still borrows it: E0597, s does not live long enough."
+
+  - type: choice
+    prompt: Why won't Rust let you push to a Vec while a reference to one of its elements is still in use?
+    choices: ["push may move the elements to a new, bigger heap block, leaving the reference pointing at freed memory", "References to vector elements are always read-only copies", "A vector can only be borrowed once in the whole program", "push takes ownership of the vector"]
+    answer: 1
+    why: When a vector runs out of capacity, push allocates a bigger block, copies the elements and frees the old block. A reference into the old block would dangle; the "many readers or one writer" rule rules that out at compile time.
+
+  - type: choice
+    prompt: "A function only needs to read a vector of scores. Which signature fits best?"
+    choices: ["fn report(scores: Vec<u32>)", "fn report(scores: &Vec<u32>)", "fn report(scores: &mut Vec<u32>)"]
+    answer: 2
+    why: Taking ownership would force callers to give the vector away (or clone it), and &mut would demand write access it doesn't need. A shared reference is the least access that works. (The slices module improves it further to &[u32].)
+
+  - type: boss
+    prompt: |
+      Write `fn record_round(totals: &mut Vec<u32>, round: &Vec<u32>) -> usize`. Both vectors have one entry per player. Add each player's round score to their total, then return the index of the player who now has the highest total (the lowest index on a tie). You can assume the vectors are the same length and not empty.
+    seed: |
+      fn record_round(totals: &mut Vec<u32>, round: &Vec<u32>) -> usize {
+          todo!()
+      }
+    solution: |
+      fn record_round(totals: &mut Vec<u32>, round: &Vec<u32>) -> usize {
+          for i in 0..totals.len() {
+              totals[i] += round[i];
+          }
+          let mut leader = 0;
+          for i in 0..totals.len() {
+              if totals[i] > totals[leader] {
+                  leader = i;
+              }
+          }
+          leader
+      }
+    harness: |
+      #[test]
+      fn adds_the_round_to_each_total() {
+          let mut totals = vec![10, 20, 30];
+          record_round(&mut totals, &vec![5, 0, 1]);
+          assert_eq!(totals, vec![15, 20, 31], "totals after the round");
+      }
+
+      #[test]
+      fn returns_the_new_leader() {
+          let mut totals = vec![10, 20, 30];
+          assert_eq!(record_round(&mut totals, &vec![25, 0, 1]), 0, "leader after [10, 20, 30] + [25, 0, 1]");
+      }
+
+      #[test]
+      fn picks_the_lowest_index_on_a_tie() {
+          let mut totals = vec![5, 3];
+          assert_eq!(record_round(&mut totals, &vec![0, 2]), 0, "leader after [5, 3] + [0, 2]");
+      }
+
+      #[test]
+      fn works_over_several_rounds() {
+          let mut totals = vec![0, 0];
+          record_round(&mut totals, &vec![3, 1]);
+          assert_eq!(record_round(&mut totals, &vec![0, 4]), 1, "leader after two rounds");
+          assert_eq!(totals, vec![3, 5], "totals after two rounds");
+      }
+    forbid:
+      - pattern: '\.clone\(\)'
+        message: Read the round through its & reference and change the totals through their &mut; no copies needed.
+    hints:
+      - "First loop: `for i in 0..totals.len() { totals[i] += round[i]; }`"
+      - "Then find the leader: start with `let mut leader = 0;` and replace it whenever `totals[i] > totals[leader]`."
+    why: The function reads one vector through & and changes the other through &mut, and the caller keeps ownership of both.

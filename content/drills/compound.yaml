@@ -1,0 +1,169 @@
+topic: compound
+drills:
+  - type: predict
+    body: |
+      let t = (5, 'x', true);
+      println!("{} {}", t.1, t.0);
+    why: Tuple parts are numbered from 0, so t.1 is the char 'x' and t.0 is 5.
+  - type: predict
+    body: |
+      let (a, b) = (1, 2);
+      let (a, b) = (b, a);
+      println!("{a} {b}");
+    why: The second let builds the tuple (2, 1) from the old values and unpacks it into new variables, which swaps them.
+  - type: predict
+    pre: |
+      fn min_max(a: i32, b: i32) -> (i32, i32) {
+          if a < b { (a, b) } else { (b, a) }
+      }
+    body: |
+      let (lo, hi) = min_max(9, 4);
+      println!("{lo}-{hi}");
+    why: The function returns a tuple (smaller, larger), and the let destructures it into lo and hi.
+  - type: predict
+    after: compound-3
+    body: |
+      let a = [3; 4];
+      println!("{:?} {}", a, a.len());
+    why: "[3; 4] is an array of four 3s; .len() is 4."
+  - type: predict
+    after: compound-5
+    body: |
+      let g = [[1, 2], [3, 4]];
+      println!("{}", g[1][0]);
+    why: g[1] is the second row [3, 4], and [0] picks its first element.
+  - type: predict
+    body: |
+      let mut v = vec![1];
+      v.push(2);
+      v.push(3);
+      println!("{:?} {}", v, v.len());
+    why: Each push adds one element at the end, so the vector grows to three elements.
+  - type: fill
+    prompt: Print the y part of the point.
+    body: |
+      let point = (3, -7);
+      println!("y = {}", point.[[1]]);
+    why: The second part of a tuple is .1, because parts are numbered from 0.
+  - type: fill
+    prompt: Unpack the tuple into two variables.
+    body: |
+      let size = (1920, 1080);
+      let [[(w, h)‖(w,h)]] = size;
+      println!("{w}x{h}");
+    why: A tuple pattern on the left of let gives each part its own name.
+  - type: fill
+    prompt: Add the new score at the end of the list.
+    body: |
+      let mut scores = vec![10, 20];
+      scores.[[push]](30);
+      println!("{:?}", scores);
+    why: push adds an element at the end of a Vec.
+  - type: bug
+    after: compound-4
+    body: |
+      let scores = [70, 85, 90];
+      let mut total = 0;
+      for i in 0..=scores.len() { // BUG
+          total += scores[i];
+      }
+      println!("{total}");
+    fix: "for i in 0..scores.len() {"
+    why: 0..=scores.len() includes 3, which is past the last index, so scores[3] panics. The valid indexes are 0..scores.len().
+  - type: bug
+    after: compound-3
+    body: |
+      let names = ["Ana", "Ben", "Cy"];
+      let last = names[names.len()]; // BUG
+      println!("{last}");
+    fix: "let last = names[names.len() - 1];"
+    why: The last element is at len() - 1. Index len() is out of bounds and panics.
+  - type: bug
+    after: compound-4
+    body: |
+      let temps = [-5, -2, -9, -4];
+      let mut max = 0; // BUG
+      for t in temps {
+          if t > max {
+              max = t;
+          }
+      }
+      println!("{max}");
+    fix: "let mut max = temps[0];"
+    prompt: "This should print the highest temperature, -2. Click the line with the bug."
+    why: Starting at 0 means no negative value ever beats it, so it prints 0. Start from the first element instead.
+  - type: compiles
+    answer: no
+    body: |
+      let t = (1, 2);
+      println!("{}", t.2);
+    why: A two-value tuple only has .0 and .1, and the compiler checks this.
+  - type: compiles
+    after: compound-3
+    answer: no
+    body: |
+      let a = [1, 2, 3];
+      a[0] = 5;
+    why: Changing an element changes the array, so it must be declared with let mut.
+  - type: compiles
+    after: compound-3
+    answer: no
+    body: |
+      let a: [i32; 3] = [1, 2];
+    why: The length is part of an array's type. [i32; 3] needs exactly three elements.
+  - type: compiles
+    answer: yes
+    body: |
+      let mut v = Vec::new();
+      v.push(1);
+      println!("{:?}", v);
+    why: Rust works out that v is a Vec<i32> from the value pushed into it.
+  - type: choice
+    prompt: A program collects the orders that arrive while it runs. You don't know how many there will be. What should hold them?
+    choices: ["An array like [i32; 100]", "A Vec, growing it with push", "A tuple with one part per order"]
+    answer: 2
+    why: An array and a tuple have a length fixed when you write the code. A Vec grows at run time.
+  - type: boss
+    after: compound-4
+    prompt: |
+      Write `stats(scores)`, which returns the lowest score, the highest score and the average (as an `f64`) of five scores, as a tuple `(min, max, average)`. For example `stats([70, 85, 90, 60, 95])` returns `(60, 95, 80.0)`.
+    seed: |
+      fn stats(scores: [u32; 5]) -> (u32, u32, f64) {
+          todo!()
+      }
+    solution: |
+      fn stats(scores: [u32; 5]) -> (u32, u32, f64) {
+          let mut min = scores[0];
+          let mut max = scores[0];
+          let mut sum = 0;
+          for s in scores {
+              if s < min {
+                  min = s;
+              }
+              if s > max {
+                  max = s;
+              }
+              sum += s;
+          }
+          (min, max, sum as f64 / scores.len() as f64)
+      }
+    harness: |
+      #[test]
+      fn finds_min_max_and_average() {
+          assert_eq!(stats([70, 85, 90, 60, 95]), (60, 95, 80.0), "stats([70, 85, 90, 60, 95])");
+      }
+
+      #[test]
+      fn all_scores_equal() {
+          assert_eq!(stats([50; 5]), (50, 50, 50.0), "stats([50; 5])");
+      }
+
+      #[test]
+      fn the_average_keeps_its_fraction() {
+          assert_eq!(stats([1, 2, 3, 4, 5]), (1, 5, 3.0), "stats([1, 2, 3, 4, 5])");
+          assert_eq!(stats([0, 0, 0, 0, 1]), (0, 1, 0.2), "stats([0, 0, 0, 0, 1])");
+      }
+    hints:
+      - "Start min and max at scores[0], then loop once over the scores, updating both and adding to a sum."
+      - "The average is sum as f64 / scores.len() as f64. Return (min, max, average)."
+    why: One loop can track several results at once, and a tuple returns them together.

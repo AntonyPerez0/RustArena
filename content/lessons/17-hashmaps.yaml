@@ -1,0 +1,1460 @@
+id: hashmaps
+title: HashMaps and sets
+phase: "Structuring data"
+summary: "Look things up by key with HashMap, count with the entry API, keep unique values with HashSet, and combine sets. Plus why hash order changes from run to run, and when to reach for BTreeMap and BTreeSet instead."
+roadmap: [HashMap, HashSet, BTreeMap, BTreeSet]
+steps:
+  - title: Looking things up with HashMap
+    id: hashmaps-1
+    text: |
+      A **HashMap<K, V>** stores **key-value pairs**: you file a value under a key, then ask for the value by its key. A price list (item to price), a phone book (name to number), an inventory (product to quantity). To find `"kiwi"` in a vector you'd check every element; a HashMap computes a number from the key, its **hash**, and uses it to jump almost straight to the right slot. A lookup takes about the same time with ten entries or ten million.
+
+      ```rust run
+      use std::collections::HashMap;
+
+      fn main() {
+          let mut stock: HashMap<String, u32> = HashMap::new();
+          stock.insert(String::from("apple"), 12);
+          stock.insert(String::from("pear"), 0);
+          stock.insert(String::from("kiwi"), 7);
+
+          println!("{} kinds", stock.len());
+          println!("apples: {:?}", stock.get("apple"));
+          println!("mangos: {:?}", stock.get("mango"));
+          println!("kiwi listed? {}", stock.contains_key("kiwi"));
+
+          let old = stock.insert(String::from("apple"), 20);
+          println!("apples were {:?}, now {:?}", old, stock.get("apple"));
+
+          let removed = stock.remove("pear");
+          println!("removed {:?}, {} kinds left", removed, stock.len());
+      }
+      ```
+
+      ```output
+      3 kinds
+      apples: Some(12)
+      mangos: None
+      kiwi listed? true
+      apples were Some(12), now Some(20)
+      removed Some(0), 2 kinds left
+      ```
+
+      Piece by piece:
+
+      - `use std::collections::HashMap;` HashMap isn't in the **prelude** (the short list of names every Rust file gets automatically), so you import it.
+      - `HashMap<String, u32>`: every key is a `String`, every value a `u32`.
+      - `insert(key, value)` adds a pair. Keys are unique: inserting an existing key **replaces** its value and returns the old one as `Some(old)` (or `None` for a new key).
+      - `get(key)` returns `Option<&V>`, because the key might not be there. A map with `String` keys can be searched with a plain `&str` like `"apple"`: you don't have to build a `String` just to look something up.
+      - `contains_key` answers yes or no, `len` counts the pairs, and `remove` takes a pair out and returns its value as an `Option`.
+
+      ### Getting values out and changing them
+
+      `get` hands you a reference inside an `Option`. To get a plain number, with a default for missing keys, match on it; `Some(&n)` copies the number out of the reference (a pattern from module 15):
+
+      ```rust run
+      use std::collections::HashMap;
+
+      fn main() {
+          let mut stock: HashMap<&str, u32> = HashMap::new();
+          stock.insert("kiwi", 7);
+
+          let mangos = match stock.get("mango") {
+              Some(&n) => n,
+              None => 0,
+          };
+          println!("mangos: {mangos}");
+
+          if let Some(qty) = stock.get_mut("kiwi") {
+              *qty -= 1;
+          }
+          println!("kiwis: {}", stock["kiwi"]);
+      }
+      ```
+
+      ```output
+      mangos: 0
+      kiwis: 6
+      ```
+
+      - The one-liner `stock.get("mango").copied().unwrap_or(0)` does the same as that `match`; module 19 covers `unwrap_or` and friends.
+      - `get_mut` returns `Option<&mut V>`, a mutable reference you can write through with `*`.
+      - `stock["kiwi"]` reads a value directly, but **panics** if the key is missing. Use it only when you know the key is there.
+      - This map uses `&str` keys. That's fine when the keys are string literals or text that outlives the map; for text you read at run time, use `String` keys.
+
+      `insert` takes **ownership** of the key and the value: after `stock.insert(name, 3)` with a `String` `name`, the map owns it and `name` can't be used any more.
+
+      ### Common mistakes
+
+      - **Assigning through an index:**
+
+        ```rust compile_fail
+        use std::collections::HashMap;
+
+        fn main() {
+            let mut stock: HashMap<&str, i32> = HashMap::new();
+            stock.insert("apple", 3);
+            stock["apple"] = 5;
+        }
+        ```
+
+        ```error
+        error[E0594]: cannot assign to data in an index of `HashMap<&str, i32>`
+        ```
+
+        Use `insert("apple", 5)` to replace, or `get_mut` to change the value in place.
+      - **Printing the whole map with `{:?}`.** It compiles, but the order of the pairs changes from run to run. The next step explains why and what to do instead.
+
+      **Your turn:** write a price checker. Create a `HashMap<&str, u32>` with these prices in cents: `apple` 125, `bread` 349, `milk` 99, `eggs` 450. Then, for each input line (an item name), print `ITEM: PRICE cents`, or `ITEM: not sold here` if the item isn't in the map.
+    seed: |
+      use std::collections::HashMap;
+      use std::io::{self, BufRead};
+
+      fn main() {
+          // 1. Create the price map and insert the four prices
+
+          // 2. Look up each item
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let item = line.trim();
+          }
+      }
+    solution: |
+      use std::collections::HashMap;
+      use std::io::{self, BufRead};
+
+      fn main() {
+          // 1. Create the price map and insert the four prices
+          let mut prices: HashMap<&str, u32> = HashMap::new();
+          prices.insert("apple", 125);
+          prices.insert("bread", 349);
+          prices.insert("milk", 99);
+          prices.insert("eggs", 450);
+
+          // 2. Look up each item
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let item = line.trim();
+              match prices.get(item) {
+                  Some(price) => println!("{item}: {price} cents"),
+                  None => println!("{item}: not sold here"),
+              }
+          }
+      }
+    tests:
+      - stdin: "apple\nmango\nmilk\n"
+        expect: "apple: 125 cents\nmango: not sold here\nmilk: 99 cents"
+      - stdin: "eggs\nbread\nApple\n"
+      - stdin: "milk\nmilk\ncheese\n  eggs  \n"
+        hidden: true
+    require:
+      - pattern: '\.insert\('
+        message: "Fill the map with `insert`."
+      - pattern: '\.get\('
+        message: "Look items up with `get`, which handles missing items without panicking."
+    hints:
+      - "`let mut prices: HashMap<&str, u32> = HashMap::new();` then `prices.insert(\"apple\", 125);` and so on."
+      - "`match prices.get(item) { Some(price) => ..., None => ... }`"
+    more:
+      - task: |
+          Write `fn restock(stock: &mut HashMap<String, u32>, item: &str, amount: u32)`: if the item is already in the map, add `amount` to its quantity; if not, insert it with `amount`. Use `get_mut` and `insert` (the next steps show a shortcut).
+        seed: |
+          use std::collections::HashMap;
+
+          fn restock(stock: &mut HashMap<String, u32>, item: &str, amount: u32) {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn restock(stock: &mut HashMap<String, u32>, item: &str, amount: u32) {
+              match stock.get_mut(item) {
+                  Some(qty) => *qty += amount,
+                  None => {
+                      stock.insert(item.to_string(), amount);
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn adds_to_an_existing_item() {
+              let mut stock = HashMap::new();
+              stock.insert(String::from("tape"), 4);
+              restock(&mut stock, "tape", 10);
+              assert_eq!(stock.get("tape"), Some(&14), "tape after restocking 4 + 10");
+          }
+
+          #[test]
+          fn inserts_a_new_item() {
+              let mut stock = HashMap::new();
+              restock(&mut stock, "glue", 3);
+              assert_eq!(stock.get("glue"), Some(&3), "glue after restocking a new item");
+              assert_eq!(stock.len(), 1, "number of items");
+          }
+
+          #[test]
+          fn other_items_are_untouched() {
+              let mut stock = HashMap::new();
+              stock.insert(String::from("tape"), 4);
+              stock.insert(String::from("nails"), 100);
+              restock(&mut stock, "tape", 1);
+              assert_eq!(stock.get("nails"), Some(&100), "nails after restocking tape");
+          }
+        hints:
+          - "`match stock.get_mut(item) { Some(qty) => *qty += amount, None => ... }`"
+          - "In the `None` arm the map needs an owned key: `stock.insert(item.to_string(), amount);` (wrap it in braces, since `insert` returns a value the arm doesn't need)."
+      - task: |
+          Write `fn sell(stock: &mut HashMap<String, u32>, item: &str, qty: u32) -> bool`. If the item is missing or there aren't at least `qty` of it, return `false` and change nothing. Otherwise subtract `qty` and return `true`; if that leaves 0, remove the item from the map entirely.
+        seed: |
+          use std::collections::HashMap;
+
+          fn sell(stock: &mut HashMap<String, u32>, item: &str, qty: u32) -> bool {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn sell(stock: &mut HashMap<String, u32>, item: &str, qty: u32) -> bool {
+              let Some(have) = stock.get_mut(item) else {
+                  return false;
+              };
+              if *have < qty {
+                  return false;
+              }
+              *have -= qty;
+              if *have == 0 {
+                  stock.remove(item);
+              }
+              true
+          }
+        harness: |
+          fn shop() -> HashMap<String, u32> {
+              let mut stock = HashMap::new();
+              stock.insert(String::from("mug"), 5);
+              stock.insert(String::from("plush"), 1);
+              stock
+          }
+
+          #[test]
+          fn sells_when_there_is_enough() {
+              let mut stock = shop();
+              assert_eq!(sell(&mut stock, "mug", 2), true, "sell 2 of 5 mugs");
+              assert_eq!(stock.get("mug"), Some(&3), "mugs left");
+          }
+
+          #[test]
+          fn refuses_when_there_is_not_enough() {
+              let mut stock = shop();
+              assert_eq!(sell(&mut stock, "mug", 6), false, "sell 6 of 5 mugs");
+              assert_eq!(stock.get("mug"), Some(&5), "mugs left after a refused sale");
+          }
+
+          #[test]
+          fn refuses_a_missing_item() {
+              let mut stock = shop();
+              assert_eq!(sell(&mut stock, "hat", 1), false, "sell a hat");
+              assert_eq!(stock.len(), 2, "number of items");
+          }
+
+          #[test]
+          fn selling_the_last_one_removes_the_item() {
+              let mut stock = shop();
+              assert_eq!(sell(&mut stock, "plush", 1), true, "sell the last plush");
+              assert_eq!(stock.contains_key("plush"), false, "plush still listed?");
+          }
+        hints:
+          - "`let Some(have) = stock.get_mut(item) else { return false; };`"
+          - "Check `*have < qty` before subtracting, so a refused sale changes nothing."
+          - "After `*have -= qty;`, `if *have == 0 { stock.remove(item); }`. The borrow from `get_mut` ends at its last use, so `remove` is allowed."
+
+  - title: Iteration order and BTreeMap
+    id: hashmaps-2
+    text: |
+      To visit every pair, loop over a reference to the map. Each item is a `(&key, &value)` pair; `.keys()` and `.values()` give just one side.
+
+      ```rust
+      for (city, temp) in &temps {
+          println!("{city}: {temp}");
+      }
+      ```
+
+      Run that twice and you can get two different orders:
+
+      ```text
+      $ cargo run              $ cargo run
+      oslo: 3                  lima: 19
+      lima: 19                 cairo: 31
+      cairo: 31                oslo: 3
+      ```
+
+      A HashMap places each entry according to its hash, so the order is unrelated to the order you inserted things. On top of that, Rust's default hash function is **seeded with random numbers** each time the program starts. That's deliberate: if attackers could predict where keys land, they could send a web server thousands of keys that all collide in one slot and slow it to a crawl (a **HashDoS** attack). Random seeds make that impractical.
+
+      So: **never rely on HashMap order.** Not in output, and especially not in tests, where it causes "flaky" tests that pass or fail at random. You have two fixes.
+
+      ### Fix 1: copy the pairs into a Vec and sort it
+
+      ```rust run
+      use std::collections::HashMap;
+
+      fn main() {
+          let mut ages = HashMap::new();
+          ages.insert("zoe", 31);
+          ages.insert("ana", 27);
+          ages.insert("max", 45);
+
+          let mut pairs: Vec<(&str, u32)> = Vec::new();
+          for (name, age) in &ages {
+              pairs.push((*name, *age));
+          }
+          pairs.sort();
+          for (name, age) in &pairs {
+              println!("{name}: {age}");
+          }
+      }
+      ```
+
+      ```output
+      ana: 27
+      max: 45
+      zoe: 31
+      ```
+
+      Tuples sort by their first part, then by the second. To order by value instead, use `pairs.sort_by(...)` from the vectors module.
+
+      ### Fix 2: use a BTreeMap
+
+      **BTreeMap** has almost the same methods as HashMap (`insert`, `get`, `get_mut`, `remove`, `contains_key`, `entry`), but it keeps its keys **sorted**, so iterating and printing always go in key order:
+
+      ```rust run
+      use std::collections::BTreeMap;
+
+      fn main() {
+          let mut ages = BTreeMap::new();
+          ages.insert("zoe", 31);
+          ages.insert("ana", 27);
+          ages.insert("max", 45);
+
+          for (name, age) in &ages {
+              println!("{name}: {age}");
+          }
+          println!("{:?}", ages);
+          println!("{:?}", ages.first_key_value());
+      }
+      ```
+
+      ```output
+      ana: 27
+      max: 45
+      zoe: 31
+      {"ana": 27, "max": 45, "zoe": 31}
+      Some(("ana", 27))
+      ```
+
+      | | HashMap | BTreeMap |
+      |---|---|---|
+      | Lookup and insert | very fast (about constant time) | fast (grows slowly with size, `O(log n)`) |
+      | Iteration order | unspecified, changes between runs | sorted by key |
+      | Keys need | `Hash + Eq` | `Ord` (a total order) |
+      | Use it for | lookups and counting | sorted output, smallest/largest key, ranges |
+
+      At work, HashMap is the default. Teams switch to BTreeMap (or sort before printing) wherever order is visible: reports, logs, JSON output, test expectations.
+
+      ### Common mistakes
+
+      - **Trying to sort `keys()`.** `ages.keys()` is an iterator, not a vector; there's nothing to sort yet. Push the keys (or pairs) into a `Vec` first.
+      - **Comparing `format!("{:?}", map)` in a test.** With a HashMap, that test passes on some runs and fails on others.
+
+      **Your turn:** weather stations report lines like `oslo 3`. Read them all into a `HashMap<String, i32>` (a later report for the same city replaces the earlier one), then print every city with its latest temperature, in alphabetical order, as `city: temp`. Use a HashMap here and sort the pairs yourself; the next exercise uses BTreeMap.
+    seed: |
+      use std::collections::HashMap;
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let mut latest: HashMap<String, i32> = HashMap::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let parts: Vec<&str> = line.split_whitespace().collect();
+              let city = parts[0];
+              let temp: i32 = parts[1].parse().expect("temperature must be a number");
+              // store the reading
+          }
+          // print the cities in alphabetical order
+      }
+    solution: |
+      use std::collections::HashMap;
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let mut latest: HashMap<String, i32> = HashMap::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let parts: Vec<&str> = line.split_whitespace().collect();
+              let city = parts[0];
+              let temp: i32 = parts[1].parse().expect("temperature must be a number");
+              // store the reading
+              latest.insert(city.to_string(), temp);
+          }
+          // print the cities in alphabetical order
+          let mut pairs: Vec<(&String, &i32)> = Vec::new();
+          for (city, temp) in &latest {
+              pairs.push((city, temp));
+          }
+          pairs.sort();
+          for (city, temp) in pairs {
+              println!("{city}: {temp}");
+          }
+      }
+    tests:
+      - stdin: "oslo 3\nlima 19\ncairo 31\noslo -2\n"
+        expect: "cairo: 31\nlima: 19\noslo: -2"
+      - stdin: "rome 22\n"
+      - stdin: "zurich 5\nathens 30\nzurich 7\nmadrid 25\nathens 29\nbern 4\n"
+        hidden: true
+    require:
+      - pattern: 'HashMap'
+        message: Keep the HashMap for this exercise.
+      - pattern: '\.sort'
+        message: Sort the pairs (or keys) before printing.
+    forbid:
+      - pattern: 'BTreeMap'
+        message: "Use the HashMap and sort the pairs yourself here; BTreeMap is the next exercise."
+    hints:
+      - "`latest.insert(city.to_string(), temp);` replaces any earlier reading for that city."
+      - "Copy the pairs into a vector: `let mut pairs: Vec<(&String, &i32)> = Vec::new(); for (city, temp) in &latest { pairs.push((city, temp)); }`"
+      - "`pairs.sort();` then print each pair. Tuples sort by city first."
+    more:
+      - task: |
+          A warehouse logs lines like `bolts 40`. Add up the quantity for each product with a **BTreeMap<String, u32>**, then print every product and its total as `product: total`. Because a BTreeMap is sorted, a plain `for` loop prints them alphabetically.
+        seed: |
+          use std::collections::BTreeMap;
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::collections::BTreeMap;
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut totals: BTreeMap<String, u32> = BTreeMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  let qty: u32 = parts[1].parse().expect("quantity must be a number");
+                  match totals.get_mut(parts[0]) {
+                      Some(total) => *total += qty,
+                      None => {
+                          totals.insert(parts[0].to_string(), qty);
+                      }
+                  }
+              }
+              for (product, total) in &totals {
+                  println!("{product}: {total}");
+              }
+          }
+        tests:
+          - stdin: "bolts 40\nnuts 15\nbolts 2\nanchors 7\n"
+            expect: "anchors: 7\nbolts: 42\nnuts: 15"
+          - stdin: "tape 1\ntape 1\ntape 1\n"
+          - stdin: "x 5\nb 9\nx 1\na 0\nb 1\n"
+            hidden: true
+        require:
+          - pattern: 'BTreeMap'
+            message: Use a BTreeMap so the output comes out sorted.
+        hints:
+          - "Split each line, parse the quantity, then add it: `get_mut` to add to an existing total, `insert` for a new product."
+          - "`for (product, total) in &totals { println!(\"{product}: {total}\"); }` is already in alphabetical order."
+      - task: |
+          Write `fn sorted_by_value(scores: &HashMap<String, u32>) -> Vec<(String, u32)>` that returns all pairs with the highest score first and equal scores in alphabetical order by name. The tests compare the exact vector, so the order must be fully predictable.
+        seed: |
+          use std::collections::HashMap;
+
+          fn sorted_by_value(scores: &HashMap<String, u32>) -> Vec<(String, u32)> {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          fn sorted_by_value(scores: &HashMap<String, u32>) -> Vec<(String, u32)> {
+              let mut pairs = Vec::new();
+              for (name, score) in scores {
+                  pairs.push((name.clone(), *score));
+              }
+              pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+              pairs
+          }
+        harness: |
+          fn map(pairs: &[(&str, u32)]) -> HashMap<String, u32> {
+              let mut m = HashMap::new();
+              for (k, v) in pairs {
+                  m.insert(k.to_string(), *v);
+              }
+              m
+          }
+
+          #[test]
+          fn highest_first() {
+              let m = map(&[("bo", 10), ("ana", 30), ("cy", 20)]);
+              let want = vec![(String::from("ana"), 30), (String::from("cy"), 20), (String::from("bo"), 10)];
+              assert_eq!(sorted_by_value(&m), want, "sorted_by_value(bo 10, ana 30, cy 20)");
+          }
+
+          #[test]
+          fn ties_by_name() {
+              let m = map(&[("zed", 5), ("amy", 5), ("kim", 5), ("top", 9)]);
+              let want = vec![(String::from("top"), 9), (String::from("amy"), 5), (String::from("kim"), 5), (String::from("zed"), 5)];
+              assert_eq!(sorted_by_value(&m), want, "sorted_by_value with three ties");
+          }
+
+          #[test]
+          fn empty_map() {
+              assert_eq!(sorted_by_value(&HashMap::new()), Vec::new(), "sorted_by_value of an empty map");
+          }
+        hints:
+          - "Copy the pairs out: `for (name, score) in scores { pairs.push((name.clone(), *score)); }`"
+          - "Sort by score descending, then name: `pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));`"
+
+  - title: Counting with entry
+    id: hashmaps-3
+    text: |
+      The most common thing to do with a map is count: words in a text, hits per page, errors per server. Each time you see a key you want "add one, or start at one if it's new". With what you know so far, that's a `get_mut` and an `insert`: two lookups and a `match`. The **entry API** does it in one:
+
+      ```rust run
+      use std::collections::HashMap;
+
+      fn main() {
+          let text = "the crab and the gull and the crab";
+          let mut counts: HashMap<&str, u32> = HashMap::new();
+          for word in text.split_whitespace() {
+              *counts.entry(word).or_insert(0) += 1;
+          }
+
+          let mut pairs: Vec<(&str, u32)> = Vec::new();
+          for (word, n) in &counts {
+              pairs.push((*word, *n));
+          }
+          pairs.sort();
+          for (word, n) in pairs {
+              println!("{word}: {n}");
+          }
+      }
+      ```
+
+      ```output
+      and: 2
+      crab: 2
+      gull: 1
+      the: 3
+      ```
+
+      Read `*counts.entry(word).or_insert(0) += 1;` from the inside out:
+
+      1. `counts.entry(word)` finds the slot for `word`. That slot, an **Entry**, is either occupied (the word was seen before) or vacant.
+      2. `.or_insert(0)` puts `0` in the slot if it was vacant. Either way it returns a `&mut u32` pointing at the count inside the map.
+      3. `*... += 1` adds one through that reference.
+
+      One lookup, no `match`, and it reads like the sentence "add one to this word's count, starting from zero".
+
+      ### Other ways to fill an entry
+
+      ```rust run
+      use std::collections::BTreeMap;
+
+      fn main() {
+          let visits = ["home", "about", "home", "shop", "home"];
+
+          let mut counts: BTreeMap<&str, u32> = BTreeMap::new();
+          for page in visits {
+              counts.entry(page).and_modify(|n| *n += 1).or_insert(1);
+          }
+          println!("{:?}", counts);
+
+          let mut totals: BTreeMap<&str, u32> = BTreeMap::new();
+          for page in visits {
+              *totals.entry(page).or_default() += 1;
+          }
+          println!("{:?}", totals);
+      }
+      ```
+
+      ```output
+      {"about": 1, "home": 3, "shop": 1}
+      {"about": 1, "home": 3, "shop": 1}
+      ```
+
+      - `.and_modify(|n| *n += 1)` runs the closure on the value only if the key already exists; `.or_insert(1)` handles the new key.
+      - `.or_default()` inserts the type's default value: `0` for numbers, an empty `String` or `Vec`. It's handy for building lists per key, which you'll do in the last step.
+      - The entry API works the same on `BTreeMap`; here it's used so the map can be printed directly.
+
+      ### Common mistakes
+
+      - **Holding two entries at once.** `or_insert` returns a mutable reference into the map, so the map stays mutably borrowed while you use it:
+
+        ```rust compile_fail
+        use std::collections::HashMap;
+
+        fn main() {
+            let mut counts: HashMap<&str, u32> = HashMap::new();
+            let a = counts.entry("a").or_insert(0);
+            let b = counts.entry("b").or_insert(0);
+            *a += 1;
+            *b += 1;
+        }
+        ```
+
+        ```error
+        error[E0499]: cannot borrow `counts` as mutable more than once at a time
+        ```
+
+        Inserting `"b"` could make the map grow and move its entries, which would leave `a` pointing at freed memory. Finish with one entry before starting the next: `*counts.entry("a").or_insert(0) += 1;` on one line, then the same for `"b"`.
+      - **Keys need to be owned values of the key type.** With `String` keys, `entry` needs a `String`: `counts.entry(word.to_string())`. That allocates even when the word is already in the map, which is fine for most programs.
+
+      **Your turn:** write `fn word_counts(text: &str) -> HashMap<String, u32>` that counts each word (split on whitespace), ignoring case: `"Rust"` and `"rust"` are the same word, stored in lowercase.
+    seed: |
+      use std::collections::HashMap;
+
+      fn word_counts(text: &str) -> HashMap<String, u32> {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashMap;
+
+      fn word_counts(text: &str) -> HashMap<String, u32> {
+          let mut counts = HashMap::new();
+          for word in text.split_whitespace() {
+              *counts.entry(word.to_lowercase()).or_insert(0) += 1;
+          }
+          counts
+      }
+    harness: |
+      #[test]
+      fn counts_repeated_words() {
+          let c = word_counts("the crab and the gull");
+          assert_eq!(c.get("the"), Some(&2), "count of \"the\"");
+          assert_eq!(c.get("crab"), Some(&1), "count of \"crab\"");
+          assert_eq!(c.len(), 4, "number of different words");
+      }
+
+      #[test]
+      fn ignores_case() {
+          let c = word_counts("Rust rust RUST");
+          assert_eq!(c.get("rust"), Some(&3), "count of \"rust\"");
+          assert_eq!(c.len(), 1, "number of different words");
+      }
+
+      #[test]
+      fn extra_spaces_and_newlines() {
+          let c = word_counts("  a\nb   a \n");
+          assert_eq!(c.get("a"), Some(&2), "count of \"a\"");
+          assert_eq!(c.get("b"), Some(&1), "count of \"b\"");
+      }
+
+      #[test]
+      fn empty_text_and_missing_words() {
+          let c = word_counts("");
+          assert_eq!(c.len(), 0, "number of words in \"\"");
+          assert_eq!(c.get("zebra"), None, "count of a word that never appears");
+      }
+    require:
+      - pattern: '\.entry\('
+        message: "Use the entry API: `*counts.entry(...).or_insert(0) += 1;`"
+    hints:
+      - "Loop with `for word in text.split_whitespace()`."
+      - "The key is the lowercase word: `word.to_lowercase()` (a new `String`)."
+      - "`*counts.entry(word.to_lowercase()).or_insert(0) += 1;` then return `counts`."
+    more:
+      - task: |
+          Fill in the blanks to count how often each letter appears, using a BTreeMap so the letters print in order.
+        fill: |
+          use std::collections::BTreeMap;
+
+          fn main() {
+              let text = "banana bandana";
+              let mut freq: BTreeMap<char, u32> = BTreeMap::new();
+              for c in text.chars() {
+                  if c != ' ' {
+                      *freq.[[entry]](c).[[or_insert]](0) += 1;
+                  }
+              }
+              for (c, n) in &freq {
+                  println!("{c}: {n}");
+              }
+          }
+        hints:
+          - "First find the slot for the key, then insert 0 if it's empty."
+          - "`*freq.entry(c).or_insert(0) += 1;`"
+        tests:
+          - expect: "a: 6\nb: 2\nd: 1\nn: 4"
+      - task: |
+          Write a sales report. Each input line is `region amount` (whole numbers). Total the amounts per region with the entry API, then print every region as `region: total`, **highest total first**, with equal totals in alphabetical order.
+        seed: |
+          use std::collections::HashMap;
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::collections::HashMap;
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut totals: HashMap<String, u64> = HashMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  let amount: u64 = parts[1].parse().expect("amount must be a number");
+                  *totals.entry(parts[0].to_string()).or_insert(0) += amount;
+              }
+              let mut rows: Vec<(&String, &u64)> = Vec::new();
+              for (region, total) in &totals {
+                  rows.push((region, total));
+              }
+              rows.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+              for (region, total) in rows {
+                  println!("{region}: {total}");
+              }
+          }
+        tests:
+          - stdin: "north 300\nsouth 120\nnorth 150\neast 450\nwest 20\n"
+            expect: "east: 450\nnorth: 450\nsouth: 120\nwest: 20"
+          - stdin: "solo 5\n"
+          - stdin: "b 10\na 10\nc 30\nb 1\na 1\nd 0\n"
+            hidden: true
+        require:
+          - pattern: '\.entry\('
+            message: "Total the amounts with the entry API."
+        hints:
+          - "`*totals.entry(region.to_string()).or_insert(0) += amount;`"
+          - "Copy the pairs into a `Vec` and sort it: `rows.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));` (here the pairs hold references, so no `&` is needed inside `cmp`)."
+
+  - title: "HashSet: have I seen this before?"
+    id: hashmaps-4
+    text: |
+      A **HashSet<T>** is like a HashMap with keys and no values: a collection of **unique** values with a very fast "is this in here?" check. Its `insert` returns a `bool`: `true` if the value was new, `false` if it was already there. That makes "have I seen this before?" a single call:
+
+      ```rust run
+      use std::collections::HashSet;
+
+      fn main() {
+          let log = ["login ana", "login bo", "login ana", "logout bo", "login cy", "login ana"];
+          let mut seen = HashSet::new();
+          for line in log {
+              if seen.insert(line) {
+                  println!("new: {line}");
+              } else {
+                  println!("repeat: {line}");
+              }
+          }
+          println!("{} unique lines", seen.len());
+      }
+      ```
+
+      ```output
+      new: login ana
+      new: login bo
+      repeat: login ana
+      new: logout bo
+      new: login cy
+      repeat: login ana
+      4 unique lines
+      ```
+
+      The output follows the order of the `log` array, which is fixed. We never print the set itself, because a HashSet has the same unpredictable order as a HashMap.
+
+      Other methods: `contains(&value)`, `remove(&value)` (returns whether it was there), `len`, `is_empty`, and `for x in &set` to visit every element (in no particular order).
+
+      ### BTreeSet: unique and sorted
+
+      **BTreeSet** is to HashSet what BTreeMap is to HashMap: the same idea, kept in sorted order, so printing it is safe.
+
+      ```rust run
+      use std::collections::BTreeSet;
+
+      fn main() {
+          let mut tags = BTreeSet::new();
+          for t in ["rust", "web", "cli", "rust", "async", "web"] {
+              tags.insert(t);
+          }
+          println!("{:?}", tags);
+          println!("{} tags, has cli: {}", tags.len(), tags.contains("cli"));
+      }
+      ```
+
+      ```output
+      {"async", "cli", "rust", "web"}
+      4 tags, has cli: true
+      ```
+
+      ### Sets versus sort + dedup
+
+      In the vectors module you removed duplicates with `sort` then `dedup`. That works, but it loses the original order and needs all the data first. A set keeps values unique **as they arrive**, and checking membership doesn't slow down as it grows. A very common pattern: a HashSet to remember what you've seen, plus a Vec to keep the output in its original order.
+
+      ### Common mistakes
+
+      - **Checking, then inserting:** `if !seen.contains(&x) { seen.insert(x); ... }` looks the value up twice. `if seen.insert(x) { ... }` does both in one step.
+      - **Printing a HashSet** (or comparing its `{:?}` text in a test): the order changes between runs. Sort, or use a BTreeSet.
+      - **f64 values in a set.** Floats aren't `Eq` or `Hash` (NaN again), so `HashSet<f64>` won't let you insert. The last step covers which types can be keys.
+
+      **Your turn:** write `fn first_repeat(ids: &[u32]) -> Option<u32>` that scans the ids in order and returns the first one that appears for the second time, or `None` if every id is unique. Use a `HashSet`.
+    seed: |
+      use std::collections::HashSet;
+
+      fn first_repeat(ids: &[u32]) -> Option<u32> {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashSet;
+
+      fn first_repeat(ids: &[u32]) -> Option<u32> {
+          let mut seen = HashSet::new();
+          for &id in ids {
+              if !seen.insert(id) {
+                  return Some(id);
+              }
+          }
+          None
+      }
+    harness: |
+      #[test]
+      fn finds_the_first_repeat_in_scan_order() {
+          assert_eq!(first_repeat(&[3, 1, 4, 1, 5, 3]), Some(1), "first_repeat(&[3, 1, 4, 1, 5, 3])");
+      }
+
+      #[test]
+      fn adjacent_repeat() {
+          assert_eq!(first_repeat(&[7, 7]), Some(7), "first_repeat(&[7, 7])");
+      }
+
+      #[test]
+      fn all_unique() {
+          assert_eq!(first_repeat(&[1, 2, 3]), None, "first_repeat(&[1, 2, 3])");
+      }
+
+      #[test]
+      fn empty() {
+          assert_eq!(first_repeat(&[]), None, "first_repeat(&[])");
+      }
+    require:
+      - pattern: 'HashSet'
+        message: Use a HashSet to remember the ids you've seen.
+    hints:
+      - "`let mut seen = HashSet::new();` then loop with `for &id in ids` (the `&id` pattern copies each number out)."
+      - "`insert` returns `false` when the id was already there: `if !seen.insert(id) { return Some(id); }`"
+    more:
+      - task: |
+          Write `fn dedupe_keep_order(lines: &[&str]) -> Vec<String>` that removes repeated lines but keeps the **first** occurrence of each, in the original order (`sort` + `dedup` would scramble the order).
+        seed: |
+          use std::collections::HashSet;
+
+          fn dedupe_keep_order(lines: &[&str]) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashSet;
+
+          fn dedupe_keep_order(lines: &[&str]) -> Vec<String> {
+              let mut seen = HashSet::new();
+              let mut out = Vec::new();
+              for line in lines {
+                  if seen.insert(*line) {
+                      out.push(line.to_string());
+                  }
+              }
+              out
+          }
+        harness: |
+          #[test]
+          fn keeps_first_occurrences_in_order() {
+              let got = dedupe_keep_order(&["b", "a", "b", "c", "a"]);
+              assert_eq!(got, vec!["b", "a", "c"], "dedupe_keep_order([b, a, b, c, a])");
+          }
+
+          #[test]
+          fn nothing_to_remove() {
+              let got = dedupe_keep_order(&["x", "y"]);
+              assert_eq!(got, vec!["x", "y"], "dedupe_keep_order([x, y])");
+          }
+
+          #[test]
+          fn all_the_same() {
+              let got = dedupe_keep_order(&["ping", "ping", "ping"]);
+              assert_eq!(got, vec!["ping"], "dedupe_keep_order([ping, ping, ping])");
+          }
+
+          #[test]
+          fn empty() {
+              assert_eq!(dedupe_keep_order(&[]), Vec::<String>::new(), "dedupe_keep_order([])");
+          }
+        forbid:
+          - pattern: '\.sort|\.dedup'
+            message: "Keep the original order: use a HashSet of seen lines instead of sort/dedup."
+        hints:
+          - "Keep two collections: `let mut seen = HashSet::new();` and `let mut out = Vec::new();`"
+          - "`if seen.insert(*line) { out.push(line.to_string()); }`"
+      - task: |
+          A web server logs visits as `user page` lines. Print how many distinct users and distinct pages there were, then every distinct page in alphabetical order:
+
+          ```
+          users: 3
+          pages: 2
+          about
+          home
+          ```
+
+          Use a `HashSet` for the users (you only need the count) and a `BTreeSet` for the pages (you print them).
+        seed: |
+          use std::collections::{BTreeSet, HashSet};
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::collections::{BTreeSet, HashSet};
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut users: HashSet<String> = HashSet::new();
+              let mut pages: BTreeSet<String> = BTreeSet::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  users.insert(parts[0].to_string());
+                  pages.insert(parts[1].to_string());
+              }
+              println!("users: {}", users.len());
+              println!("pages: {}", pages.len());
+              for page in &pages {
+                  println!("{page}");
+              }
+          }
+        tests:
+          - stdin: "ana home\nbo about\nana about\ncy home\nbo home\n"
+            expect: "users: 3\npages: 2\nabout\nhome"
+          - stdin: "solo /index\n"
+          - stdin: "u1 shop\nu2 cart\nu1 shop\nu3 account\nu2 shop\nu4 cart\n"
+            hidden: true
+        hints:
+          - "Split each line into user and page, and `insert` each into its set (duplicates are ignored)."
+          - "Print `users.len()` and `pages.len()`, then loop over `&pages`: a BTreeSet iterates in sorted order."
+
+  - title: "Set operations: union, intersection, difference"
+    id: hashmaps-5
+    text: |
+      Sets can be combined the way you did with Venn diagrams at school. Who came on both days? Who came at all? Which required skills is a candidate missing?
+
+      ```rust run
+      use std::collections::BTreeSet;
+
+      fn main() {
+          let monday = BTreeSet::from(["ana", "bo", "cy", "dee"]);
+          let tuesday = BTreeSet::from(["bo", "dee", "eli"]);
+
+          println!("both days: {:?}", &monday & &tuesday);
+          println!("either day: {:?}", &monday | &tuesday);
+          println!("only monday: {:?}", &monday - &tuesday);
+          println!("exactly one day: {:?}", &monday ^ &tuesday);
+
+          for name in monday.intersection(&tuesday) {
+              println!("{name} came twice");
+          }
+          println!("{}", tuesday.is_subset(&monday));
+      }
+      ```
+
+      ```output
+      both days: {"bo", "dee"}
+      either day: {"ana", "bo", "cy", "dee", "eli"}
+      only monday: {"ana", "cy"}
+      exactly one day: {"ana", "cy", "eli"}
+      bo came twice
+      dee came twice
+      false
+      ```
+
+      - `BTreeSet::from([...])` builds a set from an array in one go (`HashSet::from`, `HashMap::from([(k, v), ...])` and `BTreeMap::from` work the same way).
+      - The operators build a **new** set from two borrowed ones:
+
+        | Operator | Method | Elements in the result |
+        |---|---|---|
+        | `&a & &b` | `a.intersection(&b)` | in both |
+        | `&a \| &b` | `a.union(&b)` | in either |
+        | `&a - &b` | `a.difference(&b)` | in `a` but not in `b` |
+        | `&a ^ &b` | `a.symmetric_difference(&b)` | in exactly one of them |
+
+      - The methods don't build a set; they give you the elements one by one, ready for a `for` loop. Each element comes as a reference (`&&str` here, `&String` for a set of Strings): clone it if you need an owned copy.
+      - `is_subset`, `is_superset` and `is_disjoint` (no elements in common) answer yes/no questions.
+
+      The same operators and methods work on HashSet. The results are HashSets too, so sort them before printing.
+
+      ### Common mistakes
+
+      - **Forgetting the `&`s.** The operators take the sets by reference:
+
+        ```rust compile_fail
+        use std::collections::BTreeSet;
+
+        fn main() {
+            let a = BTreeSet::from([1, 2]);
+            let b = BTreeSet::from([2, 3]);
+            let c = a & b;
+            println!("{:?}", c);
+        }
+        ```
+
+        ```error
+        error[E0369]: no implementation for `BTreeSet<{integer}> & BTreeSet<{integer}>`
+        ```
+
+        Write `&a & &b`.
+      - **Mixing up the direction of `-`.** `&a - &b` is "a without b"; `&b - &a` is a different set.
+
+      **Your turn:** a job board matches candidates to roles. Write `fn missing_skills(required: &HashSet<String>, have: &HashSet<String>) -> Vec<String>` that returns the required skills the candidate doesn't have, sorted alphabetically.
+    seed: |
+      use std::collections::HashSet;
+
+      fn missing_skills(required: &HashSet<String>, have: &HashSet<String>) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashSet;
+
+      fn missing_skills(required: &HashSet<String>, have: &HashSet<String>) -> Vec<String> {
+          let mut missing = Vec::new();
+          for skill in required.difference(have) {
+              missing.push(skill.clone());
+          }
+          missing.sort();
+          missing
+      }
+    harness: |
+      fn set(items: &[&str]) -> HashSet<String> {
+          let mut s = HashSet::new();
+          for i in items {
+              s.insert(i.to_string());
+          }
+          s
+      }
+
+      #[test]
+      fn lists_missing_skills_sorted() {
+          let required = set(&["rust", "sql", "docker", "git"]);
+          let have = set(&["git", "rust", "python"]);
+          assert_eq!(missing_skills(&required, &have), vec!["docker", "sql"], "required rust/sql/docker/git, have git/rust/python");
+      }
+
+      #[test]
+      fn nothing_missing() {
+          let required = set(&["rust"]);
+          let have = set(&["rust", "go"]);
+          assert_eq!(missing_skills(&required, &have), Vec::<String>::new(), "required rust, have rust/go");
+      }
+
+      #[test]
+      fn has_nothing() {
+          let required = set(&["tokio", "axum"]);
+          let have = set(&[]);
+          assert_eq!(missing_skills(&required, &have), vec!["axum", "tokio"], "required tokio/axum, have nothing");
+      }
+    hints:
+      - "`required.difference(have)` gives each required skill that isn't in `have`, as a `&String`."
+      - "Push clones into a vector: `for skill in required.difference(have) { missing.push(skill.clone()); }`"
+      - "A HashSet has no order, so `missing.sort();` before returning."
+    more:
+      - task: |
+          Write `fn common_friends(a: &[&str], b: &[&str]) -> Vec<String>` that returns the names appearing in both friend lists, each once, in alphabetical order. The lists may contain repeats. Build a `BTreeSet` from each list and use `intersection` (its results come out sorted).
+        seed: |
+          use std::collections::BTreeSet;
+
+          fn common_friends(a: &[&str], b: &[&str]) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeSet;
+
+          fn common_friends(a: &[&str], b: &[&str]) -> Vec<String> {
+              let mut left = BTreeSet::new();
+              for name in a {
+                  left.insert(*name);
+              }
+              let mut right = BTreeSet::new();
+              for name in b {
+                  right.insert(*name);
+              }
+              let mut common = Vec::new();
+              for name in left.intersection(&right) {
+                  common.push(name.to_string());
+              }
+              common
+          }
+        harness: |
+          #[test]
+          fn finds_shared_names_in_order() {
+              let got = common_friends(&["zoe", "ana", "max"], &["max", "kim", "zoe"]);
+              assert_eq!(got, vec!["max", "zoe"], "common_friends([zoe, ana, max], [max, kim, zoe])");
+          }
+
+          #[test]
+          fn repeats_appear_once() {
+              let got = common_friends(&["bo", "bo", "cy"], &["bo", "bo"]);
+              assert_eq!(got, vec!["bo"], "common_friends([bo, bo, cy], [bo, bo])");
+          }
+
+          #[test]
+          fn no_overlap() {
+              let got = common_friends(&["a"], &["b"]);
+              assert_eq!(got, Vec::<String>::new(), "common_friends([a], [b])");
+          }
+        require:
+          - pattern: 'intersection|&\s*\w+\s*&\s*&'
+            message: "Use the intersection of the two sets."
+        hints:
+          - "Build each set with a loop: `for name in a { left.insert(*name); }`"
+          - "`for name in left.intersection(&right) { common.push(name.to_string()); }`"
+      - task: |
+          Compare the tags of two articles. The input is two lines of space-separated tags. Print the shared tags, the tags only in the first article, the tags only in the second (each list sorted and space-separated, or `(none)` if empty), and the **similarity**: shared tags as a percentage of all distinct tags, rounded down (print `0%` if there are no tags at all).
+
+          For `rust web async` and `web rust cli tui`:
+
+          ```
+          shared: rust web
+          only first: async
+          only second: cli tui
+          similarity: 40%
+          ```
+        seed: |
+          use std::collections::BTreeSet;
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut lines: Vec<String> = Vec::new();
+              for line in io::stdin().lock().lines() {
+                  lines.push(line.expect("could not read a line"));
+              }
+              // lines[0] and lines[1] hold the two tag lists
+          }
+        solution: |
+          use std::collections::BTreeSet;
+          use std::io::{self, BufRead};
+
+          fn show(set: &BTreeSet<&str>) -> String {
+              if set.is_empty() {
+                  return String::from("(none)");
+              }
+              let mut out = String::new();
+              for tag in set {
+                  if !out.is_empty() {
+                      out.push(' ');
+                  }
+                  out.push_str(tag);
+              }
+              out
+          }
+
+          fn main() {
+              let mut lines: Vec<String> = Vec::new();
+              for line in io::stdin().lock().lines() {
+                  lines.push(line.expect("could not read a line"));
+              }
+              // lines[0] and lines[1] hold the two tag lists
+              let mut first = BTreeSet::new();
+              for tag in lines[0].split_whitespace() {
+                  first.insert(tag);
+              }
+              let mut second = BTreeSet::new();
+              for tag in lines[1].split_whitespace() {
+                  second.insert(tag);
+              }
+              let shared = &first & &second;
+              let all = &first | &second;
+              println!("shared: {}", show(&shared));
+              println!("only first: {}", show(&(&first - &second)));
+              println!("only second: {}", show(&(&second - &first)));
+              let percent = if all.is_empty() { 0 } else { shared.len() * 100 / all.len() };
+              println!("similarity: {percent}%");
+          }
+        tests:
+          - stdin: "rust web async\nweb rust cli tui\n"
+            expect: "shared: rust web\nonly first: async\nonly second: cli tui\nsimilarity: 40%"
+          - stdin: "a b\na b\n"
+          - stdin: "games\nmusic art\n"
+            hidden: true
+          - stdin: "x y z y\nz q x\n"
+            hidden: true
+        hints:
+          - "Build a `BTreeSet<&str>` from each line with `split_whitespace` and `insert`."
+          - "`&first & &second` is the shared set, `&first | &second` all tags, `&first - &second` only in the first."
+          - "A small helper `fn show(set: &BTreeSet<&str>) -> String` that joins the tags with spaces (or returns `(none)`) keeps `main` short."
+
+  - title: Your own keys, and grouping
+    id: hashmaps-6
+    text: |
+      Any type can be a **value** in a map. A **key** has to support what the map does with it:
+
+      - HashMap and HashSet hash keys and compare them for equality, so keys need the traits **`Hash`** and **`Eq`**.
+      - BTreeMap and BTreeSet sort keys, so keys need **`Ord`**.
+
+      A **trait** is a named set of abilities a type can have (module 22 covers them). Strings, integers, chars, bools, and tuples and arrays of them already have these. Your own structs and enums don't, until you ask:
+
+      ```rust compile_fail
+      use std::collections::HashMap;
+
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      fn main() {
+          let mut seen: HashMap<Point, u32> = HashMap::new();
+          seen.insert(Point { x: 1, y: 2 }, 1);
+      }
+      ```
+
+      ```error
+      error[E0599]: the method `insert` exists for struct `HashMap<Point, u32>`, but its trait bounds were not satisfied
+      ```
+
+      The fix is one line above the type: `#[derive(PartialEq, Eq, Hash)]`. You've used `#[derive(Debug)]` already; derive writes these abilities for you too. `PartialEq` and `Eq` give `==` (field by field), and `Hash` computes a hash from all the fields. Deriving them together guarantees the rule maps rely on: **equal keys always have equal hashes**.
+
+      ```rust run
+      use std::collections::HashMap;
+
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+      enum Priority {
+          Low,
+          High,
+          Urgent,
+      }
+
+      fn main() {
+          let tickets = [(101, Priority::High), (102, Priority::Low), (103, Priority::Urgent), (104, Priority::High)];
+
+          let mut by_priority: HashMap<Priority, Vec<u32>> = HashMap::new();
+          for (id, p) in tickets {
+              by_priority.entry(p).or_default().push(id);
+          }
+
+          for p in [Priority::Urgent, Priority::High, Priority::Low] {
+              println!("{:?}: {:?}", p, by_priority[&p]);
+          }
+      }
+      ```
+
+      ```output
+      Urgent: [103]
+      High: [101, 104]
+      Low: [102]
+      ```
+
+      - The enum derives `Hash` and `Eq`, so it can be a key. (`Clone, Copy` let us use `p` again after inserting it.)
+      - `HashMap<Priority, Vec<u32>>` maps each key to a **list**: this is **grouping**, one of the most common map patterns.
+      - `entry(p).or_default()` gives the existing list, or a new empty `Vec` the first time, and `.push(id)` adds to it.
+      - Printing loops over a fixed array of priorities rather than over the map, so the order is ours, not the hash's.
+
+      ### Tuples as keys
+
+      Tuples of hashable types are hashable, which makes sparse grids easy: store only the cells that hold something.
+
+      ```rust run
+      use std::collections::HashMap;
+
+      fn main() {
+          let mut board: HashMap<(usize, usize), char> = HashMap::new();
+          board.insert((0, 0), 'X');
+          board.insert((1, 1), 'O');
+          board.insert((0, 2), 'X');
+
+          for row in 0..3 {
+              let mut line = String::new();
+              for col in 0..3 {
+                  match board.get(&(row, col)) {
+                      Some(&mark) => line.push(mark),
+                      None => line.push('.'),
+                  }
+              }
+              println!("{line}");
+          }
+      }
+      ```
+
+      ```output
+      X.X
+      .O.
+      ...
+      ```
+
+      ### Common mistakes
+
+      - **Floats as keys.** `f64` isn't `Eq` or `Hash` (NaN isn't equal to itself), so `HashMap<f64, _>` can't insert. Use integers (cents instead of dollars, millimeters instead of meters) or a string form.
+      - **Deriving `Hash` without `Eq`** (or the other way round): derive both, plus `PartialEq`.
+      - **Expecting derives on a struct with an un-hashable field.** If a field is an `f64`, the derive fails for the same reason.
+
+      **Your turn:** write `fn group_by_department(staff: &[(&str, &str)]) -> HashMap<String, Vec<String>>`. Each pair is `(name, department)`. Return a map from each department to the names in it, in the order they appear in `staff`.
+    seed: |
+      use std::collections::HashMap;
+
+      fn group_by_department(staff: &[(&str, &str)]) -> HashMap<String, Vec<String>> {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashMap;
+
+      fn group_by_department(staff: &[(&str, &str)]) -> HashMap<String, Vec<String>> {
+          let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+          for (name, dept) in staff {
+              groups.entry(dept.to_string()).or_default().push(name.to_string());
+          }
+          groups
+      }
+    harness: |
+      fn names(list: &[&str]) -> Vec<String> {
+          let mut v = Vec::new();
+          for n in list {
+              v.push(n.to_string());
+          }
+          v
+      }
+
+      #[test]
+      fn groups_names_in_input_order() {
+          let staff = [("ana", "eng"), ("bo", "sales"), ("cy", "eng"), ("dee", "eng")];
+          let g = group_by_department(&staff);
+          assert_eq!(g.get("eng"), Some(&names(&["ana", "cy", "dee"])), "the eng group");
+          assert_eq!(g.get("sales"), Some(&names(&["bo"])), "the sales group");
+      }
+
+      #[test]
+      fn one_entry_per_department() {
+          let staff = [("ana", "eng"), ("bo", "sales"), ("cy", "eng")];
+          assert_eq!(group_by_department(&staff).len(), 2, "number of departments");
+      }
+
+      #[test]
+      fn unknown_department_is_missing() {
+          let staff = [("ana", "eng")];
+          assert_eq!(group_by_department(&staff).get("hr"), None, "the hr group");
+      }
+
+      #[test]
+      fn no_staff() {
+          assert_eq!(group_by_department(&[]).len(), 0, "number of departments with no staff");
+      }
+    require:
+      - pattern: '\.entry\('
+        message: "Use `entry(...).or_default().push(...)` to build the groups."
+    hints:
+      - "Loop with `for (name, dept) in staff`."
+      - "`groups.entry(dept.to_string()).or_default().push(name.to_string());`"
+    more:
+      - task: |
+          A cinema books seats in a `HashSet<Seat>`. Make `Seat` usable in a HashSet (derive what it needs), then write `fn book(booked: &mut HashSet<Seat>, seat: Seat) -> String` that returns `"booked row R seat N"` if the seat was free (and records it), or `"row R seat N is taken"` if it was already booked.
+        seed: |
+          use std::collections::HashSet;
+
+          struct Seat {
+              row: u32,
+              number: u32,
+          }
+
+          fn book(booked: &mut HashSet<Seat>, seat: Seat) -> String {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashSet;
+
+          #[derive(PartialEq, Eq, Hash)]
+          struct Seat {
+              row: u32,
+              number: u32,
+          }
+
+          fn book(booked: &mut HashSet<Seat>, seat: Seat) -> String {
+              let label = format!("row {} seat {}", seat.row, seat.number);
+              if booked.insert(seat) {
+                  format!("booked {label}")
+              } else {
+                  format!("{label} is taken")
+              }
+          }
+        harness: |
+          #[test]
+          fn books_a_free_seat() {
+              let mut booked = HashSet::new();
+              assert_eq!(book(&mut booked, Seat { row: 3, number: 12 }), "booked row 3 seat 12", "book row 3 seat 12");
+              assert_eq!(booked.len(), 1, "number of booked seats");
+          }
+
+          #[test]
+          fn refuses_a_taken_seat() {
+              let mut booked = HashSet::new();
+              book(&mut booked, Seat { row: 3, number: 12 });
+              assert_eq!(book(&mut booked, Seat { row: 3, number: 12 }), "row 3 seat 12 is taken", "book row 3 seat 12 twice");
+          }
+
+          #[test]
+          fn same_number_different_row_is_a_different_seat() {
+              let mut booked = HashSet::new();
+              book(&mut booked, Seat { row: 1, number: 5 });
+              assert_eq!(book(&mut booked, Seat { row: 2, number: 5 }), "booked row 2 seat 5", "book row 2 seat 5 after row 1 seat 5");
+          }
+        require:
+          - pattern: '#\[derive\([^)]*Hash'
+            message: "Derive `Hash` (with `PartialEq` and `Eq`) on Seat."
+        hints:
+          - "Add `#[derive(PartialEq, Eq, Hash)]` on the line above `struct Seat`."
+          - "Build the label before inserting (insert moves `seat` into the set): `let label = format!(\"row {} seat {}\", seat.row, seat.number);`"
+          - "`if booked.insert(seat) { format!(\"booked {label}\") } else { format!(\"{label} is taken\") }`"
+      - task: |
+          A robot starts at `(0, 0)` and reads one line of moves: `U` (y + 1), `D` (y - 1), `L` (x - 1), `R` (x + 1); ignore any other character. Using a `HashSet<(i32, i32)>`, print how many distinct cells it visited (including the start), and how many moves landed on a cell it had already visited:
+
+          ```
+          visited 4 cells
+          revisited 1 times
+          ```
+
+          (That's the output for `URDL`, which walks a square back to the start.)
+        seed: |
+          use std::collections::HashSet;
+          use std::io;
+
+          fn main() {
+              let mut moves = String::new();
+              io::stdin().read_line(&mut moves).expect("could not read moves");
+          }
+        solution: |
+          use std::collections::HashSet;
+          use std::io;
+
+          fn main() {
+              let mut moves = String::new();
+              io::stdin().read_line(&mut moves).expect("could not read moves");
+              let mut pos = (0, 0);
+              let mut visited: HashSet<(i32, i32)> = HashSet::new();
+              visited.insert(pos);
+              let mut revisits = 0;
+              for c in moves.chars() {
+                  match c {
+                      'U' => pos.1 += 1,
+                      'D' => pos.1 -= 1,
+                      'L' => pos.0 -= 1,
+                      'R' => pos.0 += 1,
+                      _ => continue,
+                  }
+                  if !visited.insert(pos) {
+                      revisits += 1;
+                  }
+              }
+              println!("visited {} cells", visited.len());
+              println!("revisited {revisits} times");
+          }
+        tests:
+          - stdin: "URDL\n"
+            expect: "visited 4 cells\nrevisited 1 times"
+          - stdin: "RRRR\n"
+          - stdin: "UDUDLRRL\n"
+            hidden: true
+          - stdin: "UURRDDLLUR x\n"
+            hidden: true
+        hints:
+          - "Keep `let mut pos = (0, 0);` and insert the start into the set before moving."
+          - "`match c { 'U' => pos.1 += 1, ..., _ => continue }` moves (or skips characters that aren't moves)."
+          - "After each move, `if !visited.insert(pos) { revisits += 1; }`. At the end, `visited.len()` is the number of distinct cells."

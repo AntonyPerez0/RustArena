@@ -1,0 +1,220 @@
+topic: hashmaps
+drills:
+  - type: predict
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut m = HashMap::new();
+      m.insert("a", 1);
+      m.insert("a", 2);
+      println!("{:?} {}", m.get("a"), m.len());
+    why: Keys are unique. The second insert replaces the value for "a", so there's still one pair and its value is 2.
+  - type: predict
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut m = HashMap::new();
+      let first = m.insert("x", 5);
+      let second = m.insert("x", 6);
+      println!("{:?} {:?}", first, second);
+    why: insert returns the value it replaced. The first insert replaced nothing (None); the second replaced 5.
+  - type: predict
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut counts = HashMap::new();
+      for c in "banana".chars() {
+          *counts.entry(c).or_insert(0) += 1;
+      }
+      println!("{} {}", counts[&'a'], counts[&'n']);
+    why: "entry(c).or_insert(0) starts each letter at 0, then += 1 counts it. banana has three a's and two n's."
+  - type: predict
+    pre: |
+      use std::collections::HashSet;
+    body: |
+      let mut s = HashSet::new();
+      println!("{} {} {}", s.insert(1), s.insert(2), s.insert(1));
+    why: HashSet::insert returns true when the value is new and false when it was already in the set.
+  - type: predict
+    pre: |
+      use std::collections::BTreeMap;
+    body: |
+      let mut m = BTreeMap::new();
+      m.insert("pear", 3);
+      m.insert("apple", 1);
+      m.insert("fig", 2);
+      println!("{:?}", m);
+    why: A BTreeMap keeps its keys sorted, so printing it always lists them in order, whatever order they were inserted in.
+  - type: predict
+    pre: |
+      use std::collections::BTreeSet;
+    body: |
+      let a = BTreeSet::from([1, 2, 3]);
+      let b = BTreeSet::from([2, 3, 4]);
+      println!("{:?} {:?}", &a - &b, &a & &b);
+    why: "&a - &b keeps what's in a but not b ({1}); &a & &b keeps what's in both ({2, 3})."
+  - type: fill
+    prompt: Count each word with the entry API.
+    pre: |
+      use std::collections::BTreeMap;
+    body: |
+      let mut counts: BTreeMap<&str, u32> = BTreeMap::new();
+      for word in "to be or not to be".split_whitespace() {
+          *counts.[[entry]](word).or_insert(0) += 1;
+      }
+      println!("{:?}", counts);
+    why: "entry(word) finds or creates the slot for the word; or_insert(0) fills a new slot with 0."
+  - type: fill
+    prompt: Report each duplicate id, using what insert returns.
+    pre: |
+      use std::collections::HashSet;
+    body: |
+      let mut seen = HashSet::new();
+      for id in [4, 9, 4, 2, 9] {
+          if !seen.[[insert]](id) {
+              println!("duplicate {id}");
+          }
+      }
+    why: insert returns false when the value was already present, so one call both checks and records the id.
+  - type: fill
+    prompt: Use the map type that prints its keys in sorted order.
+    body: |
+      let mut ages = std::collections::[[BTreeMap]]::new();
+      ages.insert("zoe", 31);
+      ages.insert("ana", 27);
+      println!("{:?}", ages);
+    why: BTreeMap keeps its keys sorted, so the output is the same on every run. A HashMap's order would change between runs.
+  - type: bug
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut counts: HashMap<&str, u32> = HashMap::new();
+      for w in ["hi", "yo", "hi"] {
+          counts.entry(w).and_modify(|n| *n += 1); // BUG
+      }
+      println!("{:?}", counts.get("hi"));
+    fix: '*counts.entry(w).or_insert(0) += 1;'
+    prompt: "This should count the words and print `Some(2)`. Click the line with the bug."
+    why: and_modify only changes values that already exist; without or_insert nothing is ever added to the map.
+  - type: bug
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut stock = HashMap::new();
+      stock.insert("apple", 3);
+      stock.insert("apple", 2); // BUG
+      println!("{}", stock["apple"]);
+    fix: '*stock.entry("apple").or_insert(0) += 2;'
+    prompt: "This should restock 2 more apples and print `5`. Click the line with the bug."
+    why: insert replaces the old value instead of adding to it. Add through the entry instead.
+  - type: bug
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut prices = HashMap::new();
+      prices.insert("apple", 125);
+      println!("{}", prices["mango"]); // BUG
+    fix: 'println!("{:?}", prices.get("mango"));'
+    prompt: "This should report that mangos have no price (print `None`) instead of crashing. Click the line with the bug."
+    why: Indexing a map with a missing key panics. get returns an Option, so a missing key is just None.
+  - type: compiles
+    answer: no
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut stock: HashMap<&str, i32> = HashMap::new();
+      stock.insert("apple", 3);
+      stock["apple"] = 5;
+    why: You can read through a map index but not assign through it. Use insert or get_mut.
+  - type: compiles
+    answer: no
+    pre: |
+      use std::collections::HashSet;
+
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+    body: |
+      let mut seen = HashSet::new();
+      seen.insert(Point { x: 1, y: 2 });
+    why: "Set elements need Hash and Eq. Add #[derive(PartialEq, Eq, Hash)] to Point."
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::collections::HashMap;
+    body: |
+      let mut grid: HashMap<(i32, i32), char> = HashMap::new();
+      grid.insert((0, 0), 'X');
+      println!("{:?}", grid.get(&(0, 0)));
+    why: Tuples of hashable types are hashable, so (i32, i32) works as a key.
+  - type: compiles
+    answer: no
+    pre: |
+      use std::collections::HashSet;
+    body: |
+      let mut temps: HashSet<f64> = HashSet::new();
+      temps.insert(21.5);
+    why: f64 isn't Eq or Hash because NaN isn't equal to itself, so floats can't be set elements or map keys.
+  - type: choice
+    prompt: Why can the same program print a HashMap's entries in a different order each time it runs?
+    choices: ["HashMap sorts its keys by insertion time, and the clock changes", "Its hash function is seeded randomly when the program starts (to resist HashDoS attacks), and the order follows the hashes", "The order is random only in debug builds", "println! shuffles collections"]
+    answer: 2
+    why: Rust's default hasher uses a random seed per process, so iteration order isn't stable between runs. Sort the keys or use a BTreeMap when order matters.
+  - type: boss
+    prompt: |
+      Write `fn top_words(text: &str, n: usize) -> Vec<(String, u32)>` that counts words (split on whitespace, lowercased) and returns the `n` most frequent as `(word, count)` pairs: highest count first, equal counts in alphabetical order. Return fewer than `n` if there aren't enough different words.
+    seed: |
+      use std::collections::HashMap;
+
+      fn top_words(text: &str, n: usize) -> Vec<(String, u32)> {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashMap;
+
+      fn top_words(text: &str, n: usize) -> Vec<(String, u32)> {
+          let mut counts: HashMap<String, u32> = HashMap::new();
+          for word in text.split_whitespace() {
+              *counts.entry(word.to_lowercase()).or_insert(0) += 1;
+          }
+          let mut pairs: Vec<(String, u32)> = Vec::new();
+          for (word, count) in counts {
+              pairs.push((word, count));
+          }
+          pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+          pairs.truncate(n);
+          pairs
+      }
+    harness: |
+      fn pair(w: &str, c: u32) -> (String, u32) {
+          (w.to_string(), c)
+      }
+
+      #[test]
+      fn most_frequent_first() {
+          let got = top_words("the crab and the gull and the crab", 2);
+          assert_eq!(got, vec![pair("the", 3), pair("and", 2)], "top 2 words");
+      }
+
+      #[test]
+      fn ignores_case() {
+          let got = top_words("Rust rust RUST go Go", 5);
+          assert_eq!(got, vec![pair("rust", 3), pair("go", 2)], "top words of \"Rust rust RUST go Go\"");
+      }
+
+      #[test]
+      fn ties_are_alphabetical() {
+          let got = top_words("b a c", 3);
+          assert_eq!(got, vec![pair("a", 1), pair("b", 1), pair("c", 1)], "top 3 of \"b a c\"");
+      }
+
+      #[test]
+      fn empty_text() {
+          assert_eq!(top_words("", 3), Vec::<(String, u32)>::new(), "top_words(\"\", 3)");
+      }
+    hints:
+      - "Count with `*counts.entry(word.to_lowercase()).or_insert(0) += 1;`"
+      - "Move the pairs into a vector (`for (word, count) in counts`) because the map has no order."
+      - "`pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));` then `pairs.truncate(n);`"
+    why: A HashMap does the counting; sorting a Vec of pairs with a tie-breaker gives a fully predictable ranking.

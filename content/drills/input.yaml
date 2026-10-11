@@ -1,0 +1,217 @@
+topic: input
+drills:
+  - type: predict
+    prompt: "The input is the line `Ferris`. What does this print?"
+    stdin: "Ferris\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut s = String::new();
+      io::stdin().read_line(&mut s).expect("read failed");
+      println!("{}", s.len());
+    why: read_line keeps the newline from the Enter key, so the String holds 6 letters plus one newline byte.
+  - type: predict
+    prompt: "The input is the line `  42  ` (with spaces around the number). What does this print?"
+    stdin: "  42  \n"
+    pre: |
+      use std::io;
+    body: |
+      let mut s = String::new();
+      io::stdin().read_line(&mut s).expect("read failed");
+      let n: i32 = s.trim().parse().expect("not a number");
+      println!("{}", n + 1);
+    why: trim removes the spaces and the newline, so parse sees "42" and the program adds 1.
+  - type: predict
+    after: input-3
+    prompt: "The input is two lines, `1` and `2`. What does this print?"
+    stdin: "1\n2\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut s = String::new();
+      io::stdin().read_line(&mut s).expect("read failed");
+      io::stdin().read_line(&mut s).expect("read failed");
+      println!("{:?}", s);
+    why: read_line appends to the String instead of replacing its contents, so both lines (with their newlines) end up in it. Call s.clear() between reads to start fresh.
+  - type: predict
+    prompt: "The input is three lines: `a`, `b` and `c`. What does this print?"
+    stdin: "a\nb\nc\n"
+    pre: |
+      use std::io;
+    body: |
+      for line in io::stdin().lines() {
+          let line = line.expect("read failed");
+          print!("{}-", line.to_uppercase());
+      }
+      println!("end");
+    why: lines() hands out each line without its newline until the input ends; then the loop stops and "end" is printed.
+  - type: predict
+    body: |
+      for text in ["8", "x8"] {
+          match text.parse::<i32>() {
+              Ok(n) => println!("ok {}", n * 2),
+              Err(_) => println!("bad {text}"),
+          }
+      }
+    why: '"8" parses, so the Ok arm runs with n = 8. "x8" has an invalid digit, so the Err arm runs.'
+  - type: fill
+    prompt: Lend the String to read_line so it can write the line into it.
+    stdin: "hi\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut line = String::new();
+      io::stdin().read_line([[&mut line]]).expect("read failed");
+      println!("[{}]", line.trim());
+    why: read_line needs a mutable reference to the String, written &mut line.
+  - type: fill
+    prompt: "Remove the newline so the text can be parsed. The input is the line `5`."
+    stdin: "5\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut line = String::new();
+      io::stdin().read_line(&mut line).expect("read failed");
+      let n: u32 = line.[[trim()]].parse().expect("not a number");
+      println!("{}", n * 2);
+    why: The line is "5\n". trim() removes the newline; without it, parse fails on the invalid digit.
+  - type: fill
+    prompt: "Split the line into words, however many spaces separate them. The input is `red  green blue`."
+    stdin: "red  green blue\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut line = String::new();
+      io::stdin().read_line(&mut line).expect("read failed");
+      let mut words = 0;
+      for word in line.[[split_whitespace()]] {
+          words += 1;
+      }
+      println!("{words}");
+    why: split_whitespace splits at any run of whitespace and ignores it at the ends, so it finds exactly three words.
+  - type: fill
+    prompt: Handle the case where parsing fails.
+    body: |
+      match "abc".parse::<i32>() {
+          Ok(n) => println!("number {n}"),
+          [[Err(_)‖Err(e)]] => println!("not a number"),
+      }
+    why: parse returns Ok(value) or Err(error), and match must handle both. Err(_) matches any error.
+  - type: bug
+    stdin: "5\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut line = String::new();
+      io::stdin().read_line(&mut line).expect("read failed");
+      let n: i32 = line.parse().expect("not a number"); // BUG
+      println!("{}", n * 10);
+    fix: 'let n: i32 = line.trim().parse().expect("not a number");'
+    prompt: "The input is the line `5`, and this should print `50`. Click the line with the bug."
+    why: The line still ends with a newline, which parse rejects as an invalid digit, so the program panics. Trim first.
+  - type: bug
+    stdin: "3  4\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut line = String::new();
+      io::stdin().read_line(&mut line).expect("read failed");
+      let mut total = 0;
+      for part in line.split(' ') { // BUG
+          let n: i32 = part.trim().parse().expect("not a number");
+          total += n;
+      }
+      println!("{total}");
+    fix: "for part in line.split_whitespace() {"
+    prompt: "The input is `3  4` (two spaces), and this should print `7`. Click the line with the bug."
+    why: split(' ') cuts at every single space, so two spaces in a row produce an empty piece, and parsing "" panics.
+  - type: bug
+    stdin: "-3\n"
+    pre: |
+      use std::io;
+    body: |
+      let mut line = String::new();
+      io::stdin().read_line(&mut line).expect("read failed");
+      let temp: u32 = line.trim().parse().expect("not a number"); // BUG
+      println!("{temp} degrees");
+    fix: 'let temp: i32 = line.trim().parse().expect("not a number");'
+    prompt: "The input is the line `-3`, and this should print `-3 degrees`. Click the line with the bug."
+    why: A u32 can't be negative, so "-3" fails to parse and the program panics. Temperatures need a signed type like i32.
+  - type: compiles
+    answer: no
+    pre: |
+      use std::io;
+    body: |
+      let line = String::new();
+      io::stdin().read_line(&mut line).expect("read failed");
+    why: read_line changes the String, so it must be declared with let mut.
+  - type: compiles
+    answer: no
+    body: |
+      let n: i32 = "42".parse();
+    why: parse returns a Result (it might fail), not an i32. Unwrap it with .expect(...) or handle it with match.
+  - type: compiles
+    answer: no
+    body: |
+      let n = "42".parse().expect("not a number");
+      println!("{n}");
+    why: "Nothing says which type to parse into. Annotate the variable (let n: i32) or use the turbofish parse::<i32>()."
+  - type: compiles
+    after: input-2
+    answer: yes
+    body: |
+      let n = "42".trim().parse::<i32>().expect("not a number");
+      println!("{}", n + 1);
+    why: The turbofish ::<i32> tells parse which type to produce, so no annotation on n is needed.
+  - type: choice
+    prompt: "The user types `42` and presses Enter. What does `read_line(&mut line)` do to `line`, which was empty?"
+    choices: ["It puts the number 42 in it", "It appends the text `\"42\\n\"`, newline included", "It appends the text `\"42\"`, without the newline"]
+    answer: 2
+    why: read_line always reads text and keeps the newline, appending it to whatever the String already holds. That's why input is trimmed before parsing.
+  - type: boss
+    prompt: |
+      Each line of the input is an order: an item, a quantity and a unit price, like `coffee 2 3.50`. Read until the end of the input, skip blank lines, and print each item's total and then the grand total, all with two decimals:
+
+      ```
+      coffee: 7.00
+      bagel: 2.50
+      total: 9.50
+      ```
+    seed: |
+      use std::io;
+
+      fn main() {
+      }
+    solution: |
+      use std::io;
+
+      fn main() {
+          let mut grand_total = 0.0;
+          for line in io::stdin().lines() {
+              let line = line.expect("failed to read a line");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              let mut parts = Vec::new();
+              for part in line.split_whitespace() {
+                  parts.push(part);
+              }
+              let qty: f64 = parts[1].parse().expect("bad quantity");
+              let price: f64 = parts[2].parse().expect("bad price");
+              let total = qty * price;
+              grand_total += total;
+              println!("{}: {:.2}", parts[0], total);
+          }
+          println!("total: {grand_total:.2}");
+      }
+    tests:
+      - stdin: "coffee 2 3.50\nbagel 1 2.50\n"
+        expect: "coffee: 7.00\nbagel: 2.50\ntotal: 9.50"
+      - stdin: "tea 3 1.20\n\njuice 2 2.75\n"
+        hidden: true
+      - stdin: ""
+        hidden: true
+    hints:
+      - "Loop over io::stdin().lines(), skip lines whose trim() is empty, and push the pieces of split_whitespace() into a Vec."
+      - "parts[0] is the item, parts[1] and parts[2] parse into numbers (f64 works for both). Add each line's total to a grand total."
+    why: Reading lines until the end, splitting each one and parsing the pieces is the everyday shape of a program that processes data.

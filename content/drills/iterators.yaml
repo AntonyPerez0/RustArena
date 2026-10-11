@@ -1,0 +1,194 @@
+topic: iterators
+drills:
+  - type: predict
+    body: |
+      let v = vec![1, 2, 3, 4, 5];
+      let r: Vec<i32> = v.iter().filter(|x| *x % 2 == 1).map(|x| x * 10).collect();
+      println!("{:?}", r);
+    why: filter keeps the odd numbers 1, 3, 5, then map multiplies each by 10.
+
+  - type: predict
+    body: |
+      let v = [1, 2, 3, 4];
+      let it = v.iter().map(|x| {
+          println!("map {x}");
+          x * 2
+      }).take(2);
+      println!("start");
+      let total: i32 = it.sum();
+      println!("{total}");
+    why: Adapters are lazy. Nothing runs until sum pulls items, so "start" comes first, and take(2) stops after two items, so map only runs twice (2 + 4 = 6).
+
+  - type: predict
+    body: |
+      let a = [1, 2, 3];
+      let b = ["x", "y"];
+      let pairs: Vec<String> = a.iter().zip(b.iter()).map(|(n, s)| format!("{s}{n}")).collect();
+      println!("{:?}", pairs);
+    why: zip stops as soon as either side runs out, so the 3 has no partner and is dropped.
+
+  - type: predict
+    body: |
+      let v = [3, 8, 2, 9, 4];
+      println!("{:?} {:?}", v.iter().position(|&x| x > 5), v.iter().max());
+    why: position returns the index of the first match (8 is at index 1); max returns the largest item, wrapped in Some.
+
+  - type: predict
+    body: |
+      let n = (1..=4).fold(0, |acc, x| acc * 10 + x);
+      println!("{n}");
+    why: "fold carries the accumulator through the items: 0 -> 1 -> 12 -> 123 -> 1234."
+
+  - type: predict
+    body: |
+      let temps = [5, 7, 6, 9, 9];
+      let rises = temps.windows(2).filter(|w| w[1] > w[0]).count();
+      println!("{rises}");
+    why: "windows(2) gives the overlapping pairs [5,7], [7,6], [6,9], [9,9]. Only two of them go up."
+
+  - type: fill
+    prompt: Number the names, starting from 0.
+    body: |
+      let names = ["ann", "bo"];
+      for (i, name) in names.iter().[[enumerate()]] {
+          println!("{i}: {name}");
+      }
+    why: enumerate turns each item into an (index, item) pair.
+
+  - type: fill
+    prompt: Tell collect which collection to build, using the turbofish.
+    body: |
+      let nums = "3 1 2".split(' ').map(|s| s.parse::<i32>().unwrap()).collect::<[[Vec<i32>‖Vec<_>]]>();
+      println!("{:?}", nums);
+    why: collect can build many collections. The turbofish ::<Vec<i32>> says which one.
+
+  - type: fill
+    prompt: Keep only the entries that parse, dropping the rest.
+    body: |
+      let good: Vec<i32> = ["4", "x", "15"].iter().[[filter_map]](|s| s.parse().ok()).collect();
+      println!("{:?}", good);
+    why: filter_map keeps the values inside Some and drops the Nones. .ok() turns each Result into an Option.
+
+  - type: bug
+    body: |
+      let v = vec![1, 2, 3, 4];
+      let evens: Vec<i32> = v.iter().filter(|x| *x % 2 == 0).collect(); // BUG
+      println!("{:?}", evens);
+    fix: "let evens: Vec<i32> = v.iter().filter(|x| *x % 2 == 0).copied().collect();"
+    why: v.iter() yields &i32, and a Vec<i32> can't be collected from references. .copied() turns each &i32 into an i32.
+
+  - type: bug
+    body: |
+      let nums = 1..=20;
+      let firsts: Vec<i32> = nums.take(3).filter(|n| n % 5 == 0).collect(); // BUG
+      println!("{:?}", firsts);
+    fix: "let firsts: Vec<i32> = nums.filter(|n| n % 5 == 0).take(3).collect();"
+    prompt: "This should print the first three multiples of 5: [5, 10, 15]. Click the line with the bug."
+    why: take(3) first keeps only 1, 2, 3, and none of them is a multiple of 5. Filter first, then take.
+
+  - type: bug
+    body: |
+      let names = ["ann", "bo"];
+      let mut log = Vec::new();
+      names.iter().map(|n| log.push(n.to_uppercase())); // BUG
+      println!("{:?}", log);
+    fix: "names.iter().for_each(|n| log.push(n.to_uppercase()));"
+    prompt: "This should print [\"ANN\", \"BO\"]. Click the line with the bug."
+    why: map is lazy, and nothing consumes this iterator, so the closure never runs. for_each (or a for loop) runs it for every item.
+
+  - type: compiles
+    answer: no
+    body: |
+      let v = vec![1, 2, 3];
+      let it = v.iter();
+      println!("{:?}", it.next());
+    why: next takes &mut self, so the iterator variable must be declared mut.
+
+  - type: compiles
+    answer: no
+    body: |
+      let prices = vec![2.5, 9.75, 4.0];
+      let top = prices.iter().max();
+      println!("{:?}", top);
+    why: f64 isn't Ord (NaN can't be ordered), so max isn't available. Use max_by with total_cmp.
+
+  - type: compiles
+    answer: yes
+    body: |
+      let v = vec![1, 2, 3];
+      let doubled: Vec<i32> = v.iter().map(|x| x * 2).collect();
+      println!("{:?} {:?}", v, doubled);
+    why: iter() only borrows v, and x * 2 on a &i32 gives an i32, so collecting a Vec<i32> works and v is still usable.
+
+  - type: choice
+    prompt: What does the statement `v.iter().map(|x| x * 2);` do on its own?
+    choices: ["Doubles every element of v in place", "Builds a new Vec with the doubled values", "Nothing: the iterator is lazy and nothing consumes it", "It doesn't compile"]
+    answer: 3
+    why: Adapters only describe work. Without a consumer like collect, sum or for_each, the closure never runs (the compiler warns about it).
+
+  - type: choice
+    prompt: You collect an iterator of Result<i32, ParseIntError> into Result<Vec<i32>, ParseIntError>, and the second of five items is an Err. What do you get?
+    choices: ["Ok with the four good numbers", "That Err; collecting stops at the first error", "A panic", "Ok with an empty Vec"]
+    answer: 2
+    why: Collecting into Result short-circuits. The first Err becomes the result and the remaining items are never looked at.
+
+  - type: boss
+    prompt: |
+      Write `fn top_words(text: &str, n: usize) -> Vec<(String, usize)>` that counts how often each word appears (words are separated by whitespace, compare them lowercased) and returns the `n` most common as `(word, count)` pairs: highest count first, ties in alphabetical order. Use iterator chains, no loops: count with `fold` into a `HashMap`, then sort and `take`.
+    seed: |
+      use std::collections::HashMap;
+
+      fn top_words(text: &str, n: usize) -> Vec<(String, usize)> {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashMap;
+
+      fn top_words(text: &str, n: usize) -> Vec<(String, usize)> {
+          let counts = text
+              .split_whitespace()
+              .map(|w| w.to_lowercase())
+              .fold(HashMap::new(), |mut m, w| {
+                  *m.entry(w).or_insert(0) += 1;
+                  m
+              });
+          let mut pairs: Vec<(String, usize)> = counts.into_iter().collect();
+          pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+          pairs.into_iter().take(n).collect()
+      }
+    forbid:
+      - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+        message: "Use iterator chains: fold to count, collect, sort_by, take."
+    harness: |
+      fn pairs(list: &[(&str, usize)]) -> Vec<(String, usize)> {
+          list.iter().map(|(w, c)| (w.to_string(), *c)).collect()
+      }
+
+      #[test]
+      fn most_common_first() {
+          assert_eq!(top_words("the crab and the shell and the sea", 2), pairs(&[("the", 3), ("and", 2)]), "top_words(.., 2)");
+      }
+
+      #[test]
+      fn ties_are_alphabetical() {
+          assert_eq!(top_words("b a c a b c", 3), pairs(&[("a", 2), ("b", 2), ("c", 2)]), "top_words(\"b a c a b c\", 3)");
+      }
+
+      #[test]
+      fn case_is_ignored() {
+          assert_eq!(top_words("Rust rust RUST go", 1), pairs(&[("rust", 3)]), "top_words(\"Rust rust RUST go\", 1)");
+      }
+
+      #[test]
+      fn asking_for_more_than_exists() {
+          assert_eq!(top_words("one", 5), pairs(&[("one", 1)]), "top_words(\"one\", 5)");
+      }
+
+      #[test]
+      fn empty_text_gives_nothing() {
+          assert_eq!(top_words("", 3), Vec::<(String, usize)>::new(), "top_words(\"\", 3)");
+      }
+    hints:
+      - "Count with `.fold(HashMap::new(), |mut m, w| { *m.entry(w).or_insert(0) += 1; m })`."
+      - "Collect the map into a `Vec<(String, usize)>`, sort it with `b.1.cmp(&a.1).then(a.0.cmp(&b.0))`, then `.into_iter().take(n).collect()`."
+    why: A HashMap has no order, so the pairs are collected into a Vec and sorted (count descending, then word) before taking the first n.

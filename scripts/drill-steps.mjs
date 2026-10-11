@@ -1,3 +1,5 @@
+import { fillFirstBlank } from "../src/grader/assemble.js";
+
 // Works out which lesson step teaches each drill, so Deathmatch can unlock a drill
 // only after the learner has done that step (not as soon as they start the module).
 //
@@ -50,6 +52,10 @@ export function features(code) {
   if (/\bwhile\s+let\b/.test(src)) out.add("while let");
   if (/\blet\b[^;=]*=[^;]*\belse\s*\{/.test(src)) out.add("let else");
   if (/=>/.test(src)) out.add("match arm");
+  if (/\[[^\]\n;]+;\s*[\w.]+\s*\]/.test(src)) out.add("array repeat");
+  if (/:\s*\[\s*[\w<>&']+\s*;\s*\d+\s*\]/.test(src)) out.add("array type");
+  if (/[A-Za-z_)\]]\.\d+\b/.test(src)) out.add("tuple index");
+  if (/\blet\s*(?:mut\s+)?\(/.test(src)) out.add("tuple destructuring");
   if (/\.\.=?/.test(src)) out.add("range");
   if (/#\[derive\(/.test(src)) out.add("derive");
   for (const m of src.matchAll(/#\[derive\(([^)]*)\)\]/g)) for (const d of m[1].split(",")) out.add("derive " + d.trim());
@@ -117,7 +123,7 @@ export function assignDrillSteps(modules, drills, errors) {
       continue;
     }
     // Code: the latest step that introduces a feature the drill uses. A fill drill's blank counts as filled in.
-    const shown = d.type === "fill" ? (d.display ?? "").replace(/\[\[[^\]]*\]\]/, d.answer) : d.display ?? "";
+    const shown = d.type === "fill" ? fillFirstBlank(d.display ?? "", d.answer) : d.display ?? "";
     const code = [shown, d.fix ?? "", d.exercise?.solution ?? "", codeOf(d.prompt ?? ""), ...(d.choices ?? []).map(codeOf)].join("\n");
     let at = -1;
     for (const t of features(code)) if (mod.first.has(t)) at = Math.max(at, mod.first.get(t));

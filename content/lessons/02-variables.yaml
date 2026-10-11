@@ -1,0 +1,920 @@
+id: variables
+title: Variables and Mutability
+phase: "Foundations"
+summary: Give values names with let. Why Rust variables can't change unless you say mut, how shadowing works, what types and constants are, and how Rust teams name things.
+roadmap: ["Variables, DataTypes and Constants"]
+steps:
+  - title: Storing values with let
+    id: variables-1
+    text: |
+      A **variable** is a name for a value, so you can use the value later without typing it again. You create one with `let`:
+
+      ```rust run
+      fn main() {
+          let player = "Ferris";
+          let score = 120;
+          println!("{} scored {} points", player, score);
+      }
+      ```
+
+      ```output
+      Ferris scored 120 points
+      ```
+
+      Piece by piece:
+
+      - `let` starts a **variable declaration**. Rust calls this **binding** a name to a value: after this line, the name `score` is bound to `120`.
+      - The `=` means "is bound to", not "equals" in the math sense. The right side is worked out first, then the result gets the name on the left.
+      - The `;` ends the statement, just like after `println!`.
+      - From then on, writing `score` (without quotes) means "the value bound to `score`". Here it fills a `{}` placeholder.
+
+      ### Calculating with variables
+
+      The right side can be any calculation, including one that uses other variables:
+
+      ```rust run
+      fn main() {
+          let price = 250;
+          let quantity = 3;
+          let total = price * quantity;
+          println!("{} x {} = {}", quantity, price, total);
+      }
+      ```
+
+      ```output
+      3 x 250 = 750
+      ```
+
+      Names make code explain itself: `price * quantity` says what is being computed, `250 * 3` doesn't.
+
+      A variable exists from its `let` line onward, and only inside the pair of braces `{ }` it was declared in. That region of code is the variable's **scope**. Code runs from top to bottom, so a name can't be used before its `let`:
+
+      ```rust compile_fail
+      fn main() {
+          println!("{}", score);
+          let score = 120;
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find value `score` in this scope
+       --> src/main.rs:2:20
+        |
+      2 |     println!("{}", score);
+        |                    ^^^^^ not found in this scope
+      ```
+
+      ### Common mistakes
+
+      - **Forgetting `let`**: `score = 120;` on its own means "change the existing variable `score`". If there isn't one, you get the same E0425 error as above.
+      - **Quotes around the name**: `println!("{}", "score")` prints the word `score`. A bare name is a variable; text in double quotes is a string literal.
+      - **Spaces or dashes in names**: `let total price` and `let total-price` don't work. Names are one word; join words with `_`: `total_price`.
+
+      **Your turn:** fill in the blanks: declare a variable `coins` holding `25`, then print it, so the program prints `Coins: 25`.
+    fill: |
+      fn main() {
+          [[let]] coins = 25;
+          println!("Coins: {}", [[coins]]);
+      }
+    hints:
+      - Variables are declared with the keyword `let`.
+      - The value to print is the variable's name, written without quotes.
+    tests:
+      - expect: "Coins: 25"
+    more:
+      - task: |
+          Fill in the blanks so the program adds up the length of two songs and prints `Total: 7 minutes`. Let Rust do the adding.
+        fill: |
+          fn main() {
+              let first = 3;
+              let second = 4;
+              let total = [[first + second‖second + first]];
+              println!("Total: {} minutes", [[total]]);
+          }
+        hints:
+          - The total is the two variables added together with `+`.
+          - Then print the new variable, `total`.
+        tests:
+          - expect: "Total: 7 minutes"
+      - task: |
+          Write it yourself: declare `width` as `7` and `height` as `6`, then a third variable `area` that multiplies them, and print `Area: 42`. Let Rust work out the 42: don't type it yourself.
+        seed: |
+          fn main() {
+              // three let lines, then a println!
+          }
+        solution: |
+          fn main() {
+              // three let lines, then a println!
+              let width = 7;
+              let height = 6;
+              let area = width * height;
+              println!("Area: {}", area);
+          }
+        require:
+          - pattern: 'let\s+area\s*=\s*(width\s*\*\s*height|height\s*\*\s*width)\s*;'
+            message: "Compute `area` from the other two variables: `let area = width * height;`"
+        forbid:
+          - pattern: '\b42\b'
+            message: Don't type 42 yourself; print the `area` variable.
+        hints:
+          - "Start with `let width = 7;` and `let height = 6;`."
+          - "Then `let area = width * height;` and `println!(\"Area: {}\", area);`"
+        tests:
+          - expect: "Area: 42"
+
+  - title: Immutable by default, and mut
+    id: variables-2
+    text: |
+      In Rust, once a value is bound to a name, it can't be changed. Variables are **immutable** (unchangeable) by default:
+
+      ```rust compile_fail
+      fn main() {
+          let health = 100;
+          println!("health: {}", health);
+          health = 70;
+          println!("health: {}", health);
+      }
+      ```
+
+      ```error
+      error[E0384]: cannot assign twice to immutable variable `health`
+       --> src/main.rs:4:5
+        |
+      2 |     let health = 100;
+        |         ------ first assignment to `health`
+      3 |     println!("health: {}", health);
+      4 |     health = 70;
+        |     ^^^^^^^^^^^ cannot assign twice to immutable variable
+        |
+      help: consider making this binding mutable
+        |
+      2 |     let mut health = 100;
+        |         +++
+      ```
+
+      The `help:` lines show the fix: the keyword `mut` (short for **mutable**, changeable).
+
+      ```rust run
+      fn main() {
+          let mut health = 100;
+          println!("health: {}", health);
+          health = 70;
+          println!("health: {}", health);
+      }
+      ```
+
+      ```output
+      health: 100
+      health: 70
+      ```
+
+      `health = 70;`, without `let`, is an **assignment**: it puts a new value into an existing mutable variable.
+
+      ### Why immutable by default?
+
+      Most values in a program never change after they're set. When a variable can't change, you (and your teammates) can read `let tax = 20;` and trust it's still 20 a hundred lines later, without checking every line in between. When something must change, `mut` puts a visible marker on it. The compiler enforces both sides: it refuses assignments to immutable variables, and it warns when you write `mut` but never change the variable (`warning: variable does not need to be mutable`).
+
+      ### Updating a variable from its old value
+
+      The right side is worked out first, so a variable can appear on both sides of `=`:
+
+      ```rust run
+      fn main() {
+          let mut gold = 10;
+          gold = gold + 5;
+          gold += 20;
+          gold -= 3;
+          gold *= 2;
+          println!("gold: {}", gold);
+      }
+      ```
+
+      ```output
+      gold: 64
+      ```
+
+      `gold += 20` is short for `gold = gold + 20`. These **compound assignment** operators exist for `+`, `-`, `*`, `/` and `%`. Step by step: 10 + 5 = 15, + 20 = 35, - 3 = 32, * 2 = 64.
+
+      ### Common mistakes
+
+      - **Forgetting `mut`**: the E0384 error above. Read the `help:` lines; rustc shows the exact fix.
+      - **Writing `let` again when you meant to change the variable**: `let health = 70;` creates a *new* variable instead (the next step explains why that's allowed). To change the existing one, leave out `let`.
+      - **`count++`**: Rust has no `++` or `--` operators (`error: Rust has no postfix increment operator`). Write `count += 1`.
+
+      **Your turn:** the program below doesn't compile. Fix it so it prints these three lines (the player takes 30 damage, then drinks a potion worth 15):
+
+      ```
+      health: 100
+      health: 70
+      health: 85
+      ```
+    seed: |
+      fn main() {
+          let health = 100;
+          println!("health: {}", health);
+          health = health - 30;
+          println!("health: {}", health);
+          health = health + 15;
+          println!("health: {}", health);
+      }
+    solution: |
+      fn main() {
+          let mut health = 100;
+          println!("health: {}", health);
+          health = health - 30;
+          println!("health: {}", health);
+          health = health + 15;
+          println!("health: {}", health);
+      }
+    require:
+      - pattern: 'let\s+mut\s+health'
+        message: "Make `health` mutable: `let mut health = 100;`"
+    hints:
+      - Press Check and read the `help:` line of the error.
+      - "Add `mut` after `let` on the first line: `let mut health = 100;`"
+    tests:
+      - expect: "health: 100\nhealth: 70\nhealth: 85"
+    more:
+      - task: |
+          Fill in the operators so the step counter adds 1200 and then 800 to `steps`, using the short form that adds to a variable. It should print `Steps today: 2000`.
+        fill: |
+          fn main() {
+              let mut steps = 0;
+              steps [[+=]] 1200;
+              steps [[+=]] 800;
+              println!("Steps today: {}", steps);
+          }
+        hints:
+          - "`x += 5` is short for `x = x + 5`."
+        tests:
+          - expect: "Steps today: 2000"
+      - task: |
+          A bank account starts with a `balance` of `500`. Deposit `250`, then withdraw `100`, printing the balance at the start and after each change:
+
+          ```
+          balance: 500
+          balance: 750
+          balance: 650
+          ```
+
+          Use one mutable variable and the `+=` and `-=` operators.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let mut balance = 500;
+              println!("balance: {}", balance);
+              balance += 250;
+              println!("balance: {}", balance);
+              balance -= 100;
+              println!("balance: {}", balance);
+          }
+        require:
+          - pattern: 'let\s+mut\s+balance'
+            message: "Declare one mutable variable: `let mut balance = 500;`"
+          - pattern: 'balance\s*\+=\s*250'
+            message: "Deposit with `balance += 250;`"
+          - pattern: 'balance\s*-=\s*100'
+            message: "Withdraw with `balance -= 100;`"
+        forbid:
+          - pattern: 'let[^;]*balance[\s\S]*let[^;]*balance'
+            message: Use a single `balance` variable and change it (no second `let`).
+        hints:
+          - "Start with `let mut balance = 500;` and print it."
+          - "Then `balance += 250;`, print, `balance -= 100;`, print."
+        tests:
+          - expect: "balance: 500\nbalance: 750\nbalance: 650"
+
+  - title: Shadowing
+    id: variables-3
+    text: |
+      You just saw that writing `let` again creates a new variable. If the new variable has the same name as an old one, the new one **shadows** the old: from that line on, the name refers to the new variable.
+
+      ```rust run
+      fn main() {
+          let level = 1;
+          let level = level + 1;
+          let level = level * 10;
+          println!("level: {}", level);
+      }
+      ```
+
+      ```output
+      level: 20
+      ```
+
+      Each line reads the *old* `level` on the right and creates a new `level` on the left. None of them is mutable, and none needs to be: no value was changed; each line made a new variable and the old one can no longer be reached by name.
+
+      ### Shadowing versus mut
+
+      They look similar, but there are two real differences:
+
+      1. Shadowing creates a new variable, so it can have a different **type** (kind of value: number, text, ...). `mut` only lets you put a new value *of the same type* into the same variable.
+      2. After shadowing, the variable is still immutable, so nothing can change it by accident later.
+
+      A typical use is transforming a value step by step while keeping one good name. Here `spaces` starts as text and becomes a number. `.len()` gives the length of a piece of text (you'll meet it properly in the strings module):
+
+      ```rust run
+      fn main() {
+          let spaces = "    ";
+          let spaces = spaces.len();
+          println!("{} spaces", spaces);
+      }
+      ```
+
+      ```output
+      4 spaces
+      ```
+
+      With `mut` instead, Rust refuses, because a variable's type never changes:
+
+      ```rust compile_fail
+      fn main() {
+          let mut spaces = "    ";
+          spaces = spaces.len();
+          println!("{} spaces", spaces);
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:3:14
+        |
+      2 |     let mut spaces = "    ";
+        |                      ------ expected due to this value
+      3 |     spaces = spaces.len();
+        |              ^^^^^^^^^^^^ expected `&str`, found `usize`
+      ```
+
+      ### Shadowing inside a block
+
+      A pair of braces `{ }` inside a function makes an inner **block** with its own scope. A variable declared inside it disappears at its closing `}`, so a shadow made inside a block only lasts until then:
+
+      ```rust run
+      fn main() {
+          let x = 5;
+          {
+              let x = x * 2;
+              println!("inside: {}", x);
+          }
+          println!("outside: {}", x);
+      }
+      ```
+
+      ```output
+      inside: 10
+      outside: 5
+      ```
+
+      ### Common mistakes
+
+      - **Expecting a shadow inside a block to change the outer variable.** It doesn't: it's a separate variable that disappears at the `}`. To change the outer one, make it `mut` and assign without `let`.
+      - **Using shadowing as a counter.** Shadowing is idiomatic for transforming a value (text into a number, a raw value into a cleaned one). For something that keeps changing, like a score or a balance, use `mut`.
+
+      **Your turn:** a run is recorded in kilometers. Use shadowing (a second `let`, no `mut`) to convert `distance` from kilometers to meters, so the program prints `5000 m`.
+    seed: |
+      fn main() {
+          let distance = 5; // kilometers
+          // shadow distance here, converting it to meters
+          println!("{} m", distance);
+      }
+    solution: |
+      fn main() {
+          let distance = 5; // kilometers
+          // shadow distance here, converting it to meters
+          let distance = distance * 1000;
+          println!("{} m", distance);
+      }
+    require:
+      - pattern: 'let\s+distance\s*=\s*distance\s*\*\s*1000\s*;'
+        message: "Shadow it with a second `let`: `let distance = distance * 1000;`"
+    forbid:
+      - pattern: '\bmut\b'
+        message: Use shadowing (a second `let`), not `mut`.
+    hints:
+      - Write a second `let distance = ...` whose right side uses the first `distance`.
+      - "`let distance = distance * 1000;`"
+    tests:
+      - expect: "5000 m"
+    more:
+      - task: |
+          Fill in the keyword twice so `price` is shadowed once in `main` and once inside the inner block. The program should print `inside: 100` and then `outside: 50`.
+        fill: |
+          fn main() {
+              let price = 40;
+              [[let]] price = price + 10;
+              {
+                  [[let]] price = price * 2;
+                  println!("inside: {}", price);
+              }
+              println!("outside: {}", price);
+          }
+        hints:
+          - Each blank creates a new variable that shadows the old `price`.
+          - The block's `price` disappears at its closing brace, so the last line sees 50.
+        tests:
+          - expect: "inside: 100\noutside: 50"
+      - task: |
+          Two concert tickets cost `120` each, and there is a coupon for `20` off each ticket. Starting from `let price = 120;`, shadow `price` twice, first applying the coupon and then multiplying by the two tickets, and print `Total: 200`. Use only `let` (no `mut`), and don't type 200 yourself.
+        seed: |
+          fn main() {
+              let price = 120;
+          }
+        solution: |
+          fn main() {
+              let price = 120;
+              let price = price - 20;
+              let price = price * 2;
+              println!("Total: {}", price);
+          }
+        require:
+          - pattern: 'let\s+price[\s\S]*let\s+price[\s\S]*let\s+price'
+            message: "Shadow `price` twice: three `let price` lines in total."
+        forbid:
+          - pattern: '\bmut\b'
+            message: Use shadowing, not `mut`.
+          - pattern: '\b200\b'
+            message: Let Rust compute the 200.
+        hints:
+          - "`let price = price - 20;` applies the coupon."
+          - "Then `let price = price * 2;` and print `price`."
+        tests:
+          - expect: "Total: 200"
+
+  - title: "Types: annotations and inference"
+    id: variables-4
+    text: |
+      Every value in Rust has a **type**: the kind of value it is, which decides what you can do with it. You've already used several:
+
+      | Value | Type | What it is |
+      |---|---|---|
+      | `120` | `i32` | a whole number (an **integer**) |
+      | `3.5` | `f64` | a number with a fraction (a **floating-point** number) |
+      | `true`, `false` | `bool` | a yes/no value (a **Boolean**) |
+      | `'R'` | `char` | one character, in single quotes |
+      | `"Ferris"` | `&str` | a piece of text (a **string slice**), in double quotes |
+
+      Rust is **statically typed**: every variable's type is known when the program is compiled, and it never changes. But you rarely have to write the type, because the compiler works it out from the value. That's **type inference**. When you want to, you can write it yourself with a **type annotation**: a colon and the type after the name.
+
+      ```rust run
+      fn main() {
+          let lives: i32 = 3;
+          let speed: f64 = 2.5;
+          let is_boss: bool = false;
+          let grade: char = 'A';
+          let name: &str = "Ferris";
+          println!("{} {} {} {} {}", lives, speed, is_boss, grade, name);
+      }
+      ```
+
+      ```output
+      3 2.5 false A Ferris
+      ```
+
+      Without annotations, a whole number like `3` becomes an `i32` and a number with a decimal point like `2.5` becomes an `f64`. The next module covers the number types in detail (there are several sizes).
+
+      ### Why annotate if the compiler can infer?
+
+      - To choose a type other than the default (you'll want bigger or non-negative integer types in the next module).
+      - To state your intent, so the compiler reports a mistake right where it happens.
+      - Some values could be several types, and the compiler needs you to pick one (you'll see this when reading numbers from input).
+
+      ### The annotation is a promise
+
+      The compiler checks that the value matches the type you wrote:
+
+      ```rust compile_fail
+      fn main() {
+          let count: i32 = "five";
+          println!("{}", count);
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:2:22
+        |
+      2 |     let count: i32 = "five";
+        |                ---   ^^^^^^ expected `i32`, found `&str`
+        |                |
+        |                expected due to this
+      ```
+
+      E0308 "mismatched types" is the error you'll see most often in Rust. It always tells you what was **expected** and what was **found**.
+
+      ### Common mistakes
+
+      - **`let count: i32 = 3.0;`**: `3.0` is a float, not an integer, even though it's a whole number. Write `3`.
+      - **Text in single quotes**: `'Ferris'` is an error. Single quotes hold exactly one `char`; text goes in double quotes.
+      - **Type before the name**, as in C or Java (`let i32 count`). In Rust the name comes first, then `: type`.
+
+      **Your turn:** fill in each variable's type so the program compiles and prints `21.5 true`.
+    fill: |
+      fn main() {
+          let temperature: [[f64‖f32]] = 21.5;
+          let heating_on: [[bool]] = true;
+          println!("{} {}", temperature, heating_on);
+      }
+    hints:
+      - A number with a decimal point is a float; the default float type is `f64`.
+      - "`true` and `false` have the type `bool`."
+    tests:
+      - expect: "21.5 true"
+    more:
+      - task: |
+          The annotations are right, but the two values don't match their types. Fix the **values** (keep both annotations) so the program prints `3 lives, symbol @`.
+        seed: |
+          fn main() {
+              let lives: i32 = 3.0;
+              let symbol: char = "@";
+              println!("{} lives, symbol {}", lives, symbol);
+          }
+        solution: |
+          fn main() {
+              let lives: i32 = 3;
+              let symbol: char = '@';
+              println!("{} lives, symbol {}", lives, symbol);
+          }
+        require:
+          - pattern: 'let\s+lives\s*:\s*i32\s*='
+            message: "Keep the annotation `lives: i32` and fix the value instead."
+          - pattern: 'let\s+symbol\s*:\s*char\s*='
+            message: "Keep the annotation `symbol: char` and fix the value instead."
+        hints:
+          - An `i32` is a whole number written without a decimal point.
+          - A `char` is written in single quotes, like `'@'`.
+        tests:
+          - expect: "3 lives, symbol @"
+      - task: |
+          Create a character profile with four variables, each with an explicit type annotation: `name` (`&str`) set to `"Crabby"`, `level` (`i32`) set to `7`, `health` (`f64`) set to `88.5` and `online` (`bool`) set to `true`. Print them on one line:
+
+          ```
+          Crabby lvl 7 hp 88.5 online true
+          ```
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let name: &str = "Crabby";
+              let level: i32 = 7;
+              let health: f64 = 88.5;
+              let online: bool = true;
+              println!("{} lvl {} hp {} online {}", name, level, health, online);
+          }
+        require:
+          - pattern: 'name\s*:\s*&str'
+            message: "Annotate `name` with `: &str`."
+          - pattern: 'level\s*:\s*i32'
+            message: "Annotate `level` with `: i32`."
+          - pattern: 'health\s*:\s*f64'
+            message: "Annotate `health` with `: f64`."
+          - pattern: 'online\s*:\s*bool'
+            message: "Annotate `online` with `: bool`."
+        hints:
+          - "The pattern is `let name: type = value;`, for example `let level: i32 = 7;`."
+          - "Then one `println!` with four `{}` placeholders."
+        tests:
+          - expect: "Crabby lvl 7 hp 88.5 online true"
+
+  - title: Constants and naming
+    id: variables-5
+    text: |
+      ### Constants
+
+      Some values are fixed for the whole program: the maximum health, the number of seconds in a minute, a tax rate. Rust has **constants** for these, declared with `const`:
+
+      ```rust run
+      const MAX_HEALTH: i32 = 100;
+      const SECONDS_PER_MINUTE: i32 = 60;
+
+      fn main() {
+          let minutes = 3;
+          println!("max health: {}", MAX_HEALTH);
+          println!("{} minutes = {} seconds", minutes, minutes * SECONDS_PER_MINUTE);
+      }
+      ```
+
+      ```output
+      max health: 100
+      3 minutes = 180 seconds
+      ```
+
+      How `const` differs from `let`:
+
+      - The type annotation is **required**: `const MAX_HEALTH: i32`. Constants are often shared across a whole program, so Rust wants their type spelled out.
+      - A constant can never be `mut`.
+      - It can be declared outside any function, at the top of the file (a **global** constant), and every function in the file can use it.
+      - Its value must be known while compiling: numbers, text, and arithmetic on them (like `60 * 60`), but not something that only exists when the program runs.
+
+      ```rust compile_fail
+      const MAX_HEALTH = 100;
+
+      fn main() {
+          println!("{}", MAX_HEALTH);
+      }
+      ```
+
+      ```error
+      error: missing type for `const` item
+       --> src/main.rs:1:17
+        |
+      1 | const MAX_HEALTH = 100;
+        |                 ^ help: provide a type for the constant: `: i32`
+      ```
+
+      Why bother? A named value explains itself (`MAX_HEALTH` versus a mysterious `100`), and when the rule changes you edit one line instead of hunting for every `100`. Unexplained numbers in code are called **magic numbers**, and code reviewers at most companies will ask you to name them.
+
+      ### Naming conventions
+
+      Rust has firm naming conventions, and the compiler warns when you break them:
+
+      | Kind of name | Style | Examples |
+      |---|---|---|
+      | variables, functions | `snake_case` | `max_speed`, `player_name` |
+      | constants | `SCREAMING_SNAKE_CASE` | `MAX_SPEED`, `TAX_RATE` |
+      | types (coming later) | `UpperCamelCase` | `Player`, `HashMap` |
+
+      ```text
+      warning: variable `playerScore` should have a snake case name
+       --> src/main.rs:2:9
+        |
+      2 |     let playerScore = 10;
+        |         ^^^^^^^^^^^ help: convert the identifier to snake case: `player_score`
+      ```
+
+      A **warning** doesn't stop the program from building, but treat warnings as things to fix: most teams make their automated checks (CI) fail on any warning. Names may contain letters, digits and `_`, but can't start with a digit.
+
+      ### Unused variables and the _ prefix
+
+      If you declare a variable and never use it, rustc warns, because that's often a bug (you computed something and forgot to use it):
+
+      ```text
+      warning: unused variable: `bonus`
+       --> src/main.rs:3:9
+        |
+      3 |     let bonus = 50;
+        |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_bonus`
+      ```
+
+      Starting a name with `_` tells the compiler "I know this isn't used yet", which is handy while you're still writing the code. A lone `_` means "I don't need a name at all"; you'll meet it again in loops and patterns.
+
+      **Your turn:** work out how many seconds there are in 3 hours using two constants. Declare `SECONDS_PER_MINUTE` and `MINUTES_PER_HOUR` (both `i32`, both `60`) at the top of the file, then print `3 hours = 10800 seconds`, letting Rust do the math with `hours` and the constants.
+    seed: |
+      // Declare your two constants here
+
+      fn main() {
+          let hours = 3;
+          // print: 3 hours = 10800 seconds
+      }
+    solution: |
+      // Declare your two constants here
+      const SECONDS_PER_MINUTE: i32 = 60;
+      const MINUTES_PER_HOUR: i32 = 60;
+
+      fn main() {
+          let hours = 3;
+          // print: 3 hours = 10800 seconds
+          println!("{} hours = {} seconds", hours, hours * MINUTES_PER_HOUR * SECONDS_PER_MINUTE);
+      }
+    require:
+      - pattern: 'const\s+SECONDS_PER_MINUTE\s*:\s*i32\s*=\s*60\s*;'
+        message: "Declare `const SECONDS_PER_MINUTE: i32 = 60;`"
+      - pattern: 'const\s+MINUTES_PER_HOUR\s*:\s*i32\s*=\s*60\s*;'
+        message: "Declare `const MINUTES_PER_HOUR: i32 = 60;`"
+      - pattern: '\*\s*SECONDS_PER_MINUTE|SECONDS_PER_MINUTE\s*\*'
+        message: Use `SECONDS_PER_MINUTE` in the calculation.
+      - pattern: '\*\s*MINUTES_PER_HOUR|MINUTES_PER_HOUR\s*\*'
+        message: Use `MINUTES_PER_HOUR` in the calculation.
+    forbid:
+      - pattern: '10800|3600'
+        message: Let Rust multiply; don't type the result yourself.
+    hints:
+      - "A constant looks like `const NAME: i32 = 60;`, outside `fn main`."
+      - "The seconds are `hours * MINUTES_PER_HOUR * SECONDS_PER_MINUTE`."
+    tests:
+      - expect: "3 hours = 10800 seconds"
+    more:
+      - task: |
+          This program works, but it breaks Rust's naming conventions three times (the compiler warns about each). Rename `maxPlayers` to `MAX_PLAYERS`, `currentPlayers` to `current_players` and `FreeSlots` to `free_slots`, everywhere they appear. The output stays `5 of 8 slots taken, 3 free`.
+        seed: |
+          const maxPlayers: i32 = 8;
+
+          fn main() {
+              let currentPlayers = 5;
+              let FreeSlots = maxPlayers - currentPlayers;
+              println!("{} of {} slots taken, {} free", currentPlayers, maxPlayers, FreeSlots);
+          }
+        solution: |
+          const MAX_PLAYERS: i32 = 8;
+
+          fn main() {
+              let current_players = 5;
+              let free_slots = MAX_PLAYERS - current_players;
+              println!("{} of {} slots taken, {} free", current_players, MAX_PLAYERS, free_slots);
+          }
+        forbid:
+          - pattern: 'maxPlayers|currentPlayers|FreeSlots'
+            message: Rename every use of the old names, not just the declarations.
+        require:
+          - pattern: 'const\s+MAX_PLAYERS'
+            message: "Constants use SCREAMING_SNAKE_CASE: `MAX_PLAYERS`."
+          - pattern: 'let\s+current_players'
+            message: "Variables use snake_case: `current_players`."
+          - pattern: 'let\s+free_slots'
+            message: "Variables use snake_case: `free_slots`."
+        hints:
+          - Each name appears more than once. Change the declaration and every place it's used.
+        tests:
+          - expect: "5 of 8 slots taken, 3 free"
+      - task: |
+          A shop charges a fixed delivery fee on every order. Declare a top-level constant `DELIVERY_FEE` of type `i32` with the value `499` (cents). In `main`, an item costs `2599` cents and the customer buys `2`. Print the subtotal and the total including delivery:
+
+          ```
+          Subtotal: 5198
+          Total: 5697
+          ```
+
+          Let Rust do all the arithmetic.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          const DELIVERY_FEE: i32 = 499;
+
+          fn main() {
+              let price = 2599;
+              let quantity = 2;
+              let subtotal = price * quantity;
+              println!("Subtotal: {}", subtotal);
+              println!("Total: {}", subtotal + DELIVERY_FEE);
+          }
+        require:
+          - pattern: 'const\s+DELIVERY_FEE\s*:\s*i32\s*=\s*499'
+            message: "Declare `const DELIVERY_FEE: i32 = 499;` above `fn main`."
+          - pattern: '\+\s*DELIVERY_FEE|DELIVERY_FEE\s*\+'
+            message: Add `DELIVERY_FEE` in the total.
+        forbid:
+          - pattern: '5198|5697'
+            message: Let Rust compute the totals.
+        hints:
+          - The constant goes outside `fn main`, at the top of the file.
+          - "`let subtotal = price * quantity;`, then the total is `subtotal + DELIVERY_FEE`."
+        tests:
+          - expect: "Subtotal: 5198\nTotal: 5697"
+
+  - title: Inline format arguments and {:?}
+    id: variables-6
+    text: |
+      ### Names inside the braces
+
+      So far you've passed values after the format string: `println!("{} scored {}", player, score)`. When a value is a plain variable, you can write its name **inside** the braces instead:
+
+      ```rust run
+      fn main() {
+          let player = "Ferris";
+          let score = 120;
+          println!("{player} scored {score} points");
+          println!("{} scored {} points", player, score);
+      }
+      ```
+
+      ```output
+      Ferris scored 120 points
+      Ferris scored 120 points
+      ```
+
+      These **inline format arguments** read like the final text, and you can't mix up the order. Both forms are correct Rust. Most new code uses the inline form, and clippy has a lint that suggests it (`uninlined_format_args`). You can mix the two in one call: `println!("{player} has {} lives", 2 + 1)`.
+
+      Only a plain variable name works inside the braces, not a calculation:
+
+      ```rust compile_fail
+      fn main() {
+          let score = 120;
+          println!("next: {score + 10}");
+      }
+      ```
+
+      ```error
+      error: invalid format string: expected `}`, found `+`
+       --> src/main.rs:3:28
+        |
+      3 |     println!("next: {score + 10}");
+        |                     -      ^ expected `}` in format string
+        |                     |
+        |                     because of this opening brace
+      ```
+
+      Put the calculation after the format string, `println!("next: {}", score + 10)`, or store it in a variable first.
+
+      ### Debug output with {:?}
+
+      `{}` uses a value's **Display** format: the clean form meant for users. `{:?}` uses its **Debug** format: the form meant for programmers, which shows exactly what the value is. For text, Debug adds the quotes and shows escapes like `\n`, which makes invisible problems visible:
+
+      ```rust run
+      fn main() {
+          let name = "  Ferris ";
+          let message = "line one\nline two";
+          println!("[{}]", name);
+          println!("{:?}", name);
+          println!("{message:?}");
+      }
+      ```
+
+      ```output
+      [  Ferris ]
+      "  Ferris "
+      "line one\nline two"
+      ```
+
+      `{message:?}` combines both ideas: the variable's name, then `:?`. For numbers, Debug and Display look the same. Debug becomes essential later: lists, your own data types and errors are printed with `{:?}`, and many types have no `{}` format at all.
+
+      At work, `{:?}` is how you look inside values while debugging. Messages meant for users should use `{}`.
+
+      ### Common mistakes
+
+      - **A calculation inside the braces** (the error above).
+      - **A typo in the name**: `{scroe}` gives ``error[E0425]: cannot find value `scroe` in this scope``, the same error as any unknown variable.
+      - **`{?}` or `{?:}`**: it's a colon, then a question mark: `{:?}`.
+
+      **Your turn:** rewrite the `println!` to use inline format arguments (`{name}`, `{level}` and `{hp}` inside the string, nothing after it). The output stays `Ferris is level 7 with 92 hp`.
+    seed: |
+      fn main() {
+          let name = "Ferris";
+          let level = 7;
+          let hp = 92;
+          println!("{} is level {} with {} hp", name, level, hp);
+      }
+    solution: |
+      fn main() {
+          let name = "Ferris";
+          let level = 7;
+          let hp = 92;
+          println!("{name} is level {level} with {hp} hp");
+      }
+    require:
+      - pattern: '\{name\}[\s\S]*\{level\}[\s\S]*\{hp\}'
+        strings: true
+        message: "Write the names inside the braces: `{name}`, `{level}`, `{hp}`."
+    forbid:
+      - pattern: 'println!\("[^"]*"\s*,'
+        strings: true
+        message: Nothing should follow the format string; put the names inside the braces.
+    hints:
+      - "`{name}` inside the string is replaced by the value of `name`."
+      - "`println!(\"{name} is level {level} with {hp} hp\");`"
+    tests:
+      - expect: "Ferris is level 7 with 92 hp"
+    more:
+      - task: |
+          Fill in the blank so the program prints the password in Debug format, which shows the quotes and the hidden trailing space: `"hunter2 "`.
+        fill: |
+          fn main() {
+              let password = "hunter2 ";
+              println!("{password[[:?]]}");
+          }
+        hints:
+          - "Debug format is selected with a colon and a question mark after the name."
+        tests:
+          - expect: "\"hunter2 \""
+      - task: |
+          Print a two-line status report from the variables in the starter code. Use inline format arguments on both lines, and Debug format for `status` so its trailing space shows:
+
+          ```
+          server eu-west has 1520 users
+          status: "degraded "
+          ```
+        seed: |
+          fn main() {
+              let server = "eu-west";
+              let users = 1520;
+              let status = "degraded ";
+          }
+        solution: |
+          fn main() {
+              let server = "eu-west";
+              let users = 1520;
+              let status = "degraded ";
+              println!("server {server} has {users} users");
+              println!("status: {status:?}");
+          }
+        require:
+          - pattern: '\{server\}'
+            strings: true
+            message: "Use `{server}` inside the format string."
+          - pattern: '\{users\}'
+            strings: true
+            message: "Use `{users}` inside the format string."
+          - pattern: '\{status:\?\}'
+            strings: true
+            message: "Print `status` with `{status:?}`."
+        forbid:
+          - pattern: 'println!\("[^"]*"\s*,'
+            strings: true
+            message: Use inline format arguments only (nothing after the format string).
+        hints:
+          - "The first line is `println!(\"server {server} has {users} users\");`"
+          - "Debug format with a name is `{status:?}`."
+        tests:
+          - expect: "server eu-west has 1520 users\nstatus: \"degraded \""

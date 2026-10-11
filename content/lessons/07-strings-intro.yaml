@@ -1,0 +1,1087 @@
+id: strings-intro
+title: Working with Text
+phase: "Foundations"
+summary: A first look at Rust's two string types, String and &str, and the everyday tools for text. Build strings, join them, measure them, change case, search, replace, trim and compare.
+roadmap: [String]
+steps:
+  - title: "Two kinds of string: &str and String"
+    id: strings-intro-1
+    text: |
+      Programs are full of text: names, messages, log lines, commands typed by a user. Rust has two main types for text. You've been using one of them since your first `println!`.
+
+      ### String literals are `&str`
+
+      Every `"..."` in your code is a **string literal**. Its type is written `&str` (read it as "string slice" or "str ref"). The text is stored inside your compiled program, and it can't change:
+
+      ```rust run
+      fn main() {
+          let greeting: &str = "Hello";
+          let name = "Ferris"; // also a &str, inferred
+          println!("{greeting}, {name}!");
+      }
+      ```
+
+      ```output
+      Hello, Ferris!
+      ```
+
+      ### `String`: text you own and can change
+
+      A **`String`** is a piece of text your program creates while it runs. It can grow, shrink and change. You make one from a literal, from a number, or empty:
+
+      ```rust run
+      fn main() {
+          let team = String::from("Crabs");
+          let city = "Lisbon".to_string();
+          let notes = String::new();
+          let score = 42;
+          let score_text = score.to_string();
+          println!("{team} from {city}, score {score_text}, notes [{notes}]");
+      }
+      ```
+
+      ```output
+      Crabs from Lisbon, score 42, notes []
+      ```
+
+      - `String::from("Crabs")` and `"Lisbon".to_string()` do the same thing: they make a new `String` holding a copy of the literal's text. Both are common; a team usually picks one style.
+      - `String::new()` makes an empty `String`.
+      - `.to_string()` works on numbers, `char`s and `bool`s too. It gives the same text that `{}` would print.
+
+      ### Why two types?
+
+      A `String` **owns** its text: it keeps the characters in memory that it manages, which is why it can grow and change. A `&str` is a **view** of text that lives somewhere else: inside the program for a literal, or inside a `String`. Looking at text through a view is cheap, because nothing is copied. Modules 09 to 11 (ownership, borrowing and slices) show exactly how this works. Until then, this rule of thumb covers most code:
+
+      - Text written in your code is a `&str`.
+      - Text you build, change or keep around is a `String`.
+      - A function that only **reads** text takes a `&str` parameter, like `fn shout(msg: &str)`. You can pass it a literal directly: `shout("hi")`.
+      - A function that **creates** text returns a `String`.
+
+      Both kinds print the same way, and the read-only methods in this module (`len`, `contains`, `to_uppercase`, `trim`...) work on both.
+
+      ### Common mistakes
+
+      - **Using a literal where a `String` is expected.** The types are different, and Rust doesn't convert silently:
+
+      ```rust compile_fail
+      fn main() {
+          let s: String = "hi";
+          println!("{s}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      The full message says ``expected `String`, found `&str` `` and suggests the fix: `"hi".to_string()`. The same error appears when a function declared `-> String` returns a plain `"hi"`.
+
+      **Your turn:** fill in the blanks to turn the literal into a `String` and the number into text, so the program prints `Crabs: 3 wins`.
+    fill: |
+      fn main() {
+          let team: String = [[String::from]]("Crabs");
+          let wins = 3;
+          let wins_text: String = wins.[[to_string()]];
+          println!("{}: {} wins", team, wins_text);
+      }
+    hints:
+      - "`String::from(\"...\")` makes a String from a literal."
+      - "`.to_string()` turns a number into its text form."
+    tests:
+      - expect: "Crabs: 3 wins"
+    more:
+      - task: |
+          Fill the blanks: make `city` a `String` using the method form, and make `note` an empty `String`. The program should print `city: Oslo, note: []`.
+        fill: |
+          fn main() {
+              let city: String = "Oslo".[[to_string()]];
+              let note = String::[[new]]();
+              println!("city: {city}, note: [{note}]");
+          }
+        hints:
+          - "A literal becomes a String with `.to_string()`."
+          - "`String::new()` makes an empty String."
+        tests:
+          - expect: "city: Oslo, note: []"
+      - task: |
+          Write `grade(score)`, which returns the `String` `"pass"` when the score is 50 or more and `"fail"` otherwise.
+
+          Returning a plain `"pass"` won't compile: the function promises a `String`, and a literal is a `&str`. Read the error if you try it.
+        seed: |
+          fn grade(score: u32) -> String {
+              todo!()
+          }
+        solution: |
+          fn grade(score: u32) -> String {
+              if score >= 50 {
+                  "pass".to_string()
+              } else {
+                  "fail".to_string()
+              }
+          }
+        harness: |
+          #[test]
+          fn a_high_score_passes() {
+              assert_eq!(grade(75), "pass", "grade(75)");
+          }
+
+          #[test]
+          fn exactly_fifty_passes() {
+              assert_eq!(grade(50), "pass", "grade(50)");
+          }
+
+          #[test]
+          fn forty_nine_fails() {
+              assert_eq!(grade(49), "fail", "grade(49)");
+          }
+
+          #[test]
+          fn zero_fails() {
+              assert_eq!(grade(0), "fail", "grade(0)");
+          }
+        hints:
+          - "Use an if expression as the function's last expression."
+          - "Each branch must be a String: `\"pass\".to_string()` or `String::from(\"fail\")`."
+
+  - title: Growing a String with push_str and push
+    id: strings-intro-2
+    text: |
+      A `String` can grow. Two methods add text at the end:
+
+      ```rust run
+      fn main() {
+          let mut log = String::new();
+          log.push_str("user=ferris");
+          log.push(';');
+          log.push_str(" action=login");
+          println!("{log}");
+      }
+      ```
+
+      ```output
+      user=ferris; action=login
+      ```
+
+      - `push_str(text)` appends a `&str`, any amount of text.
+      - `push(c)` appends a single `char`, written in single quotes.
+      - Both change the `String`, so it must be declared `let mut`.
+
+      ### Building text in a loop
+
+      Growing a `String` piece by piece is how you build text whose shape depends on data. Here's a progress bar:
+
+      ```rust run
+      fn main() {
+          let done = 3;
+          let total = 8;
+          let mut bar = String::new();
+          for i in 0..total {
+              if i < done {
+                  bar.push('#');
+              } else {
+                  bar.push('.');
+              }
+          }
+          println!("[{bar}] {done}/{total}");
+      }
+      ```
+
+      ```output
+      [###.....] 3/8
+      ```
+
+      A `String` reserves extra room as it grows, so pushing many small pieces is cheap. You don't need to know the final length in advance.
+
+      ### Common mistakes
+
+      - **Giving `push` a string.** `push` takes exactly one `char`, in single quotes:
+
+      ```rust compile_fail
+      fn main() {
+          let mut s = String::from("hi");
+          s.push("!");
+          println!("{s}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      The message says ``expected `char`, found `&str` `` and suggests `'!'`. Use `s.push('!')` for one character or `s.push_str("!")` for text.
+      - **Forgetting `mut`**: error E0596, ``cannot borrow `s` as mutable, as it is not declared as mutable``, with a `help:` line showing where to add `mut`.
+      - **Pushing onto a literal.** A `&str` can't grow: `let s = "hi"; s.push_str("!");` gives ``no method named `push_str` found for reference `&str` ``. Make a `String` first: `let mut s = String::from("hi");`
+
+      **Your turn:** fill in the blanks so the version tag grows from `v1` to `v1.2.0`: push a single `'.'` character, then the text `"2.0"`.
+    fill: |
+      fn main() {
+          let mut tag = String::from("v1");
+          tag.[[push]]('.');
+          tag.[[push_str]]("2.0");
+          println!("{tag}");
+      }
+    hints:
+      - "One `char` goes in with `push`; a piece of text goes in with `push_str`."
+    tests:
+      - expect: "v1.2.0"
+    more:
+      - task: |
+          Write `progress_bar(done, total)`, which returns a bar with one `#` per finished step and one `.` per remaining step, inside square brackets. For example `progress_bar(3, 8)` returns `"[###.....]"`. You can assume `done` is never bigger than `total`.
+        seed: |
+          fn progress_bar(done: u32, total: u32) -> String {
+              todo!()
+          }
+        solution: |
+          fn progress_bar(done: u32, total: u32) -> String {
+              let mut bar = String::from("[");
+              for i in 0..total {
+                  if i < done {
+                      bar.push('#');
+                  } else {
+                      bar.push('.');
+                  }
+              }
+              bar.push(']');
+              bar
+          }
+        harness: |
+          #[test]
+          fn three_of_eight_done() {
+              assert_eq!(progress_bar(3, 8), "[###.....]", "progress_bar(3, 8)");
+          }
+
+          #[test]
+          fn nothing_done_yet() {
+              assert_eq!(progress_bar(0, 4), "[....]", "progress_bar(0, 4)");
+          }
+
+          #[test]
+          fn everything_done() {
+              assert_eq!(progress_bar(5, 5), "[#####]", "progress_bar(5, 5)");
+          }
+
+          #[test]
+          fn zero_steps_gives_empty_brackets() {
+              assert_eq!(progress_bar(0, 0), "[]", "progress_bar(0, 0)");
+          }
+        hints:
+          - "Start with `let mut bar = String::from(\"[\");` and finish with `bar.push(']');`."
+          - "In between, loop over `0..total` and push `'#'` when `i < done`, otherwise `'.'`. Return `bar` at the end."
+      - task: |
+          Print an 8 × 8 chessboard. Square (row, col) is `#` when `row + col` is even and `.` when it's odd. Build each row as a `String` with `push`, then print it:
+
+          ```
+          #.#.#.#.
+          .#.#.#.#
+          #.#.#.#.
+          .#.#.#.#
+          #.#.#.#.
+          .#.#.#.#
+          #.#.#.#.
+          .#.#.#.#
+          ```
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              for row in 0..8 {
+                  let mut line = String::new();
+                  for col in 0..8 {
+                      if (row + col) % 2 == 0 {
+                          line.push('#');
+                      } else {
+                          line.push('.');
+                      }
+                  }
+                  println!("{line}");
+              }
+          }
+        require:
+          - pattern: '\.push\('
+            message: "Build each row with `.push(...)`."
+          - pattern: 'for[\s\S]*for'
+            message: Use one loop for the rows and another inside it for the columns.
+        hints:
+          - "The outer loop goes over the rows (`for row in 0..8`). Inside it, start a new `String::new()` for that row."
+          - "The inner loop goes over the columns and pushes `'#'` when `(row + col) % 2 == 0`, otherwise `'.'`. Print the row after the inner loop."
+        tests:
+          - expect: "#.#.#.#.\n.#.#.#.#\n#.#.#.#.\n.#.#.#.#\n#.#.#.#.\n.#.#.#.#\n#.#.#.#.\n.#.#.#.#"
+
+  - title: "Joining text: format! and +"
+    id: strings-intro-3
+    text: |
+      ### format!: println! that returns the text
+
+      `format!` takes the same format string and values as `println!` (with `{}`, `{name}`, `{:.2}` and `{:?}`), but instead of printing, it **returns** the result as a new `String`:
+
+      ```rust run
+      fn main() {
+          let name = "Ana";
+          let visits = 3;
+          let msg = format!("Welcome back, {name}! Visit #{visits}");
+          let price = format!("{:.2} EUR", 7.5);
+          println!("{msg}");
+          println!("{price}");
+      }
+      ```
+
+      ```output
+      Welcome back, Ana! Visit #3
+      7.50 EUR
+      ```
+
+      Use it whenever you need text built from values: messages, file names, IDs, report lines. It's the most common way to build strings in Rust.
+
+      ### Joining with +
+
+      You can also join strings with `+`:
+
+      ```rust run
+      fn main() {
+          let first = String::from("Ada");
+          let last = String::from("Lovelace");
+          let full = first + " " + &last;
+          println!("{full}");
+          println!("{last}");
+      }
+      ```
+
+      ```output
+      Ada Lovelace
+      Lovelace
+      ```
+
+      `+` has two rules that surprise everyone at first:
+
+      - The left side must be a `String` and the right side a `&str`. `" "` is a literal, so it's already a `&str`. For the `String` `last`, write `&last`: the `&` passes a view of its text instead of the `String` itself. You'll use the same trick anywhere a `&str` is expected and you have a `String`, for example `s.push_str(&other)`.
+      - `+` reuses the left `String`'s memory and **takes it over**. After `first + ...`, the variable `first` can't be used anymore (`last` still can, because `&` only lent it). Using `first` afterwards is error E0382, ``borrow of moved value: `first` ``. Module 09 explains these **moves** properly.
+
+      Because of those rules, many Rust programmers prefer `format!("{first} {last}")`: it reads like the result, and it leaves every variable usable.
+
+      ### Appending with +=
+
+      `s += "text";` appends to `s` in place, just like `s.push_str("text")`. With a `String` on the right, add `&` again: `s += &other;`.
+
+      ### Common mistakes
+
+      - **Adding two Strings.** The right side must be a `&str`:
+
+      ```rust compile_fail
+      fn main() {
+          let a = String::from("Hello, ");
+          let b = String::from("world");
+          let c = a + b;
+          println!("{c}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      The message says ``expected `&str`, found `String` `` and suggests `&b` ("consider borrowing here"). Or write `format!("{a}{b}")`.
+      - **Using the left variable after `+`**: see the move rule above. If you still need it, use `format!`.
+
+      **Your turn:** write `greeting(name, visits)`. On the first visit it returns `Welcome, Ana!`; on later visits it returns `Welcome back, Ana! Visit #3` (with the real name and number).
+    seed: |
+      fn greeting(name: &str, visits: u32) -> String {
+          todo!()
+      }
+    solution: |
+      fn greeting(name: &str, visits: u32) -> String {
+          if visits == 1 {
+              format!("Welcome, {name}!")
+          } else {
+              format!("Welcome back, {name}! Visit #{visits}")
+          }
+      }
+    harness: |
+      #[test]
+      fn first_visit() {
+          assert_eq!(greeting("Ana", 1), "Welcome, Ana!", "greeting(\"Ana\", 1)");
+      }
+
+      #[test]
+      fn third_visit() {
+          assert_eq!(greeting("Ana", 3), "Welcome back, Ana! Visit #3", "greeting(\"Ana\", 3)");
+      }
+
+      #[test]
+      fn another_name_and_number() {
+          assert_eq!(greeting("Ferris", 12), "Welcome back, Ferris! Visit #12", "greeting(\"Ferris\", 12)");
+      }
+    hints:
+      - "Use an if expression: one `format!` for the first visit, another for the rest."
+      - "`format!(\"Welcome back, {name}! Visit #{visits}\")` builds the second message."
+    more:
+      - task: |
+          Write `price_tag(item, cents)`, which returns text like `coffee: $3.50`. Prices are stored in whole cents, so `price_tag("coffee", 350)` returns `"coffee: $3.50"`. Always show two decimals.
+        seed: |
+          fn price_tag(item: &str, cents: u32) -> String {
+              todo!()
+          }
+        solution: |
+          fn price_tag(item: &str, cents: u32) -> String {
+              let dollars = cents as f64 / 100.0;
+              format!("{item}: ${dollars:.2}")
+          }
+        harness: |
+          #[test]
+          fn coffee_for_350_cents() {
+              assert_eq!(price_tag("coffee", 350), "coffee: $3.50", "price_tag(\"coffee\", 350)");
+          }
+
+          #[test]
+          fn less_than_a_dollar() {
+              assert_eq!(price_tag("tea", 99), "tea: $0.99", "price_tag(\"tea\", 99)");
+          }
+
+          #[test]
+          fn whole_dollars_show_two_zeros() {
+              assert_eq!(price_tag("cake", 1200), "cake: $12.00", "price_tag(\"cake\", 1200)");
+          }
+
+          #[test]
+          fn five_cents() {
+              assert_eq!(price_tag("gum", 5), "gum: $0.05", "price_tag(\"gum\", 5)");
+          }
+        hints:
+          - "Convert to dollars as a float: `cents as f64 / 100.0`."
+          - "`{:.2}` shows exactly two decimals: `format!(\"{}: ${:.2}\", item, dollars)`."
+      - task: |
+          Write `countdown(n)`, which returns the numbers from `n` down to 1, separated by spaces, followed by `liftoff!`. For example `countdown(3)` returns `"3 2 1 liftoff!"` and `countdown(0)` returns `"liftoff!"`.
+        seed: |
+          fn countdown(n: u32) -> String {
+              todo!()
+          }
+        solution: |
+          fn countdown(n: u32) -> String {
+              let mut text = String::new();
+              for i in (1..=n).rev() {
+                  text.push_str(&format!("{i} "));
+              }
+              text.push_str("liftoff!");
+              text
+          }
+        harness: |
+          #[test]
+          fn counts_down_from_three() {
+              assert_eq!(countdown(3), "3 2 1 liftoff!", "countdown(3)");
+          }
+
+          #[test]
+          fn counts_down_from_ten() {
+              assert_eq!(countdown(10), "10 9 8 7 6 5 4 3 2 1 liftoff!", "countdown(10)");
+          }
+
+          #[test]
+          fn from_one() {
+              assert_eq!(countdown(1), "1 liftoff!", "countdown(1)");
+          }
+
+          #[test]
+          fn from_zero_is_just_liftoff() {
+              assert_eq!(countdown(0), "liftoff!", "countdown(0)");
+          }
+        hints:
+          - "Loop with `for i in (1..=n).rev()` to count down."
+          - "Append each number and a space: `text.push_str(&format!(\"{i} \"));` (or `text += &format!(\"{i} \");`). The `&` turns the new String into a `&str`."
+          - "After the loop, append `\"liftoff!\"` and return `text`."
+
+  - title: "Length: bytes versus characters"
+    id: strings-intro-4
+    text: |
+      How long is a string? It depends on what you count:
+
+      ```rust run
+      fn main() {
+          let words = ["crab", "café", "日本", "🦀"];
+          for w in words {
+              println!("{w}: len {}, chars {}", w.len(), w.chars().count());
+          }
+      }
+      ```
+
+      ```output
+      crab: len 4, chars 4
+      café: len 5, chars 4
+      日本: len 6, chars 2
+      🦀: len 4, chars 1
+      ```
+
+      Rust strings are always stored as **UTF-8**, the encoding used by almost all of the web. In UTF-8 each character takes **1 to 4 bytes**: English letters and digits take 1, `é` takes 2, `日` takes 3, and the crab emoji takes 4.
+
+      - **`.len()` counts bytes**: how much memory the text uses.
+      - **`.chars().count()` counts characters**: `.chars()` hands out the text one `char` at a time, and `.count()` counts them.
+      - **`.is_empty()`** is `true` when the string has no text at all (clippy prefers it over `len() == 0`).
+
+      Which one do you want? Bytes matter for storage and protocols ("this database column holds 255 bytes"). Characters matter for people ("usernames are at most 20 characters"). For plain English text they're the same, which is exactly why the difference causes bugs: everything works until someone types `José`.
+
+      (One more subtlety for later: a few symbols that people see as one character, like some flags and accented letters typed as two parts, are made of several `char`s. Module 18 goes deeper.)
+
+      ### Looping over characters
+
+      `for c in text.chars()` visits each character as a `char`:
+
+      ```rust run
+      fn main() {
+          let word = "banana";
+          let mut count = 0;
+          for c in word.chars() {
+              if c == 'a' {
+                  count += 1;
+              }
+          }
+          println!("{count}");
+      }
+      ```
+
+      ```output
+      3
+      ```
+
+      ### Common mistakes
+
+      - **Indexing a string like an array.** `s[0]` doesn't compile:
+
+      ```rust compile_fail
+      fn main() {
+          let s = String::from("crab");
+          let first = s[0];
+          println!("{first}");
+      }
+      ```
+
+      ```error
+      error[E0277]: the type `str` cannot be indexed by `{integer}`
+      ```
+
+      Byte 0 might be only half of a character, so Rust refuses rather than guess. Use `.chars()` to walk the characters. (Module 18 shows slicing and other ways in.)
+      - **Using `.len()` for a "max N characters" rule.** It counts bytes, so `"café"` looks like 5. Use `.chars().count()`.
+
+      **Your turn:** write `fits_limit(text, limit)`, which returns `true` when `text` has at most `limit` **characters**. Tests include accents and emoji, where bytes and characters differ.
+    seed: |
+      fn fits_limit(text: &str, limit: usize) -> bool {
+          todo!()
+      }
+    solution: |
+      fn fits_limit(text: &str, limit: usize) -> bool {
+          text.chars().count() <= limit
+      }
+    harness: |
+      #[test]
+      fn short_text_fits() {
+          assert_eq!(fits_limit("hello", 10), true, "fits_limit(\"hello\", 10)");
+      }
+
+      #[test]
+      fn exactly_at_the_limit_fits() {
+          assert_eq!(fits_limit("hello", 5), true, "fits_limit(\"hello\", 5)");
+      }
+
+      #[test]
+      fn one_over_does_not_fit() {
+          assert_eq!(fits_limit("hello!", 5), false, "fits_limit(\"hello!\", 5)");
+      }
+
+      #[test]
+      fn accents_count_as_one_character() {
+          assert_eq!(fits_limit("héllo wörld", 11), true, "fits_limit(\"héllo wörld\", 11)");
+      }
+
+      #[test]
+      fn emoji_count_as_one_character() {
+          assert_eq!(fits_limit("🦀🦀🦀", 3), true, "fits_limit(\"🦀🦀🦀\", 3)");
+      }
+
+      #[test]
+      fn empty_text_always_fits() {
+          assert_eq!(fits_limit("", 0), true, "fits_limit(\"\", 0)");
+      }
+    hints:
+      - "`text.len()` counts bytes, which is too many for `é` or emoji. Count characters with `text.chars().count()`."
+      - "The whole body can be one comparison: `text.chars().count() <= limit`."
+    more:
+      - task: |
+          Write `extra_bytes(s)`, which returns how many more bytes than characters the text uses (0 for plain English text). For example `extra_bytes("café")` is 1: 5 bytes, 4 characters.
+        seed: |
+          fn extra_bytes(s: &str) -> usize {
+              todo!()
+          }
+        solution: |
+          fn extra_bytes(s: &str) -> usize {
+              s.len() - s.chars().count()
+          }
+        harness: |
+          #[test]
+          fn plain_english_has_none() {
+              assert_eq!(extra_bytes("crab"), 0, "extra_bytes(\"crab\")");
+          }
+
+          #[test]
+          fn one_accent() {
+              assert_eq!(extra_bytes("café"), 1, "extra_bytes(\"café\")");
+          }
+
+          #[test]
+          fn two_emoji() {
+              assert_eq!(extra_bytes("🦀🦀"), 6, "extra_bytes(\"🦀🦀\")");
+          }
+
+          #[test]
+          fn empty_text() {
+              assert_eq!(extra_bytes(""), 0, "extra_bytes(\"\")");
+          }
+        hints:
+          - "Bytes are `s.len()`, characters are `s.chars().count()`."
+          - "Bytes are never fewer than characters, so `s.len() - s.chars().count()` can't go below zero."
+      - task: |
+          Write `count_vowels(s)`, which counts the vowels `a e i o u` in the text, in lowercase **and** uppercase. For example `count_vowels("Rustacean")` is 4.
+        seed: |
+          fn count_vowels(s: &str) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn count_vowels(s: &str) -> u32 {
+              let mut count = 0;
+              for c in s.chars() {
+                  if c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u'
+                      || c == 'A' || c == 'E' || c == 'I' || c == 'O' || c == 'U'
+                  {
+                      count += 1;
+                  }
+              }
+              count
+          }
+        harness: |
+          #[test]
+          fn counts_lowercase_vowels() {
+              assert_eq!(count_vowels("Rustacean"), 4, "count_vowels(\"Rustacean\")");
+          }
+
+          #[test]
+          fn counts_uppercase_vowels() {
+              assert_eq!(count_vowels("AEIOU"), 5, "count_vowels(\"AEIOU\")");
+          }
+
+          #[test]
+          fn no_vowels() {
+              assert_eq!(count_vowels("rhythm"), 0, "count_vowels(\"rhythm\")");
+          }
+
+          #[test]
+          fn empty_text() {
+              assert_eq!(count_vowels(""), 0, "count_vowels(\"\")");
+          }
+
+          #[test]
+          fn a_sentence_with_spaces() {
+              assert_eq!(count_vowels("Hello World"), 3, "count_vowels(\"Hello World\")");
+          }
+        hints:
+          - "Loop with `for c in s.chars()` and keep a counter."
+          - "Compare `c` with each vowel using `||`, for example `c == 'a' || c == 'A' || ...`. All ten letters are needed."
+
+  - title: Changing case, searching, replacing and trimming
+    id: strings-intro-5
+    text: |
+      Here are the everyday tools for cleaning up and inspecting text, applied to a messy log line:
+
+      ```rust run
+      fn main() {
+          let line = "  ERROR: Disk full on /dev/sda1  ";
+          let clean = line.trim();
+          println!("[{clean}]");
+          println!("{}", clean.to_lowercase());
+          println!("{}", clean.contains("Disk"));
+          println!("{}", clean.contains("disk"));
+          println!("{}", clean.replace("/dev/sda1", "drive 1"));
+          println!("[{line}]");
+      }
+      ```
+
+      ```output
+      [ERROR: Disk full on /dev/sda1]
+      error: disk full on /dev/sda1
+      true
+      false
+      ERROR: Disk full on drive 1
+      [  ERROR: Disk full on /dev/sda1  ]
+      ```
+
+      - **`trim()`** removes whitespace (spaces, tabs, newlines) from both ends. `trim_start()` and `trim_end()` do one side. You'll call it constantly in the next module, because every line a user types ends with a newline.
+      - **`to_uppercase()` / `to_lowercase()`** return a new `String` with the case changed. They handle non-English letters too: `"straße".to_uppercase()` is `"STRASSE"`.
+      - **`contains(pattern)`** returns `true` if the pattern appears anywhere. It's case-sensitive: `"Disk"` is found, `"disk"` isn't.
+      - **`replace(from, to)`** returns a new `String` with **every** occurrence replaced. The pattern can also be a `char`: `s.replace(' ', "_")`.
+
+      Look at the last line of output: **none of these methods change the original**. `to_lowercase` and `replace` build a new `String`; `trim` returns a `&str` view of the middle part (nothing is copied); `contains` just answers a question.
+
+      ### Chaining
+
+      Each method returns a value that has methods of its own, so you can chain them. Read the chain left to right:
+
+      ```rust run
+      fn main() {
+          let raw = "  Hello World  ";
+          let slug = raw.trim().to_lowercase().replace(' ', "-");
+          println!("{slug}");
+          let shouted = "is anyone there?".to_uppercase();
+          println!("{}", shouted.contains("ANYONE"));
+      }
+      ```
+
+      ```output
+      hello-world
+      true
+      ```
+
+      To search **ignoring case**, lowercase the text first and search for a lowercase pattern: `line.to_lowercase().contains("error")` finds `ERROR`, `Error` and `error`.
+
+      ### Common mistakes
+
+      - **Expecting the original to change.** This line computes an uppercase copy and throws it away:
+
+      ```rust
+      name.to_uppercase(); // warning: unused return value of `to_uppercase` that must be used
+      ```
+
+      The compiler warns you, and the note says: *this returns the uppercase string as a new String, without modifying the original*. Keep the result: `let name = name.to_uppercase();` (shadowing works nicely here).
+      - **Forgetting that `contains` is case-sensitive.** `"ERROR".contains("error")` is `false`.
+      - **Mixing up the argument order of `replace`**: it's `replace(what_to_find, what_to_put_instead)`.
+
+      **Your turn:** write `normalize_tag(tag)`, which cleans up a tag typed by a user: remove spaces at the ends, make it lowercase, and replace each remaining space with `-`. For example `normalize_tag("  Rust Lang ")` returns `"rust-lang"`.
+    seed: |
+      fn normalize_tag(tag: &str) -> String {
+          todo!()
+      }
+    solution: |
+      fn normalize_tag(tag: &str) -> String {
+          tag.trim().to_lowercase().replace(' ', "-")
+      }
+    harness: |
+      #[test]
+      fn trims_lowercases_and_joins_words() {
+          assert_eq!(normalize_tag("  Rust Lang "), "rust-lang", "normalize_tag(\"  Rust Lang \")");
+      }
+
+      #[test]
+      fn one_word_is_only_lowercased() {
+          assert_eq!(normalize_tag("GameDev"), "gamedev", "normalize_tag(\"GameDev\")");
+      }
+
+      #[test]
+      fn every_inner_space_becomes_a_dash() {
+          assert_eq!(normalize_tag("web assembly tools"), "web-assembly-tools", "normalize_tag(\"web assembly tools\")");
+      }
+
+      #[test]
+      fn only_spaces_gives_an_empty_tag() {
+          assert_eq!(normalize_tag("   "), "", "normalize_tag(\"   \")");
+      }
+    hints:
+      - "Trim first, so the outer spaces don't turn into dashes."
+      - "Chain the three steps: `tag.trim().to_lowercase().replace(' ', \"-\")`."
+    more:
+      - task: |
+          Write `is_alert(line)`, which returns `true` when a log line mentions `error` or `fatal`, in any mix of upper and lower case.
+        seed: |
+          fn is_alert(line: &str) -> bool {
+              todo!()
+          }
+        solution: |
+          fn is_alert(line: &str) -> bool {
+              let lower = line.to_lowercase();
+              lower.contains("error") || lower.contains("fatal")
+          }
+        harness: |
+          #[test]
+          fn uppercase_error_is_an_alert() {
+              assert_eq!(is_alert("ERROR: disk full"), true, "is_alert(\"ERROR: disk full\")");
+          }
+
+          #[test]
+          fn mixed_case_fatal_is_an_alert() {
+              assert_eq!(is_alert("worker crashed (Fatal)"), true, "is_alert(\"worker crashed (Fatal)\")");
+          }
+
+          #[test]
+          fn info_lines_are_not_alerts() {
+              assert_eq!(is_alert("INFO: all good"), false, "is_alert(\"INFO: all good\")");
+          }
+
+          #[test]
+          fn empty_line_is_not_an_alert() {
+              assert_eq!(is_alert(""), false, "is_alert(\"\")");
+          }
+        hints:
+          - "Lowercase the line once: `let lower = line.to_lowercase();`"
+          - "Then `lower.contains(\"error\") || lower.contains(\"fatal\")`."
+      - task: |
+          Write `censor(text, word)`, which replaces every occurrence of `word` with stars, one `*` per **character** of the word. For example `censor("darn it, darn", "darn")` returns `"**** it, ****"`, and `censor("café café", "café")` returns `"**** ****"`.
+        seed: |
+          fn censor(text: &str, word: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn censor(text: &str, word: &str) -> String {
+              let mut stars = String::new();
+              for _ in 0..word.chars().count() {
+                  stars.push('*');
+              }
+              text.replace(word, &stars)
+          }
+        harness: |
+          #[test]
+          fn replaces_every_occurrence() {
+              assert_eq!(censor("darn it, darn", "darn"), "**** it, ****", "censor(\"darn it, darn\", \"darn\")");
+          }
+
+          #[test]
+          fn leaves_other_text_alone() {
+              assert_eq!(censor("no match here", "xyz"), "no match here", "censor(\"no match here\", \"xyz\")");
+          }
+
+          #[test]
+          fn one_star_per_character_not_per_byte() {
+              assert_eq!(censor("café café", "café"), "**** ****", "censor(\"café café\", \"café\")");
+          }
+
+          #[test]
+          fn a_one_letter_word() {
+              assert_eq!(censor("a banana", "a"), "* b*n*n*", "censor(\"a banana\", \"a\")");
+          }
+        hints:
+          - "First build the stars: an empty String and a loop that pushes `'*'` once per character of `word` (`word.chars().count()`)."
+          - "Then `text.replace(word, &stars)`. The `&` passes your String where a `&str` is expected."
+
+  - title: Comparing strings
+    id: strings-intro-6
+    text: |
+      `==` and `!=` compare the text of two strings, character by character. They work between a `String` and a `&str` in either order:
+
+      ```rust run
+      fn main() {
+          let answer = String::from("yes");
+          println!("{}", answer == "yes");
+          println!("{}", "Yes" == "yes");
+          println!("{}", answer.to_lowercase() == "YES".to_lowercase());
+          println!("{}", "apple" < "banana");
+          println!("{}", "Zebra" < "apple");
+      }
+      ```
+
+      ```output
+      true
+      false
+      true
+      true
+      true
+      ```
+
+      - Comparison is **case-sensitive**: `"Yes"` and `"yes"` are different. To ignore case, lowercase both sides. (For plain ASCII text there's also `a.eq_ignore_ascii_case(b)`, which doesn't build new strings.)
+      - `<` and `>` compare in dictionary-like order, character by character, using each character's Unicode number. All uppercase letters come before all lowercase ones, which is why `"Zebra" < "apple"`. For a human-friendly order, compare lowercased copies.
+
+      ### Choosing what to do based on text
+
+      An `if` / `else if` chain handles commands. Clean the input first, then compare:
+
+      ```rust run
+      fn reply(cmd: &str) -> String {
+          let cmd = cmd.trim().to_lowercase();
+          if cmd == "start" {
+              "Starting engine".to_string()
+          } else if cmd == "stop" {
+              "Stopping engine".to_string()
+          } else {
+              format!("Unknown command: {cmd}")
+          }
+      }
+
+      fn main() {
+          println!("{}", reply("START "));
+          println!("{}", reply("stop"));
+          println!("{}", reply("jump"));
+      }
+      ```
+
+      ```output
+      Starting engine
+      Stopping engine
+      Unknown command: jump
+      ```
+
+      `let cmd = cmd.trim().to_lowercase();` shadows the `&str` parameter with a cleaned-up `String`, a common idiom. Module 14 introduces `match`, which expresses this kind of choice even more neatly.
+
+      ### Common mistakes
+
+      - **Comparing raw input.** Text typed by a user usually ends with a newline: `"yes\n" == "yes"` is `false`. Trim first.
+      - **Comparing a string with a `char`:**
+
+      ```rust compile_fail
+      fn main() {
+          let answer = String::from("y");
+          if answer == 'y' {
+              println!("ok");
+          }
+      }
+      ```
+
+      ```error
+      error[E0277]: can't compare `String` with `char`
+      ```
+
+      `'y'` is a `char`, `"y"` is a string. Compare with `"y"`.
+
+      **Your turn:** write `bot_reply(msg)` for a support chat bot. Ignore spaces around the message and ignore case, then:
+
+      - `hi` or `hello` → `Hello! How can I help?`
+      - a message containing `refund` anywhere → `Refunds take 5 days.`
+      - an empty message → `Say something!`
+      - anything else → `Sorry, I don't understand: ` followed by the message, trimmed but with its **original** case.
+    seed: |
+      fn bot_reply(msg: &str) -> String {
+          todo!()
+      }
+    solution: |
+      fn bot_reply(msg: &str) -> String {
+          let trimmed = msg.trim();
+          let lower = trimmed.to_lowercase();
+          if lower == "hi" || lower == "hello" {
+              "Hello! How can I help?".to_string()
+          } else if lower.contains("refund") {
+              "Refunds take 5 days.".to_string()
+          } else if lower.is_empty() {
+              "Say something!".to_string()
+          } else {
+              format!("Sorry, I don't understand: {trimmed}")
+          }
+      }
+    harness: |
+      #[test]
+      fn greets_hi() {
+          assert_eq!(bot_reply("hi"), "Hello! How can I help?", "bot_reply(\"hi\")");
+      }
+
+      #[test]
+      fn greets_hello_in_any_case_with_spaces() {
+          assert_eq!(bot_reply("  HeLLo "), "Hello! How can I help?", "bot_reply(\"  HeLLo \")");
+      }
+
+      #[test]
+      fn finds_refund_anywhere() {
+          assert_eq!(bot_reply("Where is my REFUND?"), "Refunds take 5 days.", "bot_reply(\"Where is my REFUND?\")");
+      }
+
+      #[test]
+      fn empty_message() {
+          assert_eq!(bot_reply("   "), "Say something!", "bot_reply(\"   \")");
+      }
+
+      #[test]
+      fn unknown_message_keeps_its_case() {
+          assert_eq!(bot_reply(" Track Order 42 "), "Sorry, I don't understand: Track Order 42", "bot_reply(\" Track Order 42 \")");
+      }
+
+      #[test]
+      fn hi_must_be_the_whole_message() {
+          assert_eq!(bot_reply("hint"), "Sorry, I don't understand: hint", "bot_reply(\"hint\")");
+      }
+    hints:
+      - "Make two versions first: `let trimmed = msg.trim();` and `let lower = trimmed.to_lowercase();`. Compare with `lower`, but print `trimmed`."
+      - "Use `==` for hi/hello (the whole message), `contains` for refund, and `is_empty()` for the empty message."
+      - "Each branch returns a String: `\"...\".to_string()` for fixed text, `format!(\"Sorry, I don't understand: {trimmed}\")` for the last one."
+    more:
+      - task: |
+          Write `same_user(a, b)`, which returns `true` when two usernames are the same once you ignore spaces around them and upper/lower case. For example `same_user(" Ferris", "ferris ")` is `true`.
+        seed: |
+          fn same_user(a: &str, b: &str) -> bool {
+              todo!()
+          }
+        solution: |
+          fn same_user(a: &str, b: &str) -> bool {
+              a.trim().to_lowercase() == b.trim().to_lowercase()
+          }
+        harness: |
+          #[test]
+          fn ignores_spaces_and_case() {
+              assert_eq!(same_user(" Ferris", "ferris "), true, "same_user(\" Ferris\", \"ferris \")");
+          }
+
+          #[test]
+          fn identical_names() {
+              assert_eq!(same_user("ana", "ana"), true, "same_user(\"ana\", \"ana\")");
+          }
+
+          #[test]
+          fn different_names() {
+              assert_eq!(same_user("ana", "anna"), false, "same_user(\"ana\", \"anna\")");
+          }
+
+          #[test]
+          fn inner_spaces_still_matter() {
+              assert_eq!(same_user("ann a", "anna"), false, "same_user(\"ann a\", \"anna\")");
+          }
+        hints:
+          - "Clean both sides the same way: `.trim().to_lowercase()`."
+          - "Then compare the two results with `==`."
+      - task: |
+          Write `check_password(p)`, which returns the first problem it finds, checking in this order:
+
+          1. fewer than 8 **characters** → `too short`
+          2. the password, lowercased, is `password` or `qwertyuiop` → `too common`
+          3. no digit (`'0'` to `'9'`) anywhere → `needs a digit`
+          4. otherwise → `ok`
+        seed: |
+          fn check_password(p: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn check_password(p: &str) -> String {
+              let lower = p.to_lowercase();
+              let mut has_digit = false;
+              for c in p.chars() {
+                  if c >= '0' && c <= '9' {
+                      has_digit = true;
+                  }
+              }
+              if p.chars().count() < 8 {
+                  "too short".to_string()
+              } else if lower == "password" || lower == "qwertyuiop" {
+                  "too common".to_string()
+              } else if !has_digit {
+                  "needs a digit".to_string()
+              } else {
+                  "ok".to_string()
+              }
+          }
+        harness: |
+          #[test]
+          fn short_passwords_are_rejected() {
+              assert_eq!(check_password("abc1"), "too short", "check_password(\"abc1\")");
+          }
+
+          #[test]
+          fn length_counts_characters_not_bytes() {
+              assert_eq!(check_password("äöüäöü1"), "too short", "check_password(\"äöüäöü1\")");
+          }
+
+          #[test]
+          fn common_passwords_in_any_case() {
+              assert_eq!(check_password("PassWord"), "too common", "check_password(\"PassWord\")");
+              assert_eq!(check_password("qwertyuiop"), "too common", "check_password(\"qwertyuiop\")");
+          }
+
+          #[test]
+          fn needs_a_digit() {
+              assert_eq!(check_password("sunflower"), "needs a digit", "check_password(\"sunflower\")");
+          }
+
+          #[test]
+          fn a_good_password() {
+              assert_eq!(check_password("sunfl0wer"), "ok", "check_password(\"sunfl0wer\")");
+          }
+        hints:
+          - "Count characters with `p.chars().count()`, not `p.len()`."
+          - "Find a digit with a loop over `p.chars()` that sets `has_digit = true` when `c >= '0' && c <= '9'`. (Clippy would suggest the shorter `c.is_ascii_digit()`, which does the same.)"
+          - "Then one `if` / `else if` chain, in the order given, returning a String in each branch."

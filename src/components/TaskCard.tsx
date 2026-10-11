@@ -60,6 +60,22 @@ export default function TaskCard({ ex, task, index, total }: { ex: Exercise; tas
           )}
         </div>
       )}
+      {ex.mode === "test" && (
+        <div className="task-checks">
+          <div className="lbl">How it's checked</div>
+          <ul>
+            <li>
+              <Check className="icon" aria-hidden="true" /> runs <code>cargo test</code>: at least {ex.minTests ?? 1} of your own <code>#[test]</code> functions, all passing
+            </li>
+            {(ex.mutants ?? []).length > 0 && (
+              <li>
+                <Check className="icon" aria-hidden="true" /> then plants {ex.mutants!.length} bug{ex.mutants!.length > 1 ? "s" : ""} in the code, one at a time: your tests must catch each
+                one
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
       {checks.length > 0 && (
         <div className="task-checks">
           <div className="lbl">The tests check</div>

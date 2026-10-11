@@ -19,6 +19,7 @@ import { applyStepUrls, readStepUrls, writeStepUrls, STEP_URLS_FILE } from "./st
 import { execute, EDITION } from "./rust-exec.mjs";
 import {
   parseTemplate,
+  fillFirstBlank,
   templateSolution,
   wrapProgram,
   parseRuns,
@@ -458,7 +459,7 @@ async function buildDrill(where, id, topic, d) {
       const out = normalizeOutput(r.stdout);
       if (d.expect != null && normalizeOutput(String(d.expect)) !== out) errors.push(`${where}: expected "${d.expect}" but got "${out}"`);
       for (const alt of blanks[0].accept.slice(1)) {
-        const fill = (s) => s.replace(/\[\[(?!\[)(.*?)\]\](?!\])/, alt);
+        const fill = (s) => fillFirstBlank(s, alt);
         const ar = await runProgram(drillProgram(fill(pre), fill(body)), one);
         if (!ar.compiled || normalizeOutput(ar.runs[0]?.stdout ?? "") !== out) errors.push(`${where}: accepted alternative "${alt}" doesn't compile or prints something else`);
       }
@@ -632,7 +633,7 @@ function buildPro() {
 }
 
 // ---------------------------------------------------------------- roadmap
-function buildRoadmap(modules) {
+function buildRoadmap(modules, pro) {
   const file = path.join(ROOT, "content", "roadmap.yaml");
   if (!fs.existsSync(file)) return [];
   const data = YAML.parse(fs.readFileSync(file, "utf8"));
@@ -641,6 +642,8 @@ function buildRoadmap(modules) {
   for (const s of data.sections ?? []) {
     if (!s.title || !s.items?.length) errors.push(`content/roadmap.yaml: section needs title and items`);
     for (const it of s.items ?? []) {
+      for (const p of it.pro ?? []) if (!pro.some((x) => x.id === p)) errors.push(`content/roadmap.yaml: ${it.title}: unknown Pro Track project ${p}`);
+      if (!it.modules?.length && !it.pro?.length && !it.links?.length) errors.push(`content/roadmap.yaml: ${it.title}: needs modules, pro or links`);
       for (const m of it.modules ?? []) {
         if (!ids.has(m)) errors.push(`content/roadmap.yaml: ${it.title}: unknown module ${m}`);
         used.add(m);
@@ -670,7 +673,7 @@ if (!ONLY) assignDrillSteps(modules, drills, errors);
 const pro = ONLY ? [] : buildPro();
 const placement = ONLY ? [] : await buildPlacement(modules);
 const topics = await buildTopics(ONLY ? null : modules);
-const roadmap = ONLY ? [] : buildRoadmap(modules);
+const roadmap = ONLY ? [] : buildRoadmap(modules, pro);
 let next = null;
 if (!ONLY) {
   // The "Where to go next" page (/next).

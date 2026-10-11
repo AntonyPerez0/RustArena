@@ -41,8 +41,8 @@ export async function qrSvg(text: string): Promise<string | null> {
 }
 
 // ------------------------------------------------------------ GitHub Gist
-const GIST_KEY = "cpp-arena-gist";
-const FILE = "cpp-arena-progress.json";
+const GIST_KEY = "rustarena-gist";
+const FILE = "rustarena-progress.json";
 type GistConfig = { token: string; id?: string; auto: boolean; last?: number };
 
 export function gistConfig(): GistConfig | null {
@@ -116,7 +116,7 @@ export async function saveToGist(): Promise<void> {
   const c = gistConfig();
   if (!c) throw new Error("Add a GitHub token first.");
   const id = await findGist(c);
-  const body = JSON.stringify({ description: "C/C++ Arena progress (cpparena.com)", files: { [FILE]: { content: exportProgress() } }, ...(id ? {} : { public: false }) });
+  const body = JSON.stringify({ description: "RustArena progress", files: { [FILE]: { content: exportProgress() } }, ...(id ? {} : { public: false }) });
   const g = (await api(id ? `/gists/${id}` : "/gists", c.token, { method: id ? "PATCH" : "POST", body })) as { id: string };
   setConfig({ ...c, id: g.id, last: Date.now() });
 }

@@ -1,0 +1,204 @@
+topic: variables
+drills:
+  - type: predict
+    after: variables-3
+    body: |
+      let x = 5;
+      let x = x * 2;
+      {
+          let x = x + 1;
+          println!("{}", x);
+      }
+      println!("{}", x);
+    why: The inner `let x` shadows `x` only until the closing brace (11 inside); outside, `x` is still 10.
+
+  - type: predict
+    after: variables-2
+    body: |
+      let mut gold = 10;
+      gold += 5;
+      gold *= 2;
+      gold -= 1;
+      println!("{}", gold);
+    why: 10 + 5 = 15, times 2 = 30, minus 1 = 29. Each compound assignment updates the same mutable variable.
+
+  - type: predict
+    after: variables-6
+    body: |
+      let name = "Ferris";
+      println!("{name:?} {name}");
+    why: "`{:?}` (Debug) shows a string with its quotes; `{}` (Display) prints just the text."
+
+  - type: predict
+    after: variables-3
+    body: |
+      let word = "crab";
+      let word = word.len();
+      println!("{}", word + 1);
+    why: The second `let` shadows the text with its length, the number 4, so `word + 1` is 5. Shadowing can change the type.
+
+  - type: predict
+    after: variables-5
+    pre: |
+      const BONUS: i32 = 5;
+    body: |
+      let score = 10;
+      let score = score + BONUS;
+      println!("{} {}", score, BONUS * 2);
+    why: "`score` is shadowed with 10 + 5 = 15, and `BONUS * 2` is 10. Constants can be used anywhere in the file."
+
+  - type: fill
+    after: variables-2
+    prompt: Make the counter changeable.
+    body: |
+      let [[mut]] count = 0;
+      count += 1;
+      count += 1;
+      println!("{}", count);
+    why: Variables are immutable unless declared with `let mut`.
+
+  - type: fill
+    after: variables-6
+    prompt: Print the variable with an inline format argument.
+    body: |
+      let city = "Lisbon";
+      println!("Hello, [[{city}]]!");
+    why: A variable's name inside braces, `{city}`, is replaced by its value.
+
+  - type: fill
+    after: variables-6
+    prompt: Print the text in Debug format, so the spaces show.
+    body: |
+      let tag = " new ";
+      println!("{tag[[:?]]}");
+    why: "`:?` after the name selects the Debug format, which adds quotes and makes the spaces visible."
+
+  - type: bug
+    after: variables-2
+    body: |
+      let total = 0; // BUG
+      total += 5;
+      println!("{}", total);
+    fix: let mut total = 0;
+    why: Changing `total` with `+=` needs a mutable variable, declared with `let mut`.
+
+  - type: bug
+    after: variables-3
+    body: |
+      let mut points = 10;
+      {
+          let points = points + 5; // BUG
+      }
+      println!("{}", points);
+    fix: points += 5;
+    prompt: "This should add 5 to `points` and print 15. Click the line with the bug."
+    why: "`let` inside the block creates a new variable that shadows `points` and disappears at the `}`, so the outer `points` never changes. Assign to it instead."
+
+  - type: bug
+    after: variables-6
+    body: |
+      let score = 41;
+      println!("next: {score + 1}"); // BUG
+    fix: 'println!("next: {}", score + 1);'
+    prompt: "This should print `next: 42`. Click the line with the bug."
+    why: Only a plain variable name can go inside the braces; a calculation goes after the format string.
+
+  - type: compiles
+    answer: no
+    after: variables-2
+    body: |
+      let x = 5;
+      x = 6;
+      println!("{}", x);
+    why: "`x` is immutable, so it can't be assigned again. It would need `let mut x = 5;`."
+
+  - type: compiles
+    answer: yes
+    after: variables-3
+    body: |
+      let x = 5;
+      let x = "five";
+      println!("{}", x);
+    why: Shadowing creates a brand-new variable, so the new `x` can have a different type.
+
+  - type: compiles
+    answer: no
+    after: variables-3
+    body: |
+      let mut x = 5;
+      x = "five";
+      println!("{}", x);
+    why: "`mut` lets you change the value, never the type: this `x` is an integer for its whole life."
+
+  - type: compiles
+    answer: no
+    after: variables-5
+    pre: |
+      const LIMIT = 10;
+    body: |
+      println!("{}", LIMIT);
+    why: "Constants always need a type annotation: `const LIMIT: i32 = 10;`."
+
+  - type: choice
+    after: variables-2
+    prompt: Why are Rust variables immutable by default?
+    choices:
+      - Immutable variables print faster
+      - So a value can't change unexpectedly; anything that changes is clearly marked with mut
+      - Because Rust has no way to change a variable
+      - To save memory
+    answer: 2
+    why: Immutability by default makes code easier to reason about. When you need change, `mut` allows it and makes it visible.
+
+  - type: choice
+    after: variables-5
+    prompt: "You write `let _retries = 3;` and never use it. What does the `_` at the start of the name do?"
+    choices:
+      - It makes the variable private
+      - It tells the compiler the variable is intentionally unused, so it doesn't warn
+      - It turns the variable into a constant
+      - It deletes the variable after its first use
+    answer: 2
+    why: Unused variables trigger a warning because they're often a mistake. A leading underscore says "this is on purpose".
+
+  - type: boss
+    after: variables-6
+    prompt: |
+      Write a receipt calculator. Declare a top-level constant `TAX_PERCENT` of type `i32` with the value `8`. In `main`, an item costs `2500` cents and the customer buys `3`. Compute the subtotal, the tax (`subtotal * TAX_PERCENT / 100`) and the total, and print them with inline format arguments:
+
+      ```
+      subtotal: 7500
+      tax: 600
+      total: 8100
+      ```
+
+      Let Rust do the arithmetic (don't type the results).
+    seed: |
+      fn main() {
+      }
+    solution: |
+      const TAX_PERCENT: i32 = 8;
+
+      fn main() {
+          let price = 2500;
+          let quantity = 3;
+          let subtotal = price * quantity;
+          let tax = subtotal * TAX_PERCENT / 100;
+          let total = subtotal + tax;
+          println!("subtotal: {subtotal}");
+          println!("tax: {tax}");
+          println!("total: {total}");
+      }
+    require:
+      - pattern: 'const\s+TAX_PERCENT\s*:\s*i32\s*=\s*8\s*;'
+        message: "Declare `const TAX_PERCENT: i32 = 8;` above `fn main`."
+      - pattern: '\{subtotal\}[\s\S]*\{tax\}[\s\S]*\{total\}'
+        strings: true
+        message: "Print with inline format arguments: `{subtotal}`, `{tax}`, `{total}`."
+    forbid:
+      - pattern: '7500|\b600\b|8100'
+        message: Let Rust compute the numbers.
+    hints:
+      - "`let subtotal = price * quantity;` then `let tax = subtotal * TAX_PERCENT / 100;`"
+      - "`let total = subtotal + tax;` and three `println!` lines like `println!(\"total: {total}\");`"
+    why: Constants name fixed values, variables hold the intermediate results, and inline format arguments keep the output lines readable.

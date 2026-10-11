@@ -9,10 +9,13 @@ export const pro = content.pro ?? [];
 export const placement = content.placement ?? [];
 export const topics = content.topics ?? [];
 export const nextPage = content.next;
+export const roadmap = content.roadmap ?? [];
 export const topicBySlug = new Map(topics.map((t) => [t.slug, t]));
 export const proById = new Map(pro.map((p) => [p.id, p]));
 
 export const moduleById = new Map(modules.map((m) => [m.id, m]));
+/** A module's number in the course (1-based), as shown on badges. */
+export const moduleNumber = (id: string) => modules.findIndex((m) => m.id === id) + 1;
 export const projectById = new Map(projects.map((p) => [p.id, p]));
 
 /** A step's address. */
@@ -26,18 +29,9 @@ export function firstStepPath(moduleId: string) {
   return m ? stepPath(m, m.steps[0]) : "/learn";
 }
 
-/**
- * The step an address names: its slug, or an old step number (which then redirects).
- * Numbers mean what they did when numbered addresses were in use, not today's order.
- */
-export function findStep(m: Module, key: string): { step: Step; numbered: boolean } | null {
-  const bySlug = m.steps.find((s) => s.slug === key);
-  if (bySlug) return { step: bySlug, numbered: false };
-  if (!/^\d+$/.test(key)) return null;
-  const n = Number(key);
-  const id = m.numbered ? m.numbered[n - 1] : m.steps[n - 1]?.id;
-  const step = m.steps.find((s) => s.id === id) ?? (m.numbered && n > m.numbered.length ? m.steps[n - 1] : undefined);
-  return step ? { step, numbered: true } : null;
+/** The step an address names (its slug). */
+export function findStep(m: Module, key: string): Step | null {
+  return m.steps.find((s) => s.slug === key) ?? null;
 }
 
 export const allSteps: { module: Module; step: Step; index: number }[] = modules.flatMap((m) =>

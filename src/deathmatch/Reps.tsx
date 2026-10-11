@@ -20,7 +20,6 @@ export function Rep({ drill, onAnswer }: { drill: Drill; onAnswer: (given: strin
     <div className={"rep rep-" + drill.type} data-drill={drill.id} ref={box}>
       <div className="rep-head">
         <span className={"rep-type type-" + drill.type}>{TYPE_LABEL[drill.type]}</span>
-        <span className={"lang-tag lang-" + drill.lang}>{drill.lang === "c" ? "C" : "C++"}</span>
         <span className="rep-topic">{topicTitle(drill.topic)}</span>
       </div>
       {drill.type !== "boss" && (
@@ -192,7 +191,7 @@ function CompilesRep({ drill, onAnswer }: { drill: Drill; onAnswer: (g: string, 
           Compile error (N)
         </button>
       </div>
-      <div className="muted small">Standard headers are already included. Warnings don't count as errors.</div>
+      <div className="muted small">The code runs inside <code>fn main</code> (with anything above it at the top level). Warnings don't count as errors.</div>
     </>
   );
 }
@@ -299,6 +298,11 @@ export function Death({ drill, given, title, sub, children }: { drill: Drill; gi
               </div>
             </div>
           </>
+        )}
+        {drill.type === "compiles" && drill.error && (
+          <pre className="compiler-msg console tiny" tabIndex={0}>
+            {drill.error}
+          </pre>
         )}
         {drill.why && (
           <div className="why">

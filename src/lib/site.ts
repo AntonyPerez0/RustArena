@@ -1,7 +1,8 @@
 // Where the project lives. Reports and the footer link here.
-export const REPO = "AntonyPerez0/cpp-arena";
+export const REPO = "AntonyPerez0/RustArena";
 export const REPO_URL = `https://github.com/${REPO}`;
-export const SITE_URL = "https://cpparena.com";
+/** The public address, set by the deploy workflow (SITE_URL); the GitHub Pages address otherwise. */
+export const SITE_URL: string = (import.meta.env.VITE_SITE_URL as string | undefined)?.replace(/\/$/, "") || "https://antonyperez0.github.io/RustArena";
 
 export type ReportInfo = {
   /** What the learner was on, for example "Lesson step" or "Deathmatch drill". */

@@ -1,0 +1,2295 @@
+id: methods
+title: Methods
+phase: "Structuring data"
+summary: Attach behavior to your own types with impl blocks. Write methods that read (&self), change (&mut self) or consume (self) a value, constructors like new, getters that protect your rules, and chains of method calls.
+roadmap: [Impl Blocks, Functions and Method Syntax]
+steps:
+  - title: impl blocks and your first method
+    id: methods-1
+    text: |
+      In the structs module you wrote functions like `fn total_value(items: &[Item])`. They work, but they float free: nothing ties them to the type, and you have to know their names to find them. A **method** is a function that belongs to a type. You define it inside an **impl block** (short for *implementation*), and its first parameter is `self`: the value the method was called on.
+
+      ```rust run
+      struct Rect {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rect {
+          fn area(&self) -> u32 {
+              self.width * self.height
+          }
+
+          fn is_square(&self) -> bool {
+              self.width == self.height
+          }
+      }
+
+      fn main() {
+          let r = Rect { width: 8, height: 5 };
+          println!("area: {}", r.area());
+          println!("square? {}", r.is_square());
+      }
+      ```
+
+      ```output
+      area: 40
+      square? false
+      ```
+
+      Piece by piece:
+
+      - `impl Rect { ... }` holds the functions that belong to `Rect`. You can put as many methods in it as you like.
+      - `&self` is short for `self: &Self`, and inside an impl block **`Self`** means "the type this impl is for", here `Rect`. So `area` borrows the rectangle, reads it, and gives it back. It's the same `&Rect` parameter you'd write for a free function, with a special name.
+      - `self.width` reads a field of the value the method was called on.
+      - You call a method with a dot: `r.area()`. Rust passes `&r` as `self` for you (**automatic referencing**), so you never write `(&r).area()`.
+
+      In fact `r.area()` is just a nicer way to write `Rect::area(&r)`, and both compile to exactly the same code. Methods are about organization, not speed:
+
+      - **Discoverability**: type `r.` in an editor with rust-analyzer and you get a list of everything a `Rect` can do.
+      - **Behavior lives next to its data**: one place to look when you change the struct.
+      - **Shorter names**: `r.area()` instead of `rect_area(&r)`. Different types can each have their own `area` method.
+
+      ### Common mistakes
+
+      - **Forgetting `self`**: a function in an impl without a `self` parameter has no value to read from:
+
+      ```rust compile_fail
+      struct Rect {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rect {
+          fn area() -> u32 {
+              self.width * self.height
+          }
+      }
+
+      fn main() {
+          let r = Rect { width: 2, height: 3 };
+          println!("{}", r.area());
+      }
+      ```
+
+      ```error
+      error[E0424]: expected value, found module `self`
+      ```
+
+      - **Forgetting the parentheses**: `r.area` (without `()`) gives ``error[E0615]: attempted to take value of method `area` on type `Rect` ``. Fields are read without parentheses, methods are called with them.
+
+      **Your turn:** fill in the blanks so the program prints `perimeter: 28`: the keyword that starts the block, the parameter that borrows the square, the value whose `side` you read, and the method call.
+    fill: |
+      struct Square {
+          side: u32,
+      }
+
+      [[impl]] Square {
+          fn perimeter([[&self‖self: &Self‖self: &Square]]) -> u32 {
+              [[self]].side * 4
+          }
+      }
+
+      fn main() {
+          let sq = Square { side: 7 };
+          println!("perimeter: {}", sq.[[perimeter()]]);
+      }
+    hints:
+      - "Methods live in an `impl Square { ... }` block."
+      - "A method that only reads the value takes `&self`, and reads fields with `self.side`."
+      - "Call it with a dot and parentheses: `sq.perimeter()`."
+    tests:
+      - expect: "perimeter: 28"
+    more:
+      - task: |
+          Add two methods to `Rect`:
+
+          - `fn perimeter(&self) -> u32`: twice the width plus twice the height.
+          - `fn can_hold(&self, other: &Rect) -> bool`: true if `self` is strictly wider **and** strictly taller than `other`.
+
+          A method can take more parameters after `self`, like any function.
+        seed: |
+          struct Rect {
+              width: u32,
+              height: u32,
+          }
+
+          impl Rect {
+              // Your methods here
+          }
+        solution: |
+          struct Rect {
+              width: u32,
+              height: u32,
+          }
+
+          impl Rect {
+              // Your methods here
+              fn perimeter(&self) -> u32 {
+                  2 * self.width + 2 * self.height
+              }
+
+              fn can_hold(&self, other: &Rect) -> bool {
+                  self.width > other.width && self.height > other.height
+              }
+          }
+        harness: |
+          #[test]
+          fn perimeter_of_a_rectangle() {
+              let r = Rect { width: 8, height: 5 };
+              assert_eq!(r.perimeter(), 26, "perimeter of 8x5");
+          }
+
+          #[test]
+          fn perimeter_of_a_flat_rectangle() {
+              let r = Rect { width: 10, height: 0 };
+              assert_eq!(r.perimeter(), 20, "perimeter of 10x0");
+          }
+
+          #[test]
+          fn a_bigger_rect_can_hold_a_smaller_one() {
+              let big = Rect { width: 10, height: 8 };
+              let small = Rect { width: 3, height: 2 };
+              assert_eq!(big.can_hold(&small), true, "10x8 can_hold 3x2");
+              assert_eq!(small.can_hold(&big), false, "3x2 can_hold 10x8");
+          }
+
+          #[test]
+          fn too_tall_does_not_fit() {
+              let wide = Rect { width: 10, height: 2 };
+              let tall = Rect { width: 3, height: 5 };
+              assert_eq!(wide.can_hold(&tall), false, "10x2 can_hold 3x5");
+          }
+
+          #[test]
+          fn the_same_size_does_not_fit() {
+              let a = Rect { width: 4, height: 4 };
+              let b = Rect { width: 4, height: 4 };
+              assert_eq!(a.can_hold(&b), false, "4x4 can_hold 4x4");
+          }
+        hints:
+          - "Both methods take `&self`; `can_hold` also takes `other: &Rect`."
+          - "`can_hold` compares both dimensions: `self.width > other.width && self.height > other.height`."
+      - task: |
+          Write an impl block for `Time` (hours and minutes on a 24-hour clock) with two methods:
+
+          - `fn total_minutes(&self) -> u32`: minutes since midnight (`9:30` is 570).
+          - `fn is_before(&self, other: &Time) -> bool`: true if `self` is earlier in the day than `other`. Call `total_minutes` from inside it with `self.total_minutes()`.
+        seed: |
+          struct Time {
+              hours: u32,
+              minutes: u32,
+          }
+
+        solution: |
+          struct Time {
+              hours: u32,
+              minutes: u32,
+          }
+
+          impl Time {
+              fn total_minutes(&self) -> u32 {
+                  self.hours * 60 + self.minutes
+              }
+
+              fn is_before(&self, other: &Time) -> bool {
+                  self.total_minutes() < other.total_minutes()
+              }
+          }
+        harness: |
+          #[test]
+          fn counts_minutes_since_midnight() {
+              assert_eq!(Time { hours: 9, minutes: 30 }.total_minutes(), 570, "9:30 total_minutes");
+          }
+
+          #[test]
+          fn midnight_is_zero() {
+              assert_eq!(Time { hours: 0, minutes: 0 }.total_minutes(), 0, "0:00 total_minutes");
+          }
+
+          #[test]
+          fn earlier_time_is_before() {
+              let a = Time { hours: 9, minutes: 30 };
+              let b = Time { hours: 10, minutes: 0 };
+              assert_eq!(a.is_before(&b), true, "9:30 is_before 10:00");
+              assert_eq!(b.is_before(&a), false, "10:00 is_before 9:30");
+          }
+
+          #[test]
+          fn minutes_matter_within_the_same_hour() {
+              let a = Time { hours: 14, minutes: 5 };
+              let b = Time { hours: 14, minutes: 50 };
+              assert_eq!(a.is_before(&b), true, "14:05 is_before 14:50");
+          }
+
+          #[test]
+          fn a_time_is_not_before_itself() {
+              let a = Time { hours: 7, minutes: 15 };
+              let b = Time { hours: 7, minutes: 15 };
+              assert_eq!(a.is_before(&b), false, "7:15 is_before 7:15");
+          }
+        require:
+          - pattern: 'impl\s+Time'
+            message: "Put the methods in an `impl Time { ... }` block."
+        hints:
+          - "Start with `impl Time { }` and write both methods inside, each taking `&self`."
+          - "`self.hours * 60 + self.minutes`"
+          - "`self.total_minutes() < other.total_minutes()`"
+
+  - title: "&mut self: methods that change the value"
+    id: methods-2
+    text: |
+      A method that changes the value takes **`&mut self`**: a mutable borrow of the value it's called on. Everything you know about `&mut` applies: you can change fields through it, and while the method runs nothing else can use the value.
+
+      ```rust run
+      struct Fighter {
+          name: String,
+          hp: u32,
+      }
+
+      impl Fighter {
+          fn take_hit(&mut self, damage: u32) {
+              self.hp = self.hp.saturating_sub(damage);
+          }
+
+          fn is_down(&self) -> bool {
+              self.hp == 0
+          }
+      }
+
+      fn main() {
+          let mut crab = Fighter { name: String::from("Ferris"), hp: 30 };
+          crab.take_hit(12);
+          println!("{} has {} hp", crab.name, crab.hp);
+          crab.take_hit(25);
+          println!("{} has {} hp, down: {}", crab.name, crab.hp, crab.is_down());
+      }
+      ```
+
+      ```output
+      Ferris has 18 hp
+      Ferris has 0 hp, down: true
+      ```
+
+      - `crab.take_hit(12)` borrows `crab` mutably for the call. Rust adds the `&mut` for you, just like it adds `&` for `&self` methods.
+      - Because the method needs a mutable borrow, the variable must be declared `let mut crab`.
+      - `is_down` only reads, so it takes `&self`. Pick the weakest receiver that does the job: readers take `&self`, so they can be called on any value, mutable or not.
+
+      ### Returning whether it worked
+
+      Some changes are not always allowed: you can't sell more than you have, or withdraw more than your balance. A simple way to say so is to return a `bool` and leave the value untouched when the answer is no:
+
+      ```rust run
+      struct Stock {
+          quantity: u32,
+      }
+
+      impl Stock {
+          fn sell(&mut self, amount: u32) -> bool {
+              if amount > self.quantity {
+                  return false;
+              }
+              self.quantity -= amount;
+              true
+          }
+      }
+
+      fn main() {
+          let mut tea = Stock { quantity: 5 };
+          println!("sell 3: {}", tea.sell(3));
+          println!("sell 3: {}", tea.sell(3));
+          println!("left: {}", tea.quantity);
+      }
+      ```
+
+      ```output
+      sell 3: true
+      sell 3: false
+      left: 2
+      ```
+
+      The caller decides what to do with a `false`: print a message, try a smaller amount, and so on. Later you'll return richer answers with enums (next modules) and `Result` (the errors module).
+
+      ### Common mistakes
+
+      - **Calling a `&mut self` method on a variable that isn't `mut`**:
+
+      ```rust compile_fail
+      struct Account {
+          balance: u32,
+      }
+
+      impl Account {
+          fn deposit(&mut self, amount: u32) {
+              self.balance += amount;
+          }
+      }
+
+      fn main() {
+          let acct = Account { balance: 0 };
+          acct.deposit(50);
+          println!("{}", acct.balance);
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `acct` as mutable, as it is not declared as mutable
+      ```
+
+      - **Changing a field in a `&self` method**: ``error[E0594]: cannot assign to `self.count`, which is behind a `&` reference``. The compiler's help suggests `&mut self`, which is right if the method really should change the value.
+
+      **Your turn:** finish the bank account. `deposit` adds `amount` to the balance. `withdraw` takes `amount` out only if the balance is big enough and returns `true`; otherwise it changes nothing and returns `false`. Every **successful** deposit or withdrawal adds 1 to `transactions`.
+    seed: |
+      struct Account {
+          balance_cents: u64,
+          transactions: u32,
+      }
+
+      impl Account {
+          fn deposit(&mut self, amount: u64) {
+              todo!()
+          }
+
+          fn withdraw(&mut self, amount: u64) -> bool {
+              todo!()
+          }
+      }
+    solution: |
+      struct Account {
+          balance_cents: u64,
+          transactions: u32,
+      }
+
+      impl Account {
+          fn deposit(&mut self, amount: u64) {
+              self.balance_cents += amount;
+              self.transactions += 1;
+          }
+
+          fn withdraw(&mut self, amount: u64) -> bool {
+              if amount > self.balance_cents {
+                  return false;
+              }
+              self.balance_cents -= amount;
+              self.transactions += 1;
+              true
+          }
+      }
+    harness: |
+      fn empty() -> Account {
+          Account { balance_cents: 0, transactions: 0 }
+      }
+
+      #[test]
+      fn deposit_adds_to_the_balance() {
+          let mut a = empty();
+          a.deposit(5000);
+          a.deposit(250);
+          assert_eq!(a.balance_cents, 5250, "balance after deposit(5000) and deposit(250)");
+      }
+
+      #[test]
+      fn withdraw_takes_money_out() {
+          let mut a = empty();
+          a.deposit(5000);
+          assert_eq!(a.withdraw(1200), true, "withdraw(1200) from 5000");
+          assert_eq!(a.balance_cents, 3800, "balance after withdraw(1200) from 5000");
+      }
+
+      #[test]
+      fn withdraw_refuses_too_much() {
+          let mut a = empty();
+          a.deposit(5000);
+          assert_eq!(a.withdraw(7500), false, "withdraw(7500) from 5000");
+          assert_eq!(a.balance_cents, 5000, "balance after a refused withdraw");
+      }
+
+      #[test]
+      fn can_withdraw_everything() {
+          let mut a = empty();
+          a.deposit(300);
+          assert_eq!(a.withdraw(300), true, "withdraw(300) from 300");
+          assert_eq!(a.balance_cents, 0, "balance after withdrawing everything");
+      }
+
+      #[test]
+      fn counts_only_successful_transactions() {
+          let mut a = empty();
+          a.deposit(100);
+          a.withdraw(30);
+          a.withdraw(500);
+          a.deposit(1);
+          assert_eq!(a.transactions, 3, "transactions after deposit, withdraw, refused withdraw, deposit");
+      }
+    hints:
+      - "Both methods change the account, so they work through `self`: `self.balance_cents += amount;`"
+      - "In `withdraw`, check `amount > self.balance_cents` first and `return false` before changing anything."
+      - "Don't forget `self.transactions += 1;` in both methods, only on the successful path."
+    more:
+      - task: |
+          Add `fn transfer(&mut self, to: &mut Account, amount: u64) -> bool`. It moves `amount` from `self` into `to` if `self` has enough, and returns whether it did. Reuse `withdraw` and `deposit`: call them on `self` and on `to`.
+        seed: |
+          struct Account {
+              balance_cents: u64,
+              transactions: u32,
+          }
+
+          impl Account {
+              fn deposit(&mut self, amount: u64) {
+                  self.balance_cents += amount;
+                  self.transactions += 1;
+              }
+
+              fn withdraw(&mut self, amount: u64) -> bool {
+                  if amount > self.balance_cents {
+                      return false;
+                  }
+                  self.balance_cents -= amount;
+                  self.transactions += 1;
+                  true
+              }
+
+              fn transfer(&mut self, to: &mut Account, amount: u64) -> bool {
+                  todo!()
+              }
+          }
+        solution: |
+          struct Account {
+              balance_cents: u64,
+              transactions: u32,
+          }
+
+          impl Account {
+              fn deposit(&mut self, amount: u64) {
+                  self.balance_cents += amount;
+                  self.transactions += 1;
+              }
+
+              fn withdraw(&mut self, amount: u64) -> bool {
+                  if amount > self.balance_cents {
+                      return false;
+                  }
+                  self.balance_cents -= amount;
+                  self.transactions += 1;
+                  true
+              }
+
+              fn transfer(&mut self, to: &mut Account, amount: u64) -> bool {
+                  if !self.withdraw(amount) {
+                      return false;
+                  }
+                  to.deposit(amount);
+                  true
+              }
+          }
+        harness: |
+          fn with(balance_cents: u64) -> Account {
+              Account { balance_cents, transactions: 0 }
+          }
+
+          #[test]
+          fn moves_the_money() {
+              let mut a = with(1000);
+              let mut b = with(50);
+              assert_eq!(a.transfer(&mut b, 400), true, "a.transfer(&mut b, 400) with 1000");
+              assert_eq!((a.balance_cents, b.balance_cents), (600, 450), "balances after the transfer");
+          }
+
+          #[test]
+          fn refuses_when_short() {
+              let mut a = with(100);
+              let mut b = with(0);
+              assert_eq!(a.transfer(&mut b, 101), false, "a.transfer(&mut b, 101) with 100");
+              assert_eq!((a.balance_cents, b.balance_cents), (100, 0), "balances after a refused transfer");
+          }
+
+          #[test]
+          fn counts_a_transaction_on_each_side() {
+              let mut a = with(100);
+              let mut b = with(0);
+              a.transfer(&mut b, 10);
+              assert_eq!((a.transactions, b.transactions), (1, 1), "(a.transactions, b.transactions)");
+          }
+
+          #[test]
+          fn a_refused_transfer_counts_nothing() {
+              let mut a = with(5);
+              let mut b = with(0);
+              a.transfer(&mut b, 10);
+              assert_eq!((a.transactions, b.transactions), (0, 0), "(a.transactions, b.transactions) after a refusal");
+          }
+        require:
+          - pattern: 'self\.withdraw\('
+            message: "Reuse the existing method: call `self.withdraw(amount)`."
+        hints:
+          - "`self.withdraw(amount)` already checks the balance and tells you whether it worked."
+          - "Only if it returned `true`, call `to.deposit(amount)`."
+          - "`if !self.withdraw(amount) { return false; } to.deposit(amount); true`"
+      - task: |
+          Write an impl block for a `Thermostat` from scratch:
+
+          - `fn set_target(&mut self, target: i32)`: sets the target, but keeps it between 10 and 30 degrees (a target below 10 becomes 10, above 30 becomes 30).
+          - `fn tick(&mut self)`: moves `current` one degree toward `target` (up if it's below, down if it's above, unchanged if equal).
+          - `fn is_stable(&self) -> bool`: true when `current` equals `target`.
+        seed: |
+          struct Thermostat {
+              current: i32,
+              target: i32,
+          }
+
+        solution: |
+          struct Thermostat {
+              current: i32,
+              target: i32,
+          }
+
+          impl Thermostat {
+              fn set_target(&mut self, target: i32) {
+                  self.target = if target < 10 {
+                      10
+                  } else if target > 30 {
+                      30
+                  } else {
+                      target
+                  };
+              }
+
+              fn tick(&mut self) {
+                  if self.current < self.target {
+                      self.current += 1;
+                  } else if self.current > self.target {
+                      self.current -= 1;
+                  }
+              }
+
+              fn is_stable(&self) -> bool {
+                  self.current == self.target
+              }
+          }
+        harness: |
+          fn at(current: i32) -> Thermostat {
+              Thermostat { current, target: current }
+          }
+
+          #[test]
+          fn sets_a_normal_target() {
+              let mut t = at(18);
+              t.set_target(22);
+              assert_eq!(t.target, 22, "target after set_target(22)");
+          }
+
+          #[test]
+          fn clamps_low_and_high_targets() {
+              let mut t = at(18);
+              t.set_target(-5);
+              assert_eq!(t.target, 10, "target after set_target(-5)");
+              t.set_target(99);
+              assert_eq!(t.target, 30, "target after set_target(99)");
+          }
+
+          #[test]
+          fn ticks_up_one_degree() {
+              let mut t = at(18);
+              t.set_target(20);
+              t.tick();
+              assert_eq!(t.current, 19, "current after one tick from 18 toward 20");
+          }
+
+          #[test]
+          fn ticks_down_one_degree() {
+              let mut t = at(25);
+              t.set_target(20);
+              t.tick();
+              assert_eq!(t.current, 24, "current after one tick from 25 toward 20");
+          }
+
+          #[test]
+          fn becomes_stable_and_stays_there() {
+              let mut t = at(18);
+              t.set_target(20);
+              assert_eq!(t.is_stable(), false, "is_stable at 18 with target 20");
+              t.tick();
+              t.tick();
+              t.tick();
+              assert_eq!((t.current, t.is_stable()), (20, true), "(current, is_stable) after three ticks from 18 toward 20");
+          }
+        hints:
+          - "`set_target` and `tick` change the thermostat, so they take `&mut self`; `is_stable` takes `&self`."
+          - "For the clamp, an `if / else if / else` expression works: `self.target = if target < 10 { 10 } else if ... ;`"
+          - "In `tick`, compare `self.current` with `self.target` and add or subtract 1."
+
+  - title: "Associated functions and Self: constructors"
+    id: methods-3
+    text: |
+      A function inside an impl block that does **not** take `self` is an **associated function**: it belongs to the type, but isn't called on a value. You call it with the type's name and `::`. You've used them since the first modules: `String::from("hi")`, `String::new()`, `Vec::new()`.
+
+      Their most common job is building values. By convention, the main one is called **`new`**:
+
+      ```rust run
+      struct Item {
+          name: String,
+          price_cents: u32,
+          quantity: u32,
+      }
+
+      impl Item {
+          fn new(name: &str, price_cents: u32) -> Self {
+              Self {
+                  name: name.to_string(),
+                  price_cents,
+                  quantity: 0,
+              }
+          }
+
+          fn free_sample(name: &str) -> Self {
+              Self::new(name, 0)
+          }
+
+          fn summary(&self) -> String {
+              format!("{} x{} at {} cents", self.name, self.quantity, self.price_cents)
+          }
+      }
+
+      fn main() {
+          let mut tea = Item::new("Tea", 450);
+          tea.quantity = 12;
+          let sticker = Item::free_sample("Sticker");
+          println!("{}", tea.summary());
+          println!("{}", sticker.summary());
+      }
+      ```
+
+      ```output
+      Tea x12 at 450 cents
+      Sticker x0 at 0 cents
+      ```
+
+      - `fn new(...) -> Self` returns a new `Item`. Inside an impl, **`Self`** is the type (`Item`), so `Self { ... }` builds one. Writing `Item` works too, but `Self` keeps working if you rename the type.
+      - `Item::new("Tea", 450)` calls it with `::`, because there's no value yet to put before a dot.
+      - A type can have several constructors with descriptive names. `free_sample` calls `Self::new` so the defaults live in one place.
+
+      ### Why constructors?
+
+      `new` is not special syntax: Rust has no built-in constructors, just this convention. It's still worth it. Callers don't need to know every field (`quantity` starts at 0 without them thinking about it), the defaults live in one place, and later, with private fields (the modules module), a constructor becomes the only way to create a value, so it can enforce rules like "a name is never empty". Clippy even checks the convention: a `new` that doesn't return `Self` gets a `new_ret_no_self` warning.
+
+      ### `::` or `.`?
+
+      | You write | Meaning |
+      |---|---|
+      | `Item::new("Tea", 450)` | associated function, called on the **type** |
+      | `tea.summary()` | method, called on a **value** |
+      | `Item::summary(&tea)` | the same method, called the long way |
+
+      ### Common mistakes
+
+      - **A dot after the type name**:
+
+      ```rust compile_fail
+      struct Rect {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rect {
+          fn new(width: u32, height: u32) -> Self {
+              Self { width, height }
+          }
+
+          fn area(&self) -> u32 {
+              self.width * self.height
+          }
+      }
+
+      fn main() {
+          let r = Rect.new(2, 3);
+          println!("{}", r.area());
+      }
+      ```
+
+      ```error
+      error[E0423]: expected value, found struct `Rect`
+      ```
+
+      - **Calling a method like an associated function**: `Rect::area()` has no rectangle to measure: ``error[E0061]: this function takes 1 argument but 0 arguments were supplied``. Call it on a value: `r.area()`.
+
+      **Your turn:** write `Player::new(name: &str) -> Self`. A new player has the given name, level 1, 100 hp and a score of 0.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct Player {
+          name: String,
+          level: u32,
+          hp: u32,
+          score: u32,
+      }
+
+      impl Player {
+          fn new(name: &str) -> Self {
+              todo!()
+          }
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct Player {
+          name: String,
+          level: u32,
+          hp: u32,
+          score: u32,
+      }
+
+      impl Player {
+          fn new(name: &str) -> Self {
+              Self {
+                  name: name.to_string(),
+                  level: 1,
+                  hp: 100,
+                  score: 0,
+              }
+          }
+      }
+    harness: |
+      #[test]
+      fn builds_a_fresh_player() {
+          assert_eq!(
+              Player::new("Ayla"),
+              Player { name: String::from("Ayla"), level: 1, hp: 100, score: 0 },
+              "Player::new(\"Ayla\")"
+          );
+      }
+
+      #[test]
+      fn uses_the_given_name() {
+          assert_eq!(Player::new("Ferris").name, "Ferris", "Player::new(\"Ferris\").name");
+      }
+
+      #[test]
+      fn two_new_players_start_equal_apart_from_the_name() {
+          let a = Player::new("A");
+          let b = Player::new("B");
+          assert_eq!((a.level, a.hp, a.score), (b.level, b.hp, b.score), "(level, hp, score) of two new players");
+      }
+    require:
+      - pattern: 'Self\s*\{'
+        message: "Build the value with `Self { ... }` inside the impl block."
+    hints:
+      - "Return a struct literal: `Self { name: ..., level: 1, hp: 100, score: 0 }`."
+      - "`name` is a `&str`; the field is a `String`, so use `name.to_string()`."
+    more:
+      - task: |
+          Give `Rect` two constructors and a method:
+
+          - `fn new(width: u32, height: u32) -> Self`
+          - `fn square(size: u32) -> Self`: a rectangle with equal sides. Build it by calling `Self::new`.
+          - `fn area(&self) -> u32`
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Rect {
+              width: u32,
+              height: u32,
+          }
+
+          impl Rect {
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Rect {
+              width: u32,
+              height: u32,
+          }
+
+          impl Rect {
+              fn new(width: u32, height: u32) -> Self {
+                  Self { width, height }
+              }
+
+              fn square(size: u32) -> Self {
+                  Self::new(size, size)
+              }
+
+              fn area(&self) -> u32 {
+                  self.width * self.height
+              }
+          }
+        harness: |
+          #[test]
+          fn new_sets_both_sides() {
+              assert_eq!(Rect::new(4, 3), Rect { width: 4, height: 3 }, "Rect::new(4, 3)");
+          }
+
+          #[test]
+          fn square_has_equal_sides() {
+              assert_eq!(Rect::square(5), Rect { width: 5, height: 5 }, "Rect::square(5)");
+          }
+
+          #[test]
+          fn area_of_a_new_rect() {
+              assert_eq!(Rect::new(4, 3).area(), 12, "Rect::new(4, 3).area()");
+          }
+
+          #[test]
+          fn area_of_a_square() {
+              assert_eq!(Rect::square(6).area(), 36, "Rect::square(6).area()");
+          }
+        require:
+          - pattern: 'Self::new\('
+            message: "Build the square by calling `Self::new(size, size)`."
+        hints:
+          - "`new` can use the shorthand: `Self { width, height }`."
+          - "`fn square(size: u32) -> Self { Self::new(size, size) }`"
+      - task: |
+          Write an impl block for `Timer`, which stores a duration in seconds, with:
+
+          - `fn from_minutes(minutes: u32) -> Self`
+          - `fn from_hms(hours: u32, minutes: u32, seconds: u32) -> Self`
+          - `fn whole_minutes(&self) -> u32`: the number of complete minutes (`125` seconds is `2`).
+        seed: |
+          struct Timer {
+              seconds: u32,
+          }
+
+        solution: |
+          struct Timer {
+              seconds: u32,
+          }
+
+          impl Timer {
+              fn from_minutes(minutes: u32) -> Self {
+                  Self { seconds: minutes * 60 }
+              }
+
+              fn from_hms(hours: u32, minutes: u32, seconds: u32) -> Self {
+                  Self {
+                      seconds: hours * 3600 + minutes * 60 + seconds,
+                  }
+              }
+
+              fn whole_minutes(&self) -> u32 {
+                  self.seconds / 60
+              }
+          }
+        harness: |
+          #[test]
+          fn from_minutes_converts_to_seconds() {
+              assert_eq!(Timer::from_minutes(3).seconds, 180, "Timer::from_minutes(3).seconds");
+          }
+
+          #[test]
+          fn from_hms_adds_everything_up() {
+              assert_eq!(Timer::from_hms(1, 2, 5).seconds, 3725, "Timer::from_hms(1, 2, 5).seconds");
+          }
+
+          #[test]
+          fn whole_minutes_drops_leftover_seconds() {
+              assert_eq!(Timer::from_hms(0, 2, 5).whole_minutes(), 2, "Timer::from_hms(0, 2, 5).whole_minutes()");
+          }
+
+          #[test]
+          fn whole_minutes_of_hours() {
+              assert_eq!(Timer::from_hms(2, 0, 0).whole_minutes(), 120, "Timer::from_hms(2, 0, 0).whole_minutes()");
+          }
+
+          #[test]
+          fn round_trip_through_minutes() {
+              assert_eq!(Timer::from_minutes(45).whole_minutes(), 45, "Timer::from_minutes(45).whole_minutes()");
+          }
+        hints:
+          - "The two constructors take no `self` and return `Self { seconds: ... }`."
+          - "An hour is 3600 seconds and a minute is 60."
+          - "Integer division drops the remainder: `self.seconds / 60`."
+
+  - title: "self: methods that take ownership"
+    id: methods-4
+    text: |
+      The third kind of receiver is plain **`self`**: the method takes **ownership** of the value. The value moves into the method, and the caller can't use it afterwards. That sounds harsh, but it's exactly right for methods that **turn a value into something else**:
+
+      ```rust run
+      struct Order {
+          customer: String,
+          items: Vec<String>,
+      }
+
+      struct Receipt {
+          customer: String,
+          item_count: usize,
+      }
+
+      impl Order {
+          fn add(&mut self, item: &str) {
+              self.items.push(item.to_string());
+          }
+
+          fn into_receipt(self) -> Receipt {
+              Receipt {
+                  customer: self.customer,
+                  item_count: self.items.len(),
+              }
+          }
+      }
+
+      fn main() {
+          let mut order = Order { customer: String::from("Grace"), items: Vec::new() };
+          order.add("coffee");
+          order.add("bagel");
+          let receipt = order.into_receipt();
+          println!("{} bought {} items", receipt.customer, receipt.item_count);
+      }
+      ```
+
+      ```output
+      Grace bought 2 items
+      ```
+
+      Because `into_receipt` owns the order, it can **move** the `customer` String into the receipt instead of copying the text with `.clone()`. And once the order has become a receipt, the compiler makes sure nobody keeps adding coffee to it:
+
+      ```rust compile_fail
+      struct Order {
+          items: Vec<String>,
+      }
+
+      impl Order {
+          fn into_receipt(self) -> String {
+              format!("{} items", self.items.len())
+          }
+      }
+
+      fn main() {
+          let order = Order { items: vec![String::from("tea")] };
+          let receipt = order.into_receipt();
+          println!("{}", receipt);
+          println!("{}", order.items.len());
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `order`
+      ```
+
+      The full message even says ``note: `Order::into_receipt` takes ownership of the receiver `self`, which moves `order` ``. The standard library names such methods `into_...` (like `String::into_bytes`), so readers know the value is consumed.
+
+      ### Choosing the receiver
+
+      | Receiver | The method... | Caller writes | Use it for |
+      |---|---|---|---|
+      | `&self` | reads the value | `x.m()` on any value | most methods: queries, calculations, printing |
+      | `&mut self` | changes the value in place | `x.m()` on a `mut` value | updates: deposit, push, take damage |
+      | `self` | consumes the value | `x.m()`, then `x` is gone | conversions and "finishing" steps |
+
+      Start with `&self`, use `&mut self` when the method must change something, and `self` only when the old value really should be gone afterwards.
+
+      ### Small types: derive Copy
+
+      For a small struct made only of `Copy` fields (numbers, `bool`, `char`), you can derive **`Clone` and `Copy`** (Copy needs Clone, so they come as a pair): `#[derive(Clone, Copy)]`. Then the struct behaves like an integer, as you saw in the ownership module: using it by value **copies** it, so `self` methods leave the original usable.
+
+      ```rust run
+      #[derive(Debug, Clone, Copy)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      impl Point {
+          fn moved(self, dx: i32, dy: i32) -> Point {
+              Point { x: self.x + dx, y: self.y + dy }
+          }
+      }
+
+      fn main() {
+          let start = Point { x: 0, y: 0 };
+          let next = start.moved(2, 3);
+          println!("{:?} -> {:?}", start, next);
+      }
+      ```
+
+      ```output
+      Point { x: 0, y: 0 } -> Point { x: 2, y: 3 }
+      ```
+
+      A struct with a `String` or a `Vec` inside can't be `Copy`: copying it bit by bit would give two owners of the same heap memory.
+
+      **Your turn:** a support ticket can get notes while it's open. Closing it produces a `ClosedTicket`, which has no `add_note` method at all, so the type system guarantees nobody edits a closed ticket. Write:
+
+      - `fn add_note(&mut self, note: &str)`: adds the note to `notes`.
+      - `fn close(self, resolution: &str) -> ClosedTicket`: keeps the id and title, stores the resolution, and records how many notes the ticket had. Move the title instead of cloning it.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct ClosedTicket {
+          id: u32,
+          title: String,
+          resolution: String,
+          note_count: usize,
+      }
+
+      struct Ticket {
+          id: u32,
+          title: String,
+          notes: Vec<String>,
+      }
+
+      impl Ticket {
+          fn new(id: u32, title: &str) -> Self {
+              Self { id, title: title.to_string(), notes: Vec::new() }
+          }
+
+          fn add_note(&mut self, note: &str) {
+              todo!()
+          }
+
+          fn close(self, resolution: &str) -> ClosedTicket {
+              todo!()
+          }
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct ClosedTicket {
+          id: u32,
+          title: String,
+          resolution: String,
+          note_count: usize,
+      }
+
+      struct Ticket {
+          id: u32,
+          title: String,
+          notes: Vec<String>,
+      }
+
+      impl Ticket {
+          fn new(id: u32, title: &str) -> Self {
+              Self { id, title: title.to_string(), notes: Vec::new() }
+          }
+
+          fn add_note(&mut self, note: &str) {
+              self.notes.push(note.to_string());
+          }
+
+          fn close(self, resolution: &str) -> ClosedTicket {
+              ClosedTicket {
+                  id: self.id,
+                  title: self.title,
+                  resolution: resolution.to_string(),
+                  note_count: self.notes.len(),
+              }
+          }
+      }
+    harness: |
+      #[test]
+      fn add_note_stores_notes_in_order() {
+          let mut t = Ticket::new(7, "Login broken");
+          t.add_note("cannot reproduce");
+          t.add_note("happens on mobile only");
+          assert_eq!(t.notes.len(), 2, "number of notes after two add_note calls");
+          assert_eq!(t.notes[1], "happens on mobile only", "the second note");
+      }
+
+      #[test]
+      fn close_builds_a_closed_ticket() {
+          let mut t = Ticket::new(7, "Login broken");
+          t.add_note("cannot reproduce");
+          t.add_note("happens on mobile only");
+          assert_eq!(
+              t.close("fixed in 1.2"),
+              ClosedTicket { id: 7, title: String::from("Login broken"), resolution: String::from("fixed in 1.2"), note_count: 2 },
+              "closing ticket 7 with two notes"
+          );
+      }
+
+      #[test]
+      fn closing_a_ticket_without_notes() {
+          let t = Ticket::new(12, "Typo on homepage");
+          let closed = t.close("won't fix");
+          assert_eq!((closed.id, closed.note_count), (12, 0), "(id, note_count) of a ticket closed with no notes");
+          assert_eq!(closed.resolution, "won't fix", "resolution");
+      }
+    forbid:
+      - pattern: '\.clone\(\)'
+        message: "`close` owns the ticket, so it can move `self.title` into the ClosedTicket. No clone needed."
+    hints:
+      - "`add_note` pushes an owned copy of the note: `self.notes.push(note.to_string());`"
+      - "In `close`, `self` is yours: `title: self.title` moves the String over."
+      - "`note_count: self.notes.len()` and `resolution: resolution.to_string()`."
+    more:
+      - task: |
+          `Point` is small and made of integers, so make it `Copy`: add `Clone` and `Copy` to its derive list. Then write two methods that take `self` by value and return a new point:
+
+          - `fn moved(self, dx: i32, dy: i32) -> Point`
+          - `fn mirrored(self) -> Point`: swaps `x` and `y`.
+
+          The tests keep using the original point after calling the methods, which only compiles if `Point` is `Copy`.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Point {
+              x: i32,
+              y: i32,
+          }
+
+          impl Point {
+              fn moved(self, dx: i32, dy: i32) -> Point {
+                  todo!()
+              }
+
+              fn mirrored(self) -> Point {
+                  todo!()
+              }
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Point {
+              x: i32,
+              y: i32,
+          }
+
+          impl Point {
+              fn moved(self, dx: i32, dy: i32) -> Point {
+                  Point { x: self.x + dx, y: self.y + dy }
+              }
+
+              fn mirrored(self) -> Point {
+                  Point { x: self.y, y: self.x }
+              }
+          }
+        harness: |
+          #[test]
+          fn moved_shifts_the_point() {
+              let p = Point { x: 1, y: 2 };
+              assert_eq!(p.moved(3, -4), Point { x: 4, y: -2 }, "Point(1, 2).moved(3, -4)");
+          }
+
+          #[test]
+          fn mirrored_swaps_x_and_y() {
+              let p = Point { x: 5, y: -1 };
+              assert_eq!(p.mirrored(), Point { x: -1, y: 5 }, "Point(5, -1).mirrored()");
+          }
+
+          #[test]
+          fn the_original_is_still_usable() {
+              let p = Point { x: 1, y: 2 };
+              let q = p.moved(10, 10);
+              let r = p.mirrored();
+              assert_eq!((p, q, r), (Point { x: 1, y: 2 }, Point { x: 11, y: 12 }, Point { x: 2, y: 1 }), "p, p.moved(10, 10) and p.mirrored()");
+          }
+        hints:
+          - "The derive line becomes `#[derive(Debug, Clone, Copy, PartialEq)]`."
+          - "Each method returns a new `Point { x: ..., y: ... }` built from `self.x` and `self.y`."
+      - task: |
+          Write an impl block for `Playlist` with one constructor and three methods, choosing the right receiver for each:
+
+          - `fn new() -> Self`: an empty playlist.
+          - `fn add(..., song: &str)`: adds a song at the end.
+          - `fn len(...) -> usize`: how many songs there are.
+          - `fn into_songs(...) -> Vec<String>`: gives the songs away; the playlist is used up.
+
+          Don't clone the Vec in `into_songs`.
+        seed: |
+          struct Playlist {
+              songs: Vec<String>,
+          }
+
+        solution: |
+          struct Playlist {
+              songs: Vec<String>,
+          }
+
+          impl Playlist {
+              fn new() -> Self {
+                  Self { songs: Vec::new() }
+              }
+
+              fn add(&mut self, song: &str) {
+                  self.songs.push(song.to_string());
+              }
+
+              fn len(&self) -> usize {
+                  self.songs.len()
+              }
+
+              fn into_songs(self) -> Vec<String> {
+                  self.songs
+              }
+          }
+        harness: |
+          #[test]
+          fn a_new_playlist_is_empty() {
+              assert_eq!(Playlist::new().len(), 0, "Playlist::new().len()");
+          }
+
+          #[test]
+          fn add_appends_songs() {
+              let mut p = Playlist::new();
+              p.add("Crab Rave");
+              p.add("Ferris Wheel");
+              assert_eq!(p.len(), 2, "len after adding two songs");
+          }
+
+          #[test]
+          fn into_songs_returns_them_in_order() {
+              let mut p = Playlist::new();
+              p.add("Crab Rave");
+              p.add("Ferris Wheel");
+              assert_eq!(p.into_songs(), vec![String::from("Crab Rave"), String::from("Ferris Wheel")], "into_songs after two adds");
+          }
+
+          #[test]
+          fn into_songs_of_an_empty_playlist() {
+              assert_eq!(Playlist::new().into_songs().len(), 0, "Playlist::new().into_songs().len()");
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "`into_songs` takes `self`, so it owns the Vec and can just return `self.songs`."
+        hints:
+          - "`new` takes no `self`; `add` changes the playlist (`&mut self`); `len` only reads (`&self`)."
+          - "`into_songs` consumes the playlist: `fn into_songs(self) -> Vec<String> { self.songs }`."
+
+  - title: Getters, invariants and multiple impl blocks
+    id: methods-5
+    text: |
+      A **getter** is a method that just returns a field. In Rust it's named after the field, with no `get_` prefix: `balance()`, not `get_balance()` (that's the official API guideline, and the standard library follows it everywhere: `v.len()`, `s.capacity()`). A method can share its name with a field: `hp.current` is the field, `hp.current()` the method.
+
+      For a `String` field, return a borrowed `&str` so callers can look without copying: `fn name(&self) -> &str { &self.name }`. (`&self.name` is a `&String`, which turns into `&str` automatically, as in the slices module.)
+
+      ### Why not just read the field?
+
+      Inside one file you can. But at work, structs are shared between modules and teams, and their fields are usually **private** (the modules module shows how). Then the methods are the only way in, which lets the type keep its **invariants**: rules that are always true for every value of the type. "`current` never exceeds `max`." "A balance is never negative." "An email always contains `@`." If every change goes through a method that checks the rule, no code anywhere can break it.
+
+      ```rust run
+      struct Health {
+          current: u32,
+          max: u32,
+      }
+
+      impl Health {
+          fn new(max: u32) -> Self {
+              Self { current: max, max }
+          }
+
+          fn current(&self) -> u32 {
+              self.current
+          }
+
+          fn max(&self) -> u32 {
+              self.max
+          }
+      }
+
+      impl Health {
+          fn heal(&mut self, amount: u32) {
+              self.current = (self.current + amount).min(self.max);
+          }
+
+          fn damage(&mut self, amount: u32) {
+              self.current = self.current.saturating_sub(amount);
+          }
+
+          fn percent(&self) -> u32 {
+              self.current * 100 / self.max
+          }
+      }
+
+      fn main() {
+          let mut hp = Health::new(80);
+          hp.damage(50);
+          println!("{}/{} ({}%)", hp.current(), hp.max(), hp.percent());
+          hp.heal(100);
+          println!("{}/{} ({}%)", hp.current(), hp.max(), hp.percent());
+      }
+      ```
+
+      ```output
+      30/80 (37%)
+      80/80 (100%)
+      ```
+
+      - The invariant here is `current <= max`. `new` starts full, `heal` caps the result with `.min(self.max)` (`a.min(b)` is the smaller of two numbers), and `damage` can't go below zero. No method can break the rule.
+      - `percent` uses integer math: 30 × 100 / 80 is 37 (the .5 is dropped).
+
+      ### Multiple impl blocks
+
+      Notice there are **two** `impl Health` blocks. That's allowed, and it means exactly the same as one big block. Teams use it to group methods (constructors and getters here, game logic there). You'll see more of it later: generic code and traits each get their own impl blocks.
+
+      **Your turn:** the `User` struct has a constructor. In a second impl block, add:
+
+      - getters `username(&self) -> &str` and `login_count(&self) -> u32`,
+      - `record_login(&mut self)`: adds 1 to the login count,
+      - `change_email(&mut self, email: &str) -> bool`: the invariant is "an email contains `@`". If the new email has no `@`, change nothing and return `false`; otherwise store it and return `true`.
+
+      Also add an `email(&self) -> &str` getter. Name the getters after their fields (no `get_` prefix).
+    seed: |
+      struct User {
+          username: String,
+          email: String,
+          login_count: u32,
+      }
+
+      impl User {
+          fn new(username: &str, email: &str) -> Self {
+              Self {
+                  username: username.to_string(),
+                  email: email.to_string(),
+                  login_count: 0,
+              }
+          }
+      }
+
+      // Second impl block here
+    solution: |
+      struct User {
+          username: String,
+          email: String,
+          login_count: u32,
+      }
+
+      impl User {
+          fn new(username: &str, email: &str) -> Self {
+              Self {
+                  username: username.to_string(),
+                  email: email.to_string(),
+                  login_count: 0,
+              }
+          }
+      }
+
+      // Second impl block here
+      impl User {
+          fn username(&self) -> &str {
+              &self.username
+          }
+
+          fn email(&self) -> &str {
+              &self.email
+          }
+
+          fn login_count(&self) -> u32 {
+              self.login_count
+          }
+
+          fn record_login(&mut self) {
+              self.login_count += 1;
+          }
+
+          fn change_email(&mut self, email: &str) -> bool {
+              if !email.contains('@') {
+                  return false;
+              }
+              self.email = email.to_string();
+              true
+          }
+      }
+    harness: |
+      fn ada() -> User {
+          User::new("ada", "ada@example.com")
+      }
+
+      #[test]
+      fn getters_return_the_fields() {
+          let u = ada();
+          assert_eq!((u.username(), u.email(), u.login_count()), ("ada", "ada@example.com", 0), "(username(), email(), login_count()) of a new user");
+      }
+
+      #[test]
+      fn record_login_counts_up() {
+          let mut u = ada();
+          u.record_login();
+          u.record_login();
+          assert_eq!(u.login_count(), 2, "login_count() after two logins");
+      }
+
+      #[test]
+      fn accepts_a_valid_email() {
+          let mut u = ada();
+          assert_eq!(u.change_email("ada@lovelace.dev"), true, "change_email(\"ada@lovelace.dev\")");
+          assert_eq!(u.email(), "ada@lovelace.dev", "email() after a valid change");
+      }
+
+      #[test]
+      fn rejects_an_email_without_at() {
+          let mut u = ada();
+          assert_eq!(u.change_email("not-an-email"), false, "change_email(\"not-an-email\")");
+          assert_eq!(u.email(), "ada@example.com", "email() after a rejected change");
+      }
+    require:
+      - pattern: 'impl\s+User[\s\S]*impl\s+User'
+        message: "Put the new methods in a second `impl User { ... }` block."
+    forbid:
+      - pattern: 'fn\s+get_'
+        message: "Rust getters are named after the field, without a `get_` prefix: `fn username(&self)`."
+    hints:
+      - "`fn username(&self) -> &str { &self.username }`: borrow the String as a &str."
+      - "`email.contains('@')` tells you whether the new email is acceptable."
+      - "Check first and `return false` early; only then assign `self.email = email.to_string();`"
+    more:
+      - task: |
+          A volume control with the invariant "the level is never above 100". Write:
+
+          - `fn new(level: u8) -> Self`: a level above 100 becomes 100.
+          - `fn level(&self) -> u8`: the getter.
+          - `fn up(&mut self)`: adds 10, but never goes above 100.
+          - `fn down(&mut self)`: subtracts 10, but never goes below 0.
+        seed: |
+          struct Volume {
+              level: u8,
+          }
+
+          impl Volume {
+          }
+        solution: |
+          struct Volume {
+              level: u8,
+          }
+
+          impl Volume {
+              fn new(level: u8) -> Self {
+                  Self { level: level.min(100) }
+              }
+
+              fn level(&self) -> u8 {
+                  self.level
+              }
+
+              fn up(&mut self) {
+                  self.level = (self.level + 10).min(100);
+              }
+
+              fn down(&mut self) {
+                  self.level = self.level.saturating_sub(10);
+              }
+          }
+        harness: |
+          #[test]
+          fn new_keeps_a_normal_level() {
+              assert_eq!(Volume::new(40).level(), 40, "Volume::new(40).level()");
+          }
+
+          #[test]
+          fn new_caps_the_level_at_100() {
+              assert_eq!(Volume::new(250).level(), 100, "Volume::new(250).level()");
+          }
+
+          #[test]
+          fn up_adds_ten_but_stops_at_100() {
+              let mut v = Volume::new(85);
+              v.up();
+              assert_eq!(v.level(), 95, "level after up() from 85");
+              v.up();
+              assert_eq!(v.level(), 100, "level after up() from 95");
+              v.up();
+              assert_eq!(v.level(), 100, "level after up() from 100");
+          }
+
+          #[test]
+          fn down_subtracts_ten_but_stops_at_0() {
+              let mut v = Volume::new(15);
+              v.down();
+              assert_eq!(v.level(), 5, "level after down() from 15");
+              v.down();
+              assert_eq!(v.level(), 0, "level after down() from 5");
+          }
+        hints:
+          - "`a.min(b)` gives the smaller number, so `level.min(100)` caps it."
+          - "In `up`, `self.level + 10` can't overflow a `u8` because the level is at most 100. Cap it with `.min(100)`."
+          - "`down` can use `saturating_sub(10)` to stop at 0."
+      - task: |
+          A shopping cart with a size limit. Write two impl blocks for `Cart`: one with the constructor and getters, one with the rest.
+
+          - `fn new(max_items: usize) -> Self`: an empty cart.
+          - `fn count(&self) -> usize`: how many prices are in the cart.
+          - `fn total(&self) -> u32`: the sum of all prices.
+          - `fn add(&mut self, price_cents: u32) -> bool`: adds the price unless the cart already holds `max_items`; returns whether it was added.
+        seed: |
+          struct Cart {
+              prices: Vec<u32>,
+              max_items: usize,
+          }
+
+        solution: |
+          struct Cart {
+              prices: Vec<u32>,
+              max_items: usize,
+          }
+
+          impl Cart {
+              fn new(max_items: usize) -> Self {
+                  Self { prices: Vec::new(), max_items }
+              }
+
+              fn count(&self) -> usize {
+                  self.prices.len()
+              }
+
+              fn total(&self) -> u32 {
+                  let mut sum = 0;
+                  for price in &self.prices {
+                      sum += price;
+                  }
+                  sum
+              }
+          }
+
+          impl Cart {
+              fn add(&mut self, price_cents: u32) -> bool {
+                  if self.prices.len() >= self.max_items {
+                      return false;
+                  }
+                  self.prices.push(price_cents);
+                  true
+              }
+          }
+        harness: |
+          #[test]
+          fn a_new_cart_is_empty() {
+              let c = Cart::new(3);
+              assert_eq!((c.count(), c.total()), (0, 0), "(count(), total()) of Cart::new(3)");
+          }
+
+          #[test]
+          fn adds_prices_and_totals_them() {
+              let mut c = Cart::new(3);
+              c.add(450);
+              c.add(1200);
+              assert_eq!((c.count(), c.total()), (2, 1650), "(count(), total()) after adding 450 and 1200");
+          }
+
+          #[test]
+          fn refuses_when_full() {
+              let mut c = Cart::new(2);
+              assert_eq!(c.add(100), true, "first add to a cart of 2");
+              assert_eq!(c.add(200), true, "second add to a cart of 2");
+              assert_eq!(c.add(300), false, "third add to a cart of 2");
+              assert_eq!((c.count(), c.total()), (2, 300), "(count(), total()) after a refused add");
+          }
+
+          #[test]
+          fn a_cart_with_no_room_accepts_nothing() {
+              let mut c = Cart::new(0);
+              assert_eq!(c.add(5), false, "add to Cart::new(0)");
+          }
+        require:
+          - pattern: 'impl\s+Cart[\s\S]*impl\s+Cart'
+            message: "Split the methods over two `impl Cart { ... }` blocks."
+        hints:
+          - "`count` is `self.prices.len()`."
+          - "`total` loops `for price in &self.prices` and adds each one to a running sum."
+          - "In `add`, compare `self.prices.len()` with `self.max_items` before pushing."
+
+  - title: Method chaining
+    id: methods-6
+    text: |
+      You've chained calls before: `line.trim().to_uppercase()` calls `to_uppercase` on whatever `trim` returned. Your own methods can be designed for chaining too, by returning the value itself.
+
+      ### Builders: take self, return Self
+
+      A method that takes `mut self` and returns `Self` changes the value and hands it back, ready for the next call:
+
+      ```rust run
+      struct Request {
+          url: String,
+          method: String,
+          timeout_secs: u32,
+          retries: u32,
+      }
+
+      impl Request {
+          fn get(url: &str) -> Self {
+              Self {
+                  url: url.to_string(),
+                  method: String::from("GET"),
+                  timeout_secs: 30,
+                  retries: 0,
+              }
+          }
+
+          fn timeout(mut self, secs: u32) -> Self {
+              self.timeout_secs = secs;
+              self
+          }
+
+          fn retries(mut self, n: u32) -> Self {
+              self.retries = n;
+              self
+          }
+
+          fn describe(&self) -> String {
+              format!("{} {} (timeout {}s, {} retries)", self.method, self.url, self.timeout_secs, self.retries)
+          }
+      }
+
+      fn main() {
+          let req = Request::get("https://example.com/api")
+              .timeout(5)
+              .retries(3);
+          println!("{}", req.describe());
+          let quick = Request::get("https://example.com/health");
+          println!("{}", quick.describe());
+      }
+      ```
+
+      ```output
+      GET https://example.com/api (timeout 5s, 3 retries)
+      GET https://example.com/health (timeout 30s, 0 retries)
+      ```
+
+      - `mut self` means "I own this value, and I'll change it". It's the same `mut` you'd put on any parameter: the caller doesn't need a `mut` variable, because ownership moves into the method.
+      - The last line, `self`, returns the value so the next method can take it.
+      - Settings you don't call keep their defaults (`quick` has 30 seconds and 0 retries). That's why this style is popular for configuration with many optional settings: it's the **builder pattern**, used by HTTP clients, CLI parsers and database drivers. You'll study it more in the patterns module.
+      - `cargo fmt` puts each call of a long chain on its own line, starting with the dot, as above.
+
+      ### Changing in place: take &mut self, return &mut Self
+
+      When you want to keep a variable and change it several times, return `&mut Self` instead:
+
+      ```rust run
+      struct Tally {
+          total: u32,
+          count: u32,
+      }
+
+      impl Tally {
+          fn add(&mut self, value: u32) -> &mut Self {
+              self.total += value;
+              self.count += 1;
+              self
+          }
+      }
+
+      fn main() {
+          let mut t = Tally { total: 0, count: 0 };
+          t.add(5).add(10).add(20);
+          println!("{} values, total {}", t.count, t.total);
+      }
+      ```
+
+      ```output
+      3 values, total 35
+      ```
+
+      Here `self` is already a `&mut Tally`, so returning `self` hands the same mutable borrow to the next call.
+
+      ### Common mistakes
+
+      - **Forgetting to return `self`**: the method then returns `()`, and the compiler says ``error[E0308]: mismatched types`` with ``expected `Request`, found `()` ``. End the method with `self`.
+      - **Forgetting `mut` on `self`**: ``error[E0594]: cannot assign to `self.timeout_secs`, as `self` is not declared as mutable``. Write `mut self`.
+
+      **Your turn:** write a builder for alert messages. `Message::new(to)` starts with an empty subject and `urgent` false. `subject` and `urgent` take `mut self` and return `Self`. `preview` builds a one-line summary:
+
+      - `subject -> to`, for example `Disk full -> ops@example.com`
+      - with `[URGENT] ` in front when urgent: `[URGENT] Disk full -> ops@example.com`
+      - `(no subject)` instead of the subject when it's empty (`self.subject.is_empty()` is true for an empty String).
+    seed: |
+      struct Message {
+          to: String,
+          subject: String,
+          urgent: bool,
+      }
+
+      impl Message {
+          fn new(to: &str) -> Self {
+              todo!()
+          }
+
+          fn subject(mut self, subject: &str) -> Self {
+              todo!()
+          }
+
+          fn urgent(mut self) -> Self {
+              todo!()
+          }
+
+          fn preview(&self) -> String {
+              todo!()
+          }
+      }
+    solution: |
+      struct Message {
+          to: String,
+          subject: String,
+          urgent: bool,
+      }
+
+      impl Message {
+          fn new(to: &str) -> Self {
+              Self {
+                  to: to.to_string(),
+                  subject: String::new(),
+                  urgent: false,
+              }
+          }
+
+          fn subject(mut self, subject: &str) -> Self {
+              self.subject = subject.to_string();
+              self
+          }
+
+          fn urgent(mut self) -> Self {
+              self.urgent = true;
+              self
+          }
+
+          fn preview(&self) -> String {
+              let subject = if self.subject.is_empty() { "(no subject)" } else { &self.subject };
+              let prefix = if self.urgent { "[URGENT] " } else { "" };
+              format!("{}{} -> {}", prefix, subject, self.to)
+          }
+      }
+    harness: |
+      #[test]
+      fn a_plain_message() {
+          let m = Message::new("ops@example.com").subject("Disk full");
+          assert_eq!(m.preview(), "Disk full -> ops@example.com", "new(\"ops@example.com\").subject(\"Disk full\").preview()");
+      }
+
+      #[test]
+      fn an_urgent_message() {
+          let m = Message::new("ops@example.com").subject("Disk full").urgent();
+          assert_eq!(m.preview(), "[URGENT] Disk full -> ops@example.com", "...subject(\"Disk full\").urgent().preview()");
+      }
+
+      #[test]
+      fn order_of_the_calls_does_not_matter() {
+          let m = Message::new("dev@example.com").urgent().subject("Build failed");
+          assert_eq!(m.preview(), "[URGENT] Build failed -> dev@example.com", "...urgent().subject(\"Build failed\").preview()");
+      }
+
+      #[test]
+      fn no_subject_set() {
+          let m = Message::new("me@example.com");
+          assert_eq!(m.preview(), "(no subject) -> me@example.com", "Message::new(\"me@example.com\").preview()");
+      }
+
+      #[test]
+      fn the_last_subject_wins() {
+          let m = Message::new("a@b.c").subject("first").subject("second");
+          assert_eq!(m.preview(), "second -> a@b.c", "...subject(\"first\").subject(\"second\").preview()");
+      }
+    hints:
+      - "`subject` stores the text (`self.subject = subject.to_string();`) and ends with `self`."
+      - "In `preview`, `if` is an expression: `let prefix = if self.urgent { \"[URGENT] \" } else { \"\" };`"
+      - "Pick the subject text the same way, then `format!(\"{}{} -> {}\", prefix, subject, self.to)`."
+    more:
+      - task: |
+          Write `Stats`, which records numbers in place with chainable calls:
+
+          - `fn new() -> Self`: no values yet: count 0, total 0, `highest` set to `i32::MIN`.
+          - `fn record(&mut self, value: i32) -> &mut Self`: counts the value, adds it to `total`, updates `highest`, and returns `self` for chaining.
+          - `fn average(&self) -> i32`: `total / count` (integer division), or 0 when nothing has been recorded.
+        seed: |
+          struct Stats {
+              count: i32,
+              total: i32,
+              highest: i32,
+          }
+
+          impl Stats {
+          }
+        solution: |
+          struct Stats {
+              count: i32,
+              total: i32,
+              highest: i32,
+          }
+
+          impl Stats {
+              fn new() -> Self {
+                  Self { count: 0, total: 0, highest: i32::MIN }
+              }
+
+              fn record(&mut self, value: i32) -> &mut Self {
+                  self.count += 1;
+                  self.total += value;
+                  if value > self.highest {
+                      self.highest = value;
+                  }
+                  self
+              }
+
+              fn average(&self) -> i32 {
+                  if self.count == 0 {
+                      return 0;
+                  }
+                  self.total / self.count
+              }
+          }
+        harness: |
+          #[test]
+          fn records_a_chain_of_values() {
+              let mut s = Stats::new();
+              s.record(3).record(-2).record(10);
+              assert_eq!((s.count, s.total, s.highest), (3, 11, 10), "(count, total, highest) after recording 3, -2, 10");
+          }
+
+          #[test]
+          fn average_uses_integer_division() {
+              let mut s = Stats::new();
+              s.record(3).record(-2).record(10);
+              assert_eq!(s.average(), 3, "average of 3, -2, 10");
+          }
+
+          #[test]
+          fn average_of_nothing_is_zero() {
+              assert_eq!(Stats::new().average(), 0, "Stats::new().average()");
+          }
+
+          #[test]
+          fn highest_works_with_negative_values() {
+              let mut s = Stats::new();
+              s.record(-7).record(-3);
+              assert_eq!(s.highest, -3, "highest after recording -7, -3");
+          }
+        hints:
+          - "`record` takes `&mut self`, updates the three fields, and ends with `self`."
+          - "Starting `highest` at `i32::MIN` means the first recorded value is always bigger."
+          - "In `average`, return 0 early when `self.count == 0`, to avoid dividing by zero (which panics)."
+      - task: |
+          Write a pizza order builder from scratch:
+
+          - `fn new(size_cm: u32) -> Self`: no toppings, no extra cheese.
+          - `fn topping(mut self, name: &str) -> Self`: adds a topping (you can add several).
+          - `fn extra_cheese(mut self) -> Self`
+          - `fn price_cents(&self) -> u32`: 800 for a pizza up to 30 cm, 1100 above that, plus 150 per topping, plus 100 for extra cheese.
+        seed: |
+          struct Pizza {
+              size_cm: u32,
+              toppings: Vec<String>,
+              extra_cheese: bool,
+          }
+
+        solution: |
+          struct Pizza {
+              size_cm: u32,
+              toppings: Vec<String>,
+              extra_cheese: bool,
+          }
+
+          impl Pizza {
+              fn new(size_cm: u32) -> Self {
+                  Self { size_cm, toppings: Vec::new(), extra_cheese: false }
+              }
+
+              fn topping(mut self, name: &str) -> Self {
+                  self.toppings.push(name.to_string());
+                  self
+              }
+
+              fn extra_cheese(mut self) -> Self {
+                  self.extra_cheese = true;
+                  self
+              }
+
+              fn price_cents(&self) -> u32 {
+                  let base = if self.size_cm <= 30 { 800 } else { 1100 };
+                  let cheese = if self.extra_cheese { 100 } else { 0 };
+                  base + 150 * self.toppings.len() as u32 + cheese
+              }
+          }
+        harness: |
+          #[test]
+          fn a_plain_small_pizza() {
+              assert_eq!(Pizza::new(30).price_cents(), 800, "Pizza::new(30).price_cents()");
+          }
+
+          #[test]
+          fn a_plain_large_pizza() {
+              assert_eq!(Pizza::new(36).price_cents(), 1100, "Pizza::new(36).price_cents()");
+          }
+
+          #[test]
+          fn toppings_cost_150_each() {
+              let p = Pizza::new(30).topping("olives").topping("mushrooms");
+              assert_eq!(p.price_cents(), 1100, "30 cm with two toppings");
+              assert_eq!(p.toppings[1], "mushrooms", "the second topping");
+          }
+
+          #[test]
+          fn everything_together() {
+              let p = Pizza::new(40).topping("ham").extra_cheese().topping("pineapple");
+              assert_eq!(p.price_cents(), 1500, "40 cm, two toppings, extra cheese");
+          }
+        hints:
+          - "`topping` and `extra_cheese` take `mut self`, change one field, and end with `self`."
+          - "`self.toppings.len()` is a `usize`; convert it with `as u32` before multiplying."
+          - "`price_cents` adds three parts: the base price (an `if` expression), 150 per topping, and 100 if `extra_cheese`."
+
+  - title: "Putting it together: a bank account program"
+    id: methods-7
+    text: |
+      Time to design a type from scratch and drive it from a real program. A good recipe:
+
+      1. **Data**: which fields does the value need? Which types rule out nonsense (a `u64` balance can't be negative)?
+      2. **Operations**: what can you do with it? Each becomes a method, with the weakest receiver that works.
+      3. **Construction**: a `new` that sets sensible starting values.
+      4. **Rules**: which invariants must always hold, and which methods enforce them?
+
+      Then keep `main` thin: it reads input, calls methods and prints results. The rules live in the type.
+
+      ```rust run
+      struct Scoreboard {
+          home: u32,
+          away: u32,
+      }
+
+      impl Scoreboard {
+          fn new() -> Self {
+              Self { home: 0, away: 0 }
+          }
+
+          fn score(&mut self, team: &str, points: u32) -> bool {
+              if team == "home" {
+                  self.home += points;
+              } else if team == "away" {
+                  self.away += points;
+              } else {
+                  return false;
+              }
+              true
+          }
+
+          fn summary(&self) -> String {
+              format!("home {} - {} away", self.home, self.away)
+          }
+      }
+
+      fn main() {
+          let events = [("home", 3), ("away", 2), ("visitors", 1), ("home", 1)];
+          let mut board = Scoreboard::new();
+          for (team, points) in events {
+              if !board.score(team, points) {
+                  println!("ignored unknown team: {}", team);
+              }
+          }
+          println!("{}", board.summary());
+      }
+      ```
+
+      ```output
+      ignored unknown team: visitors
+      home 4 - 2 away
+      ```
+
+      Why this split pays off at work: the `Scoreboard` logic can be tested by calling its methods directly (exactly what the hidden tests on this site have been doing to your code), without typing input or reading printed text. And when the input format changes (a file, a web request), only `main` changes.
+
+      **Your turn:** write a bank account program. Each line of input is a command:
+
+      | Input | What happens | Prints |
+      |---|---|---|
+      | `deposit N` | adds N to the balance | `deposited N` |
+      | `withdraw N` | takes N out if the balance is big enough | `withdrew N`, or `insufficient funds` (balance unchanged) |
+      | `balance` | nothing changes | `balance: N` |
+      | anything else | nothing changes | `unknown command: ` followed by the whole line |
+
+      The account starts at 0. Every `deposit` and `withdraw` line has a valid whole number. Implement the `Account` methods, then call them from `main`. For example, this input:
+
+      ```text
+      deposit 500
+      withdraw 200
+      withdraw 900
+      balance
+      ```
+
+      prints:
+
+      ```text
+      deposited 500
+      withdrew 200
+      insufficient funds
+      balance: 300
+      ```
+    seed: |
+      struct Account {
+          balance: u64,
+      }
+
+      impl Account {
+          fn new() -> Self {
+              todo!()
+          }
+
+          fn deposit(&mut self, amount: u64) {
+              todo!()
+          }
+
+          fn withdraw(&mut self, amount: u64) -> bool {
+              todo!()
+          }
+
+          fn balance(&self) -> u64 {
+              todo!()
+          }
+      }
+
+      fn main() {
+          let mut account = Account::new();
+          for line in std::io::stdin().lines() {
+              let line = line.expect("could not read input");
+              // The words of the line: parts[0] is the command, parts[1] the amount (if any).
+              let parts: Vec<&str> = line.split_whitespace().collect();
+              // TODO: compare parts[0] with "deposit", "withdraw" and "balance" and call the right method.
+              // An amount: let amount: u64 = parts[1].parse().expect("amount should be a number");
+          }
+      }
+    solution: |
+      struct Account {
+          balance: u64,
+      }
+
+      impl Account {
+          fn new() -> Self {
+              Self { balance: 0 }
+          }
+
+          fn deposit(&mut self, amount: u64) {
+              self.balance += amount;
+          }
+
+          fn withdraw(&mut self, amount: u64) -> bool {
+              if amount > self.balance {
+                  return false;
+              }
+              self.balance -= amount;
+              true
+          }
+
+          fn balance(&self) -> u64 {
+              self.balance
+          }
+      }
+
+      fn main() {
+          let mut account = Account::new();
+          for line in std::io::stdin().lines() {
+              let line = line.expect("could not read input");
+              // The words of the line: parts[0] is the command, parts[1] the amount (if any).
+              let parts: Vec<&str> = line.split_whitespace().collect();
+              if parts[0] == "deposit" {
+                  let amount: u64 = parts[1].parse().expect("amount should be a number");
+                  account.deposit(amount);
+                  println!("deposited {}", amount);
+              } else if parts[0] == "withdraw" {
+                  let amount: u64 = parts[1].parse().expect("amount should be a number");
+                  if account.withdraw(amount) {
+                      println!("withdrew {}", amount);
+                  } else {
+                      println!("insufficient funds");
+                  }
+              } else if parts[0] == "balance" {
+                  println!("balance: {}", account.balance());
+              } else {
+                  println!("unknown command: {}", line);
+              }
+          }
+      }
+    require:
+      - pattern: 'account\.deposit\('
+        message: "Call the method from main: `account.deposit(amount)`."
+      - pattern: 'account\.withdraw\('
+        message: "Use the return value of `account.withdraw(amount)` to decide what to print."
+      - pattern: 'account\.balance\(\)'
+        message: "Print the balance through the getter `account.balance()`."
+    hints:
+      - "The methods are short: `new` returns `Self { balance: 0 }`, `deposit` adds, `withdraw` checks then subtracts."
+      - "In `main`, an `if parts[0] == \"deposit\" { ... } else if parts[0] == \"withdraw\" { ... }` chain picks the command."
+      - "`if account.withdraw(amount) { println!(\"withdrew {}\", amount); } else { println!(\"insufficient funds\"); }`"
+    tests:
+      - stdin: "deposit 500\nwithdraw 200\nwithdraw 900\nbalance\n"
+        expect: "deposited 500\nwithdrew 200\ninsufficient funds\nbalance: 300"
+      - stdin: "balance\ndeposit 75\nsteal 1000\nwithdraw 75\nbalance\n"
+        hidden: true
+      - stdin: "withdraw 1\ndeposit 10\ndeposit 20\nwithdraw 30\nwithdraw 1\nbalance\nhelp me\n"
+        hidden: true
+    more:
+      - task: |
+          Same idea, different domain: a parking garage. The first line of input is the garage's capacity. Every following line is a command:
+
+          | Input | Prints |
+          |---|---|
+          | `enter` | `car in (N/C)` with the new count N and capacity C, or `full` if there's no room |
+          | `leave` | `car out (N/C)`, or `empty` if no car is parked |
+          | `status` | `N/C parked` |
+
+          The starter reads the capacity for you. Give `Garage` a constructor and methods (`enter` and `leave` return whether they worked), then handle the commands in `main`.
+        seed: |
+          struct Garage {
+              capacity: u32,
+              parked: u32,
+          }
+
+          // impl Garage here
+
+          fn main() {
+              let mut first = String::new();
+              std::io::stdin().read_line(&mut first).expect("could not read input");
+              let capacity: u32 = first.trim().parse().expect("capacity should be a number");
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  let command = line.trim();
+                  // TODO: handle "enter", "leave" and "status"
+              }
+          }
+        solution: |
+          struct Garage {
+              capacity: u32,
+              parked: u32,
+          }
+
+          // impl Garage here
+          impl Garage {
+              fn new(capacity: u32) -> Self {
+                  Self { capacity, parked: 0 }
+              }
+
+              fn enter(&mut self) -> bool {
+                  if self.parked >= self.capacity {
+                      return false;
+                  }
+                  self.parked += 1;
+                  true
+              }
+
+              fn leave(&mut self) -> bool {
+                  if self.parked == 0 {
+                      return false;
+                  }
+                  self.parked -= 1;
+                  true
+              }
+
+              fn status(&self) -> String {
+                  format!("{}/{}", self.parked, self.capacity)
+              }
+          }
+
+          fn main() {
+              let mut first = String::new();
+              std::io::stdin().read_line(&mut first).expect("could not read input");
+              let capacity: u32 = first.trim().parse().expect("capacity should be a number");
+              let mut garage = Garage::new(capacity);
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  let command = line.trim();
+                  // TODO: handle "enter", "leave" and "status"
+                  if command == "enter" {
+                      if garage.enter() {
+                          println!("car in ({})", garage.status());
+                      } else {
+                          println!("full");
+                      }
+                  } else if command == "leave" {
+                      if garage.leave() {
+                          println!("car out ({})", garage.status());
+                      } else {
+                          println!("empty");
+                      }
+                  } else if command == "status" {
+                      println!("{} parked", garage.status());
+                  }
+              }
+          }
+        require:
+          - pattern: 'impl\s+Garage'
+            message: "Put the garage's behavior in an `impl Garage` block."
+          - pattern: 'Garage::new\('
+            message: "Create the garage with a constructor: `Garage::new(capacity)`."
+        hints:
+          - "`new(capacity)` starts with `parked: 0`. `enter` refuses when `parked >= capacity`; `leave` refuses when `parked == 0`."
+          - "A small `fn status(&self) -> String` returning `format!(\"{}/{}\", self.parked, self.capacity)` saves repeating yourself."
+          - "Create `let mut garage = Garage::new(capacity);` before the loop, then compare `command` with each word."
+        tests:
+          - stdin: "2\nenter\nenter\nenter\nstatus\nleave\nleave\nleave\n"
+            expect: "car in (1/2)\ncar in (2/2)\nfull\n2/2 parked\ncar out (1/2)\ncar out (0/2)\nempty"
+          - stdin: "0\nenter\nstatus\nleave\n"
+            hidden: true
+          - stdin: "3\nstatus\nenter\nleave\nenter\nenter\nstatus\n"
+            hidden: true
+      - task: |
+          Write a to-do list program from scratch. Model it with two structs: a `Task` (its text and whether it's done) and a `TodoList` holding a `Vec<Task>`, with methods for each command. Commands, one per line:
+
+          | Input | What happens | Prints |
+          |---|---|---|
+          | `add TEXT` | adds a task (TEXT is everything after `add `) | `added #N`, where N is its number, starting at 1 |
+          | `done N` | marks task N as done | `completed #N`, or `no task N` if there's no such task |
+          | `list` | | each task as `N. [x] TEXT` (done) or `N. [ ] TEXT`; `nothing to do` if the list is empty |
+
+          Tip: `&line[4..]` is the part of the line after `add ` (4 bytes), and `for i in 0..self.tasks.len()` gives you each task's index.
+        seed: |
+          // Define Task and TodoList, with an impl block for TodoList.
+
+          fn main() {
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  // TODO: handle "add", "done" and "list"
+              }
+          }
+        solution: |
+          // Define Task and TodoList, with an impl block for TodoList.
+          struct Task {
+              text: String,
+              done: bool,
+          }
+
+          struct TodoList {
+              tasks: Vec<Task>,
+          }
+
+          impl TodoList {
+              fn new() -> Self {
+                  Self { tasks: Vec::new() }
+              }
+
+              fn add(&mut self, text: &str) -> usize {
+                  self.tasks.push(Task { text: text.to_string(), done: false });
+                  self.tasks.len()
+              }
+
+              fn complete(&mut self, number: usize) -> bool {
+                  if number == 0 || number > self.tasks.len() {
+                      return false;
+                  }
+                  self.tasks[number - 1].done = true;
+                  true
+              }
+
+              fn print(&self) {
+                  if self.tasks.is_empty() {
+                      println!("nothing to do");
+                  }
+                  for i in 0..self.tasks.len() {
+                      let task = &self.tasks[i];
+                      let mark = if task.done { "x" } else { " " };
+                      println!("{}. [{}] {}", i + 1, mark, task.text);
+                  }
+              }
+          }
+
+          fn main() {
+              let mut todo = TodoList::new();
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  // TODO: handle "add", "done" and "list"
+                  if parts[0] == "add" {
+                      let number = todo.add(&line[4..]);
+                      println!("added #{}", number);
+                  } else if parts[0] == "done" {
+                      let number: usize = parts[1].parse().expect("task number should be a number");
+                      if todo.complete(number) {
+                          println!("completed #{}", number);
+                      } else {
+                          println!("no task {}", number);
+                      }
+                  } else if parts[0] == "list" {
+                      todo.print();
+                  }
+              }
+          }
+        require:
+          - pattern: 'struct\s+Task\b'
+            message: "Model each task with its own `struct Task`."
+          - pattern: 'impl\s+TodoList'
+            message: "Give `TodoList` an impl block with a method per command."
+        hints:
+          - "`struct Task { text: String, done: bool }` and `struct TodoList { tasks: Vec<Task> }`."
+          - "`add` can push the task and return `self.tasks.len()`, which is the new task's number."
+          - "Task N lives at index N - 1. Check `number == 0 || number > self.tasks.len()` before touching it."
+        tests:
+          - stdin: "list\nadd buy milk\nadd call the bank\ndone 2\ndone 5\nlist\n"
+            expect: "nothing to do\nadded #1\nadded #2\ncompleted #2\nno task 5\n1. [ ] buy milk\n2. [x] call the bank"
+          - stdin: "add write tests\ndone 0\ndone 1\nadd ship it\nlist\n"
+            hidden: true
+          - stdin: "add a\nadd b\nadd c\ndone 1\ndone 3\nlist\n"
+            hidden: true

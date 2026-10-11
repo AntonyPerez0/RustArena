@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Crosshair, Flame, Heart, Lock, Skull, X } from "lucide-react";
 import { Link } from "react-router-dom";
-import { drills, firstStepPath, moduleById, modules } from "../content";
+import { drills, firstStepPath, modules } from "../content";
 import type { Drill } from "../content/types";
 import { getState, patchSettings, useStore, type DmMode } from "../state/store";
 import { dailyStreak, drillUnlocked, rankFor, unlockedTopics } from "../state/derived";
 import { blip, callout, isDue, lives, pickNext, recordRep, recordRun, BOSS_EVERY, topicTitle, INTERVIEW } from "../deathmatch/engine";
 import { Rep, Death } from "../deathmatch/Reps";
-import { ensureCompiler, mayAutoDownload } from "../compiler/client";
 import ShareButton from "../components/ShareButton";
 import { useTitle } from "../lib/title";
 
@@ -63,10 +62,6 @@ export default function Deathmatch() {
     const p = m === "interview" ? interviewPool : topicPool;
     if (!p.length) return;
     if (m === "warmup" && dueCount === 0) return;
-    // Boss reps compile for real: fetch the compiler in the background, unless that would cost mobile data
-    // (then the first boss rep's Fire button starts the download).
-    if (s.settings.boss && p.some((d) => d.type === "boss"))
-      mayAutoDownload(s.settings.mobileData).then((ok) => ok && ensureCompiler({ warmCpp: p.some((d) => d.lang === "cpp") }));
     setMode(m);
     setStreak(0);
     setReps(0);
@@ -223,8 +218,8 @@ export default function Deathmatch() {
               </button>
               {mode === "deathmatch" && streak > startBest && streak > 0 && (
                 <ShareButton
-                  card={{ kicker: "New personal best", title: `${streak}-rep streak`, lines: [`Rank: ${rankFor(streak).rank.name}`, "C and C++ Deathmatch, one life"], file: "cpparena-streak.png" }}
-                  text={`New Deathmatch best on C/C++ Arena: ${streak} in a row (${rankFor(streak).rank.name}).`}
+                  card={{ kicker: "New personal best", title: `${streak}-rep streak`, lines: [`Rank: ${rankFor(streak).rank.name}`, "Rust Deathmatch, one life"], file: "rustarena-streak.png" }}
+                  text={`New Deathmatch best on RustArena: ${streak} in a row (${rankFor(streak).rank.name}).`}
                 />
               )}
             </Death>
@@ -313,7 +308,7 @@ function Lobby({ pool, interviewCount, unlocked, selected, dueCount, onStart }: 
           <div className="card">
             <h2 className="h3">No topics unlocked yet</h2>
             <p>
-              Finish the first step of any lesson module to unlock its drills, or turn on <b>Unlock every topic</b> below if you already know some C/C++.
+              Finish the first step of any lesson module to unlock its drills, or turn on <b>Unlock every topic</b> below if you already know some Rust.
             </p>
             <div className="actions">
               <Link className="btn btn-primary" to={firstStepPath("c-hello")}>
@@ -345,7 +340,7 @@ function Lobby({ pool, interviewCount, unlocked, selected, dueCount, onStart }: 
             </button>
             <button className="mode mode-iv" onClick={() => onStart("interview")} disabled={!interviewCount}>
               <div className="mode-name">Interview prep</div>
-              <div className="mode-desc">{interviewCount} classic C and C++ interview questions. 3 lives. Open to everyone.</div>
+              <div className="mode-desc">{interviewCount} classic Rust and computer science interview questions. 3 lives. Open to everyone.</div>
               <div className="mode-best">best {s.dm.best.interview ?? 0}</div>
             </button>
           </div>
@@ -359,11 +354,8 @@ function Lobby({ pool, interviewCount, unlocked, selected, dueCount, onStart }: 
             <button className="linkish" onClick={() => setTopics(unlocked)}>
               all
             </button>
-            <button className="linkish" onClick={() => setTopics(unlocked.filter((t) => moduleById.get(t)?.lang === "c"))}>
-              C only
-            </button>
-            <button className="linkish" onClick={() => setTopics(unlocked.filter((t) => moduleById.get(t)?.lang === "cpp"))}>
-              C++ only
+            <button className="linkish" onClick={() => setTopics([])}>
+              none
             </button>
           </div>
         </div>

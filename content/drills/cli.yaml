@@ -1,0 +1,217 @@
+topic: cli
+drills:
+  - type: predict
+    prompt: The program is run with no arguments. What does it print?
+    body: |
+      println!("{}", std::env::args().count());
+    why: The first item of env::args() is always the program's own path, so even with no arguments the count is 1.
+
+  - type: predict
+    prompt: "The program is run as `tool -n 5 notes.txt`. What does it print?"
+    args: ["-n", "5", "notes.txt"]
+    body: |
+      let args: Vec<String> = std::env::args().skip(1).collect();
+      println!("{} {}", args.len(), args[2]);
+    why: skip(1) drops the program path, leaving three arguments; index 2 is the third one.
+
+  - type: predict
+    prompt: "The program is run as `tool -v --max 3 data.csv`. What does it print?"
+    args: ["-v", "--max", "3", "data.csv"]
+    body: |
+      let args: Vec<String> = std::env::args().skip(1).collect();
+      let mut verbose = false;
+      let mut max = 10;
+      let mut files = Vec::new();
+      let mut iter = args.iter();
+      while let Some(arg) = iter.next() {
+          match arg.as_str() {
+              "-v" => verbose = true,
+              "--max" => max = iter.next().unwrap().parse().unwrap(),
+              _ => files.push(arg.clone()),
+          }
+      }
+      println!("{verbose} {max} {files:?}");
+    why: "--max takes the next argument (3) as its value inside the loop, so only data.csv is left over as a file."
+
+  - type: predict
+    prompt: What appears on standard output (stdout)?
+    body: |
+      println!("result: 42");
+      eprintln!("warning: cache is cold");
+      println!("done");
+    why: eprintln! writes to standard error, a separate stream, so only the two println! lines are on stdout.
+
+  - type: predict
+    prompt: "The file `log.txt` contains three lines: `ok`, `fail` and `ok`. What does this print?"
+    files: { "log.txt": "ok\nfail\nok\n" }
+    body: |
+      let text = std::fs::read_to_string("log.txt").unwrap();
+      let fails = text.lines().filter(|l| *l == "fail").count();
+      println!("{} lines, {} failed", text.lines().count(), fails);
+    why: read_to_string reads the whole file; lines() splits it into the three lines, one of which is "fail".
+
+  - type: predict
+    pre: |
+      use std::io::ErrorKind;
+    body: |
+      match std::fs::read_to_string("does-not-exist.txt") {
+          Ok(_) => println!("read it"),
+          Err(e) if e.kind() == ErrorKind::NotFound => println!("missing"),
+          Err(_) => println!("other error"),
+      }
+    why: Opening a file that doesn't exist fails with an io::Error whose kind() is ErrorKind::NotFound.
+
+  - type: fill
+    prompt: Get the command-line arguments, without the program's path.
+    args: ["alpha", "beta"]
+    body: |
+      let args: Vec<String> = std::env::[[args]]().skip(1).collect();
+      println!("{}", args.join("+"));
+    why: std::env::args() yields the arguments as Strings; skip(1) drops the program path.
+
+  - type: fill
+    prompt: Send the warning to standard error so it doesn't mix with the results.
+    body: |
+      println!("total: 12");
+      [[eprintln!]]("warning: 2 rows skipped");
+    why: eprintln! prints to stderr. Results on stdout can be redirected to a file while warnings still reach the user.
+
+  - type: fill
+    prompt: "Read the whole file into a String. (The file `notes.txt` contains `buy milk`.)"
+    files: { "notes.txt": "buy milk\n" }
+    body: |
+      let text = std::fs::[[read_to_string]]("notes.txt").unwrap();
+      println!("{}", text.trim().to_uppercase());
+    why: fs::read_to_string reads a file into a String and returns io::Result<String>.
+
+  - type: fill
+    prompt: Read the file line by line.
+    pre: |
+      use std::fs::File;
+      use std::io::{BufRead, BufReader};
+    files: { "data.txt": "3\n4\n" }
+    body: |
+      let reader = BufReader::new(File::open("data.txt").unwrap());
+      let sum: i32 = reader.[[lines]]().map(|l| l.unwrap().parse::<i32>().unwrap()).sum();
+      println!("{sum}");
+    why: BufRead::lines yields io::Result<String> for each line, reading through a buffer instead of loading the whole file.
+
+  - type: bug
+    prompt: "The program is run as `tool a b`. It should print `2`. Click the line with the bug."
+    args: ["a", "b"]
+    body: |
+      let args: Vec<String> = std::env::args().collect(); // BUG
+      println!("{}", args.len());
+    fix: 'let args: Vec<String> = std::env::args().skip(1).collect();'
+    why: The first item of env::args() is the program's path, so the count is one too many without skip(1).
+
+  - type: bug
+    prompt: "The program is run as `tool --max 7`. It should print `max = 7`. Click the line with the bug."
+    args: ["--max", "7"]
+    body: |
+      let args: Vec<String> = std::env::args().skip(1).collect();
+      let mut max = 0;
+      let mut iter = args.iter();
+      while let Some(arg) = iter.next() {
+          if arg == "--max" {
+              max = arg.parse().unwrap_or(0); // BUG
+          }
+      }
+      println!("max = {max}");
+    fix: 'max = iter.next().and_then(|v| v.parse().ok()).unwrap_or(0);'
+    why: The value of an option is the next argument, so it has to be taken from the iterator. Parsing "--max" itself fails.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::process::ExitCode;
+
+      fn usage_error() -> ExitCode {
+          ExitCode::from(300)
+      }
+    body: |
+      let _ = usage_error();
+    why: Exit codes are 0 to 255, and ExitCode::from takes a u8, so 300 is rejected as out of range for u8.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::io::{self, BufRead};
+    body: |
+      let reader: Box<dyn BufRead> = Box::new(io::stdin().lock());
+      println!("{}", reader.lines().count());
+    why: A locked stdin implements BufRead, so it fits in a Box<dyn BufRead>, the same type a BufReader<File> can be boxed into.
+
+  - type: compiles
+    answer: no
+    body: |
+      let args = vec![String::from("--max"), String::from("3")];
+      let mut iter = args.iter();
+      for arg in iter {
+          if arg == "--max" {
+              let value = iter.next();
+              println!("{value:?}");
+          }
+      }
+    why: The for loop moves the iterator, so iter can't be used inside it. Use while let Some(arg) = iter.next() to take option values.
+
+  - type: choice
+    prompt: By convention, what exit code should a tool use when it was called with invalid arguments?
+    choices: ["0", "1", "2", "101"]
+    answer: 2
+    why: 0 means success, 1 a general failure, and 2 a usage error; 101 is what Rust uses for a panic.
+
+  - type: choice
+    prompt: "Why do CLI tools print error messages with eprintln! instead of println!?"
+    choices: ["eprintln! is faster", "So errors stay out of the program's real output when it's redirected to a file or piped to another program", "println! can't print error types", "eprintln! also sets the exit code to 1"]
+    answer: 2
+    why: stdout carries results, stderr carries messages for humans. `tool > out.txt` and `tool | sort` keep working, and errors still appear on screen. eprintln! doesn't change the exit code.
+
+  - type: boss
+    prompt: |
+      Write `grepc <pattern> <file>...`: for each file print `<file>:<n>`, where n is the number of lines containing the pattern. A file that can't be read prints `grepc: <file>: <error>` to stderr; the tool continues and exits with code 1 at the end. Fewer than two arguments: a usage line on stderr and exit code 2.
+    seed: |
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          ExitCode::SUCCESS
+      }
+    solution: |
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          let [pattern, files @ ..] = args.as_slice() else {
+              eprintln!("usage: grepc <pattern> <file>...");
+              return ExitCode::from(2);
+          };
+          if files.is_empty() {
+              eprintln!("usage: grepc <pattern> <file>...");
+              return ExitCode::from(2);
+          }
+          let mut failed = false;
+          for file in files {
+              match std::fs::read_to_string(file) {
+                  Ok(text) => println!("{file}:{}", text.lines().filter(|l| l.contains(pattern.as_str())).count()),
+                  Err(e) => {
+                      eprintln!("grepc: {file}: {e}");
+                      failed = true;
+                  }
+              }
+          }
+          if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+      }
+    tests:
+      - args: ["ERROR", "a.log", "b.log"]
+        files: { "a.log": "ERROR x\nINFO y\nERROR z\n", "b.log": "INFO\n" }
+      - args: ["ERROR", "a.log", "gone.log"]
+        files: { "a.log": "ERROR\n" }
+        exit: 1
+      - args: ["ERROR"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "A slice pattern `let [pattern, files @ ..] = args.as_slice() else { ... };` splits the arguments."
+      - "Remember failures in a bool and pick the ExitCode after the loop."
+    why: Results go to stdout, errors to stderr, and the exit code tells scripts whether every file was processed.

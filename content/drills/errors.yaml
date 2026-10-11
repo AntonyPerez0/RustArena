@@ -1,0 +1,198 @@
+topic: errors
+drills:
+  - type: predict
+    body: |
+      match "4x".parse::<i32>() {
+          Ok(n) => println!("got {n}"),
+          Err(e) => println!("error: {e}"),
+      }
+    why: "\"4x\" contains a letter, so parse returns Err, and {} prints the ParseIntError's message for people."
+  - type: predict
+    body: |
+      let level: u8 = "300".parse().unwrap_or(1);
+      let lives: u8 = "3".parse().unwrap_or(1);
+      println!("{level} {lives}");
+    why: 300 doesn't fit in a u8 (0 to 255), so that parse fails and unwrap_or gives the fallback 1. "3" parses fine.
+  - type: predict
+    pre: |
+      use std::num::ParseIntError;
+
+      fn total(a: &str, b: &str) -> Result<i32, ParseIntError> {
+          let x: i32 = a.parse()?;
+          println!("parsed {x}");
+          let y: i32 = b.parse()?;
+          println!("parsed {y}");
+          Ok(x + y)
+      }
+    body: |
+      println!("{}", total("5", "x").is_ok());
+    why: The first ? gets Ok(5) and the function continues. The second ? gets an Err and returns it from total right away, so the second "parsed" line never runs.
+  - type: predict
+    body: |
+      let a = "5".parse::<i32>().map(|n| n * 10);
+      let b = "five".parse::<i32>().map(|n| n * 10);
+      println!("{a:?} {}", b.is_err());
+    why: map changes the value inside Ok and leaves an Err untouched, so the failed parse is still an Err.
+  - type: predict
+    body: |
+      let scores: Vec<u32> = Vec::new();
+      let best = scores.first().ok_or("no scores yet");
+      println!("{best:?}");
+    why: first() on an empty Vec is None, and ok_or turns None into Err with the given error.
+  - type: predict
+    body: |
+      let even = "8".parse::<i32>().ok().filter(|n| n % 2 == 0);
+      let odd = "7".parse::<i32>().ok().filter(|n| n % 2 == 0);
+      println!("{even:?} {odd:?}");
+    why: ok() turns each Result into an Option, and filter keeps the Some only when the closure returns true. 7 is odd, so it becomes None.
+  - type: fill
+    prompt: Pass the parse error to the caller.
+    pre: |
+      use std::num::ParseIntError;
+
+      fn double(s: &str) -> Result<i32, ParseIntError> {
+          let n: i32 = s.trim().parse()[[?]];
+          Ok(n * 2)
+      }
+    body: |
+      println!("{:?}", double(" 21 "));
+    why: The ? operator unwraps an Ok value and returns early from the function with the error on Err.
+  - type: fill
+    prompt: Turn the ParseIntError into a String error.
+    pre: |
+      fn parse_age(s: &str) -> Result<u8, String> {
+          s.parse::<u8>().[[map_err]](|e| format!("bad age: {e}"))
+      }
+    body: |
+      println!("{:?}", parse_age("-1"));
+    why: map_err changes the error inside Err (here into a String with context) and leaves Ok values alone.
+  - type: fill
+    prompt: Finish the function successfully.
+    pre: |
+      use std::num::ParseIntError;
+
+      fn check(s: &str) -> Result<(), ParseIntError> {
+          let n: u32 = s.parse()?;
+          println!("{n} is fine");
+          [[Ok(())]]
+      }
+    body: |
+      println!("{:?}", check("7"));
+    why: A function returning Result<(), E> must end with Ok(()), which means "success, nothing to return".
+  - type: bug
+    pre: |
+      fn withdraw(balance: u32, amount: u32) -> Result<u32, String> {
+          if amount >= balance { // BUG
+              return Err(String::from("insufficient funds"));
+          }
+          Ok(balance - amount)
+      }
+    body: |
+      println!("{:?}", withdraw(50, 50));
+    fix: "if amount > balance {"
+    prompt: Withdrawing the whole balance should work and print Ok(0). Click the line with the bug.
+    why: Only an amount larger than the balance should fail; with >= the customer can't empty their own account.
+  - type: bug
+    body: |
+      let menu = ["soup", "salad", "pie"];
+      let pick: Option<&&str> = "2".parse::<usize>().ok().map(|i| menu.get(i)); // BUG
+      println!("{pick:?}");
+    fix: 'let pick: Option<&&str> = "2".parse::<usize>().ok().and_then(|i| menu.get(i));'
+    why: menu.get already returns an Option, so map would give Option<Option<&&str>>. and_then chains a step that can fail and keeps a single Option.
+  - type: bug
+    body: |
+      let input = String::from("42\n");
+      let n: i32 = input.parse().unwrap(); // BUG
+      println!("{}", n + 1);
+    fix: "let n: i32 = input.trim().parse().unwrap();"
+    prompt: This should print 43. Click the line with the bug.
+    why: "The newline is not a digit, so parsing \"42\\n\" fails and unwrap panics. Trim input before parsing."
+  - type: compiles
+    answer: no
+    body: |
+      let n: i32 = "5".parse()?;
+      println!("{n}");
+    why: This main returns (), and ? needs a function that returns Result or Option to return the error from.
+  - type: compiles
+    answer: no
+    pre: |
+      fn parse_port(s: &str) -> Result<u16, String> {
+          let port: u16 = s.parse()?;
+          Ok(port)
+      }
+    body: |
+      println!("{:?}", parse_port("80"));
+    why: The parse error is a ParseIntError, but the function's error type is String, and ? can't convert one into the other. map_err would fix it.
+  - type: compiles
+    answer: yes
+    pre: |
+      fn first_upper(s: &str) -> Option<char> {
+          let c = s.chars().next()?;
+          Some(c.to_ascii_uppercase())
+      }
+    body: |
+      println!("{:?}", first_upper("rust"));
+    why: In a function returning Option, ? works on Option values; None would return None early.
+  - type: choice
+    prompt: Where is calling unwrap() a reasonable choice?
+    choices: ["Parsing a number the user typed", "Inside a library function that reads a config file", "In a test, where a panic should fail the test", "Reading data from a network response"]
+    answer: 3
+    why: In tests a panic is exactly the failure you want. User input, library code and network data can all be bad in normal use, so they deserve a Result.
+  - type: choice
+    prompt: What does the ? operator do when the value is an Err?
+    choices: ["Panics with the error message", "Returns the error from the current function", "Replaces the error with a default value", "Skips to the next loop iteration"]
+    answer: 2
+    why: "? is short for: on Ok(v) give v, on Err(e) return Err(e) from the function right now."
+  - type: boss
+    prompt: |
+      Write `fn parse_duration(text: &str) -> Result<u32, String>` that converts durations like `90s`, `5m` or `2h` into seconds. Trim the input. The last character is the unit, everything before it is a whole number (`u32`).
+
+      - empty input: `Err("empty duration")`
+      - a unit other than `s`, `m` or `h`: `Err("unknown unit: <unit>")`
+      - a bad number: `Err("bad number: <parse error>")`
+    seed: |
+      fn parse_duration(text: &str) -> Result<u32, String> {
+          todo!()
+      }
+    solution: |
+      fn parse_duration(text: &str) -> Result<u32, String> {
+          let text = text.trim();
+          let unit = text.chars().last().ok_or_else(|| String::from("empty duration"))?;
+          let multiplier = match unit {
+              's' => 1,
+              'm' => 60,
+              'h' => 3600,
+              other => return Err(format!("unknown unit: {other}")),
+          };
+          let number = &text[..text.len() - unit.len_utf8()];
+          let n: u32 = number.parse().map_err(|e| format!("bad number: {e}"))?;
+          Ok(n * multiplier)
+      }
+    harness: |
+      #[test]
+      fn converts_seconds_minutes_and_hours() {
+          assert_eq!(parse_duration("90s"), Ok(90), "parse_duration(\"90s\")");
+          assert_eq!(parse_duration("5m"), Ok(300), "parse_duration(\"5m\")");
+          assert_eq!(parse_duration(" 2h\n"), Ok(7200), "parse_duration(\" 2h\\n\")");
+      }
+
+      #[test]
+      fn rejects_empty_input() {
+          assert_eq!(parse_duration("  "), Err(String::from("empty duration")), "parse_duration(\"  \")");
+      }
+
+      #[test]
+      fn rejects_an_unknown_unit() {
+          assert_eq!(parse_duration("5x"), Err(String::from("unknown unit: x")), "parse_duration(\"5x\")");
+      }
+
+      #[test]
+      fn rejects_a_bad_number() {
+          assert_eq!(parse_duration("1.5h"), Err(String::from("bad number: invalid digit found in string")), "parse_duration(\"1.5h\")");
+          assert_eq!(parse_duration("m"), Err(String::from("bad number: cannot parse integer from empty string")), "parse_duration(\"m\")");
+      }
+    hints:
+      - "`text.chars().last()` gives an `Option<char>`; `ok_or_else` turns `None` into the \"empty duration\" error."
+      - "`match` the unit to get a multiplier (1, 60 or 3600); the catch-all arm returns the unknown-unit error."
+      - "The number is `&text[..text.len() - unit.len_utf8()]`; parse it with `map_err` and `?`."
+    why: Each failure is a different Err with a clear message, and ? keeps the happy path short.

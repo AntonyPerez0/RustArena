@@ -50,8 +50,8 @@ export type State = {
     certName: string;
     /** The learner's Pro Track repository on GitHub, printed on the Pro Track certificate. */
     proRepo: string;
-    /** Download the compiler automatically even on mobile data (otherwise lessons ask first). */
-    mobileData: boolean;
+    /** Where code runs: empty for the Rust Playground, or the address of a self-hosted runner. */
+    runnerUrl: string;
   };
   /** Pro Track projects the learner marked as passing on GitHub. */
   pro: Record<string, boolean>;
@@ -61,7 +61,7 @@ export type State = {
   daily: Record<string, boolean>;
 };
 
-const KEY = "cpp-arena-v1";
+const KEY = "rustarena-v1";
 
 const fresh = (): State => ({
   version: 1,
@@ -69,7 +69,7 @@ const fresh = (): State => ({
   projects: {},
   drills: {},
   dm: { best: { deathmatch: 0, casual: 0, warmup: 0, interview: 0 }, runs: [], reps: 0, kills: 0, bossKills: 0, days: {} },
-  settings: { sound: true, unlockAll: false, topics: null, boss: true, keys: true, theme: "system", textScale: 1, certName: "", proRepo: "", mobileData: false },
+  settings: { sound: true, unlockAll: false, topics: null, boss: true, keys: true, theme: "system", textScale: 1, certName: "", proRepo: "", runnerUrl: "" },
   pro: {},
   placed: [],
   daily: {},
@@ -148,7 +148,7 @@ export function exportProgress(): string {
 /** Parse and check a progress file (JSON text). */
 export function parseProgress(json: string): State {
   const s = JSON.parse(json);
-  if (!s || s.version !== 1) throw new Error("Not a C/C++ Arena progress file");
+  if (!s || s.version !== 1) throw new Error("Not a RustArena progress file");
   return normalize(s);
 }
 

@@ -1,0 +1,1821 @@
+id: collections-more
+title: Stacks, Queues, Heaps and Ordered Maps
+phase: "Algorithms and data structures"
+summary: The rest of std::collections. Stacks with Vec, queues with VecDeque, priority queues with BinaryHeap, range queries with BTreeMap, why LinkedList is rare, and how to pick the right collection for a job.
+roadmap: [Stack, Queue, VecDeque, BinaryHeap, BTreeMap, BTreeSet, LinkedList]
+steps:
+  - title: Stacks with Vec
+    id: collections-more-1
+    text: |
+      A **stack** is a collection where the last item you put in is the first one you take out: **LIFO** (last in, first out). Think of a pile of plates, the undo history of an editor, or the back button of a browser. Rust has no separate `Stack` type because `Vec` already is one:
+
+      | Stack operation | Vec method | Returns |
+      |---|---|---|
+      | push onto the top | `push(x)` | `()` |
+      | take the top off | `pop()` | `Option<T>` (`None` when empty) |
+      | look at the top | `last()` | `Option<&T>` |
+      | change the top | `last_mut()` | `Option<&mut T>` |
+
+      All of these are **O(1)**: they take the same time whether the stack holds ten items or ten million. (You'll meet this **Big-O notation** properly in the next module. For now: O(1) means "constant time", O(n) means "time grows in step with the number of items n".) They're fast because they only touch the end of the Vec; nothing else has to move.
+
+      ```rust run
+      fn main() {
+          let mut undo: Vec<String> = Vec::new();
+          undo.push(String::from("type 'Hello'"));
+          undo.push(String::from("make bold"));
+          undo.push(String::from("delete line 3"));
+
+          println!("top: {:?}", undo.last());
+          while let Some(action) = undo.pop() {
+              println!("undo {action}");
+          }
+          println!("empty: {}", undo.is_empty());
+          println!("{:?}", undo.pop());
+      }
+      ```
+
+      ```output
+      top: Some("delete line 3")
+      undo delete line 3
+      undo make bold
+      undo type 'Hello'
+      empty: true
+      None
+      ```
+
+      - `pop` returns an `Option` because the stack might be empty. `while let Some(x) = stack.pop()` is the idiomatic "take everything off" loop: it stops by itself at `None`.
+      - `last()` peeks without removing and gives a reference (`Option<&String>`); `pop()` hands you ownership of the value.
+
+      ### When a stack is the right tool
+
+      Whenever the most recent unfinished thing must be finished first: matching brackets, undo, evaluating expressions, walking a tree or a maze depth-first (the graphs module), and "what was the last thing bigger than this?" questions.
+
+      Brackets are the classic. Counting open brackets works for one kind: `(()` has an unclosed `(`. With several kinds, a counter is fooled by `([)]`: two opened, two closed, yet the `)` closes a `[`. A stack remembers *which* bracket is open most recently: push every opener, and every closer must match the opener on top.
+
+      ### Common mistakes
+
+      - **Using the front of a Vec as the top.** `v.insert(0, x)` and `v.remove(0)` shift every other element by one place: O(n) each time. The top of a Vec stack is always its end.
+      - **`stack.pop().unwrap()` on a stack that can be empty.** It panics with `called Option::unwrap() on a None value`. Handle `None`: for brackets, a closer with nothing open means the text is unbalanced.
+      - **Forgetting what's left at the end.** `((` never fails a check while you scan it; the leftovers on the stack are what make it unbalanced.
+
+      **Your turn:** write `fn is_balanced(code: &str) -> bool` that returns `true` when every `(`, `[` and `{` in `code` is closed by the matching `)`, `]` or `}` in the right order. Ignore every other character. Use a `Vec<char>` as a stack. The tests include a text of 300,000 nested brackets, so the solution must be O(n): one pass over the characters.
+    seed: |
+      fn is_balanced(code: &str) -> bool {
+          todo!()
+      }
+    solution: |
+      fn is_balanced(code: &str) -> bool {
+          let mut stack: Vec<char> = Vec::new();
+          for c in code.chars() {
+              match c {
+                  '(' | '[' | '{' => stack.push(c),
+                  ')' | ']' | '}' => {
+                      let opener = match c {
+                          ')' => '(',
+                          ']' => '[',
+                          _ => '{',
+                      };
+                      if stack.pop() != Some(opener) {
+                          return false;
+                      }
+                  }
+                  _ => {}
+              }
+          }
+          stack.is_empty()
+      }
+    harness: |
+      #[test]
+      fn accepts_nested_brackets_of_all_kinds() {
+          assert_eq!(is_balanced("fn main() { let v = vec![(1, 2)]; }"), true, "is_balanced(\"fn main() {{ let v = vec![(1, 2)]; }}\")");
+      }
+
+      #[test]
+      fn accepts_text_without_brackets() {
+          assert_eq!(is_balanced(""), true, "is_balanced(\"\")");
+          assert_eq!(is_balanced("hello"), true, "is_balanced(\"hello\")");
+      }
+
+      #[test]
+      fn rejects_brackets_closed_in_the_wrong_order() {
+          assert_eq!(is_balanced("([)]"), false, "is_balanced(\"([)]\")");
+      }
+
+      #[test]
+      fn rejects_brackets_left_open() {
+          assert_eq!(is_balanced("(("), false, "is_balanced(\"((\")");
+          assert_eq!(is_balanced("{[]"), false, "is_balanced(\"{{[]\")");
+      }
+
+      #[test]
+      fn rejects_a_closer_with_nothing_open() {
+          assert_eq!(is_balanced("())"), false, "is_balanced(\"())\")");
+          assert_eq!(is_balanced("]"), false, "is_balanced(\"]\")");
+      }
+
+      #[test]
+      fn handles_300000_nested_brackets_quickly() {
+          let deep = "(".repeat(150_000) + &")".repeat(150_000);
+          assert_eq!(is_balanced(&deep), true, "is_balanced(150,000 '(' then 150,000 ')')");
+          let broken = "[".repeat(150_000) + &")".repeat(150_000);
+          assert_eq!(is_balanced(&broken), false, "is_balanced(150,000 '[' then 150,000 ')')");
+      }
+    hints:
+      - Push every opening bracket. When you meet a closing bracket, the top of the stack must be its partner.
+      - "`stack.pop()` gives an `Option<char>`: compare it with `Some('(')` (or the right opener). An empty stack gives `None`, which never matches."
+      - "After the loop, the text is balanced only if nothing is left open: `stack.is_empty()`."
+    more:
+      - task: |
+          Write a calculator for **Reverse Polish Notation** (RPN), where the operator comes after its two operands: `3 4 +` is 7, and `5 1 2 + 4 * + 3 -` is `5 + (1 + 2) * 4 - 3` = 14. Old HP calculators and many stack-based virtual machines work this way.
+
+          Write `fn eval_rpn(expr: &str) -> Option<i64>`. Tokens are separated by spaces. A number is pushed; an operator `+`, `-`, `*` or `/` pops the top value `b`, then the next `a`, and pushes `a op b` (so `10 3 -` is 7). Return `None` when the expression is malformed: an operator without two values, a token that isn't a number or operator, division by zero, or not exactly one value left at the end. Negative numbers like `-3` are numbers, not operators.
+        seed: |
+          fn eval_rpn(expr: &str) -> Option<i64> {
+              todo!()
+          }
+        solution: |
+          fn eval_rpn(expr: &str) -> Option<i64> {
+              let mut stack: Vec<i64> = Vec::new();
+              for token in expr.split_whitespace() {
+                  match token {
+                      "+" | "-" | "*" | "/" => {
+                          let b = stack.pop()?;
+                          let a = stack.pop()?;
+                          let value = match token {
+                              "+" => a + b,
+                              "-" => a - b,
+                              "*" => a * b,
+                              _ => a.checked_div(b)?,
+                          };
+                          stack.push(value);
+                      }
+                      _ => stack.push(token.parse().ok()?),
+                  }
+              }
+              if stack.len() == 1 { stack.pop() } else { None }
+          }
+        harness: |
+          #[test]
+          fn adds_two_numbers() {
+              assert_eq!(eval_rpn("3 4 +"), Some(7), "eval_rpn(\"3 4 +\")");
+          }
+
+          #[test]
+          fn evaluates_a_longer_expression() {
+              assert_eq!(eval_rpn("5 1 2 + 4 * + 3 -"), Some(14), "eval_rpn(\"5 1 2 + 4 * + 3 -\")");
+          }
+
+          #[test]
+          fn keeps_the_operand_order_for_minus_and_divide() {
+              assert_eq!(eval_rpn("10 3 -"), Some(7), "eval_rpn(\"10 3 -\")");
+              assert_eq!(eval_rpn("20 4 /"), Some(5), "eval_rpn(\"20 4 /\")");
+          }
+
+          #[test]
+          fn reads_negative_numbers() {
+              assert_eq!(eval_rpn("-3 2 *"), Some(-6), "eval_rpn(\"-3 2 *\")");
+          }
+
+          #[test]
+          fn rejects_malformed_expressions() {
+              assert_eq!(eval_rpn("+"), None, "eval_rpn(\"+\")");
+              assert_eq!(eval_rpn("2 3"), None, "eval_rpn(\"2 3\")");
+              assert_eq!(eval_rpn("2 x +"), None, "eval_rpn(\"2 x +\")");
+              assert_eq!(eval_rpn(""), None, "eval_rpn(\"\")");
+          }
+
+          #[test]
+          fn rejects_division_by_zero() {
+              assert_eq!(eval_rpn("4 0 /"), None, "eval_rpn(\"4 0 /\")");
+          }
+        hints:
+          - "Loop over `expr.split_whitespace()` and `match` on the token: `\"+\" | \"-\" | \"*\" | \"/\"` for operators, `_` for numbers."
+          - "Inside a function returning `Option`, `stack.pop()?` returns `None` early when the stack is empty, and `token.parse().ok()?` does the same for a bad number."
+          - "Pop `b` first, then `a`. Use `a.checked_div(b)?` so dividing by zero gives `None`. At the end, return `stack.pop()` only if `stack.len() == 1`."
+      - task: |
+          A weather service wants to know, for each day, how many days you have to wait for a **warmer** day. Write `fn days_until_warmer(temps: &[i32]) -> Vec<usize>`: `result[i]` is the number of days after day `i` until a strictly warmer temperature, or `0` if no warmer day comes.
+
+          For `[73, 74, 75, 71, 69, 72, 76, 73]` the answer is `[1, 1, 4, 2, 1, 1, 0, 0]`.
+
+          Checking every later day for every day is O(n²), and the tests include 100,000 days. Use a **monotonic stack** instead: a `Vec<usize>` of the days still waiting for a warmer day. For each new day, pop every waiting day that is colder than today (today is their answer), then push today. Each day is pushed and popped at most once, so the whole thing is O(n).
+        seed: |
+          fn days_until_warmer(temps: &[i32]) -> Vec<usize> {
+              todo!()
+          }
+        solution: |
+          fn days_until_warmer(temps: &[i32]) -> Vec<usize> {
+              let mut answer = vec![0; temps.len()];
+              let mut waiting: Vec<usize> = Vec::new();
+              for (day, &t) in temps.iter().enumerate() {
+                  while let Some(&prev) = waiting.last() {
+                      if temps[prev] >= t {
+                          break;
+                      }
+                      answer[prev] = day - prev;
+                      waiting.pop();
+                  }
+                  waiting.push(day);
+              }
+              answer
+          }
+        harness: |
+          #[test]
+          fn solves_the_example_week() {
+              assert_eq!(days_until_warmer(&[73, 74, 75, 71, 69, 72, 76, 73]), vec![1, 1, 4, 2, 1, 1, 0, 0], "days_until_warmer(&[73, 74, 75, 71, 69, 72, 76, 73])");
+          }
+
+          #[test]
+          fn equal_temperatures_are_not_warmer() {
+              assert_eq!(days_until_warmer(&[30, 30, 30]), vec![0, 0, 0], "days_until_warmer(&[30, 30, 30])");
+          }
+
+          #[test]
+          fn handles_no_days_and_one_day() {
+              assert_eq!(days_until_warmer(&[]), Vec::<usize>::new(), "days_until_warmer(&[])");
+              assert_eq!(days_until_warmer(&[12]), vec![0], "days_until_warmer(&[12])");
+          }
+
+          #[test]
+          fn handles_negative_temperatures() {
+              assert_eq!(days_until_warmer(&[-5, -10, -3]), vec![2, 1, 0], "days_until_warmer(&[-5, -10, -3])");
+          }
+
+          #[test]
+          fn handles_100000_cooling_days_quickly() {
+              let mut temps: Vec<i32> = (0..99_999).map(|i| 100_000 - i).collect();
+              temps.push(1_000_000);
+              let answer = days_until_warmer(&temps);
+              assert_eq!(answer[0], 99_999, "answer[0] for 99,999 cooling days then a hot one");
+              assert_eq!(answer[50_000], 49_999, "answer[50_000]");
+              assert_eq!(answer[99_999], 0, "answer for the last day");
+          }
+        hints:
+          - "Start with `let mut answer = vec![0; temps.len()];` and an empty `Vec<usize>` of waiting days (their indices)."
+          - "For each `(day, &t)` in `temps.iter().enumerate()`: while the day on top of the stack is colder than `t`, pop it and set its answer to `day - prev`."
+          - "`while let Some(&prev) = waiting.last() { if temps[prev] >= t { break; } answer[prev] = day - prev; waiting.pop(); }` then `waiting.push(day);`"
+
+  - title: Queues with VecDeque
+    id: collections-more-2
+    text: |
+      A **queue** is **FIFO**: first in, first out, like a line at a ticket counter, jobs waiting for a printer, or messages waiting for a worker. You could build one from a Vec with `push` at the back and `remove(0)` at the front, but `remove(0)` shifts every remaining element one place left. That's O(n) per removal, so serving a queue of n people costs O(n²) in total.
+
+      `std::collections::VecDeque` (say "vec-deck", short for **double-ended queue**) fixes that. It's a **ring buffer**: one block of memory like a Vec, but the front can start anywhere and the items wrap around the end of the block. Adding or removing at **either** end is O(1).
+
+      | Method | What it does |
+      |---|---|
+      | `push_back(x)` | join at the back |
+      | `pop_front()` | leave from the front: `Option<T>` |
+      | `push_front(x)` | cut in at the front |
+      | `pop_back()` | leave from the back: `Option<T>` |
+      | `front()`, `back()` | peek: `Option<&T>` |
+      | `len()`, `is_empty()`, `iter()`, `q[i]`, `get(i)`, `contains(&x)` | like Vec |
+
+      ```rust run
+      use std::collections::VecDeque;
+
+      fn main() {
+          let mut jobs: VecDeque<&str> = VecDeque::new();
+          jobs.push_back("report.pdf");
+          jobs.push_back("photo.png");
+          jobs.push_back("invoice.pdf");
+          jobs.push_front("URGENT.txt");
+
+          println!("next up: {:?}", jobs.front());
+          println!("{} jobs, third is {}", jobs.len(), jobs[2]);
+          while let Some(job) = jobs.pop_front() {
+              println!("printing {job}");
+          }
+
+          let numbers: VecDeque<i32> = (1..=4).collect();
+          println!("{numbers:?}");
+      }
+      ```
+
+      ```output
+      next up: Some("URGENT.txt")
+      4 jobs, third is photo.png
+      printing URGENT.txt
+      printing report.pdf
+      printing photo.png
+      printing invoice.pdf
+      [1, 2, 3, 4]
+      ```
+
+      You can build one with `VecDeque::new()`, `VecDeque::from(vec![...])`, `VecDeque::from([1, 2, 3])` or `.collect()`, and `{:?}` prints it front to back like a Vec.
+
+      ### Common mistakes
+
+      - **Calling `pop()`.** A VecDeque has two ends, so there's no plain `pop`; you pick a side:
+
+      ```rust compile_fail
+      use std::collections::VecDeque;
+
+      fn main() {
+          let mut jobs: VecDeque<&str> = VecDeque::from(["a", "b"]);
+          println!("{:?}", jobs.pop());
+      }
+      ```
+
+      ```error
+      error[E0599]: no method named `pop` found for struct `VecDeque<T, A>` in the current scope
+      ```
+
+      - **Mixing up the ends.** `push_back` with `pop_back` is a stack, not a queue. A queue goes in at one end and out at the other.
+      - **Expecting one slice.** Because the items can wrap around, a VecDeque isn't always one contiguous slice: `&q[..]` doesn't work. Use `q.iter()`, or `q.make_contiguous()` when you really need a `&mut [T]`.
+      - **`Vec::remove(0)` in a loop.** It works on small inputs and falls over on big ones. If you see it in review, suggest VecDeque.
+
+      **Your turn:** run the food truck line. Read commands from standard input, one per line:
+
+      - `join NAME`: NAME joins the back of the line
+      - `vip NAME`: NAME goes straight to the front
+      - `serve`: serve the person at the front and print `served NAME`, or print `nobody waiting` if the line is empty
+
+      After the last command, print `still waiting: ` followed by the names front to back, separated by `, `, or `still waiting: nobody`. Use a `VecDeque<String>`.
+    seed: |
+      use std::collections::VecDeque;
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let mut line_up: VecDeque<String> = VecDeque::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("read error");
+              // join NAME, vip NAME or serve
+          }
+          // print who is still waiting
+      }
+    solution: |
+      use std::collections::VecDeque;
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let mut line_up: VecDeque<String> = VecDeque::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("read error");
+              // join NAME, vip NAME or serve
+              let mut parts = line.split_whitespace();
+              match (parts.next(), parts.next()) {
+                  (Some("join"), Some(name)) => line_up.push_back(name.to_string()),
+                  (Some("vip"), Some(name)) => line_up.push_front(name.to_string()),
+                  (Some("serve"), None) => match line_up.pop_front() {
+                      Some(name) => println!("served {name}"),
+                      None => println!("nobody waiting"),
+                  },
+                  _ => {}
+              }
+          }
+          // print who is still waiting
+          if line_up.is_empty() {
+              println!("still waiting: nobody");
+          } else {
+              let names: Vec<String> = line_up.into_iter().collect();
+              println!("still waiting: {}", names.join(", "));
+          }
+      }
+    require:
+      - pattern: 'push_front'
+        message: A VIP goes in with `push_front`.
+      - pattern: 'pop_front'
+        message: Serve the front of the line with `pop_front`.
+    forbid:
+      - pattern: 'remove\(\s*0\s*\)'
+        message: "`remove(0)` shifts every element: use `pop_front` on the VecDeque."
+    hints:
+      - "Split each line with `split_whitespace()` and look at the first two words: `match (parts.next(), parts.next())` with arms like `(Some(\"join\"), Some(name))`."
+      - "`join` is `push_back(name.to_string())`, `vip` is `push_front(...)`, and `serve` matches on `line_up.pop_front()`."
+      - "At the end, collect the names into a `Vec<String>` and print `names.join(\", \")`."
+    tests:
+      - stdin: "join Ana\njoin Ben\nserve\nvip Cy\nserve\njoin Dee\n"
+        expect: "served Ana\nserved Cy\nstill waiting: Ben, Dee"
+      - stdin: "serve\njoin Ola\nserve\nserve\n"
+        hidden: true
+      - stdin: "join Max\nvip Zoe\nvip Ivy\njoin Raj\n"
+        hidden: true
+    more:
+      - task: |
+          An operating system shares one CPU between tasks with **round-robin scheduling**: the task at the front of the queue runs for at most `quantum` time units; if it still needs time, it goes to the back of the queue.
+
+          Write `fn round_robin(tasks: &[(&str, u32)], quantum: u32) -> Vec<String>` that returns the task names in the order they **finish**. Each task is `(name, time needed)`. `quantum` is at least 1. A task that needs 0 time finishes on its first turn.
+
+          With `[("build", 5), ("lint", 2), ("test", 4)]` and quantum 2: build runs 2 (3 left, back of the queue), lint runs 2 and finishes, test runs 2 (2 left), build runs 2 (1 left), test finishes, build finishes: `["lint", "test", "build"]`.
+        seed: |
+          use std::collections::VecDeque;
+
+          fn round_robin(tasks: &[(&str, u32)], quantum: u32) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          use std::collections::VecDeque;
+
+          fn round_robin(tasks: &[(&str, u32)], quantum: u32) -> Vec<String> {
+              let mut queue: VecDeque<(&str, u32)> = tasks.iter().copied().collect();
+              let mut finished = Vec::new();
+              while let Some((name, left)) = queue.pop_front() {
+                  let run = left.min(quantum);
+                  if left - run == 0 {
+                      finished.push(name.to_string());
+                  } else {
+                      queue.push_back((name, left - run));
+                  }
+              }
+              finished
+          }
+        harness: |
+          #[test]
+          fn finishes_tasks_in_round_robin_order() {
+              assert_eq!(round_robin(&[("build", 5), ("lint", 2), ("test", 4)], 2), vec!["lint", "test", "build"], "round_robin(build 5, lint 2, test 4; quantum 2)");
+          }
+
+          #[test]
+          fn a_big_quantum_keeps_the_input_order() {
+              assert_eq!(round_robin(&[("a", 3), ("b", 1), ("c", 2)], 10), vec!["a", "b", "c"], "round_robin(a 3, b 1, c 2; quantum 10)");
+          }
+
+          #[test]
+          fn quantum_one_interleaves_tasks() {
+              assert_eq!(round_robin(&[("x", 3), ("y", 1), ("z", 2)], 1), vec!["y", "z", "x"], "round_robin(x 3, y 1, z 2; quantum 1)");
+          }
+
+          #[test]
+          fn no_tasks_finish_nothing() {
+              assert_eq!(round_robin(&[], 3), Vec::<String>::new(), "round_robin(&[], 3)");
+          }
+
+          #[test]
+          fn zero_time_tasks_finish_on_their_first_turn() {
+              assert_eq!(round_robin(&[("long", 4), ("noop", 0)], 2), vec!["noop", "long"], "round_robin(long 4, noop 0; quantum 2)");
+          }
+        hints:
+          - "Copy the tasks into a `VecDeque<(&str, u32)>` with `tasks.iter().copied().collect()`."
+          - "Loop with `while let Some((name, left)) = queue.pop_front()`. Run for `left.min(quantum)` units."
+          - "If nothing is left, push `name.to_string()` onto the result; otherwise `push_back((name, left - run))`."
+      - task: |
+          The monitoring dashboard shows the average response time of the **last N requests**. Write a small type for it:
+
+          ```rust
+          struct RecentReadings { /* your fields */ }
+          impl RecentReadings {
+              fn new(capacity: usize) -> Self
+              fn push(&mut self, millis: u64)   // drops the oldest reading when there are more than capacity
+              fn average(&self) -> Option<f64>  // None when there are no readings yet
+          }
+          ```
+
+          The dashboard calls `average()` after every reading, and the tests push 300,000 readings with a capacity of 100,000. Adding up the whole window on every call would be O(capacity) per call: far too slow. Keep a **running sum**: add the new reading, subtract the one you drop. Then `average` is O(1).
+        seed: |
+          use std::collections::VecDeque;
+
+          struct RecentReadings {
+              capacity: usize,
+              readings: VecDeque<u64>,
+              sum: u64,
+          }
+
+          impl RecentReadings {
+              fn new(capacity: usize) -> Self {
+                  todo!()
+              }
+
+              fn push(&mut self, millis: u64) {
+                  todo!()
+              }
+
+              fn average(&self) -> Option<f64> {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::collections::VecDeque;
+
+          struct RecentReadings {
+              capacity: usize,
+              readings: VecDeque<u64>,
+              sum: u64,
+          }
+
+          impl RecentReadings {
+              fn new(capacity: usize) -> Self {
+                  RecentReadings { capacity, readings: VecDeque::with_capacity(capacity + 1), sum: 0 }
+              }
+
+              fn push(&mut self, millis: u64) {
+                  self.readings.push_back(millis);
+                  self.sum += millis;
+                  if self.readings.len() > self.capacity {
+                      if let Some(old) = self.readings.pop_front() {
+                          self.sum -= old;
+                      }
+                  }
+              }
+
+              fn average(&self) -> Option<f64> {
+                  if self.readings.is_empty() {
+                      None
+                  } else {
+                      Some(self.sum as f64 / self.readings.len() as f64)
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn has_no_average_before_any_reading() {
+              let r = RecentReadings::new(3);
+              assert_eq!(r.average(), None, "RecentReadings::new(3).average()");
+          }
+
+          #[test]
+          fn averages_while_the_window_is_filling() {
+              let mut r = RecentReadings::new(3);
+              r.push(10);
+              r.push(20);
+              assert_eq!(r.average(), Some(15.0), "average after pushing 10, 20");
+          }
+
+          #[test]
+          fn drops_the_oldest_reading_when_full() {
+              let mut r = RecentReadings::new(3);
+              for ms in [10, 20, 30, 100] {
+                  r.push(ms);
+              }
+              assert_eq!(r.average(), Some(50.0), "average of the last 3 after pushing 10, 20, 30, 100");
+          }
+
+          #[test]
+          fn a_capacity_of_one_keeps_only_the_latest() {
+              let mut r = RecentReadings::new(1);
+              r.push(7);
+              r.push(9);
+              assert_eq!(r.average(), Some(9.0), "capacity 1 after pushing 7, 9");
+          }
+
+          #[test]
+          fn handles_300000_readings_quickly() {
+              let mut r = RecentReadings::new(100_000);
+              let mut last = None;
+              for i in 0..300_000u64 {
+                  r.push(i % 1000);
+                  last = r.average();
+              }
+              assert_eq!(last, Some(499.5), "average of the last 100,000 readings");
+          }
+        hints:
+          - "`new` stores the capacity, an empty `VecDeque` and a sum of 0."
+          - "`push`: `push_back` the reading and add it to `sum`. If `len()` is now bigger than `capacity`, `pop_front` the oldest and subtract it."
+          - "`average`: `None` if empty, otherwise `Some(self.sum as f64 / self.readings.len() as f64)`."
+
+  - title: Priority queues with BinaryHeap
+    id: collections-more-3
+    text: |
+      A **priority queue** hands out the most important item first, not the oldest one: the patient in the worst condition, the job with the highest priority, the closest unvisited city. In Rust that's `std::collections::BinaryHeap<T>`, a **max-heap**: `pop` always returns the **largest** item.
+
+      Inside, it's a Vec arranged as a **binary heap**: a tree stored in an array where every parent is at least as large as its children. Keeping that shape after a change only walks one branch of the tree, so `push` and `pop` are **O(log n)** and `peek` is O(1). (log n grows very slowly: about 20 for a million items.)
+
+      ```rust run
+      use std::collections::BinaryHeap;
+
+      fn main() {
+          let mut heap = BinaryHeap::new();
+          for severity in [3, 9, 1, 7] {
+              heap.push(severity);
+          }
+          println!("peek: {:?}", heap.peek());
+          println!("len: {}", heap.len());
+          while let Some(s) = heap.pop() {
+              print!("{s} ");
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      peek: Some(9)
+      len: 4
+      9 7 3 1
+      ```
+
+      ### A min-heap with Reverse
+
+      To get the **smallest** item first, wrap values in `std::cmp::Reverse`. `Reverse(x)` is a tiny struct whose ordering is the opposite of `x`'s, so the "largest" `Reverse` holds the smallest value. Unwrap it with `.0` or with a pattern:
+
+      ```rust run
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn main() {
+          let mut deadlines = BinaryHeap::new();
+          for day in [12, 3, 30, 7] {
+              deadlines.push(Reverse(day));
+          }
+          println!("soonest: {}", deadlines.peek().unwrap().0);
+          while let Some(Reverse(day)) = deadlines.pop() {
+              print!("{day} ");
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      soonest: 3
+      3 7 12 30
+      ```
+
+      ### Tuples as priorities
+
+      Tuples compare field by field: first fields first, and only on a tie the second, and so on. That makes them perfect priority keys. In an emergency room, higher severity goes first, and between equal severities whoever arrived first. "Arrived first" means the *smaller* arrival number should win, so it's wrapped in `Reverse`:
+
+      ```rust run
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn main() {
+          // (severity, Reverse(arrival), case)
+          let mut er = BinaryHeap::new();
+          er.push((2, Reverse(1), "sprained ankle"));
+          er.push((5, Reverse(2), "chest pain"));
+          er.push((2, Reverse(3), "deep cut"));
+          er.push((5, Reverse(4), "broken leg"));
+          while let Some((severity, Reverse(arrival), case)) = er.pop() {
+              println!("{severity} #{arrival} {case}");
+          }
+      }
+      ```
+
+      ```output
+      5 #2 chest pain
+      5 #4 broken leg
+      2 #1 sprained ankle
+      2 #3 deep cut
+      ```
+
+      A struct works too: `#[derive(PartialEq, Eq, PartialOrd, Ord)]` compares fields in the order they're declared, or you implement `Ord` yourself (module 23).
+
+      ### Top-k with a small heap
+
+      To keep the k largest of n values, you don't need to sort all n. Keep a **min-heap of at most k items**: push each value, and when the heap holds more than k, pop (that removes the smallest). What's left are the k largest. That's O(n log k) time and O(k) memory, and it works on a stream of data that never fits in memory at once.
+
+      ### Common mistakes
+
+      - **Expecting the smallest first.** `BinaryHeap` is a max-heap. Use `Reverse` for a min-heap.
+      - **Printing the heap and expecting sorted order.** `{:?}` and `.iter()` show the internal array order, which is *not* sorted. Pop in a loop, or call `into_sorted_vec()` (ascending).
+      - **Floats.** The items must implement `Ord`, and `f64` doesn't (because of NaN):
+
+      ```rust compile_fail
+      use std::collections::BinaryHeap;
+
+      fn main() {
+          let mut heap = BinaryHeap::new();
+          heap.push(2.5_f64);
+          println!("{:?}", heap.pop());
+      }
+      ```
+
+      ```error
+      error[E0277]: the trait bound `f64: Ord` is not satisfied
+      ```
+
+      Store integers instead (cents, milliseconds, scores times 100), or wrap the float in your own type that implements `Ord` with `total_cmp`.
+
+      **Your turn:** write `fn top_k(scores: &[u32], k: usize) -> Vec<u32>` that returns the `k` highest scores, highest first (all of them if there are fewer than `k`). Use a `BinaryHeap<Reverse<u32>>` that never holds more than `k` items, then pop it empty and reverse. Don't sort.
+    seed: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn top_k(scores: &[u32], k: usize) -> Vec<u32> {
+          todo!()
+      }
+    solution: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+
+      fn top_k(scores: &[u32], k: usize) -> Vec<u32> {
+          let mut heap = BinaryHeap::with_capacity(k + 1);
+          for &s in scores {
+              heap.push(Reverse(s));
+              if heap.len() > k {
+                  heap.pop();
+              }
+          }
+          let mut best = Vec::with_capacity(heap.len());
+          while let Some(Reverse(s)) = heap.pop() {
+              best.push(s);
+          }
+          best.reverse();
+          best
+      }
+    require:
+      - pattern: 'BinaryHeap'
+        message: Use a `BinaryHeap` for this one.
+      - pattern: 'Reverse'
+        message: "Wrap the scores in `Reverse` so the heap pops the smallest one."
+    forbid:
+      - pattern: '\.sort'
+        message: Solve it with the heap, without sorting.
+    hints:
+      - "Push `Reverse(s)` for every score. The heap's top is then the smallest score it holds."
+      - "Right after each push, `if heap.len() > k { heap.pop(); }` throws away the smallest, so the heap keeps the k largest."
+      - "Pop everything into a Vec (`while let Some(Reverse(s)) = heap.pop()`): that's smallest first, so call `.reverse()` before returning."
+    harness: |
+      #[test]
+      fn returns_the_three_best_scores_highest_first() {
+          assert_eq!(top_k(&[40, 95, 12, 77, 88, 51], 3), vec![95, 88, 77], "top_k(&[40, 95, 12, 77, 88, 51], 3)");
+      }
+
+      #[test]
+      fn keeps_duplicate_scores() {
+          assert_eq!(top_k(&[5, 9, 9, 1, 9], 2), vec![9, 9], "top_k(&[5, 9, 9, 1, 9], 2)");
+      }
+
+      #[test]
+      fn returns_everything_when_k_is_large() {
+          assert_eq!(top_k(&[3, 1, 2], 10), vec![3, 2, 1], "top_k(&[3, 1, 2], 10)");
+      }
+
+      #[test]
+      fn k_zero_or_no_scores_gives_nothing() {
+          assert_eq!(top_k(&[3, 1, 2], 0), Vec::<u32>::new(), "top_k(&[3, 1, 2], 0)");
+          assert_eq!(top_k(&[], 4), Vec::<u32>::new(), "top_k(&[], 4)");
+      }
+
+      #[test]
+      fn finds_the_top_5_of_200000_scores() {
+          let scores: Vec<u32> = (0..200_000u32).map(|i| i.wrapping_mul(2_654_435_761) % 1_000_000).collect();
+          let mut expected = scores.clone();
+          expected.sort_unstable_by(|a, b| b.cmp(a));
+          expected.truncate(5);
+          assert_eq!(top_k(&scores, 5), expected, "top_k(200,000 scores, 5)");
+      }
+    more:
+      - task: |
+          Several services each write a log already sorted by timestamp. Merge them into one sorted list. Write `fn merge_sorted(lists: &[Vec<i32>]) -> Vec<i32>`.
+
+          Concatenating and sorting would work, but the classic approach uses the fact that each list is already sorted: keep a min-heap with the **next** item of each list as `Reverse((value, list_index, position))`. Pop the smallest, add it to the result, and push the following item from the same list. With N items in k lists that's O(N log k). Don't sort.
+        seed: |
+          use std::cmp::Reverse;
+          use std::collections::BinaryHeap;
+
+          fn merge_sorted(lists: &[Vec<i32>]) -> Vec<i32> {
+              todo!()
+          }
+        solution: |
+          use std::cmp::Reverse;
+          use std::collections::BinaryHeap;
+
+          fn merge_sorted(lists: &[Vec<i32>]) -> Vec<i32> {
+              let mut heap = BinaryHeap::new();
+              for (i, list) in lists.iter().enumerate() {
+                  if let Some(&first) = list.first() {
+                      heap.push(Reverse((first, i, 0)));
+                  }
+              }
+              let mut merged = Vec::new();
+              while let Some(Reverse((value, i, pos))) = heap.pop() {
+                  merged.push(value);
+                  if let Some(&next) = lists[i].get(pos + 1) {
+                      heap.push(Reverse((next, i, pos + 1)));
+                  }
+              }
+              merged
+          }
+        require:
+          - pattern: 'BinaryHeap'
+            message: Use a `BinaryHeap` holding the next item of each list.
+        forbid:
+          - pattern: '\.sort'
+            message: The lists are already sorted; merge them with the heap instead of sorting.
+        harness: |
+          #[test]
+          fn merges_three_sorted_lists() {
+              let lists = vec![vec![1, 4, 9], vec![2, 3, 10], vec![5]];
+              assert_eq!(merge_sorted(&lists), vec![1, 2, 3, 4, 5, 9, 10], "merge_sorted([[1, 4, 9], [2, 3, 10], [5]])");
+          }
+
+          #[test]
+          fn skips_empty_lists() {
+              let lists = vec![vec![], vec![7, 8], vec![]];
+              assert_eq!(merge_sorted(&lists), vec![7, 8], "merge_sorted([[], [7, 8], []])");
+          }
+
+          #[test]
+          fn no_lists_merge_to_nothing() {
+              assert_eq!(merge_sorted(&[]), Vec::<i32>::new(), "merge_sorted([])");
+          }
+
+          #[test]
+          fn keeps_duplicates_and_negatives() {
+              let lists = vec![vec![-3, 0, 0], vec![-3, 5]];
+              assert_eq!(merge_sorted(&lists), vec![-3, -3, 0, 0, 5], "merge_sorted([[-3, 0, 0], [-3, 5]])");
+          }
+
+          #[test]
+          fn merges_1000_lists_of_200_items() {
+              let lists: Vec<Vec<i32>> = (0..1000).map(|l| (0..200).map(|i| i * 1000 + l).collect()).collect();
+              let merged = merge_sorted(&lists);
+              let expected: Vec<i32> = (0..200_000).collect();
+              assert_eq!(merged == expected, true, "merging 1000 lists gives 0..200000 in order");
+          }
+        hints:
+          - "Start by pushing `Reverse((list[0], i, 0))` for every non-empty list `i`."
+          - "`while let Some(Reverse((value, i, pos))) = heap.pop()`: push `value` onto the result."
+          - "Then `if let Some(&next) = lists[i].get(pos + 1)`, push `Reverse((next, i, pos + 1))`."
+      - task: |
+          Write a job scheduler. Standard input has one job per line: a name and a priority from 1 to 9, like `deploy 9`. Process the jobs highest priority first; jobs with the **same** priority run in the order they were submitted. Print one line per job:
+
+          ```
+          1. deploy (p9)
+          2. backup (p5)
+          ```
+
+          Use a `BinaryHeap`. The trick for "first submitted first" is the one from the emergency room: push `(priority, Reverse(line_number), name)`. Skip blank lines.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+              }
+          }
+        solution: |
+          use std::cmp::Reverse;
+          use std::collections::BinaryHeap;
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut heap = BinaryHeap::new();
+              for (n, line) in io::stdin().lock().lines().enumerate() {
+                  let line = line.expect("read error");
+                  let mut parts = line.split_whitespace();
+                  if let (Some(name), Some(p)) = (parts.next(), parts.next()) {
+                      let priority: u8 = p.parse().expect("priority must be a number");
+                      heap.push((priority, Reverse(n), name.to_string()));
+                  }
+              }
+              let mut rank = 1;
+              while let Some((priority, _, name)) = heap.pop() {
+                  println!("{rank}. {name} (p{priority})");
+                  rank += 1;
+              }
+          }
+        require:
+          - pattern: 'BinaryHeap'
+            message: Use a `BinaryHeap` as the scheduler's queue.
+        hints:
+          - "Number the lines with `.lines().enumerate()` so you know the submission order."
+          - "Push `(priority, Reverse(n), name.to_string())`. Tuples compare left to right, so priority wins and `Reverse(n)` breaks ties in favor of the earlier line."
+          - "Pop in a loop and print with a counter: `println!(\"{rank}. {name} (p{priority})\")`."
+        tests:
+          - stdin: "backup 5\ndeploy 9\nreport 5\ncleanup 1\n"
+            expect: "1. deploy (p9)\n2. backup (p5)\n3. report (p5)\n4. cleanup (p1)"
+          - stdin: "a 3\nb 3\n\nc 3\nd 7\n"
+            hidden: true
+          - stdin: "solo 4\n"
+            hidden: true
+
+  - title: Range queries with BTreeMap and BTreeSet
+    id: collections-more-4
+    text: |
+      You met `BTreeMap` and `BTreeSet` in the hashmaps module as the maps that keep their keys sorted. Sorted iteration is nice, but their real superpower is **range queries**: questions about keys between two values, answered without looking at the rest.
+
+      | Method | Answers |
+      |---|---|
+      | `range(a..b)` | every entry with `a <= key < b`, in order (any range syntax works: `a..=b`, `..b`, `a..`) |
+      | `range(..=x).next_back()` | the largest key `<= x` (the **floor**) |
+      | `range(x..).next()` | the smallest key `>= x` (the **ceiling**) |
+      | `first_key_value()`, `last_key_value()` | the smallest and largest entries |
+      | `pop_first()`, `pop_last()` | remove and return them |
+
+      A BTreeMap is a **balanced tree**, so finding where a range starts is O(log n), and walking k entries from there costs O(k). Compare that with a HashMap, where you'd have to look at every key.
+
+      ```rust run
+      use std::collections::BTreeMap;
+
+      fn main() {
+          // minute of the day -> temperature
+          let mut temps: BTreeMap<u32, f64> = BTreeMap::new();
+          temps.insert(600, 14.5); // 10:00
+          temps.insert(615, 15.0);
+          temps.insert(540, 12.0); // 09:00
+          temps.insert(660, 16.5);
+          temps.insert(720, 18.0);
+
+          for (minute, t) in temps.range(600..700) {
+              println!("{:02}:{:02} {t}", minute / 60, minute % 60);
+          }
+          println!("first: {:?}", temps.first_key_value());
+          println!("at or before 650: {:?}", temps.range(..=650).next_back());
+          println!("at or after 650: {:?}", temps.range(650..).next());
+          println!("readings before 10:00: {}", temps.range(..600).count());
+      }
+      ```
+
+      ```output
+      10:00 14.5
+      10:15 15
+      11:00 16.5
+      first: Some((540, 12.0))
+      at or before 650: Some((615, 15.0))
+      at or after 650: Some((660, 16.5))
+      readings before 10:00: 1
+      ```
+
+      `next_back()` takes an item from the *end* of a double-ended iterator, so on a range it gives the largest key in that range without walking through the others. `BTreeSet` has the same methods (`range`, `first`, `last`, `pop_first`, `pop_last`).
+
+      ### HashMap or BTreeMap?
+
+      | | HashMap | BTreeMap |
+      |---|---|---|
+      | insert, get, remove | O(1) on average | O(log n) |
+      | iteration order | unspecified | sorted by key |
+      | range, floor, ceiling, min, max | no (scan everything) | yes, O(log n) |
+      | key needs | `Hash + Eq` | `Ord` |
+
+      Pick BTreeMap when you need order: time series, price levels, leaderboards, schedules, or simply output that has to be deterministic.
+
+      ### Common mistakes
+
+      - **`range(..=x).next()` for a floor query.** That's the *smallest* key in the range. The floor is the last one: `next_back()`.
+      - **A backwards range.** `map.range(10..5)` panics with `range start is greater than range end`. Check your bounds when they come from input.
+      - **Filtering the whole map.** `map.iter().filter(|(k, _)| **k >= a && **k < b)` gives the same entries as `map.range(a..b)` but costs O(n) instead of O(log n + k).
+
+      **Your turn:** a meeting room booking system. Write a `Calendar` with:
+
+      - `fn new() -> Self`
+      - `fn book(&mut self, start: u32, end: u32) -> bool` that books the half-open time slot `start..end` and returns `true`, or returns `false` (and books nothing) if it overlaps an existing booking or if `start >= end`
+
+      Half-open means `9..10` and `10..11` don't overlap. Store bookings as a `BTreeMap<u32, u32>` from start to end. The tests make 100,000 bookings, so checking every existing booking is too slow. You only need to look at **one**: the booking with the latest start before `end` (`range(..end).next_back()`). If it ends after `start`, the new slot overlaps.
+    seed: |
+      use std::collections::BTreeMap;
+
+      struct Calendar {
+          bookings: BTreeMap<u32, u32>,
+      }
+
+      impl Calendar {
+          fn new() -> Self {
+              todo!()
+          }
+
+          fn book(&mut self, start: u32, end: u32) -> bool {
+              todo!()
+          }
+      }
+    solution: |
+      use std::collections::BTreeMap;
+
+      struct Calendar {
+          bookings: BTreeMap<u32, u32>,
+      }
+
+      impl Calendar {
+          fn new() -> Self {
+              Calendar { bookings: BTreeMap::new() }
+          }
+
+          fn book(&mut self, start: u32, end: u32) -> bool {
+              if start >= end {
+                  return false;
+              }
+              if let Some((_, &prev_end)) = self.bookings.range(..end).next_back() {
+                  if prev_end > start {
+                      return false;
+                  }
+              }
+              self.bookings.insert(start, end);
+              true
+          }
+      }
+    require:
+      - pattern: '\.range\('
+        message: Use `range` to find the one booking that could overlap.
+    hints:
+      - "Because bookings never overlap each other, the one that starts last before `end` is the only one that can overlap `start..end`."
+      - "`self.bookings.range(..end).next_back()` gives `Option<(&u32, &u32)>`: that booking's start and end."
+      - "If that booking's end is greater than `start`, return `false`. Otherwise `insert(start, end)` and return `true`."
+    harness: |
+      #[test]
+      fn books_free_slots() {
+          let mut c = Calendar::new();
+          assert_eq!(c.book(10, 20), true, "book(10, 20) on an empty calendar");
+          assert_eq!(c.book(30, 40), true, "book(30, 40)");
+      }
+
+      #[test]
+      fn rejects_overlapping_slots() {
+          let mut c = Calendar::new();
+          c.book(10, 20);
+          assert_eq!(c.book(15, 25), false, "book(15, 25) after 10..20");
+          assert_eq!(c.book(5, 11), false, "book(5, 11) after 10..20");
+          assert_eq!(c.book(12, 18), false, "book(12, 18) inside 10..20");
+          assert_eq!(c.book(0, 100), false, "book(0, 100) around 10..20");
+      }
+
+      #[test]
+      fn touching_slots_do_not_overlap() {
+          let mut c = Calendar::new();
+          c.book(10, 20);
+          assert_eq!(c.book(20, 30), true, "book(20, 30) after 10..20");
+          assert_eq!(c.book(5, 10), true, "book(5, 10) after 10..20");
+      }
+
+      #[test]
+      fn a_rejected_booking_is_not_stored() {
+          let mut c = Calendar::new();
+          c.book(10, 20);
+          assert_eq!(c.book(15, 30), false, "book(15, 30)");
+          assert_eq!(c.book(20, 30), true, "book(20, 30) after the rejected 15..30");
+      }
+
+      #[test]
+      fn rejects_empty_or_backwards_slots() {
+          let mut c = Calendar::new();
+          assert_eq!(c.book(5, 5), false, "book(5, 5)");
+          assert_eq!(c.book(9, 3), false, "book(9, 3)");
+      }
+
+      #[test]
+      fn handles_100000_bookings_quickly() {
+          let mut c = Calendar::new();
+          for i in 0..100_000u32 {
+              let slot = i * 7919 % 100_000;
+              assert_eq!(c.book(slot * 10, slot * 10 + 5), true, "booking slot {slot}");
+          }
+          for i in 0..100_000u32 {
+              let slot = i * 7919 % 100_000;
+              assert_eq!(c.book(slot * 10 + 4, slot * 10 + 6), false, "overlapping slot {slot}");
+          }
+      }
+    more:
+      - task: |
+          A shop keeps the history of a product's price as a `BTreeMap<u32, u32>` from the time a price was set to the new price (in cents). The price at any moment is the one set most recently at or before that moment.
+
+          Write `fn price_at(history: &BTreeMap<u32, u32>, time: u32) -> Option<u32>` (None before the first price was ever set) and `fn changes_between(history: &BTreeMap<u32, u32>, from: u32, to: u32) -> usize` that counts the price changes with `from <= time <= to` (0 when `from > to`). The tests ask 200,000 questions about a long history, so use `range` for both.
+        seed: |
+          use std::collections::BTreeMap;
+
+          fn price_at(history: &BTreeMap<u32, u32>, time: u32) -> Option<u32> {
+              todo!()
+          }
+
+          fn changes_between(history: &BTreeMap<u32, u32>, from: u32, to: u32) -> usize {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeMap;
+
+          fn price_at(history: &BTreeMap<u32, u32>, time: u32) -> Option<u32> {
+              history.range(..=time).next_back().map(|(_, &price)| price)
+          }
+
+          fn changes_between(history: &BTreeMap<u32, u32>, from: u32, to: u32) -> usize {
+              if from > to {
+                  return 0;
+              }
+              history.range(from..=to).count()
+          }
+        harness: |
+          fn sample() -> BTreeMap<u32, u32> {
+              BTreeMap::from([(100, 999), (250, 1099), (400, 899)])
+          }
+
+          #[test]
+          fn finds_the_price_in_effect() {
+              assert_eq!(price_at(&sample(), 300), Some(1099), "price_at(history, 300)");
+              assert_eq!(price_at(&sample(), 1000), Some(899), "price_at(history, 1000)");
+          }
+
+          #[test]
+          fn a_change_takes_effect_at_its_own_time() {
+              assert_eq!(price_at(&sample(), 250), Some(1099), "price_at(history, 250)");
+          }
+
+          #[test]
+          fn there_is_no_price_before_the_first_one() {
+              assert_eq!(price_at(&sample(), 99), None, "price_at(history, 99)");
+              assert_eq!(price_at(&BTreeMap::new(), 5), None, "price_at(empty history, 5)");
+          }
+
+          #[test]
+          fn counts_changes_in_an_inclusive_window() {
+              assert_eq!(changes_between(&sample(), 100, 400), 3, "changes_between(history, 100, 400)");
+              assert_eq!(changes_between(&sample(), 101, 399), 1, "changes_between(history, 101, 399)");
+              assert_eq!(changes_between(&sample(), 500, 100), 0, "changes_between(history, 500, 100)");
+          }
+
+          #[test]
+          fn answers_200000_questions_quickly() {
+              let history: BTreeMap<u32, u32> = (0..200_000u32).map(|i| (i * 10, i)).collect();
+              let mut total: u64 = 0;
+              for q in 0..200_000u32 {
+                  total += price_at(&history, q * 10 + 5).unwrap_or(0) as u64;
+              }
+              assert_eq!(total, 19_999_900_000, "sum of 200,000 lookups");
+              assert_eq!(changes_between(&history, 0, 99), 10, "changes_between(history, 0, 99)");
+          }
+        hints:
+          - "The price at `time` is the floor entry: the largest key `<= time`."
+          - "`history.range(..=time).next_back()` gives `Option<(&u32, &u32)>`; `.map(|(_, &price)| price)` turns it into `Option<u32>`."
+          - "For the count, return 0 if `from > to` (a backwards range panics), otherwise `history.range(from..=to).count()`."
+      - task: |
+          A hotel front desk wants the free room whose number is **closest** to the one a guest asks for (some guests want to be near friends). Write `fn nearest_room(free: &BTreeSet<u32>, wanted: u32) -> Option<u32>`: return the free room with the smallest distance to `wanted`; on a tie, the lower number. `None` if no room is free.
+
+          Look at just two candidates: the floor (largest free room `<= wanted`) and the ceiling (smallest free room `>= wanted`). The tests make 100,000 requests against 100,000 rooms, so don't scan the set.
+        seed: |
+          use std::collections::BTreeSet;
+
+          fn nearest_room(free: &BTreeSet<u32>, wanted: u32) -> Option<u32> {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeSet;
+
+          fn nearest_room(free: &BTreeSet<u32>, wanted: u32) -> Option<u32> {
+              let below = free.range(..=wanted).next_back().copied();
+              let above = free.range(wanted..).next().copied();
+              match (below, above) {
+                  (Some(b), Some(a)) => {
+                      if wanted - b <= a - wanted { Some(b) } else { Some(a) }
+                  }
+                  (Some(b), None) => Some(b),
+                  (None, above) => above,
+              }
+          }
+        harness: |
+          #[test]
+          fn returns_the_room_itself_when_free() {
+              let free = BTreeSet::from([101, 105, 110]);
+              assert_eq!(nearest_room(&free, 105), Some(105), "nearest_room({{101, 105, 110}}, 105)");
+          }
+
+          #[test]
+          fn picks_the_closer_neighbor() {
+              let free = BTreeSet::from([101, 105, 110]);
+              assert_eq!(nearest_room(&free, 108), Some(110), "nearest_room({{101, 105, 110}}, 108)");
+              assert_eq!(nearest_room(&free, 102), Some(101), "nearest_room({{101, 105, 110}}, 102)");
+          }
+
+          #[test]
+          fn breaks_ties_with_the_lower_number() {
+              let free = BTreeSet::from([200, 210]);
+              assert_eq!(nearest_room(&free, 205), Some(200), "nearest_room({{200, 210}}, 205)");
+          }
+
+          #[test]
+          fn works_beyond_both_ends() {
+              let free = BTreeSet::from([300, 310]);
+              assert_eq!(nearest_room(&free, 5), Some(300), "nearest_room({{300, 310}}, 5)");
+              assert_eq!(nearest_room(&free, 999), Some(310), "nearest_room({{300, 310}}, 999)");
+          }
+
+          #[test]
+          fn no_free_rooms_gives_none() {
+              assert_eq!(nearest_room(&BTreeSet::new(), 100), None, "nearest_room({{}}, 100)");
+          }
+
+          #[test]
+          fn answers_100000_requests_quickly() {
+              let free: BTreeSet<u32> = (0..100_000u32).map(|i| i * 4).collect();
+              let mut total: u64 = 0;
+              for q in 0..100_000u32 {
+                  total += nearest_room(&free, q * 4 + 1).unwrap() as u64;
+              }
+              assert_eq!(total, 19_999_800_000, "sum of 100,000 answers");
+          }
+        hints:
+          - "`free.range(..=wanted).next_back()` is the closest room at or below; `free.range(wanted..).next()` the closest at or above. Add `.copied()` to get `Option<u32>`."
+          - "`match (below, above)`: when both exist, compare `wanted - b` with `a - wanted` (use `<=` so ties go to the lower room)."
+          - "When only one exists, return it; when neither does, `None`."
+
+  - title: LinkedList, and why it's rare
+    id: collections-more-5
+    text: |
+      The standard library also has `std::collections::LinkedList<T>`, a **doubly linked list**. Each element lives in its own heap allocation, a **node**, which holds the value and pointers to the previous and next nodes.
+
+      What that buys you:
+
+      - `push_front`, `push_back`, `pop_front`, `pop_back`: O(1), like VecDeque.
+      - `append(&mut other)`: moves *all* of another list onto the end in O(1), by relinking two pointers. Nothing is copied.
+      - `split_off(at)`: cuts the list in two (O(n) to walk to the cut point).
+
+      What it costs:
+
+      - **No indexing.** Getting the i-th element means walking i nodes: O(n).
+      - **One allocation per element**, plus two pointers of overhead each.
+      - **Poor cache use.** The CPU reads memory in chunks; a Vec's items sit side by side, so one read brings in many of them. A list's nodes are scattered around the heap, so walking it is a chain of slow memory reads. In practice, iterating a Vec is many times faster than iterating a list of the same length.
+
+      ```rust run
+      use std::collections::LinkedList;
+
+      fn main() {
+          let mut playlist: LinkedList<&str> = LinkedList::new();
+          playlist.push_back("Intro");
+          playlist.push_back("Verse");
+          playlist.push_front("Countdown");
+
+          let mut encore = LinkedList::from(["Chorus", "Outro"]);
+          playlist.append(&mut encore); // O(1): relinks, copies nothing
+
+          println!("{:?}", playlist);
+          println!("encore is now empty: {}", encore.is_empty());
+          println!("third: {:?}", playlist.iter().nth(2));
+          let tail = playlist.split_off(3);
+          println!("{:?} | {:?}", playlist, tail);
+      }
+      ```
+
+      ```output
+      ["Countdown", "Intro", "Verse", "Chorus", "Outro"]
+      encore is now empty: true
+      third: Some("Verse")
+      ["Countdown", "Intro", "Verse"] | ["Chorus", "Outro"]
+      ```
+
+      There's no `playlist[2]`; the compiler refuses it:
+
+      ```rust compile_fail
+      use std::collections::LinkedList;
+
+      fn main() {
+          let list: LinkedList<i32> = LinkedList::from([1, 2, 3]);
+          println!("{}", list[1]);
+      }
+      ```
+
+      ```error
+      error[E0608]: cannot index into a value of type `LinkedList<i32>`
+      ```
+
+      ### Why you'll rarely use it
+
+      The standard library's own documentation says it's almost always better to use `Vec` or `VecDeque`. The usual textbook argument for linked lists is "O(1) insert and remove in the middle", but that needs a pointer to the spot first, and std's `LinkedList` can't even remove from the middle on stable Rust (its cursor API is still unstable). Finding the spot is O(n) anyway, and Vec's `insert` (a fast memory move) usually beats walking a list to get there.
+
+      In a code review, a `LinkedList` usually gets the comment "use `VecDeque`". It's worth knowing it exists, what `append` costs, and why it loses. Writing your *own* linked structures (with `Option<Box<Node>>`) is a different story: that's how trees work, and you'll build one in the graphs module.
+
+      ### Common mistakes
+
+      - **Reaching for LinkedList for a queue.** VecDeque does the same O(1) operations at both ends, faster.
+      - **`list.iter().nth(i)` in a loop.** Each call walks from the front: a loop over all positions is O(n²).
+      - **Forgetting that `append` empties the other list.** It takes `&mut other` and moves the nodes out of it.
+
+      **Your turn:** fill in the blanks with the right `LinkedList` methods so the bus route program prints:
+
+      ```
+      ["Garage", "Depot", "Market St", "Harbor", "Airport"]
+      Some("Garage")
+      4
+      ```
+    fill: |
+      use std::collections::LinkedList;
+
+      fn main() {
+          let mut route: LinkedList<&str> = LinkedList::new();
+          route.[[push_back]]("Depot");
+          route.push_back("Market St");
+          route.[[push_front]]("Garage");
+          let mut extra = LinkedList::from(["Harbor", "Airport"]);
+          route.[[append]](&mut extra);
+          println!("{:?}", route);
+          println!("{:?}", route.[[pop_front]]());
+          println!("{}", route.[[len]]());
+      }
+    hints:
+      - "\"Depot\" goes at the end, \"Garage\" at the very front."
+      - "Moving every node of `extra` onto the end is `append`. Taking the first stop off is `pop_front`, and counting is `len`."
+    tests:
+      - expect: "[\"Garage\", \"Depot\", \"Market St\", \"Harbor\", \"Airport\"]\nSome(\"Garage\")\n4"
+    more:
+      - task: |
+          The radio station's playlist is a `LinkedList<String>`. The DJ wants to move the last `k` songs to the front, keeping their order: with `[a, b, c, d, e]` and `k = 2` the list becomes `[d, e, a, b, c]`.
+
+          Write `fn move_last_to_front(list: &mut LinkedList<String>, k: usize)` with `split_off` and `append` (no copying of songs). If `k` is 0 or at least the list's length, leave the list as it is.
+        seed: |
+          use std::collections::LinkedList;
+
+          fn move_last_to_front(list: &mut LinkedList<String>, k: usize) {
+              todo!()
+          }
+        solution: |
+          use std::collections::LinkedList;
+
+          fn move_last_to_front(list: &mut LinkedList<String>, k: usize) {
+              if k == 0 || k >= list.len() {
+                  return;
+              }
+              let mut tail = list.split_off(list.len() - k);
+              tail.append(list);
+              *list = tail;
+          }
+        require:
+          - pattern: 'split_off'
+            message: Cut the last k songs off with `split_off`.
+          - pattern: 'append'
+            message: Join the two parts with `append`.
+        harness: |
+          fn playlist(songs: &[&str]) -> LinkedList<String> {
+              songs.iter().map(|s| s.to_string()).collect()
+          }
+
+          fn names(list: &LinkedList<String>) -> Vec<&str> {
+              list.iter().map(|s| s.as_str()).collect()
+          }
+
+          #[test]
+          fn moves_the_last_two_songs_to_the_front() {
+              let mut list = playlist(&["a", "b", "c", "d", "e"]);
+              move_last_to_front(&mut list, 2);
+              assert_eq!(names(&list), vec!["d", "e", "a", "b", "c"], "move_last_to_front([a, b, c, d, e], 2)");
+          }
+
+          #[test]
+          fn moves_a_single_song() {
+              let mut list = playlist(&["a", "b", "c"]);
+              move_last_to_front(&mut list, 1);
+              assert_eq!(names(&list), vec!["c", "a", "b"], "move_last_to_front([a, b, c], 1)");
+          }
+
+          #[test]
+          fn zero_leaves_the_list_alone() {
+              let mut list = playlist(&["a", "b", "c"]);
+              move_last_to_front(&mut list, 0);
+              assert_eq!(names(&list), vec!["a", "b", "c"], "move_last_to_front([a, b, c], 0)");
+          }
+
+          #[test]
+          fn k_too_large_leaves_the_list_alone() {
+              let mut list = playlist(&["a", "b", "c"]);
+              move_last_to_front(&mut list, 3);
+              assert_eq!(names(&list), vec!["a", "b", "c"], "move_last_to_front([a, b, c], 3)");
+              move_last_to_front(&mut list, 9);
+              assert_eq!(names(&list), vec!["a", "b", "c"], "move_last_to_front([a, b, c], 9)");
+          }
+
+          #[test]
+          fn handles_an_empty_playlist() {
+              let mut list = playlist(&[]);
+              move_last_to_front(&mut list, 2);
+              assert_eq!(list.len(), 0, "move_last_to_front([], 2) length");
+          }
+        hints:
+          - "`list.split_off(list.len() - k)` leaves the first part in `list` and returns the last `k` songs as a new list."
+          - "`tail.append(list)` moves everything from `list` onto the end of `tail` (and leaves `list` empty)."
+          - "Finally put the result back: `*list = tail;`"
+      - task: |
+          **Code review.** A teammate wrote the ticket line below with a `LinkedList`. It works, but profiling shows `ticket_at` takes most of the time once 100,000 people are waiting: each call walks the list from the front.
+
+          Rewrite `TicketLine` to use a `VecDeque<u32>` instead (no `LinkedList` anywhere), keeping every method's behavior. `ticket_at(i)` must become O(1). The tests call it 100,000 times on a line of 100,000 tickets.
+        seed: |
+          use std::collections::LinkedList;
+
+          struct TicketLine {
+              tickets: LinkedList<u32>,
+          }
+
+          impl TicketLine {
+              fn new() -> Self {
+                  TicketLine { tickets: LinkedList::new() }
+              }
+
+              fn join(&mut self, id: u32) {
+                  self.tickets.push_back(id);
+              }
+
+              fn vip(&mut self, id: u32) {
+                  self.tickets.push_front(id);
+              }
+
+              fn serve(&mut self) -> Option<u32> {
+                  self.tickets.pop_front()
+              }
+
+              fn ticket_at(&self, i: usize) -> Option<u32> {
+                  self.tickets.iter().nth(i).copied()
+              }
+          }
+        solution: |
+          use std::collections::VecDeque;
+
+          struct TicketLine {
+              tickets: VecDeque<u32>,
+          }
+
+          impl TicketLine {
+              fn new() -> Self {
+                  TicketLine { tickets: VecDeque::new() }
+              }
+
+              fn join(&mut self, id: u32) {
+                  self.tickets.push_back(id);
+              }
+
+              fn vip(&mut self, id: u32) {
+                  self.tickets.push_front(id);
+              }
+
+              fn serve(&mut self) -> Option<u32> {
+                  self.tickets.pop_front()
+              }
+
+              fn ticket_at(&self, i: usize) -> Option<u32> {
+                  self.tickets.get(i).copied()
+              }
+          }
+        forbid:
+          - pattern: 'LinkedList'
+            message: Replace the `LinkedList` with a `VecDeque`.
+        harness: |
+          #[test]
+          fn serves_in_join_order() {
+              let mut line = TicketLine::new();
+              line.join(1);
+              line.join(2);
+              assert_eq!(line.serve(), Some(1), "first serve");
+              assert_eq!(line.serve(), Some(2), "second serve");
+              assert_eq!(line.serve(), None, "serve on an empty line");
+          }
+
+          #[test]
+          fn vips_go_first() {
+              let mut line = TicketLine::new();
+              line.join(1);
+              line.vip(99);
+              assert_eq!(line.ticket_at(0), Some(99), "ticket_at(0) after join(1), vip(99)");
+              assert_eq!(line.ticket_at(1), Some(1), "ticket_at(1)");
+          }
+
+          #[test]
+          fn ticket_at_past_the_end_is_none() {
+              let mut line = TicketLine::new();
+              line.join(5);
+              assert_eq!(line.ticket_at(1), None, "ticket_at(1) with one ticket");
+          }
+
+          #[test]
+          fn looks_up_100000_positions_quickly() {
+              let mut line = TicketLine::new();
+              for id in 0..100_000 {
+                  line.join(id);
+              }
+              let mut total: u64 = 0;
+              for i in 0..100_000 {
+                  total += line.ticket_at(i).unwrap() as u64;
+              }
+              assert_eq!(total, 4_999_950_000, "sum of every ticket_at(i)");
+          }
+        hints:
+          - "Change the `use` line and the field type to `VecDeque<u32>`, and `LinkedList::new()` to `VecDeque::new()`."
+          - "`push_back`, `push_front` and `pop_front` have the same names on VecDeque."
+          - "`ticket_at` becomes `self.tickets.get(i).copied()`: O(1) indexing."
+
+  - title: Choosing a collection
+    id: collections-more-6
+    text: |
+      You now know every collection in `std::collections`. Choosing one is about **how you'll access the data**. Here's the cheat sheet teams actually use:
+
+      | You need... | Use | Cost of the main operations |
+      |---|---|---|
+      | a list to add to and walk through (the default) | `Vec` | push/pop at the end O(1), index O(1), insert/remove in the middle O(n), search O(n) |
+      | a queue, or work at both ends | `VecDeque` | push/pop at both ends O(1), index O(1) |
+      | lookup by key | `HashMap` | insert/get/remove O(1) on average |
+      | lookup by key, plus order, ranges, min/max | `BTreeMap` | insert/get/remove O(log n), range O(log n + k) |
+      | "have I seen this?" | `HashSet` / `BTreeSet` | like the maps |
+      | always take the largest (or smallest) next | `BinaryHeap` | push/pop O(log n), peek O(1) |
+      | splicing whole lists together | `LinkedList` (rarely) | append O(1), no indexing |
+
+      Questions to ask:
+
+      1. **How will I look things up?** By position (Vec), by key (a map), by "the best one" (BinaryHeap), by range (BTreeMap)?
+      2. **Does order matter?** Insertion order (Vec, VecDeque), sorted order (BTree*), or none (Hash*)? Output that people or tests read must be deterministic, which rules out iterating a HashMap directly.
+      3. **How big will it get?** For a handful of items a Vec with a linear search often beats a HashMap, because hashing has a cost. Start with Vec and change when the access pattern or a profile says so.
+
+      ### Combining collections
+
+      Real systems often keep the same data in two shapes, one per kind of question. This order summary uses three collections, each for what it's good at:
+
+      ```rust run
+      use std::collections::{BTreeMap, BinaryHeap, HashMap};
+
+      fn main() {
+          // (day, customer, amount in cents)
+          let orders = [(3, "ana", 1250), (1, "ben", 830), (3, "ben", 4999), (2, "ana", 300), (1, "cy", 2100)];
+
+          let mut by_customer: HashMap<&str, Vec<u32>> = HashMap::new();
+          let mut per_day: BTreeMap<u32, u32> = BTreeMap::new();
+          let mut biggest = BinaryHeap::new();
+          for &(day, customer, cents) in &orders {
+              by_customer.entry(customer).or_default().push(cents);
+              *per_day.entry(day).or_insert(0) += cents;
+              biggest.push((cents, customer));
+          }
+          println!("ben's orders: {:?}", by_customer["ben"]);
+          for (day, total) in &per_day {
+              println!("day {day}: {total}");
+          }
+          println!("largest: {:?}", biggest.pop());
+      }
+      ```
+
+      ```output
+      ben's orders: [830, 4999]
+      day 1: 2930
+      day 2: 300
+      day 3: 6249
+      largest: Some((4999, "ben"))
+      ```
+
+      - The HashMap answers "everything about one customer" in O(1).
+      - The BTreeMap answers "totals per day, in day order" without sorting.
+      - The BinaryHeap answers "the biggest order" (and the next biggest, and so on).
+      - `entry(key).or_default()` creates an empty Vec the first time a customer appears: the idiomatic way to group.
+
+      ### Common mistakes
+
+      - **One collection for every question**, then sorting or scanning it on every request. If a question is asked often, give it its own index.
+      - **Keeping two collections out of sync.** When data lives in two places, update both in the same method so nobody can forget one. That's a good reason to wrap them in a struct with methods.
+      - **Choosing by habit.** "HashMap because it's fast" is wrong when you need sorted output, and "BTreeMap for safety" costs O(log n) when you never need order.
+
+      **Your turn:** an API gateway needs a **rate limiter**: each user may make at most `limit` requests in any window of `window` seconds. Write:
+
+      - `fn new(limit: usize, window: u64) -> Self`
+      - `fn allow(&mut self, user: &str, now: u64) -> bool`
+
+      A request at time `now` counts the user's earlier **allowed** requests at times `t` with `now - t < window`. If there are fewer than `limit`, allow it (and remember `now`); otherwise reject it. Rejected requests don't count. Times never go backwards.
+
+      Use a `HashMap<String, VecDeque<u64>>`: for each user, a queue of their recent allowed times. Before deciding, pop the times that have left the window off the front. The tests make 200,000 requests from one user with a limit of 50,000, so don't rescan the whole history on every call.
+    seed: |
+      use std::collections::{HashMap, VecDeque};
+
+      struct RateLimiter {
+          limit: usize,
+          window: u64,
+          recent: HashMap<String, VecDeque<u64>>,
+      }
+
+      impl RateLimiter {
+          fn new(limit: usize, window: u64) -> Self {
+              todo!()
+          }
+
+          fn allow(&mut self, user: &str, now: u64) -> bool {
+              todo!()
+          }
+      }
+    solution: |
+      use std::collections::{HashMap, VecDeque};
+
+      struct RateLimiter {
+          limit: usize,
+          window: u64,
+          recent: HashMap<String, VecDeque<u64>>,
+      }
+
+      impl RateLimiter {
+          fn new(limit: usize, window: u64) -> Self {
+              RateLimiter { limit, window, recent: HashMap::new() }
+          }
+
+          fn allow(&mut self, user: &str, now: u64) -> bool {
+              let times = self.recent.entry(user.to_string()).or_default();
+              while let Some(&oldest) = times.front() {
+                  if now - oldest < self.window {
+                      break;
+                  }
+                  times.pop_front();
+              }
+              if times.len() < self.limit {
+                  times.push_back(now);
+                  true
+              } else {
+                  false
+              }
+          }
+      }
+    hints:
+      - "Get the user's queue with `self.recent.entry(user.to_string()).or_default()`."
+      - "While the front time is too old (`now - oldest >= self.window`), `pop_front` it."
+      - "Then if `times.len() < self.limit`, `push_back(now)` and return `true`; otherwise return `false`."
+    harness: |
+      #[test]
+      fn allows_requests_up_to_the_limit() {
+          let mut rl = RateLimiter::new(3, 10);
+          assert_eq!(rl.allow("ana", 1), true, "ana at 1");
+          assert_eq!(rl.allow("ana", 2), true, "ana at 2");
+          assert_eq!(rl.allow("ana", 3), true, "ana at 3");
+          assert_eq!(rl.allow("ana", 4), false, "ana at 4 (fourth in the window)");
+      }
+
+      #[test]
+      fn old_requests_leave_the_window() {
+          let mut rl = RateLimiter::new(2, 10);
+          rl.allow("ana", 0);
+          rl.allow("ana", 5);
+          assert_eq!(rl.allow("ana", 9), false, "ana at 9");
+          assert_eq!(rl.allow("ana", 10), true, "ana at 10 (the request at 0 has left)");
+      }
+
+      #[test]
+      fn users_have_separate_limits() {
+          let mut rl = RateLimiter::new(1, 60);
+          assert_eq!(rl.allow("ana", 1), true, "ana at 1");
+          assert_eq!(rl.allow("ben", 1), true, "ben at 1");
+          assert_eq!(rl.allow("ana", 2), false, "ana at 2");
+      }
+
+      #[test]
+      fn rejected_requests_do_not_count() {
+          let mut rl = RateLimiter::new(1, 10);
+          rl.allow("cy", 0);
+          assert_eq!(rl.allow("cy", 5), false, "cy at 5");
+          assert_eq!(rl.allow("cy", 10), true, "cy at 10 (the rejected request at 5 doesn't count)");
+      }
+
+      #[test]
+      fn handles_200000_requests_quickly() {
+          let mut rl = RateLimiter::new(50_000, 1_000_000);
+          let mut allowed = 0;
+          for t in 0..200_000u64 {
+              if rl.allow("bot", t) {
+                  allowed += 1;
+              }
+          }
+          assert_eq!(allowed, 50_000, "allowed requests out of 200,000");
+      }
+    more:
+      - task: |
+          Marketing wants a page report from the web server's access log. Each line of standard input is `PAGE USER`, like `/home ana`. For every page, in alphabetical order, print how many **different** users visited it and how many views it had in total:
+
+          ```
+          /cart: 1 visitors, 1 views
+          /home: 2 visitors, 3 views
+          ```
+
+          Pick collections that make this easy: a `BTreeMap` from page to a pair of a `HashSet` of users and a view count. Skip blank lines.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+              }
+          }
+        solution: |
+          use std::collections::{BTreeMap, HashSet};
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut pages: BTreeMap<String, (HashSet<String>, u32)> = BTreeMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+                  let mut parts = line.split_whitespace();
+                  if let (Some(page), Some(user)) = (parts.next(), parts.next()) {
+                      let entry = pages.entry(page.to_string()).or_default();
+                      entry.0.insert(user.to_string());
+                      entry.1 += 1;
+                  }
+              }
+              for (page, (users, views)) in &pages {
+                  println!("{page}: {} visitors, {views} views", users.len());
+              }
+          }
+        require:
+          - pattern: 'BTreeMap'
+            message: Keep the pages in a `BTreeMap` so they come out in alphabetical order.
+        hints:
+          - "`let mut pages: BTreeMap<String, (HashSet<String>, u32)> = BTreeMap::new();`"
+          - "For each line, `let entry = pages.entry(page.to_string()).or_default();` then `entry.0.insert(user.to_string());` and `entry.1 += 1;`"
+          - "Print with `for (page, (users, views)) in &pages`; `users.len()` is the number of different visitors."
+        tests:
+          - stdin: "/home ana\n/cart ana\n/home ben\n/home ana\n"
+            expect: "/cart: 1 visitors, 1 views\n/home: 2 visitors, 3 views"
+          - stdin: "/b x\n/a y\n\n/b y\n/b x\n/c z\n"
+            hidden: true
+          - stdin: "/only me\n"
+            hidden: true
+      - task: |
+          Build an **LRU cache** (least recently used): a fixed-capacity key-value store that, when full, evicts the entry that was used longest ago. Caches like this sit in front of slow databases everywhere.
+
+          ```rust
+          fn new(capacity: usize) -> Self            // capacity is at least 1
+          fn get(&mut self, key: &str) -> Option<i32> // a hit counts as a use
+          fn put(&mut self, key: &str, value: i32)    // insert or update (also a use), then evict if over capacity
+          ```
+
+          Combine two collections: a `HashMap<String, (i32, u64)>` from key to (value, time of last use), and a `BTreeMap<u64, String>` from time of last use to key. A counter `tick` goes up by one on every use. The least recently used key is then `by_age.pop_first()`, in O(log n). When a key is used again, remove its old time from `by_age` and insert the new one. The tests run 120,000 operations on a cache of 5,000 entries.
+        seed: |
+          use std::collections::{BTreeMap, HashMap};
+
+          struct LruCache {
+              capacity: usize,
+              tick: u64,
+              entries: HashMap<String, (i32, u64)>,
+              by_age: BTreeMap<u64, String>,
+          }
+
+          impl LruCache {
+              fn new(capacity: usize) -> Self {
+                  todo!()
+              }
+
+              fn get(&mut self, key: &str) -> Option<i32> {
+                  todo!()
+              }
+
+              fn put(&mut self, key: &str, value: i32) {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::collections::{BTreeMap, HashMap};
+
+          struct LruCache {
+              capacity: usize,
+              tick: u64,
+              entries: HashMap<String, (i32, u64)>,
+              by_age: BTreeMap<u64, String>,
+          }
+
+          impl LruCache {
+              fn new(capacity: usize) -> Self {
+                  LruCache { capacity, tick: 0, entries: HashMap::new(), by_age: BTreeMap::new() }
+              }
+
+              fn get(&mut self, key: &str) -> Option<i32> {
+                  let (value, used) = self.entries.get_mut(key)?;
+                  self.by_age.remove(&*used);
+                  self.tick += 1;
+                  *used = self.tick;
+                  self.by_age.insert(self.tick, key.to_string());
+                  Some(*value)
+              }
+
+              fn put(&mut self, key: &str, value: i32) {
+                  self.tick += 1;
+                  if let Some((old_value, used)) = self.entries.get_mut(key) {
+                      self.by_age.remove(&*used);
+                      *old_value = value;
+                      *used = self.tick;
+                  } else {
+                      self.entries.insert(key.to_string(), (value, self.tick));
+                      if self.entries.len() > self.capacity {
+                          if let Some((_, oldest)) = self.by_age.pop_first() {
+                              self.entries.remove(&oldest);
+                          }
+                      }
+                  }
+                  self.by_age.insert(self.tick, key.to_string());
+              }
+          }
+        harness: |
+          #[test]
+          fn returns_stored_values() {
+              let mut c = LruCache::new(2);
+              c.put("a", 1);
+              c.put("b", 2);
+              assert_eq!(c.get("a"), Some(1), "get(a)");
+              assert_eq!(c.get("b"), Some(2), "get(b)");
+              assert_eq!(c.get("zzz"), None, "get(zzz)");
+          }
+
+          #[test]
+          fn evicts_the_least_recently_used_key() {
+              let mut c = LruCache::new(2);
+              c.put("a", 1);
+              c.put("b", 2);
+              c.put("c", 3);
+              assert_eq!(c.get("a"), None, "get(a) after a, b, c with capacity 2");
+              assert_eq!(c.get("c"), Some(3), "get(c)");
+          }
+
+          #[test]
+          fn a_get_makes_a_key_recent() {
+              let mut c = LruCache::new(2);
+              c.put("a", 1);
+              c.put("b", 2);
+              c.get("a");
+              c.put("c", 3);
+              assert_eq!(c.get("b"), None, "get(b): b was the least recently used");
+              assert_eq!(c.get("a"), Some(1), "get(a)");
+          }
+
+          #[test]
+          fn put_updates_an_existing_key_without_evicting() {
+              let mut c = LruCache::new(2);
+              c.put("a", 1);
+              c.put("b", 2);
+              c.put("a", 10);
+              assert_eq!(c.get("a"), Some(10), "get(a) after updating it");
+              assert_eq!(c.get("b"), Some(2), "get(b) is still there");
+          }
+
+          #[test]
+          fn handles_60000_puts_and_gets_quickly() {
+              let mut c = LruCache::new(5_000);
+              c.put("hot", -1);
+              for i in 0..60_000 {
+                  c.put(&i.to_string(), i);
+                  assert_eq!(c.get("hot"), Some(-1), "the hot key stays cached at step {i}");
+              }
+              assert_eq!(c.get("59999"), Some(59_999), "get(59999)");
+              assert_eq!(c.get("55001"), Some(55_001), "get(55001)");
+              assert_eq!(c.get("55000"), None, "get(55000) was evicted");
+          }
+        hints:
+          - "In `get`: `let (value, used) = self.entries.get_mut(key)?;` then remove the old time from `by_age`, bump `self.tick`, store it in `*used` and insert `(self.tick, key.to_string())` into `by_age`."
+          - "In `put` for an existing key, do the same as `get` and also overwrite the value. For a new key, insert it, and if `entries.len() > capacity`, evict."
+          - "Evicting: `if let Some((_, oldest)) = self.by_age.pop_first() { self.entries.remove(&oldest); }`. Insert the new key's time into `by_age` after evicting, so you never evict the key you just added."

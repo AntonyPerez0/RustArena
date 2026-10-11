@@ -1,0 +1,1464 @@
+id: structs
+title: Structs
+phase: "Structuring data"
+summary: "Build your own types by grouping related values under one name. Define structs, create and change them, pass them to functions, use tuple structs as newtypes, and print them with #[derive(Debug)]."
+roadmap: [Structs]
+steps:
+  - title: Grouping data with a struct
+    id: structs-1
+    text: |
+      So far, related values have lived in separate variables: `name`, `score`, `level`. With three players you'd juggle nine variables, and nothing stops you from mixing up whose score is whose. A tuple like `(String, u32, u8)` groups them, but `player.1` doesn't say what the number means.
+
+      A **struct** (short for *structure*) is a type you define yourself that groups related values under one name. Each value is a **field**, with a name and a type.
+
+      ```rust run
+      struct Player {
+          name: String,
+          score: u32,
+          level: u8,
+      }
+
+      fn main() {
+          let p = Player {
+              name: String::from("Ferris"),
+              score: 1200,
+              level: 7,
+          };
+          println!("{} is level {} with {} points", p.name, p.level, p.score);
+      }
+      ```
+
+      ```output
+      Ferris is level 7 with 1200 points
+      ```
+
+      Piece by piece:
+
+      - `struct Player { ... }` **defines** a new type called `Player`. It goes outside `fn main`, at the top level of the file. A definition is a blueprint: it doesn't create any value by itself.
+      - Inside the braces, each field is written `name: Type`, separated by commas. A comma after the last field is normal Rust style (`cargo fmt` adds it for you).
+      - `Player { name: ..., score: ..., level: ... }` creates an **instance**: an actual value of type `Player`. You must give every field a value, but the order doesn't have to match the definition.
+      - `p.name` reads a field with a dot, the same way you read `.0` of a tuple, but with a name that says what it is.
+
+      Type names use **UpperCamelCase** (`Player`, `InventoryItem`); field names use snake_case, like variables. The compiler warns you if you mix them up.
+
+      ### Why bother?
+
+      A struct gives meaning to data. `p.score` says what the number is, the type `Player` can appear in function signatures (`fn print_player(p: &Player)`), and the compiler guarantees that every `Player` has all of its fields. Fields can be any type: numbers, `bool`, `String`, arrays, tuples, even other structs.
+
+      For text fields, use `String`: the struct then **owns** its text, just like a `String` variable does. A `&str` field would borrow text owned by someone else, which needs *lifetimes*, a later module. Owned fields are the right default.
+
+      ### Common mistakes
+
+      - **Leaving out a field.** Every field needs a value; there are no automatic defaults:
+
+      ```rust compile_fail
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn main() {
+          let p = Player { name: String::from("Ferris") };
+          println!("{}", p.name);
+      }
+      ```
+
+      ```error
+      error[E0063]: missing field `score` in initializer of `Player`
+      ```
+
+      - **`=` instead of `:`** when creating an instance: `Player { name = ... }` gives ``expected `:`, found `=` ``. Fields use colons both in the definition and in the instance.
+      - **A semicolon after the definition**: `struct Player { ... };` gives ``expected item, found `;` ``. A struct definition with braces ends with `}` alone.
+
+      **Your turn:** fill in the blanks: the type of `score` (a whole number that can't be negative: `u32`), the struct's name when creating the instance, and the field printed first. The program should print `Ferris has 120 points`.
+    fill: |
+      struct Player {
+          name: String,
+          score: [[u32]],
+      }
+
+      fn main() {
+          let p = [[Player]] {
+              name: String::from("Ferris"),
+              score: 120,
+          };
+          println!("{} has {} points", p.[[name]], p.score);
+      }
+    hints:
+      - "The field `score` holds a whole number that is never negative: `u32`."
+      - "You create an instance by writing the struct's name, then the fields in braces: `Player { ... }`."
+      - "The first `{}` should show the player's name, so read the field `p.name`."
+    tests:
+      - expect: "Ferris has 120 points"
+    more:
+      - task: |
+          Fill in the blanks so the program prints `The Rust Book (560 pages)`: the type of the `title` field, the field name when creating the instance, and the field read last.
+        fill: |
+          struct Book {
+              title: [[String]],
+              pages: u32,
+          }
+
+          fn main() {
+              let b = Book {
+                  [[title]]: String::from("The Rust Book"),
+                  pages: 560,
+              };
+              println!("{} ({} pages)", b.title, b.[[pages]]);
+          }
+        hints:
+          - "A struct that owns its text uses `String` for that field."
+          - "When creating the instance, each value is introduced by its field name and a colon: `title: ...`."
+        tests:
+          - expect: "The Rust Book (560 pages)"
+      - task: |
+          Write it all yourself. Define a struct `Ticket` with three fields: `id` (a `u32`), `title` (a `String`) and `open` (a `bool`). In `main`, create a ticket with id `42`, title `Login button broken` and open `true`, then print it with one `println!` that reads all three fields:
+
+          ```text
+          #42 Login button broken (open: true)
+          ```
+        seed: |
+          // Define struct Ticket here (outside main).
+
+          fn main() {
+              // Create a Ticket and print its fields.
+          }
+        solution: |
+          // Define struct Ticket here (outside main).
+          struct Ticket {
+              id: u32,
+              title: String,
+              open: bool,
+          }
+
+          fn main() {
+              // Create a Ticket and print its fields.
+              let t = Ticket {
+                  id: 42,
+                  title: String::from("Login button broken"),
+                  open: true,
+              };
+              println!("#{} {} (open: {})", t.id, t.title, t.open);
+          }
+        require:
+          - pattern: 'struct\s+Ticket\s*\{'
+            message: Define a struct named `Ticket` with braces and named fields.
+          - pattern: '\w+\.id\b[\s\S]*\w+\.title\b[\s\S]*\w+\.open\b'
+            message: Print the values by reading the ticket's fields (`t.id`, `t.title`, `t.open`), not by typing them into the text.
+        hints:
+          - "Start with `struct Ticket { id: u32, title: String, open: bool }` above `main`."
+          - "Create it with `let t = Ticket { id: 42, title: String::from(\"Login button broken\"), open: true };`"
+          - "Print with `println!(\"#{} {} (open: {})\", t.id, t.title, t.open);`"
+        tests:
+          - expect: "#42 Login button broken (open: true)"
+
+  - title: Changing structs and passing them around
+    id: structs-2
+    text: |
+      Like every variable in Rust, an instance is immutable unless you say `mut`. With `let mut`, you can change any field with `=`, `+=` and friends. Mutability belongs to the whole instance: Rust has no way to mark just one field as `mut`.
+
+      ### Structs and functions
+
+      A struct follows the ownership rules you already know. Pass `&Player` to a function that only reads it, and `&mut Player` to a function that changes it. Through a reference you still write `account.balance`: Rust follows the reference for you, so there's no need for `(*account).balance`.
+
+      ```rust run
+      struct Account {
+          owner: String,
+          balance: i64,
+      }
+
+      fn deposit(account: &mut Account, amount: i64) {
+          account.balance += amount;
+      }
+
+      fn report(account: &Account) {
+          println!("{}: {}", account.owner, account.balance);
+      }
+
+      fn main() {
+          let mut acct = Account {
+              owner: String::from("Ada"),
+              balance: 100,
+          };
+          report(&acct);
+          deposit(&mut acct, 50);
+          acct.balance -= 30;
+          report(&acct);
+      }
+      ```
+
+      ```output
+      Ada: 100
+      Ada: 120
+      ```
+
+      - `deposit` borrows the account mutably, changes one field, and gives the borrow back when it returns.
+      - `report` only needs to look, so it takes `&Account`. Both can be called as often as you like, because `main` still owns `acct`.
+      - `main` can change a field directly too (`acct.balance -= 30`), because `acct` is `mut`.
+
+      Functions can also **return** a struct. That's how you'll usually build one: a function that takes a few values and fills in the rest.
+
+      ```rust run
+      struct Account {
+          owner: String,
+          balance: i64,
+      }
+
+      fn open_account(owner: &str) -> Account {
+          Account {
+              owner: owner.to_string(),
+              balance: 0,
+          }
+      }
+
+      fn main() {
+          let acct = open_account("Grace");
+          println!("{} starts with {}", acct.owner, acct.balance);
+      }
+      ```
+
+      ```output
+      Grace starts with 0
+      ```
+
+      ### Common mistakes
+
+      - **Changing a field of an immutable instance**:
+
+      ```rust compile_fail
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn main() {
+          let p = Player { name: String::from("Ferris"), score: 10 };
+          p.score += 5;
+          println!("{} {}", p.name, p.score);
+      }
+      ```
+
+      ```error
+      error[E0594]: cannot assign to `p.score`, as `p` is not declared as mutable
+      ```
+
+      - **Passing the struct by value when you meant to lend it.** A struct with a `String` inside moves into the function, just like the `String` itself would. If `report` took `account: Account`, calling `report(acct)` twice gives ``error[E0382]: use of moved value: `acct` ``. Take `&Account` instead.
+
+      **Your turn:** write `fn level_up(hero: &mut Hero)`. It adds 1 to `level`, adds 10 to `max_hp`, and then fully heals the hero: `hp` becomes the new `max_hp`. The name doesn't change.
+    seed: |
+      struct Hero {
+          name: String,
+          level: u32,
+          hp: u32,
+          max_hp: u32,
+      }
+
+      fn level_up(hero: &mut Hero) {
+          todo!()
+      }
+    solution: |
+      struct Hero {
+          name: String,
+          level: u32,
+          hp: u32,
+          max_hp: u32,
+      }
+
+      fn level_up(hero: &mut Hero) {
+          hero.level += 1;
+          hero.max_hp += 10;
+          hero.hp = hero.max_hp;
+      }
+    harness: |
+      fn ayla() -> Hero {
+          Hero { name: String::from("Ayla"), level: 1, hp: 12, max_hp: 50 }
+      }
+
+      #[test]
+      fn adds_one_level() {
+          let mut h = ayla();
+          level_up(&mut h);
+          assert_eq!(h.level, 2, "level after level_up on a level 1 hero");
+      }
+
+      #[test]
+      fn raises_max_hp_by_10() {
+          let mut h = ayla();
+          level_up(&mut h);
+          assert_eq!(h.max_hp, 60, "max_hp after level_up when it was 50");
+      }
+
+      #[test]
+      fn heals_to_the_new_max() {
+          let mut h = ayla();
+          level_up(&mut h);
+          assert_eq!(h.hp, 60, "hp after level_up (hp was 12, max_hp was 50)");
+      }
+
+      #[test]
+      fn keeps_the_name() {
+          let mut h = ayla();
+          level_up(&mut h);
+          assert_eq!(h.name, "Ayla", "name after level_up");
+      }
+
+      #[test]
+      fn works_twice_in_a_row() {
+          let mut h = ayla();
+          level_up(&mut h);
+          level_up(&mut h);
+          assert_eq!((h.level, h.hp, h.max_hp), (3, 70, 70), "(level, hp, max_hp) after two level_ups");
+      }
+    hints:
+      - "Change the fields through the reference: `hero.level += 1;`"
+      - "Order matters: raise `max_hp` first, then set `hp` to it."
+      - "`hero.level += 1; hero.max_hp += 10; hero.hp = hero.max_hp;`"
+    more:
+      - task: |
+          Write `fn take_damage(hero: &mut Hero, amount: u32)`. It lowers `hp` by `amount`, but `hp` never goes below 0 (remember: subtracting past zero on a `u32` panics in a debug build). No other field changes.
+        seed: |
+          struct Hero {
+              name: String,
+              level: u32,
+              hp: u32,
+              max_hp: u32,
+          }
+
+          fn take_damage(hero: &mut Hero, amount: u32) {
+              todo!()
+          }
+        solution: |
+          struct Hero {
+              name: String,
+              level: u32,
+              hp: u32,
+              max_hp: u32,
+          }
+
+          fn take_damage(hero: &mut Hero, amount: u32) {
+              hero.hp = hero.hp.saturating_sub(amount);
+          }
+        harness: |
+          fn ayla() -> Hero {
+              Hero { name: String::from("Ayla"), level: 3, hp: 40, max_hp: 70 }
+          }
+
+          #[test]
+          fn lowers_hp_by_the_damage() {
+              let mut h = ayla();
+              take_damage(&mut h, 15);
+              assert_eq!(h.hp, 25, "hp after take_damage(15) from 40");
+          }
+
+          #[test]
+          fn can_drop_exactly_to_zero() {
+              let mut h = ayla();
+              take_damage(&mut h, 40);
+              assert_eq!(h.hp, 0, "hp after take_damage(40) from 40");
+          }
+
+          #[test]
+          fn stops_at_zero_instead_of_panicking() {
+              let mut h = ayla();
+              take_damage(&mut h, 500);
+              assert_eq!(h.hp, 0, "hp after take_damage(500) from 40");
+          }
+
+          #[test]
+          fn leaves_the_other_fields_alone() {
+              let mut h = ayla();
+              take_damage(&mut h, 10);
+              assert_eq!((h.name.as_str(), h.level, h.max_hp), ("Ayla", 3, 70), "(name, level, max_hp) after take_damage");
+          }
+        hints:
+          - "`hero.hp - amount` panics when `amount` is bigger. Check first with `if`, or use the saturating subtraction you met with integer types."
+          - "`hero.hp = hero.hp.saturating_sub(amount);`"
+      - task: |
+          Write `fn transfer(from: &mut Account, to: &mut Account, amount: i64)` from scratch. It moves `amount` from `from`'s balance to `to`'s balance. If `from` has less than `amount`, nothing changes at all. Owners never change.
+        seed: |
+          struct Account {
+              owner: String,
+              balance: i64,
+          }
+
+          // Write fn transfer here.
+        solution: |
+          struct Account {
+              owner: String,
+              balance: i64,
+          }
+
+          // Write fn transfer here.
+          fn transfer(from: &mut Account, to: &mut Account, amount: i64) {
+              if from.balance < amount {
+                  return;
+              }
+              from.balance -= amount;
+              to.balance += amount;
+          }
+        harness: |
+          fn acct(owner: &str, balance: i64) -> Account {
+              Account { owner: owner.to_string(), balance }
+          }
+
+          #[test]
+          fn moves_money_between_accounts() {
+              let mut a = acct("Ada", 100);
+              let mut b = acct("Grace", 20);
+              transfer(&mut a, &mut b, 30);
+              assert_eq!((a.balance, b.balance), (70, 50), "balances after transfer of 30 from 100 to 20");
+          }
+
+          #[test]
+          fn can_move_the_whole_balance() {
+              let mut a = acct("Ada", 100);
+              let mut b = acct("Grace", 0);
+              transfer(&mut a, &mut b, 100);
+              assert_eq!((a.balance, b.balance), (0, 100), "balances after transferring everything");
+          }
+
+          #[test]
+          fn refuses_when_there_is_not_enough() {
+              let mut a = acct("Ada", 10);
+              let mut b = acct("Grace", 5);
+              transfer(&mut a, &mut b, 11);
+              assert_eq!((a.balance, b.balance), (10, 5), "balances after trying to send 11 from 10");
+          }
+
+          #[test]
+          fn keeps_the_owners() {
+              let mut a = acct("Ada", 100);
+              let mut b = acct("Grace", 20);
+              transfer(&mut a, &mut b, 30);
+              assert_eq!((a.owner.as_str(), b.owner.as_str()), ("Ada", "Grace"), "owners after a transfer");
+          }
+        hints:
+          - "Two `&mut` parameters are fine here: they borrow two different accounts."
+          - "Check `from.balance < amount` first and `return` early if it's true."
+          - "Then `from.balance -= amount;` and `to.balance += amount;`"
+
+  - title: Building structs with shorthand and update syntax
+    id: structs-3
+    text: |
+      Building structs in functions is so common that Rust has two shortcuts for it.
+
+      ### Field init shorthand
+
+      When a variable has the same name as the field, write the name once: `price_cents` instead of `price_cents: price_cents`. This is the **field init shorthand**. Clippy flags the long form (`redundant_field_names`), so in real code you'll see the short one everywhere.
+
+      ### Struct update syntax
+
+      `..other` at the end of an instance means "every field I didn't list comes from `other`". This is **struct update syntax**, handy for "the same, but with these changes":
+
+      ```rust run
+      struct Settings {
+          player_name: String,
+          volume: u8,
+          music: bool,
+          difficulty: u8,
+      }
+
+      fn default_settings(player_name: String) -> Settings {
+          Settings {
+              player_name,
+              volume: 70,
+              music: true,
+              difficulty: 2,
+          }
+      }
+
+      fn main() {
+          let base = default_settings(String::from("Ferris"));
+          let hard = Settings {
+              difficulty: 5,
+              music: false,
+              ..base
+          };
+          println!("{} plays at difficulty {}", hard.player_name, hard.difficulty);
+          println!("volume {}, music {}", hard.volume, hard.music);
+      }
+      ```
+
+      ```output
+      Ferris plays at difficulty 5
+      volume 70, music false
+      ```
+
+      - In `default_settings`, the parameter is called `player_name`, so the field is filled with just `player_name,`.
+      - `hard` lists two fields and takes the rest (`player_name`, `volume`) from `base`.
+      - `..base` must come **last**, with no comma after it.
+
+      ### The update syntax moves
+
+      `..base` works like assignment: `Copy` fields (numbers, `bool`) are copied, but a `String` field is **moved** out of `base`. After that line, `base.player_name` is gone, while `base.volume` is still fine:
+
+      ```rust compile_fail
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn main() {
+          let a = Player { name: String::from("Ferris"), score: 10 };
+          let b = Player { score: 99, ..a };
+          println!("{} {}", b.name, b.score);
+          println!("{}", a.name);
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `a.name`
+      ```
+
+      If you still need `a`, give the moved fields explicitly (`name: a.name.clone()`), or just don't use `a` afterwards. Often the struct you update from is a temporary that's thrown away anyway.
+
+      **Your turn:** write `fn new_item(name: &str, price_cents: u32) -> Item` that returns an `Item` with that name and price, and a `quantity` of 0. Use the field init shorthand for `price_cents`.
+    seed: |
+      struct Item {
+          name: String,
+          price_cents: u32,
+          quantity: u32,
+      }
+
+      fn new_item(name: &str, price_cents: u32) -> Item {
+          todo!()
+      }
+    solution: |
+      struct Item {
+          name: String,
+          price_cents: u32,
+          quantity: u32,
+      }
+
+      fn new_item(name: &str, price_cents: u32) -> Item {
+          Item {
+              name: name.to_string(),
+              price_cents,
+              quantity: 0,
+          }
+      }
+    harness: |
+      #[test]
+      fn sets_the_name() {
+          let item = new_item("Tea", 450);
+          assert_eq!(item.name, "Tea", "new_item(\"Tea\", 450).name");
+      }
+
+      #[test]
+      fn sets_the_price() {
+          let item = new_item("Tea", 450);
+          assert_eq!(item.price_cents, 450, "new_item(\"Tea\", 450).price_cents");
+      }
+
+      #[test]
+      fn starts_with_zero_quantity() {
+          let item = new_item("Mug", 1200);
+          assert_eq!(item.quantity, 0, "new_item(\"Mug\", 1200).quantity");
+      }
+
+      #[test]
+      fn handles_a_free_item() {
+          let item = new_item("Sticker", 0);
+          assert_eq!((item.name.as_str(), item.price_cents), ("Sticker", 0), "new_item(\"Sticker\", 0)");
+      }
+    require:
+      - pattern: '\bprice_cents\s*[,}]'
+        message: "Use the field init shorthand: write `price_cents,` instead of `price_cents: price_cents,`."
+    hints:
+      - "`name` is a `&str` but the field is a `String`: convert it with `name.to_string()`."
+      - "Inside the `Item { ... }`, the parameter and the field share the name `price_cents`, so you can write just `price_cents,`."
+      - "`Item { name: name.to_string(), price_cents, quantity: 0 }`"
+    more:
+      - task: |
+          Write `fn with_price(item: Item, price_cents: u32) -> Item`. It returns the same item with a new price. Use struct update syntax (`..item`) for the fields that stay the same, and the shorthand for `price_cents`.
+        seed: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+              quantity: u32,
+          }
+
+          fn with_price(item: Item, price_cents: u32) -> Item {
+              todo!()
+          }
+        solution: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+              quantity: u32,
+          }
+
+          fn with_price(item: Item, price_cents: u32) -> Item {
+              Item { price_cents, ..item }
+          }
+        harness: |
+          fn tea() -> Item {
+              Item { name: String::from("Tea"), price_cents: 450, quantity: 12 }
+          }
+
+          #[test]
+          fn changes_the_price() {
+              assert_eq!(with_price(tea(), 399).price_cents, 399, "with_price(tea, 399).price_cents");
+          }
+
+          #[test]
+          fn keeps_the_name() {
+              assert_eq!(with_price(tea(), 399).name, "Tea", "with_price(tea, 399).name");
+          }
+
+          #[test]
+          fn keeps_the_quantity() {
+              assert_eq!(with_price(tea(), 399).quantity, 12, "with_price(tea, 399).quantity");
+          }
+        require:
+          - pattern: '\.\.\s*item\b'
+            message: "Take the unchanged fields from the old item with `..item`."
+        hints:
+          - "The new value lists only the field that changes, then `..item` for the rest."
+          - "`Item { price_cents, ..item }`"
+      - task: |
+          Write two functions for a game:
+
+          - `fn new_character(name: String, class: String) -> Character`: level 1 and 100 hp. Use the shorthand for `name` and `class`.
+          - `fn promoted(c: Character) -> Character`: one level higher and 20 more hp, with the same name and class. Use struct update syntax.
+        seed: |
+          struct Character {
+              name: String,
+              class: String,
+              level: u32,
+              hp: u32,
+          }
+
+        solution: |
+          struct Character {
+              name: String,
+              class: String,
+              level: u32,
+              hp: u32,
+          }
+
+          fn new_character(name: String, class: String) -> Character {
+              Character {
+                  name,
+                  class,
+                  level: 1,
+                  hp: 100,
+              }
+          }
+
+          fn promoted(c: Character) -> Character {
+              Character {
+                  level: c.level + 1,
+                  hp: c.hp + 20,
+                  ..c
+              }
+          }
+        harness: |
+          fn mage() -> Character {
+              new_character(String::from("Ayla"), String::from("mage"))
+          }
+
+          #[test]
+          fn a_new_character_starts_at_level_1_with_100_hp() {
+              let c = mage();
+              assert_eq!((c.level, c.hp), (1, 100), "(level, hp) of a new character");
+          }
+
+          #[test]
+          fn a_new_character_keeps_name_and_class() {
+              let c = mage();
+              assert_eq!((c.name.as_str(), c.class.as_str()), ("Ayla", "mage"), "(name, class) of a new character");
+          }
+
+          #[test]
+          fn promotion_adds_a_level_and_20_hp() {
+              let c = promoted(mage());
+              assert_eq!((c.level, c.hp), (2, 120), "(level, hp) after one promotion");
+          }
+
+          #[test]
+          fn promotion_keeps_name_and_class() {
+              let c = promoted(mage());
+              assert_eq!((c.name.as_str(), c.class.as_str()), ("Ayla", "mage"), "(name, class) after a promotion");
+          }
+
+          #[test]
+          fn promotions_stack() {
+              let c = promoted(promoted(promoted(mage())));
+              assert_eq!((c.level, c.hp), (4, 160), "(level, hp) after three promotions");
+          }
+        require:
+          - pattern: '\.\.\s*c\b'
+            message: "In `promoted`, take the unchanged fields with `..c`."
+        hints:
+          - "`new_character` can list `name, class,` with no colons, then `level: 1, hp: 100`."
+          - "In `promoted`, field values are computed before `..c` moves the rest, so `level: c.level + 1` works."
+          - "`Character { level: c.level + 1, hp: c.hp + 20, ..c }`"
+
+  - title: Printing structs with Debug
+    id: structs-4
+    text: |
+      Try to print a struct with `{}` and Rust refuses:
+
+      ```rust compile_fail
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      fn main() {
+          let p = Point { x: 1, y: 2 };
+          println!("{}", p);
+      }
+      ```
+
+      ```error
+      error[E0277]: `Point` doesn't implement `std::fmt::Display`
+      ```
+
+      `{}` uses **Display**, the "pretty, for end users" format. Rust doesn't guess how your type should look to users (`(1, 2)`? `x=1 y=2`?), so you'd have to write that yourself, which you'll learn in the traits module. `{:?}` uses **Debug**, the "for programmers" format, and for that Rust can write the code for you.
+
+      ### #[derive(Debug)]
+
+      ```rust run
+      #[derive(Debug)]
+      struct Item {
+          name: String,
+          price_cents: u32,
+          in_stock: bool,
+      }
+
+      fn main() {
+          let item = Item {
+              name: String::from("Tea"),
+              price_cents: 450,
+              in_stock: true,
+          };
+          println!("{:?}", item);
+          println!("{:#?}", item);
+          if item.in_stock {
+              println!("{} costs {} cents", item.name, item.price_cents);
+          }
+      }
+      ```
+
+      ```output
+      Item { name: "Tea", price_cents: 450, in_stock: true }
+      Item {
+          name: "Tea",
+          price_cents: 450,
+          in_stock: true,
+      }
+      Tea costs 450 cents
+      ```
+
+      - `#[derive(Debug)]` is an **attribute**: a note to the compiler written above an item. **derive** asks the compiler to generate code for you, here the Debug formatting. (Debug is a **trait**, a named ability a type can have; the traits module covers them properly.)
+      - `{:?}` prints everything on one line. `{:#?}` pretty-prints, one field per line, which is much easier to read for big or nested structs.
+      - Nearly every struct in real code derives `Debug`. It costs nothing until you use it, and it makes logging and debugging painless.
+
+      ### dbg!
+
+      `dbg!(expression)` prints the file, the line, the expression and its value, then **returns** the value, so you can wrap it around something in the middle of your code:
+
+      ```rust run
+      #[derive(Debug)]
+      struct Item {
+          name: String,
+          price_cents: u32,
+      }
+
+      fn main() {
+          let price_cents = dbg!(150 * 3);
+          let item = Item { name: String::from("Tea"), price_cents };
+          dbg!(&item);
+          println!("{} costs {}", item.name, item.price_cents);
+      }
+      ```
+
+      ```output
+      Tea costs 450
+      ```
+
+      The `dbg!` lines go to **standard error** (stderr), not standard output, so they don't mix with the program's real output (and the tests on this site ignore them). In a terminal you'd see:
+
+      ```text
+      [src/main.rs:8:23] 150 * 3 = 450
+      [src/main.rs:10:5] &item = Item {
+          name: "Tea",
+          price_cents: 450,
+      }
+      ```
+
+      Pass a reference (`dbg!(&item)`): `dbg!(item)` would move `item` into the macro. `dbg!` is for debugging sessions; remove it before you commit (many teams turn on clippy's `dbg_macro` lint to catch leftovers).
+
+      ### Comparing with ==
+
+      `==` doesn't work on your struct either until you derive **PartialEq**, which compares field by field. You can derive several things at once: `#[derive(Debug, PartialEq)]`. `assert_eq!` needs both: `PartialEq` to compare and `Debug` to show the two values when they differ.
+
+      ```rust run
+      #[derive(Debug, PartialEq)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      fn main() {
+          let a = Point { x: 1, y: 2 };
+          let b = Point { x: 1, y: 2 };
+          println!("{}", a == b);
+          println!("{}", a == Point { x: 2, y: 1 });
+      }
+      ```
+
+      ```output
+      true
+      false
+      ```
+
+      ### Common mistakes
+
+      - **`{:?}` without the derive**: ``error[E0277]: `Point` doesn't implement `Debug` ``. The error's help line tells you to add `#[derive(Debug)]`.
+      - **`==` without PartialEq**: ``error[E0369]: binary operation `==` cannot be applied to type `Point` ``.
+      - **A field only used in `{:?}`**: the compiler warns ``field `name` is never read``, because derived Debug output doesn't count as using a field. Real code reads its fields; if it doesn't, the field may not be needed.
+
+      **Your turn:** fill in the blanks: derive the trait that `{:?}` needs, and print `p` with it. The program should print:
+
+      ```text
+      sum: 1
+      Point { x: 3, y: -2 }
+      ```
+    fill: |
+      #[derive([[Debug]])]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      fn main() {
+          let p = Point { x: 3, y: -2 };
+          println!("sum: {}", p.x + p.y);
+          println!("[[{:?}]]", p);
+      }
+    hints:
+      - "The trait for `{:?}` formatting is `Debug`."
+      - "The second format string is just the Debug placeholder: `{:?}`."
+    tests:
+      - expect: "sum: 1\nPoint { x: 3, y: -2 }"
+    more:
+      - task: |
+          Add one derive line so that `Item` can be pretty-printed and compared with `==`. Then print `a` with the pretty Debug format and print whether `a == b`, so the output is exactly:
+
+          ```text
+          Item {
+              name: "bolt",
+              qty: 40,
+          }
+          same: true
+          ```
+        seed: |
+          struct Item {
+              name: String,
+              qty: u32,
+          }
+
+          fn main() {
+              let a = Item { name: String::from("bolt"), qty: 40 };
+              let b = Item { name: String::from("bolt"), qty: 40 };
+              // Print a with {:#?}, then "same: " and whether a == b
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Item {
+              name: String,
+              qty: u32,
+          }
+
+          fn main() {
+              let a = Item { name: String::from("bolt"), qty: 40 };
+              let b = Item { name: String::from("bolt"), qty: 40 };
+              // Print a with {:#?}, then "same: " and whether a == b
+              println!("{:#?}", a);
+              println!("same: {}", a == b);
+          }
+        require:
+          - pattern: '\{:#\?\}'
+            strings: true
+            message: "Print `a` with the pretty Debug placeholder `{:#?}`."
+          - pattern: '==\s*b\b'
+            message: Compute the answer with `a == b`.
+        hints:
+          - "You need two derives in one line: `#[derive(Debug, PartialEq)]`."
+          - "`println!(\"{:#?}\", a);` then `println!(\"same: {}\", a == b);`"
+        tests:
+          - expect: "Item {\n    name: \"bolt\",\n    qty: 40,\n}\nsame: true"
+      - task: |
+          Write two functions for 2D points:
+
+          - `fn moved(p: Point, dx: i32, dy: i32) -> Point`: the point shifted by `dx` and `dy`.
+          - `fn midpoint(a: &Point, b: &Point) -> Point`: the point halfway between, using integer division (`(1 + 4) / 2` is `2`).
+
+          The hidden tests compare whole points with `assert_eq!`, so `Point` needs the right derives. Add them yourself.
+        seed: |
+          struct Point {
+              x: i32,
+              y: i32,
+          }
+
+          fn moved(p: Point, dx: i32, dy: i32) -> Point {
+              todo!()
+          }
+
+          fn midpoint(a: &Point, b: &Point) -> Point {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Point {
+              x: i32,
+              y: i32,
+          }
+
+          fn moved(p: Point, dx: i32, dy: i32) -> Point {
+              Point {
+                  x: p.x + dx,
+                  y: p.y + dy,
+              }
+          }
+
+          fn midpoint(a: &Point, b: &Point) -> Point {
+              Point {
+                  x: (a.x + b.x) / 2,
+                  y: (a.y + b.y) / 2,
+              }
+          }
+        harness: |
+          #[test]
+          fn moves_right_and_up() {
+              assert_eq!(moved(Point { x: 1, y: 2 }, 3, 4), Point { x: 4, y: 6 }, "moved(Point {{ x: 1, y: 2 }}, 3, 4)");
+          }
+
+          #[test]
+          fn moves_by_negative_amounts() {
+              assert_eq!(moved(Point { x: 0, y: 0 }, -5, -1), Point { x: -5, y: -1 }, "moved(Point {{ x: 0, y: 0 }}, -5, -1)");
+          }
+
+          #[test]
+          fn finds_the_midpoint() {
+              assert_eq!(midpoint(&Point { x: 0, y: 0 }, &Point { x: 10, y: 4 }), Point { x: 5, y: 2 }, "midpoint of (0, 0) and (10, 4)");
+          }
+
+          #[test]
+          fn midpoint_uses_integer_division() {
+              assert_eq!(midpoint(&Point { x: 1, y: 1 }, &Point { x: 4, y: 2 }), Point { x: 2, y: 1 }, "midpoint of (1, 1) and (4, 2)");
+          }
+        hints:
+          - "`assert_eq!` needs `PartialEq` to compare and `Debug` to print: add `#[derive(Debug, PartialEq)]` above the struct."
+          - "Each function builds a new `Point { x: ..., y: ... }` from the inputs."
+          - "`Point { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }`"
+
+  - title: Tuple structs, newtypes and unit structs
+    id: structs-5
+    text: |
+      Sometimes naming every field is overkill. A **tuple struct** has a name but its fields are only numbered, like a tuple:
+
+      ```rust run
+      struct Rgb(u8, u8, u8);
+
+      fn main() {
+          let orange = Rgb(255, 140, 0);
+          println!("red {}, green {}, blue {}", orange.0, orange.1, orange.2);
+      }
+      ```
+
+      ```output
+      red 255, green 140, blue 0
+      ```
+
+      Note the definition ends with `;` (there are no braces), and you create one like a function call: `Rgb(255, 140, 0)`.
+
+      ### Newtypes: the same number, different meanings
+
+      The most useful tuple struct has just one field. Wrapping a plain type to give it a meaning is called the **newtype** pattern:
+
+      ```rust run
+      struct Meters(f64);
+      struct Feet(f64);
+
+      fn to_meters(length: Feet) -> Meters {
+          Meters(length.0 * 0.3048)
+      }
+
+      fn climb(height: Meters) {
+          println!("climbing {:.1} m", height.0);
+      }
+
+      fn main() {
+          let wall = Feet(100.0);
+          climb(to_meters(wall));
+          climb(Meters(8848.0));
+      }
+      ```
+
+      ```output
+      climbing 30.5 m
+      climbing 8848.0 m
+      ```
+
+      `Meters` and `Feet` both hold an `f64`, but to the compiler they are **different types**. You can't pass feet where meters are expected:
+
+      ```rust compile_fail
+      struct Meters(f64);
+      struct Feet(f64);
+
+      fn climb(height: Meters) -> f64 {
+          height.0
+      }
+
+      fn main() {
+          let wall = Feet(30.0);
+          println!("{}", climb(wall));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      This is not a small thing. In 1999 NASA lost the Mars Climate Orbiter because one program produced numbers in pound-force seconds and another read them as newton-seconds. Both were just floating point numbers, so nothing caught it. With newtypes, that mix-up is a compile error. The same idea at work: `UserId(u64)` and `OrderId(u64)` so you can never pass an order id to `delete_user`, or `Cents(u32)` so nobody adds dollars to cents. A newtype costs nothing at run time: in memory it's exactly the value inside.
+
+      The price: a newtype doesn't do arithmetic or printing until you teach it (`Meters(3.0) * 2.0` is ``error[E0369]: cannot multiply `Meters` by `{float}` ``). For now, reach inside with `.0`; the traits module shows how to add operators.
+
+      ### Unit structs
+
+      A struct can even have no fields at all: `struct Ping;`. This **unit struct** holds no data and takes no memory. It's useful as a marker, or as a type to hang behavior on with traits, later in the course. You create one by writing its name: `let p = Ping;`.
+
+      **Your turn:** write `fn to_fahrenheit(c: Celsius) -> Fahrenheit` using the formula F = C × 9 / 5 + 32.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct Celsius(f64);
+
+      #[derive(Debug, PartialEq)]
+      struct Fahrenheit(f64);
+
+      fn to_fahrenheit(c: Celsius) -> Fahrenheit {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct Celsius(f64);
+
+      #[derive(Debug, PartialEq)]
+      struct Fahrenheit(f64);
+
+      fn to_fahrenheit(c: Celsius) -> Fahrenheit {
+          Fahrenheit(c.0 * 9.0 / 5.0 + 32.0)
+      }
+    harness: |
+      #[test]
+      fn boiling_water() {
+          assert_eq!(to_fahrenheit(Celsius(100.0)), Fahrenheit(212.0), "to_fahrenheit(Celsius(100.0))");
+      }
+
+      #[test]
+      fn freezing_water() {
+          assert_eq!(to_fahrenheit(Celsius(0.0)), Fahrenheit(32.0), "to_fahrenheit(Celsius(0.0))");
+      }
+
+      #[test]
+      fn minus_forty_is_the_same_in_both() {
+          assert_eq!(to_fahrenheit(Celsius(-40.0)), Fahrenheit(-40.0), "to_fahrenheit(Celsius(-40.0))");
+      }
+
+      #[test]
+      fn a_warm_day() {
+          assert_eq!(to_fahrenheit(Celsius(25.0)), Fahrenheit(77.0), "to_fahrenheit(Celsius(25.0))");
+      }
+    hints:
+      - "The number inside a `Celsius` is `c.0`."
+      - "Wrap the result in the other newtype: `Fahrenheit(...)`."
+      - "`Fahrenheit(c.0 * 9.0 / 5.0 + 32.0)`"
+    more:
+      - task: |
+          Time units, as newtypes. Write:
+
+          - `fn to_seconds(m: Minutes) -> Seconds` (1 minute is 60 seconds)
+          - `fn add(a: Seconds, b: Seconds) -> Seconds`
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Minutes(u32);
+
+          #[derive(Debug, PartialEq)]
+          struct Seconds(u32);
+
+          fn to_seconds(m: Minutes) -> Seconds {
+              todo!()
+          }
+
+          fn add(a: Seconds, b: Seconds) -> Seconds {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Minutes(u32);
+
+          #[derive(Debug, PartialEq)]
+          struct Seconds(u32);
+
+          fn to_seconds(m: Minutes) -> Seconds {
+              Seconds(m.0 * 60)
+          }
+
+          fn add(a: Seconds, b: Seconds) -> Seconds {
+              Seconds(a.0 + b.0)
+          }
+        harness: |
+          #[test]
+          fn converts_minutes_to_seconds() {
+              assert_eq!(to_seconds(Minutes(3)), Seconds(180), "to_seconds(Minutes(3))");
+          }
+
+          #[test]
+          fn zero_minutes_is_zero_seconds() {
+              assert_eq!(to_seconds(Minutes(0)), Seconds(0), "to_seconds(Minutes(0))");
+          }
+
+          #[test]
+          fn adds_seconds() {
+              assert_eq!(add(Seconds(45), Seconds(30)), Seconds(75), "add(Seconds(45), Seconds(30))");
+          }
+
+          #[test]
+          fn converts_then_adds() {
+              assert_eq!(add(to_seconds(Minutes(2)), Seconds(5)), Seconds(125), "add(to_seconds(Minutes(2)), Seconds(5))");
+          }
+        hints:
+          - "Read the number with `.0` and wrap the answer: `Seconds(...)`."
+          - "`Seconds(m.0 * 60)` and `Seconds(a.0 + b.0)`"
+      - task: |
+          Money is usually stored as a whole number of cents (floating point can't represent 0.10 exactly). Write a newtype and two functions from scratch:
+
+          - a tuple struct `Cents` holding a `u32`, with `#[derive(Debug, PartialEq)]`
+          - `fn add(a: Cents, b: Cents) -> Cents`
+          - `fn display(c: &Cents) -> String`, which formats the amount as dollars with exactly two decimals: `Cents(1205)` gives `"$12.05"`, `Cents(7)` gives `"$0.07"`.
+
+          Tip: convert to `f64` only for display, `c.0 as f64 / 100.0`, and format with `{:.2}`.
+        seed: |
+          // Define the Cents newtype here, then add and display.
+
+        solution: |
+          // Define the Cents newtype here, then add and display.
+          #[derive(Debug, PartialEq)]
+          struct Cents(u32);
+
+          fn add(a: Cents, b: Cents) -> Cents {
+              Cents(a.0 + b.0)
+          }
+
+          fn display(c: &Cents) -> String {
+              format!("${:.2}", c.0 as f64 / 100.0)
+          }
+        harness: |
+          #[test]
+          fn adds_two_amounts() {
+              assert_eq!(add(Cents(250), Cents(199)), Cents(449), "add(Cents(250), Cents(199))");
+          }
+
+          #[test]
+          fn displays_dollars_and_cents() {
+              assert_eq!(display(&Cents(1205)), "$12.05", "display(&Cents(1205))");
+          }
+
+          #[test]
+          fn displays_less_than_a_dollar() {
+              assert_eq!(display(&Cents(7)), "$0.07", "display(&Cents(7))");
+          }
+
+          #[test]
+          fn displays_whole_dollars_with_two_zeros() {
+              assert_eq!(display(&Cents(300)), "$3.00", "display(&Cents(300))");
+          }
+
+          #[test]
+          fn displays_a_sum() {
+              assert_eq!(display(&add(Cents(99), Cents(1))), "$1.00", "display(&add(Cents(99), Cents(1)))");
+          }
+        hints:
+          - "`struct Cents(u32);` with the derive line above it."
+          - "`format!` works like `println!` but returns the `String`. A `$` in a format string is just a normal character."
+          - "`format!(\"${:.2}\", c.0 as f64 / 100.0)`"
+
+  - title: "Putting it together: an inventory"
+    id: structs-6
+    text: |
+      Real programs are built from structs that contain other structs, and from lists of structs. Nothing new is needed: a field can have a struct type, and an array, a `Vec` or a slice can hold structs.
+
+      ```rust run
+      struct Location {
+          aisle: u32,
+          shelf: u32,
+      }
+
+      struct Item {
+          name: String,
+          quantity: u32,
+          location: Location,
+      }
+
+      fn print_low_stock(items: &[Item], threshold: u32) {
+          for item in items {
+              if item.quantity < threshold {
+                  println!("restock {} (aisle {}, shelf {})", item.name, item.location.aisle, item.location.shelf);
+              }
+          }
+      }
+
+      fn total_units(items: &[Item]) -> u32 {
+          let mut total = 0;
+          for item in items {
+              total += item.quantity;
+          }
+          total
+      }
+
+      fn main() {
+          let items = [
+              Item { name: String::from("bolts"), quantity: 120, location: Location { aisle: 1, shelf: 2 } },
+              Item { name: String::from("nuts"), quantity: 8, location: Location { aisle: 1, shelf: 3 } },
+              Item { name: String::from("hinges"), quantity: 3, location: Location { aisle: 4, shelf: 1 } },
+          ];
+          print_low_stock(&items, 10);
+          println!("units in stock: {}", total_units(&items));
+      }
+      ```
+
+      ```output
+      restock nuts (aisle 1, shelf 3)
+      restock hinges (aisle 4, shelf 1)
+      units in stock: 131
+      ```
+
+      - `item.location.aisle` chains field access: the `location` field of `item`, then its `aisle`.
+      - The functions take a slice, `&[Item]`, just like the `&[i32]` slices from the last module. `for item in items` gives a reference to each item (`&Item`), so nothing is moved or copied.
+      - Because they take a slice, the same functions work with an array (`&items`) or a `Vec<Item>` (`&inventory`), which coerces to a slice automatically.
+
+      You can also grow a list of structs at run time with a `Vec`:
+
+      ```rust run
+      struct Score {
+          player: String,
+          points: u32,
+      }
+
+      fn main() {
+          let mut scores = Vec::new();
+          scores.push(Score { player: String::from("Ferris"), points: 40 });
+          scores.push(Score { player: String::from("Corro"), points: 55 });
+          for s in &scores {
+              println!("{}: {}", s.player, s.points);
+          }
+          println!("{} players", scores.len());
+      }
+      ```
+
+      ```output
+      Ferris: 40
+      Corro: 55
+      2 players
+      ```
+
+      ### Designing structs at work
+
+      - **One struct per concept** in your domain: `Customer`, `Order`, `Item`, `Address`. If a group of fields always travels together (`aisle` and `shelf`), it probably wants its own struct.
+      - **Pick field types that rule out nonsense**: `u32` for a quantity that can't be negative, `bool` for yes/no, integer cents for money (never `f64`: `0.1 + 0.2` isn't exactly `0.3`).
+      - **Derive Debug** on nearly everything, so you can always `dbg!` or log a value.
+
+      **Your turn:** write `fn total_value(items: &[Item]) -> u32` that returns the value of the whole stock: for each item, `price_cents * quantity`, all added up. An empty slice is worth 0.
+    seed: |
+      struct Item {
+          name: String,
+          price_cents: u32,
+          quantity: u32,
+      }
+
+      fn total_value(items: &[Item]) -> u32 {
+          todo!()
+      }
+    solution: |
+      struct Item {
+          name: String,
+          price_cents: u32,
+          quantity: u32,
+      }
+
+      fn total_value(items: &[Item]) -> u32 {
+          let mut total = 0;
+          for item in items {
+              total += item.price_cents * item.quantity;
+          }
+          total
+      }
+    harness: |
+      fn item(name: &str, price_cents: u32, quantity: u32) -> Item {
+          Item { name: name.to_string(), price_cents, quantity }
+      }
+
+      #[test]
+      fn empty_stock_is_worth_zero() {
+          assert_eq!(total_value(&[]), 0, "total_value(&[])");
+      }
+
+      #[test]
+      fn one_item() {
+          let items = [item("tea", 450, 3)];
+          assert_eq!(total_value(&items), 1350, "tea at 450 x 3");
+      }
+
+      #[test]
+      fn several_items() {
+          let items = [item("tea", 450, 3), item("mug", 1200, 1), item("pen", 150, 10)];
+          assert_eq!(total_value(&items), 4050, "tea 450x3, mug 1200x1, pen 150x10");
+      }
+
+      #[test]
+      fn items_out_of_stock_add_nothing() {
+          let items = [item("tea", 450, 0), item("pen", 150, 2)];
+          assert_eq!(total_value(&items), 300, "tea 450x0, pen 150x2");
+      }
+
+      #[test]
+      fn works_with_a_vec() {
+          let items = vec![item("lamp", 2500, 2)];
+          assert_eq!(total_value(&items), 5000, "a Vec with lamp 2500x2");
+          assert_eq!(items[0].name, "lamp", "the item is still there afterwards");
+      }
+    hints:
+      - "Start with `let mut total = 0;` and loop with `for item in items`."
+      - "Inside the loop: `total += item.price_cents * item.quantity;`, then return `total` after the loop."
+    more:
+      - task: |
+          Write `fn count_low_stock(items: &[Item], threshold: u32) -> usize` that counts how many items have a `quantity` **below** `threshold`.
+        seed: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+              quantity: u32,
+          }
+
+          fn count_low_stock(items: &[Item], threshold: u32) -> usize {
+              todo!()
+          }
+        solution: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+              quantity: u32,
+          }
+
+          fn count_low_stock(items: &[Item], threshold: u32) -> usize {
+              let mut count = 0;
+              for item in items {
+                  if item.quantity < threshold {
+                      count += 1;
+                  }
+              }
+              count
+          }
+        harness: |
+          fn item(name: &str, price_cents: u32, quantity: u32) -> Item {
+              Item { name: name.to_string(), price_cents, quantity }
+          }
+
+          #[test]
+          fn counts_items_below_the_threshold() {
+              let items = [item("tea", 450, 3), item("mug", 1200, 20), item("pen", 150, 1)];
+              assert_eq!(count_low_stock(&items, 5), 2, "quantities 3, 20, 1 with threshold 5");
+          }
+
+          #[test]
+          fn an_item_at_the_threshold_is_not_low() {
+              let items = [item("tea", 450, 5)];
+              assert_eq!(count_low_stock(&items, 5), 0, "quantity 5 with threshold 5");
+          }
+
+          #[test]
+          fn empty_stock_has_nothing_low() {
+              assert_eq!(count_low_stock(&[], 10), 0, "count_low_stock(&[], 10)");
+          }
+
+          #[test]
+          fn everything_can_be_low() {
+              let items = [item("tea", 450, 0), item("mug", 1200, 2)];
+              assert_eq!(count_low_stock(&items, 3), 2, "quantities 0, 2 with threshold 3");
+              assert_eq!((items[0].name.as_str(), items[1].price_cents), ("tea", 1200), "items unchanged");
+          }
+        hints:
+          - "Keep a counter (`let mut count = 0;`) and add 1 for each item with `item.quantity < threshold`."
+      - task: |
+          Write a whole inventory program. Each line of input is an item: a name, a price in cents and a quantity, separated by spaces, like `tea 450 3`. The starter reads the lines and splits each one into words for you.
+
+          For each line, build an `Item` and push it onto `items`. After reading everything, print one line per item with its stock value (`price_cents * quantity`), then the total:
+
+          ```text
+          tea: 1350
+          mug: 1200
+          pen: 1500
+          total: 4050
+          ```
+        seed: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+              quantity: u32,
+          }
+
+          fn main() {
+              let mut items: Vec<Item> = Vec::new();
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  // The words of the line: parts[0] is the name, parts[1] the price, parts[2] the quantity.
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  // TODO: build an Item from parts and push it onto items.
+              }
+              // TODO: print "name: value" for each item, then "total: N".
+          }
+        solution: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+              quantity: u32,
+          }
+
+          fn main() {
+              let mut items: Vec<Item> = Vec::new();
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  // The words of the line: parts[0] is the name, parts[1] the price, parts[2] the quantity.
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  items.push(Item {
+                      name: parts[0].to_string(),
+                      price_cents: parts[1].parse().expect("price should be a number"),
+                      quantity: parts[2].parse().expect("quantity should be a number"),
+                  });
+              }
+              let mut total = 0;
+              for item in &items {
+                  let value = item.price_cents * item.quantity;
+                  println!("{}: {}", item.name, value);
+                  total += value;
+              }
+              println!("total: {}", total);
+          }
+        require:
+          - pattern: 'items\.push\(\s*Item\s*\{'
+            message: "Build each `Item { ... }` and add it with `items.push(...)`."
+        hints:
+          - "`parts[0].to_string()` gives the name as a `String`; `parts[1].parse().expect(\"...\")` gives a number (Rust infers `u32` from the field type)."
+          - "`items.push(Item { name: ..., price_cents: ..., quantity: ... });` inside the loop."
+          - "After the loop: `let mut total = 0;` then `for item in &items { ... }` printing each value and adding it to `total`."
+        tests:
+          - stdin: "tea 450 3\nmug 1200 1\npen 150 10\n"
+            expect: "tea: 1350\nmug: 1200\npen: 1500\ntotal: 4050"
+          - stdin: "lamp 2500 2\n"
+            hidden: true
+          - stdin: "bolt 5 1000\nnut 2 0\nwasher 1 300\nhinge 350 4\n"
+            hidden: true

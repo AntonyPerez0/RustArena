@@ -18,7 +18,7 @@ concurrency:
 env:
   # The site's own domain (also set under Settings > Pages > Custom domain).
   # Leave it empty to publish at https://<owner>.github.io/<repo>/ instead.
-  CUSTOM_DOMAIN: cpparena.com
+  CUSTOM_DOMAIN: ""
 
 jobs:
   build:
@@ -31,8 +31,17 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies (also copies the Clang toolchain into public/toolchain)
+      - name: Install dependencies
         run: npm ci
+
+      # The content build compiles and runs every lesson, drill and project with the real Rust compiler.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "runner-deps -> target"
 
       - name: Work out the site address
         run: |
@@ -43,12 +52,18 @@ jobs:
             echo "BASE_PATH=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
             echo "SITE_URL=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" >> "$GITHUB_ENV"
           fi
+          echo "RUSTC_VERSION=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_ENV"
 
-      - name: Install gdb (records the step-by-step visualizations)
-        run: sudo apt-get update && sudo apt-get install -y gdb
+      # Results are cached by each program's exact text and the compiler version, so only new or
+      # changed code is compiled again.
+      - uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/rustarena
+          key: content-${{ env.RUSTC_VERSION }}-${{ hashFiles('content/**', 'src/grader/assemble.js', 'scripts/build-content.mjs', 'runner-deps/Cargo.toml') }}
+          restore-keys: content-${{ env.RUSTC_VERSION }}-
 
-      - name: Compile and run every lesson, drill and project with real GCC/G++
-        run: npm run content -- --no-cache
+      - name: Compile and run every lesson, drill and project with the real Rust compiler
+        run: npm run content
 
       - name: Type-check and build the site (plus one pre-rendered page per route, sitemap.xml)
         run: npm run build

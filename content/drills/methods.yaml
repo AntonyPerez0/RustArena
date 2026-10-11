@@ -1,0 +1,402 @@
+topic: methods
+drills:
+  - type: predict
+    pre: |
+      struct Counter {
+          count: u32,
+      }
+
+      impl Counter {
+          fn bump(&mut self) {
+              self.count += 1;
+          }
+      }
+    body: |
+      let mut c = Counter { count: 0 };
+      c.bump();
+      c.bump();
+      c.bump();
+      println!("{}", c.count);
+    why: Each call to bump borrows c mutably and adds 1 to the same count field.
+
+  - type: predict
+    pre: |
+      struct Rect {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rect {
+          fn square(size: u32) -> Self {
+              Self { width: size, height: size }
+          }
+
+          fn area(&self) -> u32 {
+              self.width * self.height
+          }
+      }
+    body: |
+      println!("{}", Rect::square(3).area());
+    why: Rect::square(3) builds a 3x3 Rect with the associated function, then .area() is called on that new value.
+
+  - type: predict
+    pre: |
+      struct Account {
+          balance: u32,
+      }
+
+      impl Account {
+          fn withdraw(&mut self, amount: u32) -> bool {
+              if amount > self.balance {
+                  return false;
+              }
+              self.balance -= amount;
+              true
+          }
+      }
+    body: |
+      let mut a = Account { balance: 100 };
+      let ok = a.withdraw(150);
+      println!("{} {}", ok, a.balance);
+    why: 150 is more than the balance, so withdraw returns false before changing anything. The balance stays 100.
+
+  - type: predict
+    pre: |
+      #[derive(Clone, Copy)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      impl Point {
+          fn moved(self, dx: i32) -> Point {
+              Point { x: self.x + dx, y: self.y }
+          }
+      }
+    body: |
+      let p = Point { x: 1, y: 5 };
+      let q = p.moved(10);
+      println!("{} {}", p.x, q.x);
+    why: "Point is Copy, so calling a self method copies it. p is unchanged (x = 1) and q is the moved copy (x = 11)."
+
+  - type: predict
+    pre: |
+      struct Pizza {
+          toppings: u32,
+      }
+
+      impl Pizza {
+          fn new() -> Self {
+              Self { toppings: 0 }
+          }
+
+          fn topping(mut self) -> Self {
+              self.toppings += 1;
+              self
+          }
+      }
+    body: |
+      let p = Pizza::new().topping().topping();
+      println!("{}", p.toppings);
+    why: Each topping() call takes the pizza, adds one topping and returns it, so the chain adds two.
+
+  - type: fill
+    prompt: This method only reads the rectangle. Give it the right receiver.
+    pre: |
+      struct Rect {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rect {
+          fn area([[&self‖self: &Self‖self: &Rect]]) -> u32 {
+              self.width * self.height
+          }
+      }
+    body: |
+      let r = Rect { width: 4, height: 5 };
+      println!("{}", r.area());
+    why: A method that only reads takes &self, a shared borrow of the value it's called on.
+
+  - type: fill
+    prompt: Call the associated function that builds a Player.
+    pre: |
+      struct Player {
+          name: String,
+          level: u32,
+      }
+
+      impl Player {
+          fn new(name: &str) -> Self {
+              Self { name: name.to_string(), level: 1 }
+          }
+      }
+    body: |
+      let p = Player[[::]]new("Ayla");
+      println!("{} {}", p.name, p.level);
+    why: Associated functions have no self, so they're called on the type with ::, like String::from.
+
+  - type: fill
+    prompt: This method changes the balance. Give it the right receiver.
+    pre: |
+      struct Wallet {
+          coins: u32,
+      }
+
+      impl Wallet {
+          fn add(&mut self, n: u32) {
+              self.coins += n;
+          }
+
+          fn spend_all([[&mut self‖self: &mut Self‖self: &mut Wallet]]) -> u32 {
+              let spent = self.coins;
+              self.coins = 0;
+              spent
+          }
+      }
+    body: |
+      let mut w = Wallet { coins: 0 };
+      w.add(30);
+      let spent = w.spend_all();
+      println!("{} {}", spent, w.coins);
+    why: The method assigns to self.coins, so it needs a mutable borrow, &mut self. Plain self would consume the wallet, and w.coins couldn't be printed afterwards.
+
+  - type: bug
+    pre: |
+      struct Tally {
+          total: u32,
+      }
+
+      impl Tally {
+          fn add(&self, n: u32) { self.total += n; } // BUG
+      }
+    body: |
+      let mut t = Tally { total: 0 };
+      t.add(4);
+      t.add(6);
+      println!("{}", t.total);
+    fix: 'fn add(&mut self, n: u32) { self.total += n; }'
+    prompt: "This should print `10`. Click the line with the bug."
+    why: A method that changes a field needs &mut self. Through &self the field is behind a shared reference and can't be assigned (error E0594).
+
+  - type: bug
+    pre: |
+      struct Request {
+          retries: u32,
+      }
+
+      impl Request {
+          fn new() -> Self {
+              Self { retries: 0 }
+          }
+
+          fn retries(mut self, n: u32) -> Self {
+              self.retries = n;
+              Request::new() // BUG
+          }
+      }
+    body: |
+      let req = Request::new().retries(3);
+      println!("{}", req.retries);
+    fix: self
+    prompt: "This should print `3`. Click the line with the bug."
+    why: A builder method must return the value it changed. Returning Request::new() throws the update away and hands back a fresh default, so the chain loses the setting.
+
+  - type: bug
+    pre: |
+      struct Account {
+          balance: u32,
+      }
+
+      impl Account {
+          fn new() -> Self {
+              Self { balance: 0 }
+          }
+
+          fn deposit(&mut self, amount: u32) {
+              self.balance += amount;
+          }
+      }
+    body: |
+      let acct = Account::new(); // BUG
+      acct.deposit(25);
+      println!("{}", acct.balance);
+    fix: let mut acct = Account::new();
+    prompt: "This should print `25`. Click the line with the bug."
+    why: deposit takes &mut self, which needs a mutable variable. Without mut the call fails with E0596.
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Order {
+          items: Vec<String>,
+      }
+
+      impl Order {
+          fn into_count(self) -> usize {
+              self.items.len()
+          }
+      }
+    body: |
+      let order = Order { items: vec![String::from("tea")] };
+      let n = order.into_count();
+      println!("{} {}", n, order.items.len());
+    why: into_count takes self, so the call moves order into the method. Using order.items afterwards is a use of a moved value (E0382).
+
+  - type: compiles
+    answer: yes
+    pre: |
+      struct Rect {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rect {
+          fn area(&self) -> u32 {
+              self.width * self.height
+          }
+      }
+    body: |
+      let r = Rect { width: 2, height: 3 };
+      println!("{} {}", r.area(), Rect::area(&r));
+    why: r.area() is shorthand for Rect::area(&r). Both forms call the same method.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      struct Counter {
+          n: u32,
+      }
+
+      impl Counter {
+          fn new() -> Self {
+              Self { n: 0 }
+          }
+      }
+
+      impl Counter {
+          fn get(&self) -> u32 {
+              self.n
+          }
+      }
+    body: |
+      println!("{}", Counter::new().get());
+    why: A type can have several impl blocks. They're combined as if they were one.
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Rect {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rect {
+          fn new(width: u32, height: u32) -> Self {
+              Self { width, height }
+          }
+      }
+    body: |
+      let r = Rect.new(2, 3);
+      println!("{}", r.width * r.height);
+    why: "Associated functions are called on the type with ::, as Rect::new(2, 3). Rect.new treats the type name as a value (E0423)."
+
+  - type: choice
+    prompt: A method needs to read a struct's fields but not change them. Which receiver should it take?
+    choices: ["self", "&self", "&mut self", "mut self"]
+    answer: 2
+    why: "&self borrows the value for reading, so it can be called on any value, mutable or not, and the caller keeps ownership. &mut self would require a mutable variable, and self would consume the value."
+
+  - type: choice
+    prompt: What does Self mean inside impl Item { ... }?
+    choices: ["The value the method was called on", "The type Item itself", "The parent module", "A copy of the current value"]
+    answer: 2
+    why: "Self (capital S) is the type the impl block is for, so fn new() -> Self returns an Item. self (lowercase) is the value a method was called on."
+
+  - type: boss
+    prompt: |
+      Write a `ParkingLot` with:
+
+      - `fn new(capacity: u32) -> Self`: an empty lot.
+      - `fn park(&mut self) -> bool`: takes a spot if one is free; returns whether it did.
+      - `fn leave(&mut self) -> bool`: frees a spot if any car is parked; returns whether it did.
+      - `fn free_spots(&self) -> u32`
+    seed: |
+      struct ParkingLot {
+          capacity: u32,
+          used: u32,
+      }
+
+      impl ParkingLot {
+      }
+    solution: |
+      struct ParkingLot {
+          capacity: u32,
+          used: u32,
+      }
+
+      impl ParkingLot {
+          fn new(capacity: u32) -> Self {
+              Self { capacity, used: 0 }
+          }
+
+          fn park(&mut self) -> bool {
+              if self.used == self.capacity {
+                  return false;
+              }
+              self.used += 1;
+              true
+          }
+
+          fn leave(&mut self) -> bool {
+              if self.used == 0 {
+                  return false;
+              }
+              self.used -= 1;
+              true
+          }
+
+          fn free_spots(&self) -> u32 {
+              self.capacity - self.used
+          }
+      }
+    harness: |
+      #[test]
+      fn a_new_lot_is_all_free() {
+          assert_eq!(ParkingLot::new(3).free_spots(), 3, "ParkingLot::new(3).free_spots()");
+      }
+
+      #[test]
+      fn parking_uses_a_spot() {
+          let mut lot = ParkingLot::new(3);
+          assert_eq!(lot.park(), true, "park() in an empty lot");
+          assert_eq!(lot.free_spots(), 2, "free_spots() after one car parks");
+      }
+
+      #[test]
+      fn a_full_lot_refuses_cars() {
+          let mut lot = ParkingLot::new(1);
+          lot.park();
+          assert_eq!(lot.park(), false, "park() in a full lot");
+          assert_eq!(lot.free_spots(), 0, "free_spots() of a full lot");
+      }
+
+      #[test]
+      fn leaving_frees_a_spot() {
+          let mut lot = ParkingLot::new(2);
+          lot.park();
+          assert_eq!(lot.leave(), true, "leave() with one car parked");
+          assert_eq!(lot.free_spots(), 2, "free_spots() after the car leaves");
+      }
+
+      #[test]
+      fn nobody_can_leave_an_empty_lot() {
+          let mut lot = ParkingLot::new(2);
+          assert_eq!(lot.leave(), false, "leave() on an empty lot");
+          assert_eq!(lot.free_spots(), 2, "free_spots() after a refused leave");
+      }
+    hints:
+      - "`new` takes no self and returns `Self { capacity, used: 0 }`."
+      - "`park` and `leave` change the lot, so they take `&mut self`. Check the limit first and return false early."
+      - "`free_spots` is `self.capacity - self.used`."
+    why: Each method picks the weakest receiver it needs, and the checks in park and leave keep the invariant used <= capacity, so free_spots can never underflow.

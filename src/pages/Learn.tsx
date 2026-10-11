@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { Link } from "react-router-dom";
-import { phases, drillsByTopic, stepPath } from "../content";
+import { phases, drillsByTopic, stepPath, moduleNumber } from "../content";
 import { useStore } from "../state/store";
 import { moduleProgress, nextStep } from "../state/derived";
 import { useTitle } from "../lib/title";
 
 export default function Learn() {
-  useTitle("All C and C++ lessons");
+  useTitle("Rust curriculum: every lesson, beginner to professional");
   const s = useStore((x) => x);
   const next = nextStep(s);
   const [open, setOpen] = useState<string | null>(next?.module.id ?? null);
@@ -16,7 +16,7 @@ export default function Learn() {
     <div className="learn">
       <div className="page-head">
         <h1>Curriculum</h1>
-        <p className="muted">C first, because it makes memory and pointers concrete. Then C++, where RAII and the standard library solve the problems you felt in C.</p>
+        <p className="muted">From your first <code>println!</code> to the Rust you'd write at work: ownership and borrowing, traits and generics, error handling, iterators, concurrency and async, testing, serde, CLIs and web services. It follows the <Link to="/roadmap">Rust roadmap</Link>; every exercise is compiled and tested by the real Rust compiler.</p>
         <p className="small">
           Already know some of this? <Link to="/placement">Take the placement quiz</Link> to find your starting point.
         </p>
@@ -32,7 +32,7 @@ export default function Learn() {
               return (
                 <div key={m.id} className={"module" + (complete ? " module-done" : "") + (isOpen ? " module-open" : "")}>
                   <button className="module-head" onClick={() => setOpen(isOpen ? null : m.id)} aria-expanded={isOpen} aria-controls={`module-${m.id}`}>
-                    <span className={"lang-tag lang-" + m.lang}>{m.lang === "c" ? "C" : "C++"}</span>
+                    <span className="lang-tag lang-rs module-num">{String(moduleNumber(m.id)).padStart(2, "0")}</span>
                     <span className="module-title">
                       {m.title} {s.placed.includes(m.id) && !complete && <span className="module-placed">skipped by placement</span>}
                     </span>
@@ -60,7 +60,7 @@ export default function Learn() {
                                 <span className="step-check" aria-hidden="true">{sp?.done ? <Check className="icon" /> : i + 1}</span>
                                 <span className="step-title">{st.title}</span>
                                 {sp?.done && <span className="visually-hidden"> (done)</span>}
-                                <span className={"kind-tag kind-" + st.kind}>{st.kind === "fill" ? "fill in" : st.mode === "harness" ? "write function" : "write code"}</span>
+                                <span className={"kind-tag kind-" + st.kind}>{st.kind === "fill" ? "fill in" : st.mode === "harness" ? "write functions" : st.mode === "test" ? "write tests" : "write a program"}</span>
                               </Link>
                             </li>
                           );

@@ -1,0 +1,1799 @@
+id: iterators
+title: Iterators
+phase: "Idiomatic Rust"
+summary: How professional Rust processes data. The Iterator trait and next, adapters like map, filter, zip and windows, consumers like sum, fold and collect, laziness, collecting into Result, and writing your own iterator.
+roadmap: [Iterators, Closures and Iterators]
+steps:
+  - title: What an iterator is
+    id: iterators-1
+    text: |
+      An **iterator** is a value that hands out items one at a time. Every `for` loop you've written used one behind the scenes. In Rust, an iterator is any type that implements the `Iterator` trait, which has one required method:
+
+      ```rust
+      trait Iterator {
+          type Item;                                 // the type of the items it produces
+          fn next(&mut self) -> Option<Self::Item>;  // the next item, or None when finished
+      }
+      ```
+
+      `type Item` is an **associated type**: each iterator says what kind of item it yields. (You'll implement this trait yourself in the last step.) Here is `next` called by hand:
+
+      ```rust run
+      fn main() {
+          let scores = vec![30, 85, 60];
+          let mut it = scores.iter();
+          println!("{:?}", it.next());
+          println!("{:?}", it.next());
+          println!("{:?}", it.next());
+          println!("{:?}", it.next());
+      }
+      ```
+
+      ```output
+      Some(30)
+      Some(85)
+      Some(60)
+      None
+      ```
+
+      - `scores.iter()` creates an iterator that *borrows* the vector. Its items are `&i32` references (`{:?}` prints them like plain numbers).
+      - Each `next()` moves the iterator one step forward, so it changes the iterator: the variable must be `mut`.
+      - `None` means "no more items". Once an iterator has returned `None`, it's finished.
+
+      ### What a for loop really does
+
+      This loop:
+
+      ```rust
+      for s in &scores {
+          println!("{s}");
+      }
+      ```
+
+      is shorthand for:
+
+      ```rust
+      let mut it = (&scores).into_iter();
+      while let Some(s) = it.next() {
+          println!("{s}");
+      }
+      ```
+
+      `for` calls `into_iter()` on whatever you give it, then calls `next()` until it gets `None`. That's why you can loop over vectors, arrays, ranges, `.chars()`, `.lines()`, maps and sets: they all turn into iterators.
+
+      ### Three ways to iterate a collection
+
+      | Call | Items | The collection afterwards | Same as |
+      |---|---|---|---|
+      | `v.iter()` | `&T` (look) | unchanged | `for x in &v` |
+      | `v.iter_mut()` | `&mut T` (change in place) | changed | `for x in &mut v` |
+      | `v.into_iter()` | `T` (owned values) | gone: moved into the loop | `for x in v` |
+
+      ```rust run
+      fn main() {
+          let mut prices = vec![10, 20, 30];
+          for p in prices.iter_mut() {
+              *p += 1; // change each price in place
+          }
+          for p in prices.iter() {
+              print!("{p} ");
+          }
+          println!();
+
+          let names = vec![String::from("ann"), String::from("bo")];
+          for name in names.into_iter() {
+              let owned: String = name; // each String is ours now
+              println!("{}", owned.to_uppercase());
+          }
+      }
+      ```
+
+      ```output
+      11 21 31
+      ANN
+      BO
+      ```
+
+      ### Common mistakes
+
+      - **Forgetting `mut` on an iterator you call `next` on:**
+
+      ```rust compile_fail
+      fn main() {
+          let v = vec![1, 2, 3];
+          let it = v.iter();
+          println!("{:?}", it.next());
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `it` as mutable, as it is not declared as mutable
+      ```
+
+      - **Using a collection after `into_iter()`.** It was moved into the iterator:
+
+      ```rust compile_fail
+      fn main() {
+          let names = vec![String::from("Ann"), String::from("Bo")];
+          for n in names.into_iter() {
+              println!("{n}");
+          }
+          println!("{}", names.len());
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `names`
+      ```
+
+      Use `.iter()` (or `for n in &names`) when you still need the collection afterwards.
+
+      **Your turn:** fill in the blanks: create an iterator over `tasks` and take its first item with the method that advances an iterator, so the program prints:
+
+      ```
+      Some("write")
+      Some("test")
+      Some("ship")
+      None
+      ```
+    fill: |
+      fn main() {
+          let tasks = vec!["write", "test", "ship"];
+          let mut it = tasks.[[iter()‖into_iter()]];
+          println!("{:?}", it.[[next()]]);
+          println!("{:?}", it.next());
+          println!("{:?}", it.next());
+          println!("{:?}", it.next());
+      }
+    hints:
+      - "`.iter()` makes an iterator that borrows the vector."
+      - "Each item comes out of `.next()`, which returns `Some(item)` or `None`."
+    more:
+      - task: |
+          Write `fn apply_raise(salaries: &mut [u32], percent: u32)` that gives every salary a raise of `percent` percent, **in place**, using `iter_mut()`. Use integer math: the raise for a salary `s` is `s * percent / 100`. For example, `[1000, 2500]` with `10` becomes `[1100, 2750]`.
+        seed: |
+          fn apply_raise(salaries: &mut [u32], percent: u32) {
+              todo!()
+          }
+        solution: |
+          fn apply_raise(salaries: &mut [u32], percent: u32) {
+              for s in salaries.iter_mut() {
+                  *s += *s * percent / 100;
+              }
+          }
+        require:
+          - pattern: '\.iter_mut\(\)'
+            message: Walk the salaries with `.iter_mut()` to change them in place.
+        harness: |
+          #[test]
+          fn ten_percent_raise() {
+              let mut v = vec![1000, 2500];
+              apply_raise(&mut v, 10);
+              assert_eq!(v, vec![1100, 2750], "apply_raise([1000, 2500], 10)");
+          }
+
+          #[test]
+          fn zero_percent_changes_nothing() {
+              let mut v = vec![1234, 99];
+              apply_raise(&mut v, 0);
+              assert_eq!(v, vec![1234, 99], "apply_raise([1234, 99], 0)");
+          }
+
+          #[test]
+          fn fractions_are_dropped() {
+              let mut v = vec![99];
+              apply_raise(&mut v, 50);
+              assert_eq!(v, vec![148], "apply_raise([99], 50)");
+          }
+
+          #[test]
+          fn empty_list_is_fine() {
+              let mut v: Vec<u32> = Vec::new();
+              apply_raise(&mut v, 10);
+              assert_eq!(v, Vec::<u32>::new(), "apply_raise([], 10)");
+          }
+        hints:
+          - "`for s in salaries.iter_mut() { ... }` gives you `s: &mut u32`."
+          - "Change the value through the reference: `*s += *s * percent / 100;`"
+      - task: |
+          An iterator remembers where it stopped. Using **one** iterator `it` over `lines`, call `next()` once to take the header line and print it as `header: ...`. Then loop over the *same* iterator with `for line in it` to print the remaining lines as `row: ...`:
+
+          ```
+          header: name,score
+          row: ann,90
+          row: bo,75
+          ```
+        seed: |
+          fn main() {
+              let lines = vec!["name,score", "ann,90", "bo,75"];
+          }
+        solution: |
+          fn main() {
+              let lines = vec!["name,score", "ann,90", "bo,75"];
+              let mut it = lines.iter();
+              if let Some(header) = it.next() {
+                  println!("header: {header}");
+              }
+              for line in it {
+                  println!("row: {line}");
+              }
+          }
+        require:
+          - pattern: '\.next\(\)'
+            message: Take the header with `it.next()`.
+          - pattern: 'for\s+\w+\s+in\s+it\b'
+            message: Loop over the same iterator with `for line in it`.
+        hints:
+          - "`let mut it = lines.iter();` then `if let Some(header) = it.next() { ... }`."
+          - A `for` loop accepts an iterator directly and continues from where `next()` left off.
+
+  - title: From loops to iterator chains
+    id: iterators-2
+    text: |
+      Here is the same job done twice: add up the squares of the even numbers.
+
+      ```rust run
+      fn main() {
+          let nums = vec![3, 4, 7, 10, 12];
+
+          // A loop: say HOW, step by step
+          let mut total = 0;
+          for n in &nums {
+              if n % 2 == 0 {
+                  total += n * n;
+              }
+          }
+          println!("loop:  {total}");
+
+          // An iterator chain: say WHAT you want
+          let total: i32 = nums.iter().filter(|n| *n % 2 == 0).map(|n| n * n).sum();
+          println!("chain: {total}");
+      }
+      ```
+
+      ```output
+      loop:  260
+      chain: 260
+      ```
+
+      Read the chain from left to right:
+
+      1. `nums.iter()` produces `&i32` items.
+      2. `.filter(|n| ...)` is an **adapter**: it keeps only the items for which the closure returns `true`. `filter` hands the closure a *reference to each item*, here `&&i32` (a reference to a reference), so `*n` gets back to the `&i32`, which `%` works with.
+      3. `.map(|n| n * n)` is an adapter that turns each item into something else.
+      4. `.sum()` is a **consumer**: it pulls every item through the chain and adds them up. It can produce several number types, so the result needs a type (`let total: i32`).
+
+      **Adapters** (`map`, `filter`, and many more) take an iterator and return a new iterator. **Consumers** (`sum`, `count`, `collect`, ...) run the chain and produce a final value. Every chain has the shape *source, adapters, one consumer*.
+
+      ### Why professionals prefer chains
+
+      - **The intent is visible.** "Keep the evens, square them, sum" reads like the spec. There's no mutable accumulator to get wrong and no index to go out of bounds.
+      - **Zero cost.** The compiler turns the chain into the same machine code as the hand-written loop, sometimes better (no bounds checks).
+      - **Easy to change.** Adding a step is adding a line.
+
+      Loops are still the right tool when the body does things (printing, writing files) or has tricky control flow with several `break`s and `return`s. Good Rust uses both; most *data transformation* is written as chains.
+
+      ### collect: build a collection
+
+      `collect()` gathers the items into a collection. Tell it which one with a type annotation:
+
+      ```rust run
+      fn main() {
+          let words = vec!["apple", "kiwi", "banana", "fig"];
+          let long: Vec<&str> = words.iter().filter(|w| w.len() > 3).copied().collect();
+          let shouting: Vec<String> = words.iter().map(|w| w.to_uppercase()).collect();
+          println!("{:?}", long);
+          println!("{:?}", shouting);
+      }
+      ```
+
+      ```output
+      ["apple", "kiwi", "banana"]
+      ["APPLE", "KIWI", "BANANA", "FIG"]
+      ```
+
+      `words.iter()` yields `&&str` (references to the `&str`s in the vector). `.copied()` copies each item out of its reference, giving plain `&str`s to collect. For types that aren't `Copy`, like `String`, the same adapter is `.cloned()`.
+
+      ### Common mistakes
+
+      - **Forgetting that `filter` passes a reference to the item:**
+
+      ```rust compile_fail
+      fn main() {
+          let nums: Vec<i32> = vec![1, 2, 3, 4];
+          let evens: Vec<&i32> = nums.iter().filter(|x| x % 2 == 0).collect();
+          println!("{:?}", evens);
+      }
+      ```
+
+      ```error
+      error[E0369]: cannot calculate the remainder of `&&i32` divided by `{integer}`
+      ```
+
+      Dereference: `|x| *x % 2 == 0`, or take the item apart in the pattern: `|&&x| x % 2 == 0`.
+
+      - **A chain with no consumer** does nothing at all. That's the next step.
+
+      **Your turn:** write `fn even_squares(nums: &[i32]) -> Vec<i32>` that returns the squares of the even numbers, in their original order, using an iterator chain (no loops). For example `even_squares(&[1, 2, 3, 4])` is `[4, 16]`.
+    seed: |
+      fn even_squares(nums: &[i32]) -> Vec<i32> {
+          todo!()
+      }
+    solution: |
+      fn even_squares(nums: &[i32]) -> Vec<i32> {
+          nums.iter().filter(|n| *n % 2 == 0).map(|n| n * n).collect()
+      }
+    forbid:
+      - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+        message: Solve it with an iterator chain (`filter`, `map`, `collect`), no loops.
+    harness: |
+      #[test]
+      fn squares_the_even_numbers() {
+          assert_eq!(even_squares(&[1, 2, 3, 4]), vec![4, 16], "even_squares(&[1, 2, 3, 4])");
+      }
+
+      #[test]
+      fn empty_input_gives_empty_output() {
+          assert_eq!(even_squares(&[]), Vec::<i32>::new(), "even_squares(&[])");
+      }
+
+      #[test]
+      fn negative_evens_count_too() {
+          assert_eq!(even_squares(&[-2, -3]), vec![4], "even_squares(&[-2, -3])");
+      }
+
+      #[test]
+      fn all_odd_gives_nothing() {
+          assert_eq!(even_squares(&[1, 3, 5]), Vec::<i32>::new(), "even_squares(&[1, 3, 5])");
+      }
+
+      #[test]
+      fn zero_is_even() {
+          assert_eq!(even_squares(&[0, 7]), vec![0], "even_squares(&[0, 7])");
+      }
+    hints:
+      - "Start with `nums.iter()`, keep the evens with `.filter(|n| *n % 2 == 0)`, square with `.map(|n| n * n)`."
+      - "End the chain with `.collect()`: the return type `Vec<i32>` tells it what to build."
+    more:
+      - task: |
+          Write `fn shout_long_words(words: &[&str], min_chars: usize) -> Vec<String>` that returns the words with **at least** `min_chars` characters, uppercased, in their original order. Count characters, not bytes (`"café"` has 4 characters but 5 bytes). No loops.
+        seed: |
+          fn shout_long_words(words: &[&str], min_chars: usize) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          fn shout_long_words(words: &[&str], min_chars: usize) -> Vec<String> {
+              words
+                  .iter()
+                  .filter(|w| w.chars().count() >= min_chars)
+                  .map(|w| w.to_uppercase())
+                  .collect()
+          }
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `filter`, `map` and `collect` instead of a loop.
+        harness: |
+          #[test]
+          fn keeps_and_uppercases_long_words() {
+              assert_eq!(shout_long_words(&["hi", "rustacean", "crab"], 4), vec!["RUSTACEAN", "CRAB"], "shout_long_words(&[hi, rustacean, crab], 4)");
+          }
+
+          #[test]
+          fn counts_characters_not_bytes() {
+              assert_eq!(shout_long_words(&["café", "tea"], 5), Vec::<String>::new(), "shout_long_words(&[café, tea], 5)");
+              assert_eq!(shout_long_words(&["café", "tea"], 4), vec!["CAFÉ"], "shout_long_words(&[café, tea], 4)");
+          }
+
+          #[test]
+          fn zero_keeps_everything() {
+              assert_eq!(shout_long_words(&["a", ""], 0), vec!["A", ""], "shout_long_words(&[a, \"\"], 0)");
+          }
+        hints:
+          - "`.filter(|w| w.chars().count() >= min_chars)` keeps the long words."
+          - "Then `.map(|w| w.to_uppercase())` and `.collect()`."
+      - task: |
+          A bank account's transactions arrive as input, one whole number per line: positive numbers are deposits, negative numbers are withdrawals. Print three lines:
+
+          ```
+          deposits: 350
+          withdrawals: 50
+          balance: 300
+          ```
+
+          (`withdrawals` is the total amount taken out, as a positive number.) The starter reads the numbers into a `Vec<i64>`. Compute the totals with iterator chains, no loops.
+        seed: |
+          use std::io::Read;
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              let nums: Vec<i64> = input.lines().map(|l| l.trim().parse().unwrap()).collect();
+              // compute and print the totals
+          }
+        solution: |
+          use std::io::Read;
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              let nums: Vec<i64> = input.lines().map(|l| l.trim().parse().unwrap()).collect();
+              // compute and print the totals
+              let deposits: i64 = nums.iter().filter(|n| **n > 0).sum();
+              let withdrawals: i64 = nums.iter().filter(|n| **n < 0).map(|n| -n).sum();
+              println!("deposits: {deposits}");
+              println!("withdrawals: {withdrawals}");
+              println!("balance: {}", deposits - withdrawals);
+          }
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Compute the totals with iterator chains (`filter`, `map`, `sum`), no loops.
+        hints:
+          - "`let deposits: i64 = nums.iter().filter(|n| **n > 0).sum();`"
+          - "For withdrawals, keep the negatives and flip their sign with `.map(|n| -n)` before summing."
+        tests:
+          - stdin: "100\n-30\n250\n-20\n"
+            expect: "deposits: 350\nwithdrawals: 50\nbalance: 300"
+          - stdin: "-5\n"
+            hidden: true
+          - stdin: "40\n60\n"
+            hidden: true
+
+  - title: "Laziness: nothing happens until you ask"
+    id: iterators-3
+    text: |
+      Adapters don't do any work when you call them. `map` and `filter` just build a new iterator value that *remembers* what to do. The work happens only when a consumer starts calling `next()`. This is called **laziness**, and the compiler warns you when you forget:
+
+      ```rust
+      let v = vec![1, 2, 3];
+      v.iter().map(|x| println!("{x}")); // prints nothing!
+      ```
+
+      ```text
+      warning: unused `Map` that must be used
+       --> src/main.rs:3:5
+        |
+      3 |     v.iter().map(|x| println!("{x}"));
+        |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        |
+        = note: iterators are lazy and do nothing unless consumed
+      ```
+
+      For side effects like printing, use a `for` loop (or the consumer `.for_each(|x| ...)`). `map` is for *transforming* values.
+
+      ### One item at a time
+
+      Laziness also means items flow through the chain one by one. Each item goes through every step before the next item starts:
+
+      ```rust run
+      fn main() {
+          let total: i32 = [1, 2, 3, 4]
+              .iter()
+              .filter(|x| {
+                  println!("filter {x}");
+                  *x % 2 == 0
+              })
+              .map(|x| {
+                  println!("map {x}");
+                  x * 10
+              })
+              .sum();
+          println!("total {total}");
+      }
+      ```
+
+      ```output
+      filter 1
+      filter 2
+      map 2
+      filter 3
+      filter 4
+      map 4
+      total 60
+      ```
+
+      No temporary vector is built between `filter` and `map`. That's why chains are as fast as loops.
+
+      ### Infinite iterators and stopping early
+
+      Because nothing runs until asked, an iterator can even be **infinite**: `(1..)` counts up forever. That's fine as long as something stops asking:
+
+      ```rust run
+      fn main() {
+          let first_squares: Vec<u64> = (1u64..).map(|n| n * n).take(5).collect();
+          println!("{:?}", first_squares);
+
+          let readings = [3, 5, 8, -1, 4, 6];
+          let before_error: Vec<i32> = readings.iter().copied().take_while(|r| *r >= 0).collect();
+          let after_two: Vec<i32> = readings.iter().copied().skip(2).collect();
+          let countdown: Vec<u32> = (0..=10).rev().step_by(5).collect();
+          println!("{:?}", before_error);
+          println!("{:?}", after_two);
+          println!("{:?}", countdown);
+      }
+      ```
+
+      ```output
+      [1, 4, 9, 16, 25]
+      [3, 5, 8]
+      [8, -1, 4, 6]
+      [10, 5, 0]
+      ```
+
+      | Adapter | What comes out |
+      |---|---|
+      | `take(n)` | the first `n` items, then it stops |
+      | `skip(n)` | everything after the first `n` items |
+      | `take_while(f)` | items while `f` says `true`; stops at the first `false` |
+      | `skip_while(f)` | drops items while `f` says `true`, then yields all the rest |
+      | `step_by(k)` | the first item, then every `k`-th item after it |
+      | `rev()` | the items backwards (works on ranges, vectors, `.chars()`: things that know their end) |
+
+      ### Common mistakes
+
+      - **An infinite chain with nothing to stop it.** `(1..).map(|n| n * 2).collect::<Vec<u64>>()` never finishes (here it would hit the time limit).
+      - **Order matters.** `.take(3).filter(...)` takes the first three items and then filters them; `.filter(...).take(3)` gives the first three items that pass the filter.
+      - **Expecting `map` to run on its own.** Without a consumer, its closure never runs.
+
+      **Your turn:** write `fn first_multiples(k: u32, n: usize) -> Vec<u32>` that returns the first `n` multiples of `k` (`k`, `2k`, `3k`, ...), **skipping any multiple that ends in 0** (divisible by 10). For example, `first_multiples(5, 4)` is `[5, 15, 25, 35]`. Start from the infinite range `(1..)`, no loops. (`k` is never a multiple of 10.)
+    seed: |
+      fn first_multiples(k: u32, n: usize) -> Vec<u32> {
+          todo!()
+      }
+    solution: |
+      fn first_multiples(k: u32, n: usize) -> Vec<u32> {
+          (1..).map(|i| i * k).filter(|m| m % 10 != 0).take(n).collect()
+      }
+    forbid:
+      - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+        message: "Use an iterator chain: `(1..)`, `map`, `filter`, `take`, `collect`."
+    harness: |
+      #[test]
+      fn fives_skip_the_tens() {
+          assert_eq!(first_multiples(5, 4), vec![5, 15, 25, 35], "first_multiples(5, 4)");
+      }
+
+      #[test]
+      fn threes() {
+          assert_eq!(first_multiples(3, 5), vec![3, 6, 9, 12, 15], "first_multiples(3, 5)");
+      }
+
+      #[test]
+      fn twos_skip_ten() {
+          assert_eq!(first_multiples(2, 6), vec![2, 4, 6, 8, 12, 14], "first_multiples(2, 6)");
+      }
+
+      #[test]
+      fn zero_count_gives_nothing() {
+          assert_eq!(first_multiples(7, 0), Vec::<u32>::new(), "first_multiples(7, 0)");
+      }
+    hints:
+      - "`(1..).map(|i| i * k)` is the endless list of multiples."
+      - "Then `.filter(|m| m % 10 != 0)`, `.take(n)` and `.collect()`. The `take` has to come after the `filter`."
+    more:
+      - task: |
+          A sensor sends readings; a negative reading means the sensor failed, and everything after it is garbage. Write `fn readings_until_error(readings: &[i32]) -> Vec<i32>` that returns the readings **before** the first negative one. Use `take_while`, no loops.
+        seed: |
+          fn readings_until_error(readings: &[i32]) -> Vec<i32> {
+              todo!()
+          }
+        solution: |
+          fn readings_until_error(readings: &[i32]) -> Vec<i32> {
+              readings.iter().copied().take_while(|r| *r >= 0).collect()
+          }
+        require:
+          - pattern: '\.take_while\('
+            message: Use `.take_while(...)` to stop at the first negative reading.
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `take_while` and `collect` instead of a loop.
+        harness: |
+          #[test]
+          fn stops_at_the_first_negative() {
+              assert_eq!(readings_until_error(&[3, 5, 8, -1, 4]), vec![3, 5, 8], "readings_until_error(&[3, 5, 8, -1, 4])");
+          }
+
+          #[test]
+          fn no_errors_keeps_everything() {
+              assert_eq!(readings_until_error(&[1, 2]), vec![1, 2], "readings_until_error(&[1, 2])");
+          }
+
+          #[test]
+          fn error_first_gives_nothing() {
+              assert_eq!(readings_until_error(&[-2, 5]), Vec::<i32>::new(), "readings_until_error(&[-2, 5])");
+          }
+
+          #[test]
+          fn zero_is_a_valid_reading() {
+              assert_eq!(readings_until_error(&[0, 0, -9]), vec![0, 0], "readings_until_error(&[0, 0, -9])");
+          }
+        hints:
+          - "`.copied()` turns the `&i32` items into `i32`, so you can collect a `Vec<i32>`."
+          - "`readings.iter().copied().take_while(|r| *r >= 0).collect()`"
+      - task: |
+          Read a whole number `n` from input. Print the even numbers from `n` down to `0` on one line, separated by spaces, then `liftoff!` on the next line. For `10`:
+
+          ```
+          10 8 6 4 2 0
+          liftoff!
+          ```
+
+          Build the line with a range, `rev()`, an adapter that keeps the evens, `map(|x| x.to_string())` and `collect::<Vec<String>>()` (or `let parts: Vec<String> = ...`), then `parts.join(" ")`. No loops.
+        seed: |
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).unwrap();
+              let n: u32 = line.trim().parse().unwrap();
+          }
+        solution: |
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).unwrap();
+              let n: u32 = line.trim().parse().unwrap();
+              let parts: Vec<String> = (0..=n).rev().filter(|x| x % 2 == 0).map(|x| x.to_string()).collect();
+              println!("{}", parts.join(" "));
+              println!("liftoff!");
+          }
+        require:
+          - pattern: '\.rev\(\)'
+            message: Count down with `.rev()` on a range.
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Build the line with an iterator chain and `join`, no loops.
+        hints:
+          - "`(0..=n).rev()` counts from `n` down to `0`. Keep the evens with `.filter(|x| x % 2 == 0)`."
+          - "`let parts: Vec<String> = (0..=n).rev().filter(|x| x % 2 == 0).map(|x| x.to_string()).collect();` then `println!(\"{}\", parts.join(\" \"));`"
+        tests:
+          - stdin: "10\n"
+            expect: "10 8 6 4 2 0\nliftoff!"
+          - stdin: "7\n"
+            hidden: true
+          - stdin: "0\n"
+            hidden: true
+
+  - title: "Combining iterators: enumerate, zip, chain, flat_map, windows"
+    id: iterators-4
+    text: |
+      The real power of iterators is in combining them. These adapters cover most of what loops with index variables used to do.
+
+      ```rust run
+      fn main() {
+          let players = ["Ann", "Bo", "Cy"];
+          let scores = [88, 92, 75];
+
+          // enumerate: (index, item) pairs, starting at 0
+          for (i, name) in players.iter().enumerate() {
+              println!("{}. {name}", i + 1);
+          }
+
+          // zip: walk two iterators side by side, as pairs
+          let report: Vec<String> = players
+              .iter()
+              .zip(scores.iter())
+              .map(|(name, score)| format!("{name}={score}"))
+              .collect();
+          println!("{}", report.join(", "));
+
+          // chain: one iterator after the other
+          let morning = [1, 2];
+          let evening = [3, 4];
+          let all: Vec<i32> = morning.iter().chain(evening.iter()).copied().collect();
+          println!("{:?}", all);
+      }
+      ```
+
+      ```output
+      1. Ann
+      2. Bo
+      3. Cy
+      Ann=88, Bo=92, Cy=75
+      [1, 2, 3, 4]
+      ```
+
+      Notice `.map(|(name, score)| ...)`: `zip` yields tuples, and the closure's parameter is a pattern that takes the tuple apart, just like `let (a, b) = pair;`.
+
+      ```rust run
+      fn main() {
+          // flat_map: each item becomes an iterator; all of them are joined
+          let lines = ["error disk full", "warn cpu hot"];
+          let words: Vec<&str> = lines.iter().flat_map(|l| l.split_whitespace()).collect();
+          println!("{:?}", words);
+
+          // flatten: remove one level of nesting (and skips None in Options)
+          let nested = vec![vec![1, 2], vec![], vec![3]];
+          let flat: Vec<i32> = nested.into_iter().flatten().collect();
+          println!("{:?}", flat);
+
+          // windows: overlapping slices; chunks: side-by-side slices
+          let temps = [12, 15, 14, 18, 21];
+          let rises = temps.windows(2).filter(|w| w[1] > w[0]).count();
+          println!("rises: {rises}");
+          let batches: Vec<Vec<i32>> = temps.chunks(2).map(|c| c.to_vec()).collect();
+          println!("{:?}", batches);
+
+          // peekable: look at the next item without taking it
+          let rolls = [1, 1, 2, 2, 2, 3];
+          let mut it = rolls.iter().peekable();
+          while let Some(x) = it.next() {
+              let mut run = 1;
+              while it.peek() == Some(&x) {
+                  it.next();
+                  run += 1;
+              }
+              print!("{x}x{run} ");
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      ["error", "disk", "full", "warn", "cpu", "hot"]
+      [1, 2, 3]
+      rises: 3
+      [[12, 15], [14, 18], [21]]
+      1x2 2x3 3x1
+      ```
+
+      | Adapter | Yields | Typical use |
+      |---|---|---|
+      | `enumerate()` | `(index, item)`, index from 0 | numbering lines, finding positions |
+      | `zip(other)` | `(a, b)` pairs; stops when **either** side runs out | pairing names with scores |
+      | `chain(other)` | all items of the first, then all of the second | joining two sources |
+      | `flat_map(f)` | for each item, every item of the iterator `f` returns | all words of all lines |
+      | `flatten()` | the items inside each item | `Vec<Vec<T>>` to `T`s, dropping `None`s |
+      | `peekable()` | the same items, plus a `.peek()` method | parsers, grouping runs |
+      | `windows(n)` | every overlapping slice of length `n` | comparing neighbors |
+      | `chunks(n)` | slices of `n` items side by side (the last may be shorter) | batching |
+
+      `windows` and `chunks` are methods of **slices**, not adapters: call them on a `Vec` or array, not on an iterator. They return iterators, so the rest of the chain works as usual.
+
+      ### Common mistakes
+
+      - **`windows` on an iterator:**
+
+      ```rust compile_fail
+      fn main() {
+          let v = vec![1, 2, 3];
+          let n = v.iter().windows(2).count();
+          println!("{n}");
+      }
+      ```
+
+      ```error
+      error[E0599]: no method named `windows` found for struct `std::slice::Iter<'a, T>` in the current scope
+      ```
+
+      Write `v.windows(2)`.
+
+      - **`zip` silently drops leftovers.** If the two sides have different lengths, the extra items are ignored. When that would be a bug, check the lengths first.
+      - **Forgetting `enumerate` starts at 0.** Add 1 for numbers shown to people.
+      - **Filtering before `enumerate` when you want the original positions.** `enumerate` numbers whatever reaches it. Put it first to number the original items.
+
+      **Your turn:** write `fn number_lines(lines: &[&str]) -> Vec<String>` that returns `"N: line"` for every line that isn't blank, where `N` is the line's number in the original list (starting at 1). Blank lines (empty, or only spaces) are skipped but still **count** for the numbering. For example `["fn main() {", "", "}"]` gives `["1: fn main() {", "3: }"]`. No loops.
+    seed: |
+      fn number_lines(lines: &[&str]) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      fn number_lines(lines: &[&str]) -> Vec<String> {
+          lines
+              .iter()
+              .enumerate()
+              .filter(|(_, line)| !line.trim().is_empty())
+              .map(|(i, line)| format!("{}: {line}", i + 1))
+              .collect()
+      }
+    require:
+      - pattern: '\.enumerate\(\)'
+        message: Number the lines with `.enumerate()`.
+    forbid:
+      - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+        message: Use `enumerate`, `filter`, `map` and `collect`, no loops.
+    harness: |
+      #[test]
+      fn numbers_every_line() {
+          assert_eq!(number_lines(&["let x = 1;", "let y = 2;"]), vec!["1: let x = 1;", "2: let y = 2;"], "number_lines of two lines");
+      }
+
+      #[test]
+      fn blank_lines_are_skipped_but_counted() {
+          assert_eq!(number_lines(&["fn main() {", "", "}"]), vec!["1: fn main() {", "3: }"], "number_lines(&[\"fn main() {{\", \"\", \"}}\"])");
+      }
+
+      #[test]
+      fn lines_of_spaces_count_as_blank() {
+          assert_eq!(number_lines(&["a", "   ", "b"]), vec!["1: a", "3: b"], "number_lines(&[\"a\", \"   \", \"b\"])");
+      }
+
+      #[test]
+      fn no_lines_gives_nothing() {
+          assert_eq!(number_lines(&[]), Vec::<String>::new(), "number_lines(&[])");
+      }
+    hints:
+      - "`enumerate` has to come **before** the `filter`, so the numbers belong to the original positions."
+      - "`.enumerate().filter(|(_, line)| !line.trim().is_empty()).map(|(i, line)| format!(\"{}: {line}\", i + 1))`"
+    more:
+      - task: |
+          Write `fn dot_product(a: &[i32], b: &[i32]) -> i32`: multiply the numbers at the same positions and add the products up. `dot_product(&[1, 2, 3], &[4, 5, 6])` is `1*4 + 2*5 + 3*6 = 32`. If the lengths differ, ignore the extra numbers of the longer one (that's what `zip` does). No loops.
+        seed: |
+          fn dot_product(a: &[i32], b: &[i32]) -> i32 {
+              todo!()
+          }
+        solution: |
+          fn dot_product(a: &[i32], b: &[i32]) -> i32 {
+              a.iter().zip(b).map(|(x, y)| x * y).sum()
+          }
+        require:
+          - pattern: '\.zip\('
+            message: Pair up the numbers with `.zip(...)`.
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `zip`, `map` and `sum`, no loops.
+        harness: |
+          #[test]
+          fn multiplies_and_adds() {
+              assert_eq!(dot_product(&[1, 2, 3], &[4, 5, 6]), 32, "dot_product(&[1, 2, 3], &[4, 5, 6])");
+          }
+
+          #[test]
+          fn empty_vectors_give_zero() {
+              assert_eq!(dot_product(&[], &[]), 0, "dot_product(&[], &[])");
+          }
+
+          #[test]
+          fn extra_numbers_are_ignored() {
+              assert_eq!(dot_product(&[1, 2, 3], &[10, 10]), 30, "dot_product(&[1, 2, 3], &[10, 10])");
+          }
+
+          #[test]
+          fn negatives_work() {
+              assert_eq!(dot_product(&[-1, 2], &[3, -4]), -11, "dot_product(&[-1, 2], &[3, -4])");
+          }
+        hints:
+          - "`a.iter().zip(b)` gives pairs `(x, y)` of references."
+          - "`.map(|(x, y)| x * y).sum()`"
+      - task: |
+          Write `fn unique_words(lines: &[&str]) -> Vec<String>` that returns every word that appears in any of the lines, **lowercased**, sorted alphabetically, with no duplicates. Words are separated by whitespace. Use `flat_map` to get from lines to words; no loops.
+        seed: |
+          fn unique_words(lines: &[&str]) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          fn unique_words(lines: &[&str]) -> Vec<String> {
+              let mut words: Vec<String> = lines
+                  .iter()
+                  .flat_map(|line| line.split_whitespace())
+                  .map(|w| w.to_lowercase())
+                  .collect();
+              words.sort();
+              words.dedup();
+              words
+          }
+        require:
+          - pattern: '\.flat_map\('
+            message: Turn lines into words with `.flat_map(|line| line.split_whitespace())`.
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `flat_map`, `map` and `collect` (then `sort` and `dedup`), no loops.
+        harness: |
+          #[test]
+          fn collects_words_from_all_lines() {
+              assert_eq!(unique_words(&["the crab", "a crab dances"]), vec!["a", "crab", "dances", "the"], "unique_words(&[\"the crab\", \"a crab dances\"])");
+          }
+
+          #[test]
+          fn ignores_case() {
+              assert_eq!(unique_words(&["Rust rust RUST"]), vec!["rust"], "unique_words(&[\"Rust rust RUST\"])");
+          }
+
+          #[test]
+          fn extra_whitespace_is_fine() {
+              assert_eq!(unique_words(&["  b   a  ", ""]), vec!["a", "b"], "unique_words(&[\"  b   a  \", \"\"])");
+          }
+
+          #[test]
+          fn no_lines_gives_no_words() {
+              assert_eq!(unique_words(&[]), Vec::<String>::new(), "unique_words(&[])");
+          }
+        hints:
+          - "`lines.iter().flat_map(|line| line.split_whitespace()).map(|w| w.to_lowercase()).collect()` gives all the words."
+          - "Collect into a `mut` Vec, then `sort()` and `dedup()` it."
+
+  - title: "Consumers: sum, count, min, max, fold, any, find"
+    id: iterators-5
+    text: |
+      The consumer is the last link of a chain: it pulls the items through and produces the answer. Here are the ones you'll use daily, on a list of orders:
+
+      ```rust run
+      struct Order {
+          id: u32,
+          customer: String,
+          total: f64,
+          shipped: bool,
+      }
+
+      fn main() {
+          let orders = vec![
+              Order { id: 1, customer: String::from("ann"), total: 25.0, shipped: true },
+              Order { id: 2, customer: String::from("bo"), total: 140.5, shipped: false },
+              Order { id: 3, customer: String::from("ann"), total: 9.99, shipped: true },
+              Order { id: 4, customer: String::from("cy"), total: 60.0, shipped: false },
+          ];
+
+          let revenue: f64 = orders.iter().map(|o| o.total).sum();
+          let pending = orders.iter().filter(|o| !o.shipped).count();
+          let biggest = orders.iter().max_by(|a, b| a.total.total_cmp(&b.total));
+          let for_bo = orders.iter().find(|o| o.customer == "bo");
+          let first_big = orders.iter().position(|o| o.total > 100.0);
+          let all_positive = orders.iter().all(|o| o.total > 0.0);
+          let any_huge = orders.iter().any(|o| o.total > 1000.0);
+
+          println!("revenue: {revenue:.2}");
+          println!("pending: {pending}");
+          println!("biggest: {:?}", biggest.map(|o| o.id));
+          println!("bo's order: {:?}", for_bo.map(|o| o.id));
+          println!("first over 100 at index {:?}", first_big);
+          println!("all positive: {all_positive}, any over 1000: {any_huge}");
+      }
+      ```
+
+      ```output
+      revenue: 235.49
+      pending: 2
+      biggest: Some(2)
+      bo's order: Some(2)
+      first over 100 at index Some(1)
+      all positive: true, any over 1000: false
+      ```
+
+      More consumers, and `fold`, the most general one:
+
+      ```rust run
+      fn main() {
+          let words = ["kiwi", "banana", "fig", "cherry"];
+          let shortest = words.iter().min_by_key(|w| w.len());
+          let longest = words.iter().max_by_key(|w| w.len());
+          println!("{:?} {:?}", shortest, longest);
+
+          let factorial: u64 = (1..=10).product();
+          println!("10! = {factorial}");
+
+          // fold(start, |accumulator, item| next accumulator)
+          let balance = [50, -20, 30].iter().fold(100, |bal, t| bal + t);
+          println!("balance: {balance}");
+
+          let temps = [21.5, 25.25, 19.0];
+          let hottest = temps.iter().copied().fold(f64::MIN, f64::max);
+          println!("hottest: {hottest}");
+      }
+      ```
+
+      ```output
+      Some("fig") Some("cherry")
+      10! = 3628800
+      balance: 160
+      hottest: 25.25
+      ```
+
+      `fold` starts with a value (the **accumulator**), and for each item calls the closure with the accumulator and the item; whatever the closure returns becomes the new accumulator. `sum`, `count` and `max` could all be written with `fold`. The second fold passes the function `f64::max` instead of a closure.
+
+      | Consumer | Returns | Notes |
+      |---|---|---|
+      | `sum()`, `product()` | a number | give the result a type: `let s: i32 = ...` |
+      | `count()` | `usize` | |
+      | `min()`, `max()` | `Option<item>` | `None` when empty; items must be `Ord` (not `f64`) |
+      | `min_by_key(f)`, `max_by_key(f)` | `Option<item>` | compare by a key; on ties `min_by_key` returns the first, `max_by_key` the **last** |
+      | `min_by(f)`, `max_by(f)` | `Option<item>` | compare with a closure returning an `Ordering`; for `f64` use `a.total_cmp(b)` |
+      | `fold(start, f)` | the accumulator | the general one |
+      | `any(f)`, `all(f)` | `bool` | stop at the first item that decides; `all` on nothing is `true` |
+      | `find(f)` | `Option<item>` | the first item that matches; stops there |
+      | `position(f)` | `Option<usize>` | the index of the first match |
+      | `last()`, `nth(n)` | `Option<item>` | |
+      | `for_each(f)` | `()` | run a side effect for each item |
+
+      `any`, `all`, `find` and `position` **short-circuit**: they stop pulling items as soon as they know the answer, which matters with long or infinite iterators.
+
+      ### Common mistakes
+
+      - **`max` on floats.** `f64` isn't `Ord`, because `NaN` can't be ordered:
+
+      ```rust compile_fail
+      fn main() {
+          let temps: Vec<f64> = vec![21.5, 19.0];
+          let hottest = temps.iter().max();
+          println!("{:?}", hottest);
+      }
+      ```
+
+      ```error
+      error[E0277]: the trait bound `f64: Ord` is not satisfied
+      ```
+
+      Use `max_by(|a, b| a.total_cmp(b))`, or `fold(f64::MIN, f64::max)` as above.
+
+      - **`sum` without a type.** `sum` can produce many types, so it needs to know which:
+
+      ```rust compile_fail
+      fn main() {
+          let v = vec![1, 2, 3];
+          let total = v.iter().sum();
+          println!("{total}");
+      }
+      ```
+
+      ```error
+      error[E0283]: type annotations needed
+      ```
+
+      Write `let total: i32 = ...`, or `sum::<i32>()` (the turbofish, next step).
+
+      - **`unwrap()` on `min`/`max` of a list that may be empty.** Handle the `None`, or return the `Option`.
+
+      **Your turn:** the warehouse keeps a list of `Item`s. Write three functions, each a single iterator chain (no loops):
+
+      - `fn total_units(items: &[Item]) -> u32`: the sum of all quantities.
+      - `fn out_of_stock(items: &[Item]) -> bool`: `true` if any item has quantity 0.
+      - `fn priciest(items: &[Item]) -> Option<&str>`: the name of the most expensive item, or `None` for an empty list. Prices are `f64`.
+    seed: |
+      #[derive(Debug)]
+      struct Item {
+          name: String,
+          qty: u32,
+          price: f64,
+      }
+
+      fn total_units(items: &[Item]) -> u32 {
+          todo!()
+      }
+
+      fn out_of_stock(items: &[Item]) -> bool {
+          todo!()
+      }
+
+      fn priciest(items: &[Item]) -> Option<&str> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug)]
+      struct Item {
+          name: String,
+          qty: u32,
+          price: f64,
+      }
+
+      fn total_units(items: &[Item]) -> u32 {
+          items.iter().map(|i| i.qty).sum()
+      }
+
+      fn out_of_stock(items: &[Item]) -> bool {
+          items.iter().any(|i| i.qty == 0)
+      }
+
+      fn priciest(items: &[Item]) -> Option<&str> {
+          items
+              .iter()
+              .max_by(|a, b| a.price.total_cmp(&b.price))
+              .map(|i| i.name.as_str())
+      }
+    forbid:
+      - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+        message: Write each function as an iterator chain, no loops.
+    harness: |
+      fn item(name: &str, qty: u32, price: f64) -> Item {
+          Item { name: name.to_string(), qty, price }
+      }
+
+      fn stock() -> Vec<Item> {
+          vec![item("bolt", 120, 0.25), item("drill", 3, 89.0), item("saw", 0, 24.5)]
+      }
+
+      #[test]
+      fn total_units_adds_the_quantities() {
+          assert_eq!(total_units(&stock()), 123, "total_units(bolt 120, drill 3, saw 0)");
+      }
+
+      #[test]
+      fn total_units_of_nothing_is_zero() {
+          assert_eq!(total_units(&[]), 0, "total_units(&[])");
+      }
+
+      #[test]
+      fn out_of_stock_finds_an_empty_item() {
+          assert_eq!(out_of_stock(&stock()), true, "out_of_stock(bolt 120, drill 3, saw 0)");
+      }
+
+      #[test]
+      fn out_of_stock_is_false_when_everything_is_there() {
+          let items = vec![item("bolt", 120, 0.25), item("drill", 3, 89.0)];
+          assert_eq!(out_of_stock(&items), false, "out_of_stock(bolt 120, drill 3)");
+      }
+
+      #[test]
+      fn priciest_is_the_drill() {
+          assert_eq!(priciest(&stock()), Some("drill"), "priciest(bolt 0.25, drill 89.0, saw 24.5)");
+      }
+
+      #[test]
+      fn priciest_of_nothing_is_none() {
+          assert_eq!(priciest(&[]), None, "priciest(&[])");
+      }
+    hints:
+      - "`total_units`: `items.iter().map(|i| i.qty).sum()`. `out_of_stock`: `items.iter().any(|i| i.qty == 0)`."
+      - "`priciest`: `max_by(|a, b| a.price.total_cmp(&b.price))` finds the item; then `.map(|i| i.name.as_str())` turns `Option<&Item>` into `Option<&str>`."
+    more:
+      - task: |
+          Write two functions over a list of exam scores, each a single chain (no loops):
+
+          - `fn first_fail(scores: &[u32], pass_mark: u32) -> Option<usize>`: the index of the first score below `pass_mark`, or `None` if nobody failed.
+          - `fn everyone_passed(scores: &[u32], pass_mark: u32) -> bool`: `true` if every score is at least `pass_mark` (so `true` for an empty list).
+        seed: |
+          fn first_fail(scores: &[u32], pass_mark: u32) -> Option<usize> {
+              todo!()
+          }
+
+          fn everyone_passed(scores: &[u32], pass_mark: u32) -> bool {
+              todo!()
+          }
+        solution: |
+          fn first_fail(scores: &[u32], pass_mark: u32) -> Option<usize> {
+              scores.iter().position(|&s| s < pass_mark)
+          }
+
+          fn everyone_passed(scores: &[u32], pass_mark: u32) -> bool {
+              scores.iter().all(|&s| s >= pass_mark)
+          }
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `position` and `all`, no loops.
+        harness: |
+          #[test]
+          fn first_fail_finds_the_index() {
+              assert_eq!(first_fail(&[70, 45, 30], 50), Some(1), "first_fail(&[70, 45, 30], 50)");
+          }
+
+          #[test]
+          fn first_fail_is_none_when_all_pass() {
+              assert_eq!(first_fail(&[70, 50], 50), None, "first_fail(&[70, 50], 50)");
+          }
+
+          #[test]
+          fn everyone_passed_checks_every_score() {
+              assert_eq!(everyone_passed(&[70, 50], 50), true, "everyone_passed(&[70, 50], 50)");
+              assert_eq!(everyone_passed(&[70, 49], 50), false, "everyone_passed(&[70, 49], 50)");
+          }
+
+          #[test]
+          fn everyone_passed_an_empty_exam() {
+              assert_eq!(everyone_passed(&[], 50), true, "everyone_passed(&[], 50)");
+          }
+        hints:
+          - "`scores.iter().position(|&s| s < pass_mark)`: the `&s` pattern takes the number out of its reference."
+          - "`scores.iter().all(|&s| s >= pass_mark)`"
+      - task: |
+          A habit tracker stores one `bool` per day: did you practice? Write `fn longest_streak(days: &[bool]) -> usize` that returns the longest run of `true` days in a row. Use `fold` with a tuple accumulator `(current_run, best_run)`, no loops. For `[true, true, false, true, true, true, false]` the answer is `3`.
+        seed: |
+          fn longest_streak(days: &[bool]) -> usize {
+              todo!()
+          }
+        solution: |
+          fn longest_streak(days: &[bool]) -> usize {
+              days.iter()
+                  .fold((0, 0), |(current, best), &practiced| {
+                      let current = if practiced { current + 1 } else { 0 };
+                      (current, best.max(current))
+                  })
+                  .1
+          }
+        require:
+          - pattern: '\.fold\('
+            message: Use `.fold((0, 0), |(current, best), &day| ...)`.
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `fold`, no loops.
+        harness: |
+          #[test]
+          fn finds_the_longest_run() {
+              assert_eq!(longest_streak(&[true, true, false, true, true, true, false]), 3, "longest_streak(T T F T T T F)");
+          }
+
+          #[test]
+          fn no_days_means_no_streak() {
+              assert_eq!(longest_streak(&[]), 0, "longest_streak(&[])");
+          }
+
+          #[test]
+          fn all_false_means_no_streak() {
+              assert_eq!(longest_streak(&[false, false]), 0, "longest_streak(F F)");
+          }
+
+          #[test]
+          fn all_true_is_one_long_streak() {
+              assert_eq!(longest_streak(&[true, true, true, true]), 4, "longest_streak(T T T T)");
+          }
+
+          #[test]
+          fn streak_at_the_end_counts() {
+              assert_eq!(longest_streak(&[true, false, true, true]), 2, "longest_streak(T F T T)");
+          }
+        hints:
+          - "The accumulator is `(current, best)`. For each day: `current` becomes `current + 1` on a `true` day and `0` on a `false` day; `best` becomes `best.max(current)`."
+          - "Start with `(0, 0)` and take the second number of the result with `.1`."
+
+  - title: "collect, the turbofish, and collecting Results"
+    id: iterators-6
+    text: |
+      `collect()` can build almost any collection. It works out *which* one from the type you ask for, and there are two ways to ask:
+
+      ```rust
+      let v: Vec<i32> = it.collect();      // annotate the variable
+      let v = it.collect::<Vec<i32>>();    // or annotate the method call
+      let v: Vec<_> = it.collect();        // `_`: "work out the item type yourself"
+      ```
+
+      The `::<...>` syntax is affectionately called the **turbofish**. You need it where there's no variable to annotate: in the middle of a chain, as an argument, or for `parse::<i32>()` and `sum::<u32>()`.
+
+      ```rust run
+      use std::collections::{BTreeMap, HashMap, HashSet};
+
+      fn main() {
+          let names = ["ann", "bo", "ann", "cy"];
+
+          let upper = names.iter().map(|n| n.to_uppercase()).collect::<Vec<_>>();
+          let unique: HashSet<&str> = names.iter().copied().collect();
+          let initials: String = names.iter().filter_map(|n| n.chars().next()).collect();
+          let lengths: BTreeMap<&str, usize> = names.iter().map(|n| (*n, n.len())).collect();
+          let ids: HashMap<u32, &str> = (1..).zip(names.iter().copied()).collect();
+
+          println!("{:?}", upper);
+          println!("{} unique", unique.len());
+          println!("{initials}");
+          println!("{:?}", lengths);
+          println!("id 3 is {}", ids[&3]);
+      }
+      ```
+
+      ```output
+      ["ANN", "BO", "ANN", "CY"]
+      3 unique
+      abac
+      {"ann": 3, "bo": 2, "cy": 2}
+      id 3 is ann
+      ```
+
+      - A `HashSet` drops duplicates. A `String` can be collected from `char`s (or from `&str`s and `String`s).
+      - Maps are collected from `(key, value)` tuples. A later duplicate key overwrites the earlier one. `BTreeMap` keeps its keys sorted, so it's safe to print; a `HashMap`'s order is unpredictable, so here we only look keys up.
+      - `filter_map(f)` is `filter` and `map` in one: `f` returns an `Option`; `None`s are dropped and the values inside the `Some`s are kept. (`n.chars().next()` is `None` for an empty string.)
+
+      ### Collecting Results: stop at the first error
+
+      This is one of Rust's most useful tricks. When every item is a `Result`, you can collect into **`Result<Vec<T>, E>`**: you get `Ok(vec)` if every item was `Ok`, or the **first** `Err`, and collecting stops right there.
+
+      ```rust run
+      use std::num::ParseIntError;
+
+      fn parse_all(input: &str) -> Result<Vec<i32>, ParseIntError> {
+          input.split(',').map(|s| s.trim().parse::<i32>()).collect()
+      }
+
+      fn main() {
+          println!("{:?}", parse_all("4, 8, 15"));
+          println!("{:?}", parse_all("4, eight, 15"));
+
+          // or skip the bad ones: .ok() turns a Result into an Option
+          let good: Vec<i32> = "4, eight, 15".split(',').filter_map(|s| s.trim().parse().ok()).collect();
+          println!("{:?}", good);
+      }
+      ```
+
+      ```output
+      Ok([4, 8, 15])
+      Err(ParseIntError { kind: InvalidDigit })
+      [4, 15]
+      ```
+
+      It combines beautifully with `?`: `let nums: Vec<i32> = line.split(',').map(|s| s.parse()).collect::<Result<_, _>>()?;`. The same works with `Option`: collecting `Option<T>` items into `Option<Vec<T>>` gives `None` if any item was `None`.
+
+      Which one should you pick? **Fail** (collect into `Result`) when bad data means the whole input is wrong, like a config file. **Skip** (`filter_map` with `.ok()`) when bad entries are expected and harmless, like noise in a log; at work, count or log what you skipped.
+
+      ### Common mistakes
+
+      - **`collect` with no type to aim for:**
+
+      ```rust compile_fail
+      fn main() {
+          let words = "3 1 2";
+          let nums = words.split(' ').map(|w| w.parse::<i32>().unwrap()).collect();
+          println!("{:?}", nums);
+      }
+      ```
+
+      ```error
+      error[E0283]: type annotations needed
+      ```
+
+      Write `let nums: Vec<i32> = ...` or `.collect::<Vec<_>>()`.
+
+      - **Collecting references into a collection of values.** `.iter()` yields `&i32`, and a `Vec<i32>` can't be built from references:
+
+      ```rust compile_fail
+      fn main() {
+          let v: Vec<i32> = vec![1, 2, 3];
+          let copy: Vec<i32> = v.iter().collect();
+          println!("{:?}", copy);
+      }
+      ```
+
+      ```error
+      error[E0277]: a value of type `Vec<i32>` cannot be built from an iterator over elements of type `&i32`
+      ```
+
+      Add `.copied()` (for `Copy` items) or `.cloned()` (for things like `String`) before `collect`, or collect a `Vec<&i32>` if references are what you want.
+
+      **Your turn:** write `fn parse_scores(line: &str) -> Result<Vec<u32>, ParseIntError>`. The line holds scores separated by whitespace. Return all of them, or the first parse error. An empty line gives `Ok` with an empty vector. Use a single chain that collects into the `Result`, no loops.
+    seed: |
+      use std::num::ParseIntError;
+
+      fn parse_scores(line: &str) -> Result<Vec<u32>, ParseIntError> {
+          todo!()
+      }
+    solution: |
+      use std::num::ParseIntError;
+
+      fn parse_scores(line: &str) -> Result<Vec<u32>, ParseIntError> {
+          line.split_whitespace().map(|s| s.parse::<u32>()).collect()
+      }
+    forbid:
+      - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+        message: Map each word to `parse()` and `collect()` straight into the `Result`, no loops.
+      - pattern: '\.unwrap\(\)|\.expect\('
+        message: Don't unwrap; let `collect` turn the first `Err` into the function's result.
+    harness: |
+      #[test]
+      fn parses_every_score() {
+          assert_eq!(parse_scores("10 20 30"), Ok(vec![10, 20, 30]), "parse_scores(\"10 20 30\")");
+      }
+
+      #[test]
+      fn extra_spaces_are_fine() {
+          assert_eq!(parse_scores("  7   8 "), Ok(vec![7, 8]), "parse_scores(\"  7   8 \")");
+      }
+
+      #[test]
+      fn an_empty_line_gives_an_empty_vec() {
+          assert_eq!(parse_scores(""), Ok(vec![]), "parse_scores(\"\")");
+      }
+
+      #[test]
+      fn a_bad_score_is_an_error() {
+          assert!(parse_scores("10 x 30").is_err(), "parse_scores(\"10 x 30\") should be an Err");
+      }
+
+      #[test]
+      fn negative_scores_are_errors() {
+          assert!(parse_scores("5 -5").is_err(), "parse_scores(\"5 -5\") should be an Err (scores are u32)");
+      }
+    hints:
+      - "`line.split_whitespace().map(|s| s.parse::<u32>())` is an iterator of `Result<u32, ParseIntError>`."
+      - "End it with `.collect()`: the return type `Result<Vec<u32>, ParseIntError>` tells `collect` to stop at the first error."
+    more:
+      - task: |
+          A config lists ports separated by commas, but some entries are junk. Write `fn valid_ports(list: &str) -> Vec<u16>` that returns every entry that parses as a `u16` (after trimming spaces), in order, and **skips** the rest. `"80, 443, http, 70000, 8080"` gives `[80, 443, 8080]` (70000 is too big for a `u16`). Use `filter_map`, no loops.
+        seed: |
+          fn valid_ports(list: &str) -> Vec<u16> {
+              todo!()
+          }
+        solution: |
+          fn valid_ports(list: &str) -> Vec<u16> {
+              list.split(',').filter_map(|s| s.trim().parse::<u16>().ok()).collect()
+          }
+        require:
+          - pattern: '\.filter_map\('
+            message: Use `.filter_map(...)` with `.ok()` to skip the bad entries.
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `split`, `filter_map` and `collect`, no loops.
+        harness: |
+          #[test]
+          fn skips_junk_and_out_of_range() {
+              assert_eq!(valid_ports("80, 443, http, 70000, 8080"), vec![80, 443, 8080], "valid_ports(\"80, 443, http, 70000, 8080\")");
+          }
+
+          #[test]
+          fn trims_spaces() {
+              assert_eq!(valid_ports(" 22 "), vec![22], "valid_ports(\" 22 \")");
+          }
+
+          #[test]
+          fn empty_list_gives_nothing() {
+              assert_eq!(valid_ports(""), Vec::<u16>::new(), "valid_ports(\"\")");
+          }
+        hints:
+          - "`s.trim().parse::<u16>()` is a `Result`; `.ok()` turns it into an `Option` for `filter_map`."
+          - "`list.split(',').filter_map(|s| s.trim().parse::<u16>().ok()).collect()`"
+      - task: |
+          Write `fn index_users(users: Vec<User>) -> HashMap<u32, User>` that moves the users into a map keyed by their `id`, so they can be looked up quickly. If two users share an id, the later one wins. Use one chain ending in `collect`, no loops.
+        seed: |
+          use std::collections::HashMap;
+
+          #[derive(Debug, PartialEq)]
+          struct User {
+              id: u32,
+              name: String,
+          }
+
+          fn index_users(users: Vec<User>) -> HashMap<u32, User> {
+              todo!()
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          #[derive(Debug, PartialEq)]
+          struct User {
+              id: u32,
+              name: String,
+          }
+
+          fn index_users(users: Vec<User>) -> HashMap<u32, User> {
+              users.into_iter().map(|u| (u.id, u)).collect()
+          }
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: "Use `into_iter`, `map` to `(id, user)` pairs, and `collect`, no loops."
+        harness: |
+          fn user(id: u32, name: &str) -> User {
+              User { id, name: name.to_string() }
+          }
+
+          #[test]
+          fn users_can_be_found_by_id() {
+              let map = index_users(vec![user(1, "ann"), user(2, "bo"), user(7, "cy")]);
+              assert_eq!(map.len(), 3, "number of entries");
+              assert_eq!(map[&2].name, "bo", "name of user 2");
+              assert_eq!(map[&7].name, "cy", "name of user 7");
+          }
+
+          #[test]
+          fn no_users_gives_an_empty_map() {
+              assert_eq!(index_users(vec![]).len(), 0, "index_users(vec![]).len()");
+          }
+
+          #[test]
+          fn the_later_duplicate_wins() {
+              let map = index_users(vec![user(1, "old"), user(1, "new")]);
+              assert_eq!(map.len(), 1, "number of entries");
+              assert_eq!(map.get(&1), Some(&user(1, "new")), "user 1");
+          }
+        hints:
+          - "`into_iter()` gives owned `User`s, which can move into the map."
+          - "`users.into_iter().map(|u| (u.id, u)).collect()`: `u.id` is copied before `u` moves into the tuple."
+
+  - title: Implementing Iterator for your own type
+    id: iterators-7
+    text: |
+      Any type can be an iterator: implement `next`, and you get every adapter and consumer (`map`, `filter`, `take`, `sum`, `collect` and about 70 more) for free, because they're default methods of the `Iterator` trait.
+
+      ```rust run
+      struct Fibonacci {
+          current: u64,
+          next: u64,
+      }
+
+      impl Fibonacci {
+          fn new() -> Self {
+              Fibonacci { current: 0, next: 1 }
+          }
+      }
+
+      impl Iterator for Fibonacci {
+          type Item = u64;
+
+          fn next(&mut self) -> Option<Self::Item> {
+              let value = self.current;
+              self.current = self.next;
+              self.next += value;
+              Some(value)
+          }
+      }
+
+      fn main() {
+          let first: Vec<u64> = Fibonacci::new().take(10).collect();
+          println!("{:?}", first);
+
+          let even_sum: u64 = Fibonacci::new()
+              .take_while(|&f| f < 4_000_000)
+              .filter(|f| f % 2 == 0)
+              .sum();
+          println!("{even_sum}");
+      }
+      ```
+
+      ```output
+      [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+      4613732
+      ```
+
+      Piece by piece:
+
+      - `impl Iterator for Fibonacci`: implementing a standard trait, as in the traits module.
+      - `type Item = u64;`: the associated type: this iterator yields `u64`s. In the signature, `Self::Item` refers to it (writing `Option<u64>` is the same).
+      - `next(&mut self)`: moves the state stored in the struct forward and returns the next value. The struct's fields are the iterator's memory between calls.
+      - This iterator never returns `None`: it's infinite, so callers bound it with `take` or `take_while`. A finite iterator returns `None` when it's done, and should keep returning `None` if asked again.
+
+      ### Returning iterators from functions
+
+      Often you don't need a new struct: return a chain built from existing iterators, typed as `impl Iterator<Item = ...>`. Callers decide what to do with it (count it, take a few, collect it), and nothing is allocated in between:
+
+      ```rust run
+      struct Team {
+          members: Vec<(String, bool)>, // (name, active?)
+      }
+
+      impl Team {
+          fn active(&self) -> impl Iterator<Item = &str> {
+              self.members.iter().filter(|m| m.1).map(|m| m.0.as_str())
+          }
+      }
+
+      fn main() {
+          let team = Team {
+              members: vec![
+                  (String::from("ann"), true),
+                  (String::from("bo"), false),
+                  (String::from("cy"), true),
+              ],
+          };
+          println!("{}", team.active().count());
+          let names: Vec<&str> = team.active().collect();
+          println!("{}", names.join(", "));
+      }
+      ```
+
+      ```output
+      2
+      ann, cy
+      ```
+
+      This is a common pattern in libraries: return `impl Iterator` instead of a `Vec` when the caller might not need every item.
+
+      ### Common mistakes
+
+      - **Forgetting `type Item`:**
+
+      ```rust compile_fail
+      struct Countdown {
+          remaining: u32,
+      }
+
+      impl Iterator for Countdown {
+          fn next(&mut self) -> Option<u32> {
+              None
+          }
+      }
+
+      fn main() {
+          let c = Countdown { remaining: 3 };
+          println!("{}", c.remaining);
+      }
+      ```
+
+      ```error
+      error[E0046]: not all trait items implemented, missing: `Item`
+      ```
+
+      - **Writing `&self` instead of `&mut self`.** `next` must be able to change the state, and the trait says so: `error[E0053]: method next has an incompatible type for trait`.
+      - **Not moving the state forward** in `next`: the iterator returns the same item forever, and a `collect` never finishes.
+
+      **Your turn:** implement `Iterator` for `Countdown`. `Countdown::new(3)` yields `3`, `2`, `1` and then `None` (and keeps returning `None` after that). `Countdown::new(0)` yields nothing.
+    seed: |
+      struct Countdown {
+          remaining: u32,
+      }
+
+      impl Countdown {
+          fn new(from: u32) -> Self {
+              Countdown { remaining: from }
+          }
+      }
+
+      impl Iterator for Countdown {
+          type Item = u32;
+
+          fn next(&mut self) -> Option<u32> {
+              todo!()
+          }
+      }
+    solution: |
+      struct Countdown {
+          remaining: u32,
+      }
+
+      impl Countdown {
+          fn new(from: u32) -> Self {
+              Countdown { remaining: from }
+          }
+      }
+
+      impl Iterator for Countdown {
+          type Item = u32;
+
+          fn next(&mut self) -> Option<u32> {
+              if self.remaining == 0 {
+                  None
+              } else {
+                  let value = self.remaining;
+                  self.remaining -= 1;
+                  Some(value)
+              }
+          }
+      }
+    harness: |
+      #[test]
+      fn counts_down_from_three() {
+          assert_eq!(Countdown::new(3).collect::<Vec<_>>(), vec![3, 2, 1], "Countdown::new(3) collected");
+      }
+
+      #[test]
+      fn zero_yields_nothing() {
+          assert_eq!(Countdown::new(0).next(), None, "Countdown::new(0).next()");
+      }
+
+      #[test]
+      fn stays_finished() {
+          let mut c = Countdown::new(1);
+          assert_eq!(c.next(), Some(1), "first next()");
+          assert_eq!(c.next(), None, "second next()");
+          assert_eq!(c.next(), None, "third next()");
+      }
+
+      #[test]
+      fn works_with_sum() {
+          assert_eq!(Countdown::new(4).sum::<u32>(), 10, "Countdown::new(4).sum()");
+      }
+
+      #[test]
+      fn works_with_adapters() {
+          let evens: Vec<u32> = Countdown::new(6).filter(|n| n % 2 == 0).collect();
+          assert_eq!(evens, vec![6, 4, 2], "Countdown::new(6).filter(even).collect()");
+      }
+    hints:
+      - "If `self.remaining` is 0, return `None`. Otherwise remember the value, subtract 1 from `self.remaining`, and return `Some(value)`."
+      - "`let value = self.remaining; self.remaining -= 1; Some(value)`"
+    more:
+      - task: |
+          The **Collatz sequence** starts at a number `n`: if `n` is even the next number is `n / 2`, if it's odd the next is `3 * n + 1`, and it ends when it reaches `1`. Implement `Iterator` for `Collatz` so that `Collatz::new(6)` yields `6, 3, 10, 5, 16, 8, 4, 2, 1` and then `None`. The `done` field remembers that `1` has been yielded. (The start is always at least 1.)
+        seed: |
+          struct Collatz {
+              current: u64,
+              done: bool,
+          }
+
+          impl Collatz {
+              fn new(start: u64) -> Self {
+                  Collatz { current: start, done: false }
+              }
+          }
+
+          impl Iterator for Collatz {
+              type Item = u64;
+
+              fn next(&mut self) -> Option<u64> {
+                  todo!()
+              }
+          }
+        solution: |
+          struct Collatz {
+              current: u64,
+              done: bool,
+          }
+
+          impl Collatz {
+              fn new(start: u64) -> Self {
+                  Collatz { current: start, done: false }
+              }
+          }
+
+          impl Iterator for Collatz {
+              type Item = u64;
+
+              fn next(&mut self) -> Option<u64> {
+                  if self.done {
+                      return None;
+                  }
+                  let value = self.current;
+                  if value == 1 {
+                      self.done = true;
+                  } else if value % 2 == 0 {
+                      self.current = value / 2;
+                  } else {
+                      self.current = 3 * value + 1;
+                  }
+                  Some(value)
+              }
+          }
+        harness: |
+          #[test]
+          fn sequence_from_six() {
+              assert_eq!(Collatz::new(6).collect::<Vec<_>>(), vec![6, 3, 10, 5, 16, 8, 4, 2, 1], "Collatz::new(6) collected");
+          }
+
+          #[test]
+          fn one_is_just_one() {
+              assert_eq!(Collatz::new(1).collect::<Vec<_>>(), vec![1], "Collatz::new(1) collected");
+          }
+
+          #[test]
+          fn twenty_seven_takes_a_while() {
+              assert_eq!(Collatz::new(27).count(), 112, "Collatz::new(27).count()");
+          }
+
+          #[test]
+          fn highest_point_from_seven() {
+              assert_eq!(Collatz::new(7).max(), Some(52), "Collatz::new(7).max()");
+          }
+        hints:
+          - "If `done` is set, return `None`. Otherwise remember `self.current` as the value to return."
+          - "Then decide the next state: at 1 set `done = true`; if even, halve; if odd, `3 * value + 1`. Return `Some(value)`."
+      - task: |
+          APIs often return results a **page** at a time. Implement `Iterator` for `Pages`, which walks a slice of ids in pages of `size` items: with ids `[1, 2, 3, 4, 5]` and `size` 2, it yields `[1, 2]`, `[3, 4]`, `[5]`, then `None`. Each item is a sub-slice of the original (`&'a [i32]`), so nothing is copied. (`size` is always at least 1.)
+
+          You'll need `split_at` from the slices module, and `min` so the last page can be shorter.
+        seed: |
+          struct Pages<'a> {
+              items: &'a [i32],
+              size: usize,
+          }
+
+          impl<'a> Iterator for Pages<'a> {
+              type Item = &'a [i32];
+
+              fn next(&mut self) -> Option<Self::Item> {
+                  todo!()
+              }
+          }
+        solution: |
+          struct Pages<'a> {
+              items: &'a [i32],
+              size: usize,
+          }
+
+          impl<'a> Iterator for Pages<'a> {
+              type Item = &'a [i32];
+
+              fn next(&mut self) -> Option<Self::Item> {
+                  if self.items.is_empty() {
+                      return None;
+                  }
+                  let n = self.size.min(self.items.len());
+                  let (page, rest) = self.items.split_at(n);
+                  self.items = rest;
+                  Some(page)
+              }
+          }
+        harness: |
+          #[test]
+          fn splits_into_pages() {
+              let ids = [1, 2, 3, 4, 5];
+              let pages: Vec<&[i32]> = Pages { items: &ids, size: 2 }.collect();
+              assert_eq!(pages, vec![&[1, 2][..], &[3, 4][..], &[5][..]], "pages of [1, 2, 3, 4, 5] with size 2");
+          }
+
+          #[test]
+          fn empty_list_has_no_pages() {
+              let mut p = Pages { items: &[], size: 3 };
+              assert_eq!(p.next(), None, "first page of an empty list");
+          }
+
+          #[test]
+          fn big_page_size_gives_one_page() {
+              let ids = [1, 2, 3];
+              let pages: Vec<&[i32]> = Pages { items: &ids, size: 10 }.collect();
+              assert_eq!(pages, vec![&[1, 2, 3][..]], "pages of [1, 2, 3] with size 10");
+          }
+
+          #[test]
+          fn counts_pages() {
+              let ids: Vec<i32> = (1..=95).collect();
+              assert_eq!(Pages { items: &ids, size: 10 }.count(), 10, "number of pages for 95 ids, size 10");
+          }
+        hints:
+          - "If `self.items` is empty, return `None`. Otherwise the page length is `self.size.min(self.items.len())`."
+          - "`let (page, rest) = self.items.split_at(n); self.items = rest; Some(page)`"

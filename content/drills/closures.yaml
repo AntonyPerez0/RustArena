@@ -1,0 +1,214 @@
+topic: closures
+drills:
+  - type: predict
+    body: |
+      let add = |a, b| a + b;
+      println!("{}", add(2, 3) * 2);
+    why: The closure returns 2 + 3 = 5, and the result is then doubled.
+
+  - type: predict
+    body: |
+      let mut n = 0;
+      let mut bump = || n += 2;
+      bump();
+      bump();
+      println!("{n}");
+    why: The closure borrows n mutably and adds 2 on each call. After its last call the borrow ends, so n (now 4) can be printed.
+
+  - type: predict
+    body: |
+      let mut c = 10;
+      let mut next = move || {
+          c += 1;
+          c
+      };
+      next();
+      let x = next();
+      println!("{x} {c}");
+    why: With move, the closure gets its own copy of the i32. It counts 11, 12 on its copy; the outer c stays 10.
+
+  - type: predict
+    pre: |
+      fn make_adder(n: i32) -> impl Fn(i32) -> i32 {
+          move |x| x + n
+      }
+    body: |
+      let add3 = make_adder(3);
+      println!("{}", add3(add3(1)));
+    why: add3(1) is 4, and add3(4) is 7. The closure owns its own n = 3.
+
+  - type: predict
+    body: |
+      let mut words = vec!["pear", "fig", "banana"];
+      words.sort_by_key(|w| w.len());
+      println!("{:?}", words);
+    why: "sort_by_key sorts by the key the closure returns, here the length: fig (3), pear (4), banana (6)."
+
+  - type: predict
+    body: |
+      let name: Option<&str> = Some("Ann");
+      let mut calls = 0;
+      let shown = name.unwrap_or_else(|| {
+          calls += 1;
+          "guest"
+      });
+      println!("{shown} {calls}");
+    why: unwrap_or_else only calls its closure when the Option is None. Here it's Some, so the closure never runs and calls stays 0.
+
+  - type: fill
+    prompt: Write the closure's parameter list.
+    body: |
+      let square = [[|x|‖|x: i32|]] x * x;
+      println!("{}", square(5));
+    why: Closure parameters go between two pipes, followed by the body.
+
+  - type: fill
+    prompt: The returned closure must own `name`, because `name` dies when the function returns.
+    pre: |
+      fn make_label(name: String) -> impl Fn() -> String {
+          [[move]] || format!("[{name}]")
+      }
+    body: |
+      let label = make_label(String::from("crab"));
+      println!("{}", label());
+    why: Without move the closure would borrow name, a local of make_label, and could outlive it (error E0373).
+
+  - type: fill
+    prompt: Pick the closure trait. The function calls `f` twice through a non-mut parameter.
+    pre: |
+      fn twice<F: [[Fn]](i32) -> i32>(f: F, x: i32) -> i32 {
+          f(f(x))
+      }
+    body: |
+      println!("{}", twice(|v| v * 10, 2));
+    why: Calling f twice through a plain (non-mut) parameter needs Fn. FnMut would need `mut f`, and FnOnce can only be called once.
+
+  - type: bug
+    body: |
+      let mut total = 0;
+      let add = |x: i32| total += x; // BUG
+      add(5);
+      add(7);
+      println!("{total}");
+    fix: "let mut add = |x: i32| total += x;"
+    why: The closure changes total, so it is FnMut and calling it needs mutable access. The closure variable must be declared mut.
+
+  - type: bug
+    body: |
+      let names = vec![String::from("Ann"), String::from("Bo")];
+      let count = move || names.len(); // BUG
+      println!("{}", count());
+      println!("{:?}", names);
+    fix: "let count = || names.len();"
+    why: move moves the Vec into the closure, so names can't be printed afterwards. The closure only reads, so a plain borrow is enough.
+
+  - type: bug
+    body: |
+      let mut scores = vec![40, 95, 70];
+      scores.sort_by(|a, b| a.cmp(b)); // BUG
+      println!("{:?}", scores);
+    fix: "scores.sort_by(|a, b| b.cmp(a));"
+    prompt: "This should print the scores from highest to lowest: [95, 70, 40]. Click the line with the bug."
+    why: a.cmp(b) sorts ascending. Swapping the two (b.cmp(a)) reverses the order.
+
+  - type: compiles
+    answer: no
+    body: |
+      let rate = 2;
+      fn scale(x: i32) -> i32 {
+          x * rate
+      }
+      println!("{}", scale(5));
+    why: "A fn item can't capture local variables (E0434). Use a closure, `let scale = |x: i32| x * rate;`, instead."
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn call_twice<F: Fn()>(f: F) {
+          f();
+          f();
+      }
+    body: |
+      let msg = String::from("hi");
+      call_twice(move || {
+          let owned = msg;
+          println!("{owned}");
+      });
+    why: The closure moves msg out of itself, so it is only FnOnce and can't be called twice (E0507/E0525).
+
+  - type: compiles
+    answer: yes
+    pre: |
+      fn call_twice<F: Fn()>(f: F) {
+          f();
+          f();
+      }
+    body: |
+      let msg = String::from("hi");
+      call_twice(move || println!("{msg}"));
+    why: The move closure owns msg but only reads it, so it is still Fn and can be called any number of times.
+
+  - type: choice
+    prompt: A closure pushes items onto a Vec it captured. Which traits does it implement?
+    choices: ["Fn, FnMut and FnOnce", "FnMut and FnOnce", "Only FnOnce", "None: closures can't change what they capture"]
+    answer: 2
+    why: Changing captured state makes it FnMut (and therefore also FnOnce). It isn't Fn, because Fn closures may only read what they captured.
+
+  - type: choice
+    prompt: When do you need to return Box<dyn Fn(i32) -> i32> instead of impl Fn(i32) -> i32?
+    choices: ["Whenever the closure captures a variable", "When different branches return different closures", "When the closure is called more than once", "Never: they are the same thing"]
+    answer: 2
+    why: impl Fn stands for one concrete type, and every closure has its own type. To pick between several closures at run time, box them as trait objects.
+
+  - type: boss
+    prompt: |
+      Write `fn compose<F, G>(f: F, g: G) -> impl Fn(i32) -> i32` where both `F` and `G` are `Fn(i32) -> i32`. The returned closure applies `f` first, then `g` to the result. For example `compose(|x| x + 1, |x| x * 10)(4)` is `50`.
+    seed: |
+      fn compose<F, G>(f: F, g: G) -> impl Fn(i32) -> i32
+      where
+          F: Fn(i32) -> i32,
+          G: Fn(i32) -> i32,
+      {
+          |x| x
+      }
+    solution: |
+      fn compose<F, G>(f: F, g: G) -> impl Fn(i32) -> i32
+      where
+          F: Fn(i32) -> i32,
+          G: Fn(i32) -> i32,
+      {
+          move |x| g(f(x))
+      }
+    harness: |
+      #[test]
+      fn applies_f_then_g() {
+          assert_eq!(compose(|x| x + 1, |x| x * 10)(4), 50, "compose(|x| x + 1, |x| x * 10)(4)");
+      }
+
+      #[test]
+      fn order_matters() {
+          assert_eq!(compose(|x| x * 10, |x| x + 1)(4), 41, "compose(|x| x * 10, |x| x + 1)(4)");
+      }
+
+      #[test]
+      fn works_with_named_functions() {
+          fn neg(x: i32) -> i32 {
+              -x
+          }
+          fn double(x: i32) -> i32 {
+              x * 2
+          }
+          assert_eq!(compose(neg, double)(3), -6, "compose(neg, double)(3)");
+      }
+
+      #[test]
+      fn composed_closures_can_capture() {
+          let offset = 100;
+          let shifted = compose(move |x| x + offset, |x| x - 1);
+          assert_eq!(shifted(0), 99, "compose(|x| x + 100, |x| x - 1)(0)");
+          assert_eq!(shifted(5), 104, "compose(|x| x + 100, |x| x - 1)(5)");
+      }
+    hints:
+      - The returned closure has to own f and g, so it needs move.
+      - "`move |x| g(f(x))`"
+    why: The returned closure owns both functions (move) and calls them in order. Since it only reads f and g, it is Fn itself.

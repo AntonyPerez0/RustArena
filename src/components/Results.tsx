@@ -1,8 +1,24 @@
 import { useState } from "react";
-import { Check, CircleCheck, CircleX, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Check, CircleCheck, CircleX, ExternalLink, WifiOff, X } from "lucide-react";
 import type { GradeResult } from "../grader/grade";
-import type { Diagnostic } from "../grader/friendly";
+import { errorCodeUrl, type Diagnostic } from "../grader/friendly";
+import { runnerName } from "../runner/client";
 import { InlineMd } from "./Markdown";
+
+/** The code couldn't be run at all (network, server): say so, and what the learner can do. */
+export function RunnerProblem({ message }: { message: string }) {
+  return (
+    <div className="banner banner-fail runner-problem">
+      <span>
+        <WifiOff className="icon" aria-hidden="true" /> Your code couldn't be run: {message}.
+      </span>
+      <span className="small">
+        Code runs on {runnerName()}. Try again in a moment, or <Link to="/settings#runner">use another runner</Link> (for example one on your own computer).
+      </span>
+    </div>
+  );
+}
 
 export function DiagnosticList({ diagnostics, raw }: { diagnostics: Diagnostic[]; raw: string }) {
   const [showRaw, setShowRaw] = useState(false);
@@ -13,8 +29,17 @@ export function DiagnosticList({ diagnostics, raw }: { diagnostics: Diagnostic[]
       {shown.map((d, i) => (
         <div key={i} className={"diag diag-" + d.severity}>
           <div className="diag-head">
-            <span className="diag-sev">{d.severity}</span>
+            <span className="diag-sev">
+              {d.severity}
+              {d.code ? ` ${d.code}` : ""}
+            </span>
             {d.line > 0 && <span className="diag-line">{d.inTests ? "in the hidden test code" : `line ${d.line}`}</span>}
+            {d.code && (
+              <a className="diag-doc" href={errorCodeUrl(d.code)} target="_blank" rel="noopener noreferrer">
+                Explain {d.code} <ExternalLink className="icon" aria-hidden="true" />
+                <span className="visually-hidden"> (opens the Rust error index in a new tab)</span>
+              </a>
+            )}
           </div>
           <code className="diag-msg">{d.message}</code>
           {d.friendly && (
@@ -26,6 +51,12 @@ export function DiagnosticList({ diagnostics, raw }: { diagnostics: Diagnostic[]
             <p className="diag-friendly">
               The error shows up in the test code, which usually means a function name, parameter list or return type doesn't match what the step asks for.
             </p>
+          )}
+          {d.rendered && !d.inTests && (
+            <details className="diag-rendered">
+              <summary>What rustc says</summary>
+              <pre tabIndex={0} className="console small">{d.rendered}</pre>
+            </details>
           )}
         </div>
       ))}
@@ -55,11 +86,7 @@ export default function Results({ result, attempt }: { result: GradeResult; atte
           <DiagnosticList diagnostics={result.diagnostics} raw={result.rawDiagnostics} />
         </>
       )}
-      {result.status === "internal-error" && (
-        <div className="banner banner-fail">
-          The in-browser compiler couldn't run: {result.rawDiagnostics}. Try again, or reload the page.
-        </div>
-      )}
+      {result.status === "internal-error" && <RunnerProblem message={result.rawDiagnostics} />}
       {result.ruleProblems.length > 0 && (
         <ul className="rules">
           {result.ruleProblems.map((p, i) => (
@@ -139,7 +166,9 @@ export default function Results({ result, attempt }: { result: GradeResult; atte
           <pre tabIndex={0} className="console">{result.output}</pre>
         </div>
       )}
-      <div className="muted small">compiled in {(result.compileMs / 1000).toFixed(2)}s</div>
+      <div className="muted small">
+        compiled and run by rustc on {runnerName()} in {(result.compileMs / 1000).toFixed(1)}s
+      </div>
     </div>
   );
 }

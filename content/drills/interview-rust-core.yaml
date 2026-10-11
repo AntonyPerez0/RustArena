@@ -1,0 +1,366 @@
+# Interview prep: core Rust questions (ownership, borrowing, lifetimes, errors, traits, smart pointers,
+# closures, iterators, patterns, overflow, unsafe). Code questions are compiled and run to check the answers.
+topic: interview
+drills:
+  - type: choice
+    prompt: What are Rust's ownership rules?
+    choices:
+      - Each value has exactly one owner at a time, and the value is dropped when its owner goes out of scope
+      - Every value is reference counted and freed when the count reaches zero
+      - A garbage collector frees values once nothing can reach them
+      - A value can have many owners, but only one of them may change it
+    answer: 1
+    why: Ownership can move to another variable or function, but there is always exactly one owner. Dropping at end of scope frees memory deterministically, with no garbage collector and no manual free.
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn total(v: Vec<i32>) -> i32 {
+          v.iter().sum()
+      }
+    body: |
+      let v = vec![1, 2, 3];
+      let t = total(v);
+      println!("{} {}", t, v.len());
+    why: Passing a Vec by value moves it into `total`, so `v` can't be used afterwards (E0382, borrow of moved value). Take `&[i32]` instead, or pass `v.clone()` if the function really needs its own copy.
+
+  - type: choice
+    prompt: What's the difference between `Copy` and `Clone`?
+    choices:
+      - "`Copy` is an implicit bitwise copy on assignment, only for simple types with no heap ownership or Drop; `Clone` is an explicit `.clone()` that can run any code, like allocating a new buffer"
+      - "`Copy` makes a deep copy and `Clone` a shallow one"
+      - They're the same trait under two names
+      - "`Clone` happens implicitly on assignment; `Copy` needs a `.copy()` call"
+    answer: 1
+    why: "`i32`, `bool`, `char`, `&T` and tuples of Copy types are Copy, so `let b = a;` leaves `a` usable. `String` and `Vec` are only Clone: copying them means allocating, so Rust makes you write it."
+
+  - type: compiles
+    answer: no
+    pre: |
+      #[derive(Debug, Clone, Copy)]
+      struct User {
+          name: String,
+          age: u32,
+      }
+    body: |
+      let a = User { name: String::from("ana"), age: 30 };
+      let b = a;
+      println!("{:?} {:?}", a, b);
+    why: A type can be Copy only if every field is Copy (E0204). A bitwise copy of a String would give two owners of one heap buffer and a double free; derive only Clone and call `.clone()`.
+
+  - type: choice
+    prompt: What's the difference between `String` and `&str`?
+    choices:
+      - "`String` owns a growable, heap-allocated UTF-8 buffer; `&str` is a borrowed view (pointer and length) into UTF-8 bytes owned by someone else"
+      - "`&str` lives on the stack and `String` on the heap, otherwise they're identical"
+      - "`String` is UTF-16 and `&str` is UTF-8"
+      - "`&str` can be changed in place; `String` can't"
+    answer: 1
+    why: "A `&str` can point into a String, a string literal (in the binary, `&'static str`) or any other UTF-8 data. Prefer `&str` parameters: a `&String` coerces to `&str`, so callers can pass either."
+
+  - type: compiles
+    answer: no
+    body: |
+      fn longest(a: &str, b: &str) -> &str {
+          if a.len() >= b.len() { a } else { b }
+      }
+      println!("{}", longest("crab", "ferris"));
+    why: "With two reference parameters, elision can't tell which one the result borrows from (E0106, missing lifetime specifier). Write `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str`."
+
+  - type: choice
+    prompt: "`fn first_word(s: &str) -> &str` compiles without any lifetime annotations. Why?"
+    choices:
+      - "Lifetime elision: when there's exactly one input reference, the output reference gets its lifetime"
+      - The compiler infers lifetimes by analyzing every caller in the program
+      - "`&str` is always `'static`"
+      - Returned references never need lifetimes
+    answer: 1
+    why: "The elision rules: each input reference gets its own lifetime; with one input lifetime, it goes to all outputs; with `&self` or `&mut self`, self's lifetime goes to the outputs. Otherwise you must annotate."
+
+  - type: compiles
+    answer: no
+    body: |
+      let r;
+      {
+          let x = 5;
+          r = &x;
+      }
+      println!("{}", r);
+    why: "`x` is dropped at the end of the inner block, but `r` is used after it, so the reference would dangle (E0597, `x` does not live long enough). The borrow checker rejects it at compile time."
+
+  - type: compiles
+    answer: no
+    body: |
+      let mut v = vec![1, 2, 3];
+      let first = &v[0];
+      v.push(4);
+      println!("{}", first);
+    why: "`push` may reallocate the buffer and move the elements, which would leave `first` dangling. So you can't borrow `v` mutably while a shared borrow is still used later (E0502)."
+
+  - type: compiles
+    answer: yes
+    body: |
+      let mut scores = vec![10, 20];
+      let first = &scores[0];
+      println!("{}", first);
+      scores.push(30);
+      println!("{:?}", scores);
+    why: "A borrow lasts until its last use, not to the end of the scope (non-lexical lifetimes). `first` is last used before `push`, so the mutable borrow doesn't overlap it."
+
+  - type: choice
+    prompt: "What does the `?` operator do in `let n: i32 = text.parse()?;`?"
+    choices:
+      - On Ok it gives the value; on Err it returns the error from the enclosing function right away, converted with From::from
+      - It panics with the error message on Err
+      - It ignores the error and uses a default value
+      - It turns the Result into an Option
+    answer: 1
+    why: "`?` is early return for the error path. The From conversion is why `?` can turn a `ParseIntError` into your own error type or a `Box<dyn Error>`. It works on Option too, returning None early."
+
+  - type: compiles
+    answer: no
+    body: |
+      fn double(text: &str) -> i32 {
+          let n: i32 = text.parse()?;
+          n * 2
+      }
+      println!("{}", double("21"));
+    why: "`?` needs somewhere to send the error, so it only works in a function returning Result or Option (E0277). Return `Result<i32, std::num::ParseIntError>` and wrap the value in `Ok`."
+
+  - type: predict
+    pre: |
+      fn half(n: i32) -> Option<i32> {
+          if n % 2 == 0 { Some(n / 2) } else { None }
+      }
+
+      fn quarter(n: i32) -> Option<i32> {
+          let h = half(n)?;
+          half(h)
+      }
+    body: |
+      println!("{:?} {:?} {:?}", quarter(8), quarter(6), quarter(5));
+    why: "8 halves twice to 2. 6 halves to 3, then `half(3)` is None. For 5 the first `half` is None, so `?` returns None from `quarter` immediately."
+
+  - type: choice
+    prompt: When is panicking (`panic!`, `unwrap`, `expect`) the right choice instead of returning a `Result`?
+    choices:
+      - When an invariant is broken by a bug and the caller couldn't sensibly recover, such as an index your own code computed being out of range; expected failures like bad input or a missing file should return Result
+      - Whenever anything fails, since the caller can catch a panic like an exception
+      - Never; production Rust bans unwrap
+      - Only for errors that come from file I/O
+    answer: 1
+    why: "Result is for failures the caller should handle; a panic means a bug. `expect(\"why this can't fail\")` documents the assumption. `unwrap` is fine in tests, examples and prototypes."
+
+  - type: choice
+    prompt: "What's the difference between `fn draw(s: &impl Shape)` and `fn draw(s: &dyn Shape)`?"
+    choices:
+      - "`impl Shape` is generic: a copy of `draw` is compiled for each concrete type (static dispatch, calls can be inlined). `dyn Shape` is one function that calls methods through a vtable (dynamic dispatch)"
+      - They compile to exactly the same machine code
+      - "`dyn Shape` is checked at compile time and `impl Shape` at run time"
+      - "`impl Shape` puts the value on the heap"
+    answer: 1
+    why: "Static dispatch is usually faster but grows the binary. Dynamic dispatch costs an indirect call and is what lets one `Vec<Box<dyn Shape>>` hold circles and squares together."
+
+  - type: choice
+    prompt: In a single-threaded program, several parts of the code need to own the same value and change it. What's the usual tool?
+    choices:
+      - "`Rc<RefCell<T>>`"
+      - "`Box<T>`"
+      - "`Arc<T>`"
+      - "A `&mut T` stored in each part"
+    answer: 1
+    why: "Rc gives shared ownership with a reference count; RefCell allows mutation through that shared handle, checking the borrow rules at run time. Across threads the equivalent is `Arc<Mutex<T>>`."
+
+  - type: predict
+    body: |
+      use std::rc::Rc;
+      let a = Rc::new(String::from("config"));
+      let b = Rc::clone(&a);
+      {
+          let c = Rc::clone(&a);
+          println!("{}", Rc::strong_count(&c));
+      }
+      println!("{}", Rc::strong_count(&a));
+    why: "`Rc::clone` copies the pointer and bumps the count, not the String. Three handles exist inside the block; when `c` is dropped the count goes back to 2."
+
+  - type: bug
+    prompt: This should print `[5, 10, 15]` (the cart plus its total). Click the line with the bug.
+    body: |
+      use std::cell::RefCell;
+      let cart = RefCell::new(vec![5, 10]);
+      let items = cart.borrow(); // BUG
+      let total: i32 = items.iter().sum();
+      cart.borrow_mut().push(total);
+      println!("{:?}", cart.borrow());
+    fix: let items = cart.borrow().clone();
+    why: "A `Ref` guard keeps the RefCell borrowed until it's dropped at the end of the scope, so `borrow_mut` panics at run time with \"RefCell already borrowed\". Copy out what you need (or compute the sum in one statement, or `drop(items)`) before borrowing mutably."
+
+  - type: choice
+    prompt: "What's the difference between `Cell<T>` and `RefCell<T>`?"
+    choices:
+      - "`Cell` moves or copies whole values in and out (`get`, `set`, `replace`) and never hands out references; `RefCell` hands out borrow guards and enforces the borrow rules at run time, panicking on conflict"
+      - "`Cell` is thread-safe and `RefCell` isn't"
+      - "`RefCell` checks borrows at compile time and `Cell` at run time"
+      - "`Cell` only works with String"
+    answer: 1
+    why: "Both give interior mutability: changing data behind a shared `&` reference. Since `Cell` never lends out a reference, it needs no checks; it's ideal for small Copy values like counters. Neither is Sync; across threads use Mutex or atomics."
+
+  - type: predict
+    pre: |
+      struct Noisy(&'static str);
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              print!("{} ", self.0);
+          }
+      }
+      struct Pair {
+          first: Noisy,
+          second: Noisy,
+      }
+    body: |
+      {
+          let _x = Noisy("x");
+          let _p = Pair { first: Noisy("f"), second: Noisy("s") };
+      }
+      println!();
+    why: "Local variables drop in reverse order of declaration, so `_p` goes before `_x`. A struct's fields, however, drop in declaration order: `first`, then `second`."
+
+  - type: choice
+    prompt: What does this print?
+    pre: |
+      struct Noisy(&'static str);
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              print!("drop {} ", self.0);
+          }
+      }
+    body: |
+      {
+          let _a = Noisy("a");
+          let _ = Noisy("b");
+          print!("mid ");
+      }
+      println!();
+    choices:
+      - drop b mid drop a
+      - mid drop b drop a
+      - mid drop a drop b
+      - drop a drop b mid
+    answer: 1
+    verify: output
+    why: "`let _ = ...` doesn't bind the value, so the temporary is dropped at once. `_a` is a real variable that lives to the end of the block. This matters for guards: `let _ = mutex.lock();` releases the lock immediately."
+
+  - type: fill
+    prompt: Pass the boxed String to `shout`, letting deref coercion turn it into a `&str`.
+    pre: |
+      fn shout(s: &str) -> String {
+          s.to_uppercase()
+      }
+    body: |
+      let name: Box<String> = Box::new(String::from("ferris"));
+      println!("{}", shout([[&name‖&**name‖name.as_str()]]));
+    why: "`Box<String>` derefs to `String`, which derefs to `str`, so the compiler turns `&Box<String>` into `&str` by inserting the derefs for you (deref coercion). That's also why `&String` works wherever `&str` is expected."
+
+  - type: choice
+    prompt: "What does `?Sized` allow in `fn show<T: ?Sized + std::fmt::Display>(x: &T)`?"
+    choices:
+      - "`T` may be a dynamically sized type such as `str`, `[i32]` or `dyn Trait`; type parameters are `Sized` by default"
+      - "`T` may be any size up to one megabyte"
+      - "`T` may be null"
+      - "`T` no longer needs to implement Display"
+    answer: 1
+    why: "Values of unsized types can't live directly in a variable because the compiler needs their size, but they're fine behind a pointer like `&T` or `Box<T>`. `?Sized` removes the implicit `T: Sized` bound so `show(\"hi\")` works with `T = str`."
+
+  - type: compiles
+    answer: no
+    body: |
+      enum List {
+          Node(i32, List),
+          Empty,
+      }
+      let list = List::Node(1, List::Empty);
+    why: "A List would contain a whole List inline, so its size would be infinite (E0072, recursive type has infinite size). `Node(i32, Box<List>)` stores a fixed-size pointer to the next node instead."
+
+  - type: predict
+    body: |
+      let v = vec![1, 2, 3];
+      let doubled = v.iter().map(|x| {
+          print!("{x} ");
+          x * 2
+      });
+      print!("start ");
+      let total: i32 = doubled.sum();
+      println!("= {total}");
+    why: "Iterator adapters like `map` are lazy: creating `doubled` runs nothing. The closure runs only when a consumer such as `sum`, `collect` or a `for` loop pulls items."
+
+  - type: choice
+    prompt: A closure moves a captured `String` out of itself, for example by returning it. Which closure traits does it implement?
+    choices:
+      - Only FnOnce, because after the first call the String is gone
+      - Fn, FnMut and FnOnce
+      - Only FnMut
+      - None; such a closure doesn't compile
+    answer: 1
+    why: "Fn closures only read their captures, FnMut closures change them, and FnOnce closures may consume them. Every closure is FnOnce; one that consumes a capture is only FnOnce, so it can be called just once."
+
+  - type: bug
+    prompt: This should print 2. Click the line with the bug.
+    pre: |
+      fn call_twice<F: Fn()>(f: F) { f(); f(); } // BUG
+    body: |
+      let mut count = 0;
+      call_twice(|| count += 1);
+      println!("{count}");
+    fix: "fn call_twice<F: FnMut()>(mut f: F) { f(); f(); }"
+    why: "The closure changes `count`, so it's FnMut, not Fn (E0594 when bound by Fn). Ask for the weakest bound you need: `FnMut` lets it mutate, and calling an FnMut needs `f` itself to be `mut`."
+
+  - type: compiles
+    answer: no
+    body: |
+      enum Status { Active, Suspended, Closed }
+      let s = Status::Closed;
+      let label = match s {
+          Status::Active => "on",
+          Status::Suspended => "paused",
+      };
+      println!("{label}");
+    why: "`match` must be exhaustive, and `Status::Closed` isn't covered (E0004). That's why teams avoid a `_ =>` arm on their own enums: adding a variant then breaks every match that forgot it, at compile time."
+
+  - type: predict
+    body: |
+      let x = 5;
+      let x = x * 2;
+      {
+          let x = "inner";
+          print!("{x} ");
+      }
+      println!("{x}");
+    why: "Each `let x` creates a new variable that shadows the old one, and it can even have a different type. The shadow inside the block ends with the block, so the outer `x` (10) is visible again."
+
+  - type: choice
+    prompt: A `u8` addition overflows at run time. What happens in a debug build and in a release build?
+    choices:
+      - "Debug: it panics with 'attempt to add with overflow'. Release: it wraps around silently, because overflow checks are off by default"
+      - Both builds wrap around
+      - Both builds panic
+      - It's undefined behavior, as in C
+    answer: 1
+    why: "Overflow is never undefined behavior in Rust. When wrapping or clamping is what you want, say so with `wrapping_add`, `checked_add` (returns an Option) or `saturating_add`, which behave the same in every build."
+
+  - type: choice
+    prompt: Which of these does an `unsafe` block NOT let you do?
+    choices:
+      - Turn off the borrow checker for ordinary references
+      - Dereference a raw pointer
+      - Call an `unsafe fn`, including C functions through FFI
+      - Read or write a `static mut`
+    answer: 1
+    why: "The unsafe superpowers are: dereference raw pointers, call unsafe functions, implement unsafe traits, access mutable statics and access union fields. References inside an unsafe block are still borrow checked."
+
+  - type: compiles
+    answer: no
+    body: |
+      let x = 42;
+      let p = &x as *const i32;
+      println!("{}", *p);
+    why: "Creating a raw pointer is safe, but dereferencing one needs `unsafe` (E0133), because the compiler can't prove it points to valid memory. Write `unsafe { *p }` with a `// SAFETY:` comment explaining why it's valid."

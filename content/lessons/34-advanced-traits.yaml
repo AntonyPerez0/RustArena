@@ -1,0 +1,2239 @@
+id: advanced-traits
+title: Advanced Traits
+phase: "Advanced Rust"
+summary: The trait features library authors use every day. Associated types, operator traits, supertraits, blanket impls, newtypes and the orphan rule, and typestate APIs that turn wrong calls into compile errors.
+roadmap: ["Trait Bounds and Associated Types", "Advanced Generics & Type-level Programming"]
+steps:
+  - title: Associated types versus generic parameters
+    id: advanced-traits-1
+    text: |
+      You've used an **associated type** since the iterators module: `Iterator` declares `type Item;`, and every iterator says what its `Item` is. An associated type is a placeholder type inside a trait that each implementation fills in exactly once.
+
+      ```rust run
+      trait Parser {
+          type Output;
+          fn parse(&self, input: &str) -> Option<Self::Output>;
+      }
+
+      struct IntParser;
+      struct PairParser;
+
+      impl Parser for IntParser {
+          type Output = i64;
+          fn parse(&self, input: &str) -> Option<i64> {
+              input.trim().parse().ok()
+          }
+      }
+
+      impl Parser for PairParser {
+          type Output = (i32, i32);
+          fn parse(&self, input: &str) -> Option<(i32, i32)> {
+              let (a, b) = input.split_once(',')?;
+              Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+          }
+      }
+
+      fn parse_all<P: Parser>(parser: &P, lines: &[&str]) -> Vec<P::Output> {
+          lines.iter().filter_map(|line| parser.parse(line)).collect()
+      }
+
+      fn main() {
+          println!("{:?}", parse_all(&IntParser, &["10", "x", " 32 "]));
+          println!("{:?}", parse_all(&PairParser, &["1,2", "3;4", "5, 6"]));
+      }
+      ```
+
+      ```output
+      [10, 32]
+      [(1, 2), (5, 6)]
+      ```
+
+      Piece by piece:
+
+      - `type Output;` declares the placeholder. Inside the trait you refer to it as `Self::Output`.
+      - Each `impl` picks the concrete type: `type Output = i64;`. After that, the impl's methods can write `i64` directly.
+      - Generic code names it through the type parameter: `P::Output` is "whatever output this parser produces". You can also pin it in a bound: `P: Parser<Output = i64>` accepts only parsers that produce `i64`, just like `I: Iterator<Item = u32>`.
+
+      ### Why not a generic parameter?
+
+      You could write the trait as `trait Parser<T>` instead. The difference is how many implementations a type may have. With a generic parameter, one type can implement the trait **many times**, once per `T`. That's sometimes exactly right, but it means the compiler can't guess which one you mean:
+
+      ```rust compile_fail
+      trait ParseAs<T> {
+          fn parse_as(&self) -> Option<T>;
+      }
+
+      impl ParseAs<i32> for str {
+          fn parse_as(&self) -> Option<i32> {
+              self.parse().ok()
+          }
+      }
+
+      impl ParseAs<bool> for str {
+          fn parse_as(&self) -> Option<bool> {
+              self.parse().ok()
+          }
+      }
+
+      fn main() {
+          let n = "42".parse_as();
+          println!("{:?}", n);
+      }
+      ```
+
+      ```error
+      error[E0283]: type annotations needed for `Option<_>`
+      ```
+
+      Writing `let n: Option<i32> = "42".parse_as();` fixes it, but every caller now has to annotate. With an associated type there's one impl per type, so the type alone tells the compiler the answer.
+
+      | Pick | When | Examples in std |
+      |---|---|---|
+      | associated type | each implementing type has **one** natural answer | `Iterator::Item`, `Deref::Target`, `FromStr::Err` |
+      | generic parameter | a type should implement the trait **several times**, for different types | `From<T>`, `AsRef<T>`, `PartialEq<Rhs>` |
+
+      A `Vec<u8>` yields one kind of item, so `Item` is associated. A `String` can be built `From<&str>`, `From<char>` and `From<Box<str>>`, so `From<T>` is generic. Some traits use both, as you'll see in the next step.
+
+      ### Common mistakes
+
+      - **Writing `Output` instead of `Self::Output` in the trait**: the compiler says ``cannot find type `Output` in this scope``. Inside the trait it always belongs to `Self`.
+      - **Forgetting `type Output = ...;` in an impl**: ``not all trait items implemented, missing: `Output` ``.
+      - **Adding a generic parameter "for flexibility"**: if each type would only ever implement it once, you've just made every caller write annotations.
+
+      **Your turn:** the `Sensor` trait has an associated type `Reading`. Implement it for `Thermometer` (`Reading` is `f64`; the raw value is in tenths of a degree, so `215` reads as `21.5`) and for `DoorSwitch` (`Reading` is `bool`; any raw value other than `0` means open, `true`). Then write the generic `read_all`, which reads every raw value with the given sensor and returns the readings in order.
+    seed: |
+      trait Sensor {
+          type Reading;
+          fn read(&self, raw: u16) -> Self::Reading;
+      }
+
+      struct Thermometer;
+      struct DoorSwitch;
+
+      // TODO: impl Sensor for Thermometer (Reading = f64, 215 reads as 21.5)
+      // TODO: impl Sensor for DoorSwitch (Reading = bool, nonzero means true)
+
+      fn read_all<S: Sensor>(sensor: &S, raws: &[u16]) -> Vec<S::Reading> {
+          todo!()
+      }
+    solution: |
+      trait Sensor {
+          type Reading;
+          fn read(&self, raw: u16) -> Self::Reading;
+      }
+
+      struct Thermometer;
+      struct DoorSwitch;
+
+      impl Sensor for Thermometer {
+          type Reading = f64;
+          fn read(&self, raw: u16) -> f64 {
+              raw as f64 / 10.0
+          }
+      }
+
+      impl Sensor for DoorSwitch {
+          type Reading = bool;
+          fn read(&self, raw: u16) -> bool {
+              raw != 0
+          }
+      }
+
+      fn read_all<S: Sensor>(sensor: &S, raws: &[u16]) -> Vec<S::Reading> {
+          raws.iter().map(|&raw| sensor.read(raw)).collect()
+      }
+    harness: |
+      #[test]
+      fn thermometer_reads_tenths_of_a_degree() {
+          assert_eq!(Thermometer.read(215), 21.5, "Thermometer.read(215)");
+          assert_eq!(Thermometer.read(0), 0.0, "Thermometer.read(0)");
+      }
+
+      #[test]
+      fn door_switch_is_open_for_any_nonzero_value() {
+          assert_eq!(DoorSwitch.read(0), false, "DoorSwitch.read(0)");
+          assert_eq!(DoorSwitch.read(1), true, "DoorSwitch.read(1)");
+          assert_eq!(DoorSwitch.read(7), true, "DoorSwitch.read(7)");
+      }
+
+      #[test]
+      fn read_all_works_with_the_thermometer() {
+          assert_eq!(read_all(&Thermometer, &[0, 100, 255]), vec![0.0, 10.0, 25.5], "read_all(&Thermometer, &[0, 100, 255])");
+      }
+
+      #[test]
+      fn read_all_works_with_the_door_switch() {
+          assert_eq!(read_all(&DoorSwitch, &[3, 0, 0]), vec![true, false, false], "read_all(&DoorSwitch, &[3, 0, 0])");
+      }
+
+      #[test]
+      fn read_all_of_nothing_is_empty() {
+          assert!(read_all(&DoorSwitch, &[]).is_empty(), "read_all(&DoorSwitch, &[]) should be empty");
+      }
+    hints:
+      - "Each impl starts with the associated type: `impl Sensor for Thermometer { type Reading = f64; fn read(&self, raw: u16) -> f64 { ... } }`."
+      - "Convert before dividing: `raw as f64 / 10.0`. For the switch, `raw != 0` is already a bool."
+      - "`read_all` is one iterator chain: `raws.iter().map(|&raw| sensor.read(raw)).collect()`."
+    more:
+      - task: |
+          Fill in the blanks: declare the associated type in the trait, give `Doubler` its output type, and use the associated type in the generic function's return type. The program should print `(8, 42)` and then `("#007", "#042")`.
+        fill: |
+          trait Machine {
+              [[type]] Output;
+              fn run(&self, input: u32) -> Self::Output;
+          }
+
+          struct Doubler;
+          struct Labeler;
+
+          impl Machine for Doubler {
+              type Output = [[u32]];
+              fn run(&self, input: u32) -> u32 {
+                  input * 2
+              }
+          }
+
+          impl Machine for Labeler {
+              type Output = String;
+              fn run(&self, input: u32) -> String {
+                  format!("#{input:03}")
+              }
+          }
+
+          fn run_twice<M: Machine>(m: &M, a: u32, b: u32) -> (M::Output, [[M::Output]]) {
+              (m.run(a), m.run(b))
+          }
+
+          fn main() {
+              println!("{:?}", run_twice(&Doubler, 4, 21));
+              println!("{:?}", run_twice(&Labeler, 7, 42));
+          }
+        hints:
+          - "An associated type is declared with the `type` keyword inside the trait."
+          - "`Doubler::run` returns `u32`, so its `Output` is `u32`. The function returns two outputs of the same machine: `M::Output` twice."
+        tests:
+          - expect: "(8, 42)\n(\"#007\", \"#042\")"
+      - task: |
+          This time a generic parameter is the right tool: a distance in meters can sensibly be converted into **several** other units. Write a generic trait `ConvertTo<T>` with one method `fn convert(&self) -> T;`, and implement it twice for `Meters`: `ConvertTo<Feet>` (1 m = 3.28084 ft) and `ConvertTo<Centimeters>` (1 m = 100 cm). Callers pick the impl by the type they ask for: `let f: Feet = Meters(2.0).convert();`.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Meters(f64);
+
+          #[derive(Debug, PartialEq)]
+          struct Feet(f64);
+
+          #[derive(Debug, PartialEq)]
+          struct Centimeters(f64);
+
+          // Write the trait ConvertTo<T> and two impls of it for Meters.
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Meters(f64);
+
+          #[derive(Debug, PartialEq)]
+          struct Feet(f64);
+
+          #[derive(Debug, PartialEq)]
+          struct Centimeters(f64);
+
+          // Write the trait ConvertTo<T> and two impls of it for Meters.
+          trait ConvertTo<T> {
+              fn convert(&self) -> T;
+          }
+
+          impl ConvertTo<Feet> for Meters {
+              fn convert(&self) -> Feet {
+                  Feet(self.0 * 3.28084)
+              }
+          }
+
+          impl ConvertTo<Centimeters> for Meters {
+              fn convert(&self) -> Centimeters {
+                  Centimeters(self.0 * 100.0)
+              }
+          }
+        harness: |
+          #[test]
+          fn converts_meters_to_feet() {
+              let f: Feet = Meters(2.0).convert();
+              assert_eq!(f, Feet(6.56168), "Meters(2.0) as Feet");
+          }
+
+          #[test]
+          fn converts_meters_to_centimeters() {
+              let c: Centimeters = Meters(1.5).convert();
+              assert_eq!(c, Centimeters(150.0), "Meters(1.5) as Centimeters");
+          }
+
+          #[test]
+          fn zero_meters_is_zero_in_both_units() {
+              let f: Feet = Meters(0.0).convert();
+              let c: Centimeters = Meters(0.0).convert();
+              assert_eq!(f, Feet(0.0), "Meters(0.0) as Feet");
+              assert_eq!(c, Centimeters(0.0), "Meters(0.0) as Centimeters");
+          }
+
+          #[test]
+          fn one_value_converts_to_both_units() {
+              let m = Meters(10.0);
+              let f: Feet = m.convert();
+              let c: Centimeters = m.convert();
+              assert!((f.0 - 32.8084).abs() < 1e-9, "Meters(10.0) as Feet should be 32.8084, got {}", f.0);
+              assert_eq!(c, Centimeters(1000.0), "Meters(10.0) as Centimeters");
+          }
+        require:
+          - pattern: 'trait\s+ConvertTo\s*<\s*T\s*>'
+            message: "Declare the trait with a generic parameter: `trait ConvertTo<T>`."
+        hints:
+          - "`trait ConvertTo<T> { fn convert(&self) -> T; }`"
+          - "Two impls with different parameters: `impl ConvertTo<Feet> for Meters { fn convert(&self) -> Feet { Feet(self.0 * 3.28084) } }`, and the same shape for `Centimeters`."
+
+  - title: Operator traits and default type parameters
+    id: advanced-traits-2
+    text: |
+      In the std-traits module you overloaded `+` with `Add`. Here's how `std::ops::Add` is really declared:
+
+      ```rust
+      trait Add<Rhs = Self> {
+          type Output;
+          fn add(self, rhs: Rhs) -> Self::Output;
+      }
+      ```
+
+      It uses both tools from the last step. `Rhs` (the right-hand side) is a generic parameter, because one type can sensibly be added to several others. `Output` is an associated type, because once you know both sides there's one answer. And `Rhs = Self` is a **default type parameter**: if you write `impl Add for Money` without saying what's on the right, Rust fills in `Rhs = Money`.
+
+      ```rust run
+      use std::ops::{Add, Mul};
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Money {
+          cents: u64,
+      }
+
+      // Rhs defaults to Self: Money + Money
+      impl Add for Money {
+          type Output = Money;
+          fn add(self, rhs: Money) -> Money {
+              Money { cents: self.cents + rhs.cents }
+          }
+      }
+
+      // Rhs is u32: Money * u32 (a price times a quantity)
+      impl Mul<u32> for Money {
+          type Output = Money;
+          fn mul(self, qty: u32) -> Money {
+              Money { cents: self.cents * qty as u64 }
+          }
+      }
+
+      fn main() {
+          let coffee = Money { cents: 350 };
+          let bagel = Money { cents: 225 };
+          let total = coffee * 2 + bagel;
+          println!("{:?}", total);
+          println!("${}.{:02}", total.cents / 100, total.cents % 100);
+      }
+      ```
+
+      ```output
+      Money { cents: 925 }
+      $9.25
+      ```
+
+      `coffee * 2` calls `Mul<u32>`, then `+ bagel` calls `Add<Money>`. Multiplying money by money makes no sense, so there's simply no impl for it, and the compiler rejects it.
+
+      ### Order matters
+
+      `coffee * 2` uses `impl Mul<u32> for Money`. Writing `2 * coffee` would need a different impl, `impl Mul<Money> for u32`. Rust allows that one too (a local type appears in it), but it's a separate impl you'd have to write.
+
+      ### Default type parameters in your own traits
+
+      Defaults exist mainly for two reasons: to make the common case short (`impl Add for Money`), and to let a library add a type parameter to an existing trait without breaking every impl already written. You can use them in your own traits:
+
+      ```rust
+      trait Similar<Other = Self> {
+          fn similarity(&self, other: &Other) -> f64;
+      }
+      ```
+
+      `impl Similar for Song` compares songs with songs; `impl Similar<Playlist> for Song` compares a song with a playlist.
+
+      ### Common mistakes
+
+      - **Forgetting the output type**:
+
+      ```rust compile_fail
+      use std::ops::Add;
+
+      struct Meters(f64);
+
+      impl Add for Meters {
+          fn add(self, other: Meters) -> Meters {
+              Meters(self.0 + other.0)
+          }
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0046]: not all trait items implemented, missing: `Output`
+      ```
+
+      - **Using a combination you didn't implement**: with only `Mul<u32> for Money`, `coffee * coffee` fails with `mismatched types` (expected `u32`, found `Money`).
+      - **Surprising operators**: overload an operator only when its meaning is obvious to a reader. `+` on money is fine; `+` that sends an email is not.
+
+      **Your turn:** implement two operators for the game vector `Vec2`: `Vec2 + Vec2` adds the `x`s and the `y`s, and `Vec2 * i32` multiplies both coordinates by the number. Both return a `Vec2`.
+    seed: |
+      use std::ops::{Add, Mul};
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Vec2 {
+          x: i32,
+          y: i32,
+      }
+
+      // TODO: impl Add for Vec2 (Vec2 + Vec2)
+      // TODO: impl Mul<i32> for Vec2 (Vec2 * i32)
+    solution: |
+      use std::ops::{Add, Mul};
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Vec2 {
+          x: i32,
+          y: i32,
+      }
+
+      impl Add for Vec2 {
+          type Output = Vec2;
+          fn add(self, rhs: Vec2) -> Vec2 {
+              Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
+          }
+      }
+
+      impl Mul<i32> for Vec2 {
+          type Output = Vec2;
+          fn mul(self, factor: i32) -> Vec2 {
+              Vec2 { x: self.x * factor, y: self.y * factor }
+          }
+      }
+    harness: |
+      #[test]
+      fn adds_two_vectors() {
+          let a = Vec2 { x: 1, y: 2 };
+          let b = Vec2 { x: 3, y: -1 };
+          assert_eq!(a + b, Vec2 { x: 4, y: 1 }, "(1, 2) + (3, -1)");
+      }
+
+      #[test]
+      fn multiplies_both_coordinates_by_a_number() {
+          assert_eq!(Vec2 { x: 2, y: -3 } * 3, Vec2 { x: 6, y: -9 }, "(2, -3) * 3");
+      }
+
+      #[test]
+      fn combines_both_operators() {
+          let a = Vec2 { x: 1, y: 1 };
+          let b = Vec2 { x: 2, y: 0 };
+          assert_eq!((a + b) * 2, Vec2 { x: 6, y: 2 }, "(a + b) * 2");
+      }
+
+      #[test]
+      fn multiplying_by_zero_gives_the_zero_vector() {
+          assert_eq!(Vec2 { x: 5, y: 7 } * 0, Vec2 { x: 0, y: 0 }, "(5, 7) * 0");
+      }
+    hints:
+      - "Each impl needs `type Output = Vec2;` and the method (`add` or `mul`), which takes `self` by value."
+      - "`impl Mul<i32> for Vec2 { type Output = Vec2; fn mul(self, factor: i32) -> Vec2 { Vec2 { x: self.x * factor, y: self.y * factor } } }`"
+    more:
+      - task: |
+          Times work like `std::time::Instant` and `Duration`: subtracting two points in time gives a length of time, and adding a length of time to a point gives a later point. Implement `Timestamp - Timestamp` (output `Seconds`, assume the left one is later) and `Timestamp + Seconds` (output `Timestamp`).
+        seed: |
+          use std::ops::{Add, Sub};
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Timestamp(u64); // seconds since the start of the day
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Seconds(u64);
+
+          // TODO: impl Sub for Timestamp (Output = Seconds)
+          // TODO: impl Add<Seconds> for Timestamp (Output = Timestamp)
+        solution: |
+          use std::ops::{Add, Sub};
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Timestamp(u64); // seconds since the start of the day
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Seconds(u64);
+
+          impl Sub for Timestamp {
+              type Output = Seconds;
+              fn sub(self, earlier: Timestamp) -> Seconds {
+                  Seconds(self.0 - earlier.0)
+              }
+          }
+
+          impl Add<Seconds> for Timestamp {
+              type Output = Timestamp;
+              fn add(self, length: Seconds) -> Timestamp {
+                  Timestamp(self.0 + length.0)
+              }
+          }
+        harness: |
+          #[test]
+          fn subtracting_timestamps_gives_seconds() {
+              assert_eq!(Timestamp(500) - Timestamp(200), Seconds(300), "Timestamp(500) - Timestamp(200)");
+          }
+
+          #[test]
+          fn adding_seconds_gives_a_later_timestamp() {
+              assert_eq!(Timestamp(100) + Seconds(60), Timestamp(160), "Timestamp(100) + Seconds(60)");
+          }
+
+          #[test]
+          fn adding_then_subtracting_round_trips() {
+              let start = Timestamp(3600);
+              let end = start + Seconds(90);
+              assert_eq!(end - start, Seconds(90), "(start + Seconds(90)) - start");
+          }
+
+          #[test]
+          fn the_same_timestamp_is_zero_seconds_apart() {
+              assert_eq!(Timestamp(42) - Timestamp(42), Seconds(0), "Timestamp(42) - Timestamp(42)");
+          }
+        hints:
+          - "`impl Sub for Timestamp` uses the default `Rhs = Self`, but its `type Output` is `Seconds`, not `Timestamp`."
+          - "`impl Add<Seconds> for Timestamp { type Output = Timestamp; fn add(self, length: Seconds) -> Timestamp { Timestamp(self.0 + length.0) } }`"
+      - task: |
+          Write your own trait with a default type parameter. Declare `trait Distance<Other = Self>` with one method `fn distance(&self, other: &Other) -> u32;`. Then implement it twice for the grid `Cell`:
+
+          - `impl Distance for Cell` (using the default): the Manhattan distance, `|row1 - row2| + |col1 - col2|`.
+          - `impl Distance<Row> for Cell`: how many rows the cell is away from that row.
+        seed: |
+          #[derive(Debug, Clone, Copy)]
+          struct Cell {
+              row: i32,
+              col: i32,
+          }
+
+          #[derive(Debug, Clone, Copy)]
+          struct Row(i32);
+
+          // Write the trait Distance<Other = Self> and its two impls for Cell.
+        solution: |
+          #[derive(Debug, Clone, Copy)]
+          struct Cell {
+              row: i32,
+              col: i32,
+          }
+
+          #[derive(Debug, Clone, Copy)]
+          struct Row(i32);
+
+          // Write the trait Distance<Other = Self> and its two impls for Cell.
+          trait Distance<Other = Self> {
+              fn distance(&self, other: &Other) -> u32;
+          }
+
+          impl Distance for Cell {
+              fn distance(&self, other: &Cell) -> u32 {
+                  self.row.abs_diff(other.row) + self.col.abs_diff(other.col)
+              }
+          }
+
+          impl Distance<Row> for Cell {
+              fn distance(&self, other: &Row) -> u32 {
+                  self.row.abs_diff(other.0)
+              }
+          }
+        harness: |
+          #[test]
+          fn cell_to_cell_is_the_manhattan_distance() {
+              let a = Cell { row: 0, col: 0 };
+              let b = Cell { row: 2, col: 3 };
+              assert_eq!(a.distance(&b), 5, "(0,0) to (2,3)");
+          }
+
+          #[test]
+          fn cell_distance_works_with_negative_coordinates() {
+              let a = Cell { row: -2, col: 4 };
+              let b = Cell { row: 1, col: -1 };
+              assert_eq!(a.distance(&b), 8, "(-2,4) to (1,-1)");
+              assert_eq!(b.distance(&a), 8, "(1,-1) to (-2,4)");
+          }
+
+          #[test]
+          fn cell_to_row_counts_rows() {
+              let c = Cell { row: 5, col: 9 };
+              assert_eq!(c.distance(&Row(2)), 3, "(5,9) to Row(2)");
+              assert_eq!(c.distance(&Row(8)), 3, "(5,9) to Row(8)");
+          }
+
+          #[test]
+          fn a_cell_on_the_row_is_zero_rows_away() {
+              assert_eq!(Cell { row: 4, col: 1 }.distance(&Row(4)), 0, "(4,1) to Row(4)");
+          }
+        require:
+          - pattern: 'trait\s+Distance\s*<\s*\w+\s*=\s*Self\s*>'
+            message: "Give the trait a type parameter that defaults to `Self`: `trait Distance<Other = Self>`."
+          - pattern: 'impl\s+Distance\s+for\s+Cell'
+            message: "Use the default for the cell-to-cell impl: `impl Distance for Cell`."
+        hints:
+          - "`trait Distance<Other = Self> { fn distance(&self, other: &Other) -> u32; }`"
+          - "`i32::abs_diff` gives the distance between two numbers as a `u32`: `self.row.abs_diff(other.row)`."
+          - "The second impl names the parameter: `impl Distance<Row> for Cell { fn distance(&self, other: &Row) -> u32 { self.row.abs_diff(other.0) } }`."
+
+  - title: Supertraits and fully qualified syntax
+    id: advanced-traits-3
+    text: |
+      ### Supertraits: "to implement this, you must also implement that"
+
+      Sometimes a trait only makes sense for types that already have another ability. An alert must be printable, so `Alert` can require `Display`:
+
+      ```rust run
+      use std::fmt;
+
+      trait Alert: fmt::Display {
+          fn level(&self) -> u8;
+
+          fn banner(&self) -> String {
+              let tag = if self.level() >= 3 { "CRITICAL" } else { "notice" };
+              format!("[{tag}] {self}")
+          }
+      }
+
+      struct DiskFull {
+          mount: String,
+          percent: u8,
+      }
+
+      impl fmt::Display for DiskFull {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{} is {}% full", self.mount, self.percent)
+          }
+      }
+
+      impl Alert for DiskFull {
+          fn level(&self) -> u8 {
+              if self.percent >= 95 { 3 } else { 1 }
+          }
+      }
+
+      fn main() {
+          let var = DiskFull { mount: "/var".to_string(), percent: 97 };
+          let home = DiskFull { mount: "/home".to_string(), percent: 80 };
+          println!("{}", var.banner());
+          println!("{}", home.banner());
+      }
+      ```
+
+      ```output
+      [CRITICAL] /var is 97% full
+      [notice] /home is 80% full
+      ```
+
+      `trait Alert: fmt::Display` makes `Display` a **supertrait** of `Alert`. Two things follow: every type that implements `Alert` must also implement `Display`, and code inside `Alert` (like the default `banner`) may use `{self}` because it's guaranteed to work. A function taking `T: Alert` can print `T` too, without also writing `T: Display`.
+
+      It looks like inheritance, but it isn't: no fields or method bodies are inherited. It's a requirement, checked by the compiler. std is full of them: `Copy: Clone`, `Eq: PartialEq`, `Ord: Eq + PartialOrd`, and `std::error::Error: Debug + Display` (that's why your error types in the custom-errors module needed both).
+
+      ```rust compile_fail
+      use std::fmt::Display;
+
+      trait Loggable: Display {
+          fn log_line(&self) -> String {
+              format!("[LOG] {self}")
+          }
+      }
+
+      struct Ticket {
+          id: u32,
+      }
+
+      impl Loggable for Ticket {}
+
+      fn main() {
+          let t = Ticket { id: 1 };
+          println!("{}", t.id);
+      }
+      ```
+
+      ```error
+      error[E0277]: `Ticket` doesn't implement `std::fmt::Display`
+      ```
+
+      ### Two traits, one method name
+
+      Nothing stops two traits from having methods with the same name. When one type implements both, a plain method call is ambiguous, so you name the trait. This is **fully qualified syntax**.
+
+      ```rust run
+      trait Employee {
+          fn id(&self) -> String;
+          fn role() -> &'static str;
+      }
+
+      trait Customer {
+          fn id(&self) -> String;
+          fn role() -> &'static str;
+      }
+
+      struct Person {
+          staff_no: u32,
+          account: u32,
+      }
+
+      impl Employee for Person {
+          fn id(&self) -> String {
+              format!("E-{}", self.staff_no)
+          }
+          fn role() -> &'static str {
+              "employee"
+          }
+      }
+
+      impl Customer for Person {
+          fn id(&self) -> String {
+              format!("C-{}", self.account)
+          }
+          fn role() -> &'static str {
+              "customer"
+          }
+      }
+
+      fn main() {
+          let ana = Person { staff_no: 7, account: 1042 };
+          println!("{}", Employee::id(&ana));
+          println!("{}", Customer::id(&ana));
+          println!("{}", <Person as Employee>::role());
+          println!("{}", <Person as Customer>::role());
+      }
+      ```
+
+      ```output
+      E-7
+      C-1042
+      employee
+      customer
+      ```
+
+      - **Methods with `self`**: `Employee::id(&ana)` calls the trait's method as a plain function, passing the receiver yourself. Rust knows the type from `&ana`.
+      - **Associated functions without `self`**: `role()` has no receiver, so `Employee::role()` can't know which type you mean. The full form `<Person as Employee>::role()` says "the `Employee` impl of `Person`". You'll also meet it in generic code, like `<T as Iterator>::Item`.
+      - If `Person` had its own (inherent) `id` method, `ana.id()` would call that one; inherent methods win over trait methods.
+
+      ### Common mistakes
+
+      - **Calling `ana.id()` with two traits in scope**: `error[E0034]: multiple applicable items in scope`. The message lists both candidates and suggests the fully qualified forms.
+      - **`Employee::role()` with no type**:
+
+      ```rust compile_fail
+      trait Named {
+          fn name() -> String;
+      }
+
+      struct Crab;
+
+      impl Named for Crab {
+          fn name() -> String {
+              "Ferris".to_string()
+          }
+      }
+
+      fn main() {
+          println!("{}", Named::name());
+      }
+      ```
+
+      ```error
+      error[E0790]: cannot call associated function on trait without specifying the corresponding `impl` type
+      ```
+
+      **Your turn:** `Distance` implements both `Metric` and `Imperial`, which have the same two names: `unit()` (no `self`) and `value(&self)`. Write `describe`, which returns both measurements with one decimal place, like `12.0 m = 39.4 ft`. Get the units from the traits with fully qualified syntax rather than typing `"m"` and `"ft"`.
+    seed: |
+      trait Metric {
+          fn unit() -> &'static str;
+          fn value(&self) -> f64;
+      }
+
+      trait Imperial {
+          fn unit() -> &'static str;
+          fn value(&self) -> f64;
+      }
+
+      struct Distance {
+          meters: f64,
+      }
+
+      impl Metric for Distance {
+          fn unit() -> &'static str {
+              "m"
+          }
+          fn value(&self) -> f64 {
+              self.meters
+          }
+      }
+
+      impl Imperial for Distance {
+          fn unit() -> &'static str {
+              "ft"
+          }
+          fn value(&self) -> f64 {
+              self.meters * 3.28084
+          }
+      }
+
+      /// "12.0 m = 39.4 ft"
+      fn describe(d: &Distance) -> String {
+          todo!()
+      }
+    solution: |
+      trait Metric {
+          fn unit() -> &'static str;
+          fn value(&self) -> f64;
+      }
+
+      trait Imperial {
+          fn unit() -> &'static str;
+          fn value(&self) -> f64;
+      }
+
+      struct Distance {
+          meters: f64,
+      }
+
+      impl Metric for Distance {
+          fn unit() -> &'static str {
+              "m"
+          }
+          fn value(&self) -> f64 {
+              self.meters
+          }
+      }
+
+      impl Imperial for Distance {
+          fn unit() -> &'static str {
+              "ft"
+          }
+          fn value(&self) -> f64 {
+              self.meters * 3.28084
+          }
+      }
+
+      /// "12.0 m = 39.4 ft"
+      fn describe(d: &Distance) -> String {
+          format!(
+              "{:.1} {} = {:.1} {}",
+              Metric::value(d),
+              <Distance as Metric>::unit(),
+              Imperial::value(d),
+              <Distance as Imperial>::unit()
+          )
+      }
+    harness: |
+      #[test]
+      fn describes_twelve_meters() {
+          assert_eq!(describe(&Distance { meters: 12.0 }), "12.0 m = 39.4 ft", "describe(12 m)");
+      }
+
+      #[test]
+      fn describes_zero() {
+          assert_eq!(describe(&Distance { meters: 0.0 }), "0.0 m = 0.0 ft", "describe(0 m)");
+      }
+
+      #[test]
+      fn describes_a_kilometer() {
+          assert_eq!(describe(&Distance { meters: 1000.0 }), "1000.0 m = 3280.8 ft", "describe(1000 m)");
+      }
+
+      #[test]
+      fn describes_half_a_meter() {
+          assert_eq!(describe(&Distance { meters: 0.5 }), "0.5 m = 1.6 ft", "describe(0.5 m)");
+      }
+    require:
+      - pattern: '<\s*Distance\s+as\s+Metric\s*>\s*::\s*unit'
+        message: "Get the metric unit with `<Distance as Metric>::unit()`."
+      - pattern: '<\s*Distance\s+as\s+Imperial\s*>\s*::\s*unit'
+        message: "Get the imperial unit with `<Distance as Imperial>::unit()`."
+    hints:
+      - "`d.value()` is ambiguous. Call each one through its trait: `Metric::value(d)` and `Imperial::value(d)`."
+      - "`unit()` has no `self`, so it needs the full form: `<Distance as Metric>::unit()`."
+      - "`format!(\"{:.1} {} = {:.1} {}\", Metric::value(d), <Distance as Metric>::unit(), Imperial::value(d), <Distance as Imperial>::unit())`"
+    more:
+      - task: |
+          Ferris is both a pilot and a chef. Fill in the blanks to call each trait's version, so the program prints:
+
+          ```
+          Captain Ferris on the bridge
+          Chef Ferris in the kitchen
+          pilot and chef
+          ```
+        fill: |
+          trait Pilot {
+              fn greet(&self) -> String;
+              fn title() -> &'static str;
+          }
+
+          trait Chef {
+              fn greet(&self) -> String;
+              fn title() -> &'static str;
+          }
+
+          struct Crab {
+              name: String,
+          }
+
+          impl Pilot for Crab {
+              fn greet(&self) -> String {
+                  format!("Captain {} on the bridge", self.name)
+              }
+              fn title() -> &'static str {
+                  "pilot"
+              }
+          }
+
+          impl Chef for Crab {
+              fn greet(&self) -> String {
+                  format!("Chef {} in the kitchen", self.name)
+              }
+              fn title() -> &'static str {
+                  "chef"
+              }
+          }
+
+          fn main() {
+              let ferris = Crab { name: "Ferris".to_string() };
+              println!("{}", [[Pilot]]::greet(&ferris));
+              println!("{}", Chef::greet([[&ferris]]));
+              println!("{} and {}", <Crab as Pilot>::title(), <[[Crab as Chef]]>::title());
+          }
+        hints:
+          - "A method with `self` is called through its trait like a function: `Pilot::greet(&ferris)`."
+          - "An associated function needs the type and the trait: `<Crab as Chef>::title()`."
+        tests:
+          - expect: "Captain Ferris on the bridge\nChef Ferris in the kitchen\npilot and chef"
+      - task: |
+          Write a trait with **two** supertraits. `Sellable` must require both `Priced` (given) and `fmt::Display`, and have a default method `fn receipt_line(&self) -> String` that returns the item's display text, a colon, and its price in dollars, like `Rust in Action: $39.99`.
+
+          Then make `Book` sellable: implement `Display` (shows the title), `Priced` (returns `price_cents`), and an empty `impl Sellable for Book {}`. Finally write `fn total_cents<T: Sellable>(items: &[T]) -> u32`, which only needs the `Sellable` bound to add up the prices.
+        seed: |
+          use std::fmt;
+
+          trait Priced {
+              fn price_cents(&self) -> u32;
+          }
+
+          struct Book {
+              title: String,
+              price_cents: u32,
+          }
+
+          // TODO: trait Sellable: Priced + fmt::Display { fn receipt_line(&self) -> String { ... } }
+          // TODO: impl fmt::Display for Book, impl Priced for Book, impl Sellable for Book {}
+
+          fn total_cents<T: Sellable>(items: &[T]) -> u32 {
+              todo!()
+          }
+        solution: |
+          use std::fmt;
+
+          trait Priced {
+              fn price_cents(&self) -> u32;
+          }
+
+          struct Book {
+              title: String,
+              price_cents: u32,
+          }
+
+          trait Sellable: Priced + fmt::Display {
+              fn receipt_line(&self) -> String {
+                  let cents = self.price_cents();
+                  format!("{}: ${}.{:02}", self, cents / 100, cents % 100)
+              }
+          }
+
+          impl fmt::Display for Book {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  write!(f, "{}", self.title)
+              }
+          }
+
+          impl Priced for Book {
+              fn price_cents(&self) -> u32 {
+                  self.price_cents
+              }
+          }
+
+          impl Sellable for Book {}
+
+          fn total_cents<T: Sellable>(items: &[T]) -> u32 {
+              items.iter().map(|item| item.price_cents()).sum()
+          }
+        harness: |
+          fn book(title: &str, price_cents: u32) -> Book {
+              Book { title: title.to_string(), price_cents }
+          }
+
+          #[test]
+          fn receipt_line_uses_display_and_price() {
+              assert_eq!(book("Rust in Action", 3999).receipt_line(), "Rust in Action: $39.99", "receipt_line()");
+          }
+
+          #[test]
+          fn cents_are_always_two_digits() {
+              assert_eq!(book("Zines", 505).receipt_line(), "Zines: $5.05", "receipt_line() for 505 cents");
+          }
+
+          #[test]
+          fn a_book_still_displays_as_its_title() {
+              assert_eq!(format!("{}", book("Dune", 999)), "Dune", "displaying a Book");
+          }
+
+          #[test]
+          fn total_cents_adds_up_through_the_supertrait() {
+              let books = vec![book("A", 1000), book("B", 250), book("C", 1)];
+              assert_eq!(total_cents(&books), 1251, "total_cents(&books)");
+          }
+        require:
+          - pattern: 'trait\s+Sellable\s*:'
+            message: "Declare the supertraits after a colon: `trait Sellable: Priced + fmt::Display`."
+        hints:
+          - "`trait Sellable: Priced + fmt::Display { fn receipt_line(&self) -> String { ... } }`. Inside, both `self.price_cents()` and `{}` with `self` work."
+          - "`format!(\"{}: ${}.{:02}\", self, cents / 100, cents % 100)`, where `cents` is `self.price_cents()`."
+          - "`total_cents` can call `price_cents()` because every `Sellable` is also `Priced`: `items.iter().map(|item| item.price_cents()).sum()`."
+
+  - title: Blanket impls and extension traits
+    id: advanced-traits-4
+    text: |
+      A **blanket impl** implements a trait for every type that meets a bound, in one go: `impl<T: Display> Shout for T`. Read it as "for all types `T` that can be displayed, here's how they shout".
+
+      ```rust run
+      use std::fmt::{self, Display};
+
+      trait Shout {
+          fn shout(&self) -> String;
+      }
+
+      impl<T: Display> Shout for T {
+          fn shout(&self) -> String {
+              format!("{}!", self.to_string().to_uppercase())
+          }
+      }
+
+      struct Crab;
+
+      impl Display for Crab {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "ferris")
+          }
+      }
+
+      fn main() {
+          println!("{}", "hello".shout());
+          println!("{}", 42.shout());
+          println!("{}", Crab.shout());
+      }
+      ```
+
+      ```output
+      HELLO!
+      42!
+      FERRIS!
+      ```
+
+      `Crab` never mentions `Shout`, yet it can shout: implementing `Display` was enough.
+
+      ### You've been using blanket impls all along
+
+      - `impl<T: Display + ?Sized> ToString for T` in std is why every type with `Display` has `.to_string()`. (`?Sized` is explained at the end of this module.)
+      - `impl<T, U: From<T>> Into<U> for T` is why implementing `From` gives you `Into` for free.
+      - `impl<T: Iterator> Itertools for T` is how the `itertools` crate adds dozens of methods to every iterator in your program.
+
+      That last one is an **extension trait**: a trait you write to add methods to types you don't own (`str`, `Vec`, every iterator). Bring the trait into scope with `use` and the methods appear. Teams use them for small helpers like `.is_blank()` on strings or `.sum_by()` on iterators.
+
+      ### Coherence: no two impls may overlap
+
+      Once the blanket impl exists, you can't add a specific impl that it already covers:
+
+      ```rust compile_fail
+      use std::fmt::Display;
+
+      trait Shout {
+          fn shout(&self) -> String;
+      }
+
+      impl<T: Display> Shout for T {
+          fn shout(&self) -> String {
+              format!("{self}!")
+          }
+      }
+
+      impl Shout for i32 {
+          fn shout(&self) -> String {
+              format!("{self}!!!")
+          }
+      }
+
+      fn main() {
+          println!("{}", 5.shout());
+      }
+      ```
+
+      ```error
+      error[E0119]: conflicting implementations of trait `Shout` for type `i32`
+      ```
+
+      `i32` is `Display`, so it already has `Shout`. Rust insists there's always exactly one impl to pick, which keeps behavior predictable. (Picking the "more specific" impl, called specialization, isn't stable Rust.)
+
+      ### Common mistakes
+
+      - **A blanket impl in a published library is a commitment**: adding one later can break users who wrote their own impls, so library authors add them early or not at all.
+      - **Blanket-implementing a trait you don't own**: `impl<T: Debug> Display for T` is rejected by the orphan rule (next step), because it would cover types from every other crate too.
+
+      **Your turn:** write one blanket impl so that every type that implements `Debug` gets a `pretty()` method returning its Debug text inside angle brackets: `5.pretty()` is `"<5>"`, `vec![1, 2].pretty()` is `"<[1, 2]>"`.
+    seed: |
+      use std::fmt::Debug;
+
+      trait Pretty {
+          fn pretty(&self) -> String;
+      }
+
+      // TODO: one impl that covers every type implementing Debug
+    solution: |
+      use std::fmt::Debug;
+
+      trait Pretty {
+          fn pretty(&self) -> String;
+      }
+
+      impl<T: Debug> Pretty for T {
+          fn pretty(&self) -> String {
+              format!("<{:?}>", self)
+          }
+      }
+    harness: |
+      #[derive(Debug)]
+      struct Ticket {
+          id: u32,
+      }
+
+      #[test]
+      fn numbers_get_angle_brackets() {
+          assert_eq!(5.pretty(), "<5>", "5.pretty()");
+      }
+
+      #[test]
+      fn strings_keep_their_quotes() {
+          assert_eq!("hi".pretty(), "<\"hi\">", "\"hi\".pretty()");
+      }
+
+      #[test]
+      fn vectors_and_options_work_too() {
+          assert_eq!(vec![1, 2].pretty(), "<[1, 2]>", "vec![1, 2].pretty()");
+          assert_eq!(Some('x').pretty(), "<Some('x')>", "Some('x').pretty()");
+      }
+
+      #[test]
+      fn your_own_debug_types_work_without_extra_code() {
+          assert_eq!(Ticket { id: 7 }.pretty(), "<Ticket { id: 7 }>", "Ticket with id 7, pretty()");
+      }
+    require:
+      - pattern: 'impl\s*<[^>]*>\s*Pretty\s+for\s+[A-Z]\w*'
+        message: "Write one blanket impl for a type parameter: `impl<T: Debug> Pretty for T`."
+    hints:
+      - "The impl is generic: `impl<T: Debug> Pretty for T { ... }`."
+      - "Inside, `format!(\"<{:?}>\", self)`."
+    more:
+      - task: |
+          Write a blanket impl of `Between` for every type that implements `PartialOrd`. `x.between(&low, &high)` is `true` when `low <= x <= high` (both ends included). It should work for integers, floats, chars and strings without any extra impls.
+        seed: |
+          trait Between {
+              fn between(&self, low: &Self, high: &Self) -> bool;
+          }
+
+          // TODO: impl<T: PartialOrd> Between for T
+        solution: |
+          trait Between {
+              fn between(&self, low: &Self, high: &Self) -> bool;
+          }
+
+          impl<T: PartialOrd> Between for T {
+              fn between(&self, low: &Self, high: &Self) -> bool {
+                  low <= self && self <= high
+              }
+          }
+        harness: |
+          #[test]
+          fn a_number_inside_the_range_is_between() {
+              assert_eq!(5.between(&1, &10), true, "5.between(&1, &10)");
+          }
+
+          #[test]
+          fn both_ends_are_included() {
+              assert_eq!(1.between(&1, &10), true, "1.between(&1, &10)");
+              assert_eq!(10.between(&1, &10), true, "10.between(&1, &10)");
+          }
+
+          #[test]
+          fn numbers_outside_are_not_between() {
+              assert_eq!(0.between(&1, &10), false, "0.between(&1, &10)");
+              assert_eq!(11.between(&1, &10), false, "11.between(&1, &10)");
+          }
+
+          #[test]
+          fn floats_chars_and_strings_work_too() {
+              assert_eq!(2.5.between(&2.0, &3.0), true, "2.5.between(&2.0, &3.0)");
+              assert_eq!('Z'.between(&'a', &'z'), false, "'Z'.between(&'a', &'z')");
+              assert_eq!("m".between(&"a", &"z"), true, "\"m\".between(&\"a\", &\"z\")");
+          }
+        require:
+          - pattern: 'impl\s*<[^>]*>\s*Between\s+for\s+[A-Z]\w*'
+            message: "Write one blanket impl: `impl<T: PartialOrd> Between for T`."
+        hints:
+          - "`impl<T: PartialOrd> Between for T { fn between(&self, low: &Self, high: &Self) -> bool { ... } }`"
+          - "`self`, `low` and `high` are all references to `T`, and `PartialOrd` compares references too: `low <= self && self <= high`."
+      - task: |
+          Write an extension trait from scratch. `TotalLen` has one method, `fn total_len(self) -> usize`, that adds up the byte lengths of a collection of strings. Give it a blanket impl for every type `I` that implements `IntoIterator` and whose items implement `AsRef<str>`, so it works on `Vec<&str>`, `Vec<String>`, arrays, and iterators like `words.iter()`.
+        seed: |
+          // Write trait TotalLen and one blanket impl for it.
+        solution: |
+          // Write trait TotalLen and one blanket impl for it.
+          trait TotalLen {
+              fn total_len(self) -> usize;
+          }
+
+          impl<I, S> TotalLen for I
+          where
+              I: IntoIterator<Item = S>,
+              S: AsRef<str>,
+          {
+              fn total_len(self) -> usize {
+                  self.into_iter().map(|s| s.as_ref().len()).sum()
+              }
+          }
+        harness: |
+          #[test]
+          fn works_on_a_vec_of_str() {
+              assert_eq!(vec!["ab", "cde"].total_len(), 5, "vec![\"ab\", \"cde\"].total_len()");
+          }
+
+          #[test]
+          fn works_on_a_vec_of_strings() {
+              let names = vec![String::from("crab"), String::from("!")];
+              assert_eq!(names.total_len(), 5, "names.total_len()");
+          }
+
+          #[test]
+          fn works_on_an_iterator_of_borrowed_items() {
+              let words = ["x", "yz"];
+              assert_eq!(words.iter().total_len(), 3, "words.iter().total_len()");
+          }
+
+          #[test]
+          fn counts_bytes_not_chars() {
+              assert_eq!(vec!["é"].total_len(), 2, "vec![\"é\"].total_len()");
+          }
+
+          #[test]
+          fn an_empty_collection_is_zero() {
+              assert_eq!(Vec::<String>::new().total_len(), 0, "Vec::<String>::new().total_len()");
+          }
+        require:
+          - pattern: 'impl\s*<[^>]*>\s*TotalLen\s+for\s+[A-Z]\w*'
+            message: "Use one blanket impl over a type parameter, like `impl<I, S> TotalLen for I where ...`."
+        hints:
+          - "Two type parameters: `I` for the collection and `S` for its items. `impl<I, S> TotalLen for I where I: IntoIterator<Item = S>, S: AsRef<str> { ... }`"
+          - "The body: `self.into_iter().map(|s| s.as_ref().len()).sum()`."
+
+  - title: Newtypes, the orphan rule and type aliases
+    id: advanced-traits-5
+    text: |
+      ### The orphan rule
+
+      You may implement a trait for a type only if **the trait or the type is defined in your crate**. This is the **orphan rule**. You can't implement std's `Display` for std's `Vec`:
+
+      ```rust compile_fail
+      use std::fmt;
+
+      impl fmt::Display for Vec<String> {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{}", self.join(", "))
+          }
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0117]: only traits defined in the current crate can be implemented for types defined outside of the crate
+      ```
+
+      Why so strict? Imagine two crates you depend on both wrote `impl Display for Vec<String>`, differently. Which one should your program use? The orphan rule (part of **coherence**) guarantees that can never happen, so adding a dependency can't break your build with clashing impls.
+
+      ### The newtype pattern
+
+      The fix is a **newtype**: a tuple struct with one field that wraps the foreign type. The wrapper is yours, so you may implement any trait for it.
+
+      ```rust run
+      use std::fmt;
+
+      struct Scores(Vec<u32>);
+
+      impl fmt::Display for Scores {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self.0.iter().max() {
+                  Some(best) => write!(f, "{} scores, best {}", self.0.len(), best),
+                  None => write!(f, "no scores yet"),
+              }
+          }
+      }
+
+      fn main() {
+          let s = Scores(vec![72, 98, 85]);
+          println!("{s}");
+          println!("{}", Scores(Vec::new()));
+          println!("{}", std::mem::size_of::<Scores>() == std::mem::size_of::<Vec<u32>>());
+      }
+      ```
+
+      ```output
+      3 scores, best 98
+      no scores yet
+      true
+      ```
+
+      The last line shows newtypes are free: `Scores` is exactly the size of the `Vec` inside, and the compiler removes the wrapper entirely. You reach the inner value with `.0`. (You could implement `Deref` to forward every `Vec` method, but that hides the wrapper; most teams prefer exposing just the methods they need.)
+
+      ### Newtypes for safety
+
+      The other big use: give plain numbers and strings distinct types so they can't be mixed up.
+
+      ```rust compile_fail
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct UserId(u32);
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct OrderId(u32);
+
+      fn cancel(order: OrderId, by: UserId) -> String {
+          format!("{:?} cancelled by {:?}", order, by)
+      }
+
+      fn main() {
+          let user = UserId(7);
+          let order = OrderId(1042);
+          println!("{}", cancel(user, order));
+      }
+      ```
+
+      ```error
+      error[E0308]: arguments to this function are incorrect
+      ```
+
+      With two bare `u32` parameters, swapping them would compile and quietly cancel the wrong order.
+
+      ### Type aliases: a new name, not a new type
+
+      A **type alias** gives an existing type a shorter name. It's purely for readability: the alias and the original are interchangeable, so it gives **no** safety at all.
+
+      ```rust run
+      use std::collections::BTreeMap;
+
+      type Inventory = BTreeMap<String, u32>;
+      type Result<T> = std::result::Result<T, String>;
+
+      fn take(stock: &mut Inventory, item: &str, qty: u32) -> Result<u32> {
+          let have = stock.get_mut(item).ok_or(format!("no {item} in stock"))?;
+          if *have < qty {
+              return Err(format!("only {have} {item} left"));
+          }
+          *have -= qty;
+          Ok(*have)
+      }
+
+      fn main() {
+          let mut stock = Inventory::new();
+          stock.insert("potion".to_string(), 5);
+          println!("{:?}", take(&mut stock, "potion", 2));
+          println!("{:?}", take(&mut stock, "potion", 9));
+          println!("{:?}", take(&mut stock, "sword", 1));
+      }
+      ```
+
+      ```output
+      Ok(3)
+      Err("only 3 potion left")
+      Err("no sword in stock")
+      ```
+
+      The `type Result<T> = std::result::Result<T, MyError>;` pattern is everywhere: `std::io::Result<T>`, `std::fmt::Result`, `anyhow::Result<T>`. Each module that has one error type defines one, so signatures stay short.
+
+      | | newtype `struct UserId(u32)` | alias `type UserId = u32` |
+      |---|---|---|
+      | new type? | yes, can't be mixed up | no, it's just `u32` |
+      | implement foreign traits? | yes | no (it's still the foreign type) |
+      | runtime cost | none | none |
+
+      **Your turn:** `Tags` wraps a `Vec<String>`, and you can't implement `Display` for `Vec<String>` directly. Implement `fmt::Display` for `Tags`: each tag gets a `#` in front and they're separated by single spaces (`#rust #crab`). With no tags, display `(no tags)`.
+    seed: |
+      use std::fmt;
+
+      struct Tags(Vec<String>);
+
+      impl Tags {
+          fn new(tags: &[&str]) -> Tags {
+              Tags(tags.iter().map(|t| t.to_string()).collect())
+          }
+      }
+
+      // TODO: impl fmt::Display for Tags
+    solution: |
+      use std::fmt;
+
+      struct Tags(Vec<String>);
+
+      impl Tags {
+          fn new(tags: &[&str]) -> Tags {
+              Tags(tags.iter().map(|t| t.to_string()).collect())
+          }
+      }
+
+      impl fmt::Display for Tags {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              if self.0.is_empty() {
+                  return write!(f, "(no tags)");
+              }
+              let parts: Vec<String> = self.0.iter().map(|t| format!("#{t}")).collect();
+              write!(f, "{}", parts.join(" "))
+          }
+      }
+    harness: |
+      #[test]
+      fn shows_each_tag_with_a_hash() {
+          assert_eq!(format!("{}", Tags::new(&["rust", "crab"])), "#rust #crab", "Tags [rust, crab]");
+      }
+
+      #[test]
+      fn a_single_tag_has_no_extra_spaces() {
+          assert_eq!(format!("{}", Tags::new(&["async"])), "#async", "Tags [async]");
+      }
+
+      #[test]
+      fn no_tags_says_so() {
+          assert_eq!(format!("{}", Tags::new(&[])), "(no tags)", "Tags []");
+      }
+
+      #[test]
+      fn to_string_works_through_the_display_impl() {
+          assert_eq!(Tags::new(&["a", "b", "c"]).to_string(), "#a #b #c", "Tags [a, b, c].to_string()");
+      }
+    hints:
+      - "Start with `impl fmt::Display for Tags { fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { ... } }`. The vector is `self.0`."
+      - "Handle the empty case first with `return write!(f, \"(no tags)\");`."
+      - "Build the parts with `self.0.iter().map(|t| format!(\"#{t}\")).collect::<Vec<String>>()`, then `write!(f, \"{}\", parts.join(\" \"))`."
+    more:
+      - task: |
+          Define a type alias `ParseResult<T>` for a `Result` whose error type is `String`, so the two signatures below compile. Then write both functions:
+
+          - `parse_port("8080")` is `Ok(8080)`. If the text isn't a valid `u16`, return `Err("not a number: <text>")`. Port `0` is `Err("port 0 is reserved")`.
+          - `parse_addr("localhost:8080")` is `Ok(("localhost".to_string(), 8080))`. Without a `:`, return `Err("missing ':' in <text>")`. Use `parse_port` (and `?`) for the port part.
+        seed: |
+          // TODO: define the alias ParseResult<T>
+
+          fn parse_port(s: &str) -> ParseResult<u16> {
+              todo!()
+          }
+
+          fn parse_addr(s: &str) -> ParseResult<(String, u16)> {
+              todo!()
+          }
+        solution: |
+          type ParseResult<T> = Result<T, String>;
+
+          fn parse_port(s: &str) -> ParseResult<u16> {
+              let port: u16 = s.parse().map_err(|_| format!("not a number: {s}"))?;
+              if port == 0 {
+                  return Err("port 0 is reserved".to_string());
+              }
+              Ok(port)
+          }
+
+          fn parse_addr(s: &str) -> ParseResult<(String, u16)> {
+              let (host, port) = s.split_once(':').ok_or(format!("missing ':' in {s}"))?;
+              Ok((host.to_string(), parse_port(port)?))
+          }
+        harness: |
+          #[test]
+          fn parses_a_valid_port() {
+              assert_eq!(parse_port("8080"), Ok(8080), "parse_port(\"8080\")");
+          }
+
+          #[test]
+          fn rejects_text_that_is_not_a_port() {
+              assert_eq!(parse_port("http"), Err("not a number: http".to_string()), "parse_port(\"http\")");
+              assert_eq!(parse_port("70000"), Err("not a number: 70000".to_string()), "parse_port(\"70000\")");
+          }
+
+          #[test]
+          fn rejects_port_zero() {
+              assert_eq!(parse_port("0"), Err("port 0 is reserved".to_string()), "parse_port(\"0\")");
+          }
+
+          #[test]
+          fn parses_a_full_address() {
+              assert_eq!(parse_addr("localhost:8080"), Ok(("localhost".to_string(), 8080)), "parse_addr(\"localhost:8080\")");
+          }
+
+          #[test]
+          fn an_address_needs_a_colon() {
+              assert_eq!(parse_addr("localhost"), Err("missing ':' in localhost".to_string()), "parse_addr(\"localhost\")");
+          }
+
+          #[test]
+          fn a_bad_port_inside_an_address_is_reported() {
+              assert_eq!(parse_addr("db:abc"), Err("not a number: abc".to_string()), "parse_addr(\"db:abc\")");
+          }
+        require:
+          - pattern: 'type\s+ParseResult\s*<\s*T\s*>\s*='
+            message: "Define the alias: `type ParseResult<T> = Result<T, String>;`."
+        hints:
+          - "`type ParseResult<T> = Result<T, String>;`"
+          - "`s.parse::<u16>().map_err(|_| format!(\"not a number: {s}\"))?` turns the parse error into your message."
+          - "`s.split_once(':').ok_or(format!(\"missing ':' in {s}\"))?` gives you `(host, port)`; then `Ok((host.to_string(), parse_port(port)?))`."
+      - task: |
+          Use newtypes so user ids and order ids can't be mixed up. Define `UserId(u32)` and `OrderId(u32)`, both deriving `Debug, Clone, Copy, PartialEq`. Then write:
+
+          - `orders_of(orders, user)`: the ids of the orders that belong to `user`, in their original order.
+          - `total_spent(orders, user)`: the sum of `total_cents` of that user's orders.
+        seed: |
+          // TODO: struct UserId and struct OrderId
+
+          struct Order {
+              id: OrderId,
+              owner: UserId,
+              total_cents: u64,
+          }
+
+          fn orders_of(orders: &[Order], user: UserId) -> Vec<OrderId> {
+              todo!()
+          }
+
+          fn total_spent(orders: &[Order], user: UserId) -> u64 {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct UserId(u32);
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct OrderId(u32);
+
+          struct Order {
+              id: OrderId,
+              owner: UserId,
+              total_cents: u64,
+          }
+
+          fn orders_of(orders: &[Order], user: UserId) -> Vec<OrderId> {
+              orders.iter().filter(|o| o.owner == user).map(|o| o.id).collect()
+          }
+
+          fn total_spent(orders: &[Order], user: UserId) -> u64 {
+              orders.iter().filter(|o| o.owner == user).map(|o| o.total_cents).sum()
+          }
+        harness: |
+          fn sample() -> Vec<Order> {
+              vec![
+                  Order { id: OrderId(1), owner: UserId(7), total_cents: 1250 },
+                  Order { id: OrderId(2), owner: UserId(9), total_cents: 400 },
+                  Order { id: OrderId(3), owner: UserId(7), total_cents: 99 },
+              ]
+          }
+
+          #[test]
+          fn finds_the_orders_of_a_user() {
+              assert_eq!(orders_of(&sample(), UserId(7)), vec![OrderId(1), OrderId(3)], "orders_of(user 7)");
+          }
+
+          #[test]
+          fn a_user_without_orders_gets_an_empty_list() {
+              assert_eq!(orders_of(&sample(), UserId(1)), vec![], "orders_of(user 1)");
+          }
+
+          #[test]
+          fn totals_what_a_user_spent() {
+              assert_eq!(total_spent(&sample(), UserId(7)), 1349, "total_spent(user 7)");
+              assert_eq!(total_spent(&sample(), UserId(9)), 400, "total_spent(user 9)");
+          }
+
+          #[test]
+          fn nobody_spends_on_an_empty_list() {
+              assert_eq!(total_spent(&[], UserId(7)), 0, "total_spent(&[], user 7)");
+          }
+        hints:
+          - "`#[derive(Debug, Clone, Copy, PartialEq)] struct UserId(u32);` and the same for `OrderId`."
+          - "Because the ids derive `PartialEq` and `Copy`, you can write `o.owner == user` and `.map(|o| o.id)`."
+          - "`orders.iter().filter(|o| o.owner == user).map(|o| o.total_cents).sum()`"
+
+  - title: PhantomData and typestate
+    id: advanced-traits-6
+    text: |
+      **Type-level programming** means letting types carry information the compiler checks, so whole classes of bugs become compile errors. The most useful form at work is **typestate**: the state of an object is part of its type, and each state has only the methods that make sense in it.
+
+      ```rust run
+      use std::marker::PhantomData;
+
+      struct Locked;
+      struct Closed;
+      struct Open;
+
+      struct Door<State> {
+          name: String,
+          _state: PhantomData<State>,
+      }
+
+      impl Door<Locked> {
+          fn new(name: &str) -> Door<Locked> {
+              Door { name: name.to_string(), _state: PhantomData }
+          }
+          fn unlock(self) -> Door<Closed> {
+              println!("{}: unlocked", self.name);
+              Door { name: self.name, _state: PhantomData }
+          }
+      }
+
+      impl Door<Closed> {
+          fn open(self) -> Door<Open> {
+              println!("{}: opened", self.name);
+              Door { name: self.name, _state: PhantomData }
+          }
+          fn lock(self) -> Door<Locked> {
+              println!("{}: locked", self.name);
+              Door { name: self.name, _state: PhantomData }
+          }
+      }
+
+      impl Door<Open> {
+          fn close(self) -> Door<Closed> {
+              println!("{}: closed", self.name);
+              Door { name: self.name, _state: PhantomData }
+          }
+      }
+
+      fn main() {
+          let door = Door::new("vault");
+          let door = door.unlock().open();
+          let door = door.close();
+          let _door = door.lock();
+          println!("{}", std::mem::size_of::<Door<Open>>() == std::mem::size_of::<String>());
+      }
+      ```
+
+      ```output
+      vault: unlocked
+      vault: opened
+      vault: closed
+      vault: locked
+      true
+      ```
+
+      How it works:
+
+      - `Locked`, `Closed` and `Open` are empty structs used only as **markers**. No value of them is ever created.
+      - `Door<Locked>` and `Door<Open>` are different types, and each `impl` block adds methods to just one of them. A locked door simply has no `open` method.
+      - Each transition takes `self` **by value** and returns the door in its new state. The old value is moved, so you can't keep using a stale `Door<Closed>` after opening it.
+      - Methods every state needs go in a generic impl: `impl<S> Door<S> { fn name(&self) -> &str { &self.name } }`.
+
+      Trying to open a locked door isn't a runtime error; it doesn't compile:
+
+      ```rust compile_fail
+      use std::marker::PhantomData;
+
+      struct Locked;
+      struct Closed;
+
+      struct Door<S> {
+          name: String,
+          _state: PhantomData<S>,
+      }
+
+      impl Door<Locked> {
+          fn new(name: &str) -> Self {
+              Door { name: name.to_string(), _state: PhantomData }
+          }
+      }
+
+      impl Door<Closed> {
+          fn open(self) -> String {
+              self.name
+          }
+      }
+
+      fn main() {
+          let door = Door::new("vault");
+          println!("{}", door.open());
+      }
+      ```
+
+      ```error
+      error[E0599]: no method named `open` found for struct `Door<Locked>` in the current scope
+      ```
+
+      ### Why PhantomData?
+
+      Rust rejects a type parameter that no field uses: `struct Door<State> { name: String }` fails with ``error[E0392]: type parameter `State` is never used``. **`PhantomData<State>`** (from `std::marker`) is a field of size zero that says "act as if this struct holds a `State`". It costs nothing at runtime, as the `size_of` line shows: the door is exactly as big as its `String`. You create it with the value `PhantomData`.
+
+      ### Where you'll meet typestate
+
+      Builders that can't be finished before the required fields are set, connections that can't send before they're authenticated, and hardware drivers (embedded Rust uses it so a pin configured as an input has no `set_high` method). It's worth it when misuse is costly; for simple cases an enum with a runtime check is easier to read. The patterns module comes back to this.
+
+      **Your turn:** finish a typestate HTTP request builder that can't be sent until a URL is set. `RequestBuilder::new()` starts as `RequestBuilder<NoUrl>` with method `GET`. Add:
+
+      - `url(self, url: &str) -> RequestBuilder<HasUrl>`, only on `RequestBuilder<NoUrl>`.
+      - `method(self, m: &str) -> Self` and `header(self, name: &str, value: &str) -> Self`, available in **both** states (a generic impl).
+      - `send(self) -> String`, only on `RequestBuilder<HasUrl>`. It returns the method, a space, the URL, then each header as ` [Name: value]` in the order they were added: `POST https://api.shop/orders [Accept: json]`.
+    seed: |
+      use std::marker::PhantomData;
+
+      struct NoUrl;
+      struct HasUrl;
+
+      struct RequestBuilder<U> {
+          method: String,
+          url: String,
+          headers: Vec<String>,
+          _url: PhantomData<U>,
+      }
+
+      impl RequestBuilder<NoUrl> {
+          fn new() -> Self {
+              RequestBuilder { method: "GET".to_string(), url: String::new(), headers: Vec::new(), _url: PhantomData }
+          }
+
+          // TODO: fn url(self, url: &str) -> RequestBuilder<HasUrl>
+      }
+
+      // TODO: impl<U> RequestBuilder<U> with method() and header()
+
+      // TODO: impl RequestBuilder<HasUrl> with send()
+    solution: |
+      use std::marker::PhantomData;
+
+      struct NoUrl;
+      struct HasUrl;
+
+      struct RequestBuilder<U> {
+          method: String,
+          url: String,
+          headers: Vec<String>,
+          _url: PhantomData<U>,
+      }
+
+      impl RequestBuilder<NoUrl> {
+          fn new() -> Self {
+              RequestBuilder { method: "GET".to_string(), url: String::new(), headers: Vec::new(), _url: PhantomData }
+          }
+
+          fn url(self, url: &str) -> RequestBuilder<HasUrl> {
+              RequestBuilder { method: self.method, url: url.to_string(), headers: self.headers, _url: PhantomData }
+          }
+      }
+
+      impl<U> RequestBuilder<U> {
+          fn method(mut self, method: &str) -> Self {
+              self.method = method.to_string();
+              self
+          }
+
+          fn header(mut self, name: &str, value: &str) -> Self {
+              self.headers.push(format!("[{name}: {value}]"));
+              self
+          }
+      }
+
+      impl RequestBuilder<HasUrl> {
+          fn send(self) -> String {
+              let mut line = format!("{} {}", self.method, self.url);
+              for h in &self.headers {
+                  line.push(' ');
+                  line.push_str(h);
+              }
+              line
+          }
+      }
+    harness: |
+      #[test]
+      fn a_plain_request_is_a_get() {
+          assert_eq!(RequestBuilder::new().url("https://crab.rs").send(), "GET https://crab.rs", "new().url(..).send()");
+      }
+
+      #[test]
+      fn the_method_can_be_changed() {
+          let r = RequestBuilder::new().method("POST").url("https://api.shop/orders").send();
+          assert_eq!(r, "POST https://api.shop/orders", "new().method(\"POST\").url(..).send()");
+      }
+
+      #[test]
+      fn headers_are_listed_in_order() {
+          let r = RequestBuilder::new().url("https://x.io").header("Accept", "json").header("X-Id", "7").send();
+          assert_eq!(r, "GET https://x.io [Accept: json] [X-Id: 7]", "two headers");
+      }
+
+      #[test]
+      fn settings_work_before_and_after_the_url() {
+          let r = RequestBuilder::new().header("A", "1").url("u").method("PUT").header("B", "2").send();
+          assert_eq!(r, "PUT u [A: 1] [B: 2]", "header, url, method, header");
+      }
+    require:
+      - pattern: 'impl\s*<\s*\w+\s*>\s*RequestBuilder\s*<'
+        message: "Put `method` and `header` in a generic impl (`impl<U> RequestBuilder<U>`), so both states have them."
+      - pattern: 'impl\s+RequestBuilder\s*<\s*HasUrl\s*>'
+        message: "Put `send` in `impl RequestBuilder<HasUrl>`, so a builder without a URL can't send."
+    hints:
+      - "`url` moves the fields into a builder of the other type: `RequestBuilder { method: self.method, url: url.to_string(), headers: self.headers, _url: PhantomData }`."
+      - "Builder methods take `mut self` and return it: `fn method(mut self, method: &str) -> Self { self.method = method.to_string(); self }`. Store each header already formatted as `[Name: value]`."
+      - "`send` starts with `format!(\"{} {}\", self.method, self.url)` and appends a space plus each stored header."
+    more:
+      - task: |
+          A blog post goes Draft, then Review, then Published. Finish the typestate `Post`:
+
+          - On `Post<Draft>`: `write(&mut self, text: &str)` appends text, and `submit(self) -> Post<Review>`.
+          - On `Post<Review>`: `approve(self) -> Post<Published>` and `reject(self) -> Post<Draft>` (the text is kept).
+          - On `Post<Published>`: `content(&self) -> &str`. Only published posts can be read.
+        seed: |
+          use std::marker::PhantomData;
+
+          struct Draft;
+          struct Review;
+          struct Published;
+
+          struct Post<S> {
+              text: String,
+              _state: PhantomData<S>,
+          }
+
+          impl Post<Draft> {
+              fn new() -> Self {
+                  Post { text: String::new(), _state: PhantomData }
+              }
+
+              // TODO: write and submit
+          }
+
+          // TODO: impl Post<Review> with approve and reject
+          // TODO: impl Post<Published> with content
+        solution: |
+          use std::marker::PhantomData;
+
+          struct Draft;
+          struct Review;
+          struct Published;
+
+          struct Post<S> {
+              text: String,
+              _state: PhantomData<S>,
+          }
+
+          impl Post<Draft> {
+              fn new() -> Self {
+                  Post { text: String::new(), _state: PhantomData }
+              }
+
+              fn write(&mut self, text: &str) {
+                  self.text.push_str(text);
+              }
+
+              fn submit(self) -> Post<Review> {
+                  Post { text: self.text, _state: PhantomData }
+              }
+          }
+
+          impl Post<Review> {
+              fn approve(self) -> Post<Published> {
+                  Post { text: self.text, _state: PhantomData }
+              }
+
+              fn reject(self) -> Post<Draft> {
+                  Post { text: self.text, _state: PhantomData }
+              }
+          }
+
+          impl Post<Published> {
+              fn content(&self) -> &str {
+                  &self.text
+              }
+          }
+        harness: |
+          #[test]
+          fn an_approved_post_shows_its_text() {
+              let mut post = Post::new();
+              post.write("Hello, arena!");
+              let post = post.submit().approve();
+              assert_eq!(post.content(), "Hello, arena!", "content() after approve");
+          }
+
+          #[test]
+          fn write_appends() {
+              let mut post = Post::new();
+              post.write("Rust ");
+              post.write("rocks");
+              assert_eq!(post.submit().approve().content(), "Rust rocks", "two writes");
+          }
+
+          #[test]
+          fn a_rejected_post_keeps_its_text_and_can_be_edited() {
+              let mut post = Post::new();
+              post.write("v1");
+              let mut post = post.submit().reject();
+              post.write(" + fixes");
+              assert_eq!(post.submit().approve().content(), "v1 + fixes", "after reject and edit");
+          }
+
+          #[test]
+          fn an_empty_post_can_be_published() {
+              assert_eq!(Post::new().submit().approve().content(), "", "empty post");
+          }
+        hints:
+          - "Every transition has the same body shape: `Post { text: self.text, _state: PhantomData }`, with the new state in the return type."
+          - "`write` takes `&mut self` (it doesn't change the state): `self.text.push_str(text);`."
+          - "`impl Post<Published> { fn content(&self) -> &str { &self.text } }`"
+      - task: |
+          Write a database connection with three states from scratch. Use marker structs `Disconnected`, `Connected` and `Authenticated` and a `Connection<S>` holding a `host: String` and a `PhantomData<S>`.
+
+          - `Connection::new(host: &str)` creates a `Connection<Disconnected>`; `connect(self)` returns a `Connection<Connected>`.
+          - `login(self, password: &str)` on `Connection<Connected>` returns `Result<Connection<Authenticated>, Connection<Connected>>`: `Ok` when the password is `"hunter2"`, otherwise `Err` with the connection given back so the caller can retry.
+          - `query(&self, sql: &str) -> String` only on `Connection<Authenticated>`, returning `"<host> ran: <sql>"`.
+          - `host(&self) -> &str` in every state.
+        seed: |
+          use std::marker::PhantomData;
+
+          // Write the three state markers, Connection<S> and its impl blocks.
+        solution: |
+          use std::marker::PhantomData;
+
+          // Write the three state markers, Connection<S> and its impl blocks.
+          struct Disconnected;
+          struct Connected;
+          struct Authenticated;
+
+          struct Connection<S> {
+              host: String,
+              _state: PhantomData<S>,
+          }
+
+          impl<S> Connection<S> {
+              fn host(&self) -> &str {
+                  &self.host
+              }
+          }
+
+          impl Connection<Disconnected> {
+              fn new(host: &str) -> Self {
+                  Connection { host: host.to_string(), _state: PhantomData }
+              }
+
+              fn connect(self) -> Connection<Connected> {
+                  Connection { host: self.host, _state: PhantomData }
+              }
+          }
+
+          impl Connection<Connected> {
+              fn login(self, password: &str) -> Result<Connection<Authenticated>, Connection<Connected>> {
+                  if password == "hunter2" {
+                      Ok(Connection { host: self.host, _state: PhantomData })
+                  } else {
+                      Err(self)
+                  }
+              }
+          }
+
+          impl Connection<Authenticated> {
+              fn query(&self, sql: &str) -> String {
+                  format!("{} ran: {}", self.host, sql)
+              }
+          }
+        harness: |
+          #[test]
+          fn the_happy_path_reaches_query() {
+              let conn = Connection::new("db.local").connect();
+              match conn.login("hunter2") {
+                  Ok(db) => assert_eq!(db.query("SELECT 1"), "db.local ran: SELECT 1", "query after login"),
+                  Err(_) => panic!("login(\"hunter2\") should succeed"),
+              }
+          }
+
+          #[test]
+          fn a_wrong_password_gives_the_connection_back() {
+              let conn = Connection::new("db.local").connect();
+              match conn.login("nope") {
+                  Ok(_) => panic!("login(\"nope\") should fail"),
+                  Err(back) => assert_eq!(back.host(), "db.local", "host() of the returned connection"),
+              }
+          }
+
+          #[test]
+          fn you_can_retry_after_a_failed_login() {
+              let conn = Connection::new("replica").connect();
+              let conn = match conn.login("wrong") {
+                  Ok(_) => panic!("login(\"wrong\") should fail"),
+                  Err(back) => back,
+              };
+              match conn.login("hunter2") {
+                  Ok(db) => assert_eq!(db.query("SELECT name FROM crabs"), "replica ran: SELECT name FROM crabs", "query after retry"),
+                  Err(_) => panic!("the retry with hunter2 should succeed"),
+              }
+          }
+
+          #[test]
+          fn host_works_in_every_state() {
+              let c = Connection::new("a");
+              assert_eq!(c.host(), "a", "host() when disconnected");
+              let c = c.connect();
+              assert_eq!(c.host(), "a", "host() when connected");
+          }
+        require:
+          - pattern: 'PhantomData\s*<'
+            message: "Keep the state in a `PhantomData<S>` field."
+        hints:
+          - "Start with `struct Connection<S> { host: String, _state: PhantomData<S> }` and one `impl` block per state, plus `impl<S> Connection<S>` for `host`."
+          - "Failing `login` returns the connection unchanged: `Err(self)`. Succeeding builds the next state: `Ok(Connection { host: self.host, _state: PhantomData })`."
+          - "`query` lives in `impl Connection<Authenticated>` and returns `format!(\"{} ran: {}\", self.host, sql)`."
+
+  - title: The never type and Sized
+    id: advanced-traits-7
+    text: |
+      Two special corners of the type system explain things you've already been doing.
+
+      ### `!`, the never type
+
+      Some expressions never produce a value: `panic!`, `return`, `break`, `continue`, an endless `loop {}`, `std::process::exit`. Their type is **`!`**, the **never type**. Because a value of type `!` can never exist, Rust lets it stand in for **any** type. That's why this works:
+
+      ```rust run
+      fn fail(code: u32, msg: &str) -> ! {
+          panic!("error {code}: {msg}");
+      }
+
+      fn parse_scores(lines: &[&str]) -> Vec<u32> {
+          let mut out = Vec::new();
+          for line in lines {
+              let n: u32 = match line.trim().parse() {
+                  Ok(n) => n,
+                  Err(_) => continue, // type `!`, fits where a u32 is expected
+              };
+              out.push(n);
+          }
+          out
+      }
+
+      fn main() {
+          println!("{:?}", parse_scores(&["10", "oops", " 7"]));
+          let mode = "fast";
+          let speed = match mode {
+              "fast" => 3,
+              "slow" => 1,
+              _ => fail(2, "unknown mode"),
+          };
+          println!("speed {speed}");
+      }
+      ```
+
+      ```output
+      [10, 7]
+      speed 3
+      ```
+
+      - Both `match`es need every arm to have the same type. `continue` and `fail(...)` have type `!`, which fits anywhere.
+      - `fn fail(...) -> !` promises the function never returns. The compiler checks it: the body must end in something that diverges, like `panic!`.
+      - `todo!()` and `unimplemented!()` have type `!` too. That's why `todo!()` compiles as the body of a function returning anything.
+      - `let ... else` requires its `else` block to have type `!` (return, break, continue or panic), because there's no value to bind if the pattern fails.
+
+      You'll also meet **`std::convert::Infallible`**, an enum with no variants: an error type for operations that can't fail. `"crab".parse::<String>()` returns `Result<String, Infallible>`.
+
+      ### `Sized` and `?Sized`
+
+      Most types have a size known at compile time (`i32` is 4 bytes, `String` is 24). A few don't: **`str`**, slices **`[T]`** and trait objects **`dyn Trait`** can be any length. These are **dynamically sized types** (DSTs), and they can only live behind a pointer: `&str`, `&[T]`, `Box<dyn Trait>`. Such a pointer is "fat": it stores the address **plus** the length or a vtable pointer.
+
+      Every generic parameter has an invisible bound `T: Sized`. Usually that's what you want, but it means this rejects `str`:
+
+      ```rust compile_fail
+      use std::fmt::Display;
+
+      fn show<T: Display>(x: &T) {
+          println!("{x}");
+      }
+
+      fn main() {
+          let s: &str = "hi";
+          show(s);
+      }
+      ```
+
+      ```error
+      error[E0277]: the size for values of type `str` cannot be known at compilation time
+      ```
+
+      `show(s)` asks for `T = str`, which isn't `Sized`. Since `show` only uses `T` behind a reference, it can relax the bound with **`?Sized`** ("may or may not be sized"):
+
+      ```rust run
+      use std::fmt::Display;
+      use std::mem::size_of;
+
+      fn show<T: ?Sized + Display>(label: &str, value: &T) {
+          println!("{label}: {value}");
+      }
+
+      fn main() {
+          show("str", "crab"); // T = str
+          show("i32", &5);
+          let boxed: Box<dyn Display> = Box::new(2.5);
+          show("dyn", boxed.as_ref()); // T = dyn Display
+          println!("{} {} {}", size_of::<&u8>(), size_of::<&str>(), size_of::<&dyn Display>());
+      }
+      ```
+
+      ```output
+      str: crab
+      i32: 5
+      dyn: 2.5
+      8 16 16
+      ```
+
+      The last line shows the fat pointers: a plain reference is 8 bytes, while `&str` and `&dyn Display` are 16 (address plus length or vtable). std uses `?Sized` wherever it only needs a reference: `impl<T: Display + ?Sized> ToString for T`, `Box<T: ?Sized>`, `AsRef<str>`.
+
+      ### Common mistakes
+
+      - **`?Sized` on a by-value parameter**: `fn f<T: ?Sized>(x: T)` fails, because a value on the stack needs a known size. `?Sized` only works for things behind `&`, `Box`, `Rc` and friends.
+      - **Writing `-> !` for a function that can return**: the compiler checks the body diverges on every path.
+
+      **Your turn:** `describe` builds `"label = value"` from any `Debug` value, but it can't be called with a `str`, a slice or a `dyn Debug` directly. Relax its bound so all of these work: `describe("name", "Ferris")` gives `name = "Ferris"`, and `describe("scores", &v[..])` gives `scores = [3, 9]`.
+    seed: |
+      use std::fmt::Debug;
+
+      fn describe<T: Debug>(label: &str, value: &T) -> String {
+          format!("{label} = {value:?}")
+      }
+    solution: |
+      use std::fmt::Debug;
+
+      fn describe<T: ?Sized + Debug>(label: &str, value: &T) -> String {
+          format!("{label} = {value:?}")
+      }
+    harness: |
+      #[test]
+      fn works_with_a_number() {
+          assert_eq!(describe("n", &5), "n = 5", "describe(\"n\", &5)");
+      }
+
+      #[test]
+      fn works_with_a_str_directly() {
+          assert_eq!(describe("name", "Ferris"), "name = \"Ferris\"", "describe(\"name\", \"Ferris\")");
+      }
+
+      #[test]
+      fn works_with_a_slice() {
+          let v = vec![3, 9];
+          assert_eq!(describe("scores", &v[..]), "scores = [3, 9]", "describe(\"scores\", &v[..])");
+      }
+
+      #[test]
+      fn works_with_a_trait_object() {
+          let d: &dyn Debug = &'x';
+          assert_eq!(describe("c", d), "c = 'x'", "describe(\"c\", &dyn Debug)");
+      }
+    require:
+      - pattern: '\?\s*Sized'
+        message: "Relax the implicit `Sized` bound with `?Sized`."
+    hints:
+      - "Every type parameter is `Sized` unless you say otherwise. `str` and `[i32]` aren't."
+      - "`fn describe<T: ?Sized + Debug>(label: &str, value: &T) -> String`"
+    more:
+      - task: |
+          Write `parse_settings`, which turns `"key=value"` lines into `(key, number)` pairs. Skip blank lines, lines starting with `#`, lines without `=`, and lines whose value isn't a `u32`. Trim the key and the value. Use `let ... else { continue; }` for the two parsing steps: it works because `continue` has type `!`.
+        seed: |
+          fn parse_settings(lines: &[&str]) -> Vec<(String, u32)> {
+              todo!()
+          }
+        solution: |
+          fn parse_settings(lines: &[&str]) -> Vec<(String, u32)> {
+              let mut out = Vec::new();
+              for line in lines {
+                  let line = line.trim();
+                  if line.is_empty() || line.starts_with('#') {
+                      continue;
+                  }
+                  let Some((key, value)) = line.split_once('=') else {
+                      continue;
+                  };
+                  let Ok(value) = value.trim().parse::<u32>() else {
+                      continue;
+                  };
+                  out.push((key.trim().to_string(), value));
+              }
+              out
+          }
+        harness: |
+          #[test]
+          fn parses_simple_pairs() {
+              assert_eq!(parse_settings(&["port=8080", "workers=4"]), vec![("port".to_string(), 8080), ("workers".to_string(), 4)], "two settings");
+          }
+
+          #[test]
+          fn trims_keys_and_values() {
+              assert_eq!(parse_settings(&["  retries = 3  "]), vec![("retries".to_string(), 3)], "\"  retries = 3  \"");
+          }
+
+          #[test]
+          fn skips_comments_and_blank_lines() {
+              assert_eq!(parse_settings(&["# port=1", "", "   ", "port=2"]), vec![("port".to_string(), 2)], "comments and blanks");
+          }
+
+          #[test]
+          fn skips_lines_without_equals_or_with_bad_numbers() {
+              assert_eq!(parse_settings(&["verbose", "level=high", "max=-1", "ok=1"]), vec![("ok".to_string(), 1)], "bad lines");
+          }
+        require:
+          - pattern: 'else\s*\{\s*continue'
+            message: "Use `let ... else { continue; }` to skip lines that don't parse."
+        hints:
+          - "Trim first, then `if line.is_empty() || line.starts_with('#') { continue; }`."
+          - "`let Some((key, value)) = line.split_once('=') else { continue; };`"
+          - "`let Ok(value) = value.trim().parse::<u32>() else { continue; };` then push `(key.trim().to_string(), value)`."
+      - task: |
+          Write `fn join_all<T: ?Sized + Display>(items: &[&T], sep: &str) -> String`, which displays every item and joins them with `sep`. Thanks to `?Sized`, it works on a list of `&str` (`T = str`), on numbers, and on a mixed list of `&dyn Display`.
+        seed: |
+          use std::fmt::Display;
+
+          // Write join_all here.
+        solution: |
+          use std::fmt::Display;
+
+          // Write join_all here.
+          fn join_all<T: ?Sized + Display>(items: &[&T], sep: &str) -> String {
+              items.iter().map(|item| item.to_string()).collect::<Vec<String>>().join(sep)
+          }
+        harness: |
+          #[test]
+          fn joins_string_slices() {
+              assert_eq!(join_all(&["a", "b", "c"], ", "), "a, b, c", "join_all(&[\"a\", \"b\", \"c\"], \", \")");
+          }
+
+          #[test]
+          fn joins_numbers() {
+              assert_eq!(join_all(&[&1, &2, &3], "-"), "1-2-3", "join_all(&[&1, &2, &3], \"-\")");
+          }
+
+          #[test]
+          fn joins_a_mixed_list_of_trait_objects() {
+              let items: [&dyn Display; 3] = [&1, &"two", &3.5];
+              assert_eq!(join_all(&items, " | "), "1 | two | 3.5", "mixed &dyn Display");
+          }
+
+          #[test]
+          fn an_empty_list_gives_an_empty_string() {
+              assert_eq!(join_all::<str>(&[], ","), "", "join_all::<str>(&[], \",\")");
+          }
+        require:
+          - pattern: '\?\s*Sized'
+            message: "The bound needs `?Sized` so `T` can be `str` or `dyn Display`."
+        hints:
+          - "Each item is a `&T`, and `T: Display`, so `item.to_string()` works."
+          - "`items.iter().map(|item| item.to_string()).collect::<Vec<String>>().join(sep)`"

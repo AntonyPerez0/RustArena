@@ -121,7 +121,7 @@ export default function SyncPanel({ onFile, onMessage }: { onFile: () => void; o
               Copy link
             </button>
             {canShare && (
-              <button className="btn" onClick={() => navigator.share({ title: "My C/C++ Arena progress", url: link }).catch(() => {})}>
+              <button className="btn" onClick={() => navigator.share({ title: "My RustArena progress", url: link }).catch(() => {})}>
                 Share
               </button>
             )}

@@ -1,0 +1,269 @@
+topic: collections-more
+drills:
+  - type: predict
+    body: |
+      let mut stack = vec![1, 2, 3];
+      stack.push(4);
+      stack.pop();
+      stack.pop();
+      println!("{:?} {:?}", stack.last(), stack.len());
+    why: Two pops remove 4 and then 3, leaving [1, 2]. The top (last) is 2 and two items remain.
+  - type: predict
+    pre: |
+      use std::collections::VecDeque;
+    body: |
+      let mut q = VecDeque::new();
+      q.push_back("b");
+      q.push_back("c");
+      q.push_front("a");
+      q.pop_back();
+      println!("{:?}", q);
+    why: push_front puts "a" before "b", and pop_back removes "c" from the other end, leaving ["a", "b"].
+  - type: predict
+    pre: |
+      use std::collections::BinaryHeap;
+    body: |
+      let mut heap = BinaryHeap::from(vec![4, 9, 1, 7]);
+      heap.pop();
+      println!("{:?}", heap.pop());
+    why: BinaryHeap is a max-heap. The first pop removes 9, the second returns the next largest, 7.
+  - type: predict
+    pre: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+    body: |
+      let mut heap = BinaryHeap::new();
+      for x in [5, 2, 8] {
+          heap.push(Reverse(x));
+      }
+      let Reverse(first) = heap.pop().unwrap();
+      println!("{first}");
+    why: Reverse flips the ordering, so the heap pops the smallest value first.
+  - type: predict
+    pre: |
+      use std::collections::BTreeMap;
+    body: |
+      let m = BTreeMap::from([(10, "a"), (20, "b"), (30, "c")]);
+      println!("{:?}", m.range(..=25).next_back());
+      println!("{:?}", m.range(25..).next());
+    why: range(..=25).next_back() is the largest key at or below 25 (20); range(25..).next() is the smallest key at or above 25 (30).
+  - type: predict
+    pre: |
+      use std::collections::BTreeSet;
+    body: |
+      let mut seats = BTreeSet::from([7, 3, 12, 5]);
+      let first = seats.pop_first();
+      println!("{:?} {}", first, seats.range(4..10).count());
+    why: pop_first removes the smallest element, 3. Of the remaining {5, 7, 12}, two (5 and 7) fall in 4..10.
+  - type: fill
+    prompt: Serve the queue in the order people joined.
+    pre: |
+      use std::collections::VecDeque;
+    body: |
+      let mut q = VecDeque::from(["ana", "ben", "cy"]);
+      while let Some(name) = q.[[pop_front]]() {
+          print!("{name} ");
+      }
+      println!();
+    why: A queue is first in, first out, so you take from the front with pop_front.
+  - type: fill
+    prompt: Make the heap give back the smallest deadline first.
+    pre: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+    body: |
+      let mut heap = BinaryHeap::new();
+      for d in [14, 3, 9] {
+          heap.push([[Reverse(d)]]);
+      }
+      println!("{}", heap.pop().unwrap().0);
+    why: Wrapping each value in Reverse turns the max-heap into a min-heap; .0 unwraps the value again.
+  - type: fill
+    prompt: Find the price that was in effect at time 250 (the last change at or before it).
+    pre: |
+      use std::collections::BTreeMap;
+    body: |
+      let prices = BTreeMap::from([(100, 999), (200, 1099), (300, 899)]);
+      let (_, p) = prices.range(..=250).[[next_back]]().unwrap();
+      println!("{p}");
+    why: next_back takes the last entry of the range, which is the largest key not above 250.
+  - type: bug
+    pre: |
+      use std::collections::VecDeque;
+    body: |
+      let mut tickets = VecDeque::new();
+      tickets.push_back(101);
+      tickets.push_back(102);
+      tickets.push_back(103);
+      let next = tickets.pop_back(); // BUG
+      println!("{:?}", next);
+    fix: "let next = tickets.pop_front();"
+    prompt: "The first ticket in line should be served: this should print `Some(101)`. Click the line with the bug."
+    why: Pushing at the back and popping at the back makes a stack. A queue pops from the other end, the front.
+  - type: bug
+    pre: |
+      use std::collections::BTreeMap;
+    body: |
+      let readings = BTreeMap::from([(900, 12), (1000, 15), (1100, 19)]);
+      let latest = readings.range(..=1030).next(); // BUG
+      println!("{:?}", latest);
+    fix: "let latest = readings.range(..=1030).next_back();"
+    prompt: "This should print the latest reading at or before 1030, `Some((1000, 15))`. Click the line with the bug."
+    why: next() returns the first (smallest) key of the range. The latest reading before a time is the last one, next_back().
+  - type: compiles
+    answer: no
+    pre: |
+      use std::collections::BinaryHeap;
+    body: |
+      let mut heap = BinaryHeap::new();
+      heap.push(19.5);
+      heap.push(21.0);
+      println!("{:?}", heap.pop());
+    why: BinaryHeap needs its items to implement Ord, and floats only implement PartialOrd (NaN can't be compared).
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::collections::VecDeque;
+    body: |
+      let q = VecDeque::from([10, 20, 30]);
+      println!("{}", q[1]);
+    why: VecDeque supports indexing in O(1), just like Vec.
+  - type: compiles
+    answer: no
+    pre: |
+      use std::collections::LinkedList;
+    body: |
+      let list = LinkedList::from([10, 20, 30]);
+      println!("{}", list[1]);
+    why: LinkedList has no indexing because reaching the i-th node means walking the list. Use list.iter().nth(1), or better, a VecDeque.
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+    body: |
+      let mut jobs = BinaryHeap::new();
+      jobs.push((3, Reverse(1), "backup"));
+      jobs.push((3, Reverse(2), "report"));
+      println!("{:?}", jobs.pop());
+    why: Tuples of ordered types are ordered field by field, and Reverse of an ordered type is ordered too, so the tuple works as a heap item.
+  - type: choice
+    prompt: A support desk must always handle the most urgent open ticket next, while new tickets keep arriving. Which collection fits best?
+    choices: ["VecDeque", "BinaryHeap", "BTreeSet of ticket ids", "LinkedList"]
+    answer: 2
+    why: A BinaryHeap gives the highest-priority item in O(log n) per push and pop. A VecDeque serves by arrival order, not urgency.
+  - type: choice
+    prompt: What does calling v.remove(0) on a Vec of n items cost, and why?
+    choices: ["O(1), because it only touches the first item", "O(log n), because a Vec is a tree", "O(n), because every other item shifts one place left"]
+    answer: 3
+    why: A Vec keeps its items side by side, so removing the first one moves all the others. VecDeque::pop_front is O(1).
+  - type: boss
+    prompt: |
+      Build the back and forward buttons of a browser with two stacks. Write a `History` with:
+
+      - `fn new(home: &str) -> Self` starting at `home`
+      - `fn visit(&mut self, url: &str)`: go to a new page (this clears the forward history)
+      - `fn back(&mut self) -> Option<String>` and `fn forward(&mut self) -> Option<String>`: move and return the new current page, or `None` (staying put) if there's nowhere to go
+      - `fn current(&self) -> &str`
+    seed: |
+      struct History {
+          current: String,
+          back: Vec<String>,
+          forward: Vec<String>,
+      }
+
+      impl History {
+          fn new(home: &str) -> Self {
+              todo!()
+          }
+
+          fn visit(&mut self, url: &str) {
+              todo!()
+          }
+
+          fn back(&mut self) -> Option<String> {
+              todo!()
+          }
+
+          fn forward(&mut self) -> Option<String> {
+              todo!()
+          }
+
+          fn current(&self) -> &str {
+              todo!()
+          }
+      }
+    solution: |
+      struct History {
+          current: String,
+          back: Vec<String>,
+          forward: Vec<String>,
+      }
+
+      impl History {
+          fn new(home: &str) -> Self {
+              History { current: home.to_string(), back: Vec::new(), forward: Vec::new() }
+          }
+
+          fn visit(&mut self, url: &str) {
+              let previous = std::mem::replace(&mut self.current, url.to_string());
+              self.back.push(previous);
+              self.forward.clear();
+          }
+
+          fn back(&mut self) -> Option<String> {
+              let page = self.back.pop()?;
+              let previous = std::mem::replace(&mut self.current, page);
+              self.forward.push(previous);
+              Some(self.current.clone())
+          }
+
+          fn forward(&mut self) -> Option<String> {
+              let page = self.forward.pop()?;
+              let previous = std::mem::replace(&mut self.current, page);
+              self.back.push(previous);
+              Some(self.current.clone())
+          }
+
+          fn current(&self) -> &str {
+              &self.current
+          }
+      }
+    harness: |
+      #[test]
+      fn starts_at_home() {
+          let h = History::new("home");
+          assert_eq!(h.current(), "home", "current() after new(home)");
+      }
+
+      #[test]
+      fn goes_back_and_forward() {
+          let mut h = History::new("home");
+          h.visit("a");
+          h.visit("b");
+          assert_eq!(h.back(), Some("a".to_string()), "back() from b");
+          assert_eq!(h.back(), Some("home".to_string()), "back() from a");
+          assert_eq!(h.forward(), Some("a".to_string()), "forward() from home");
+      }
+
+      #[test]
+      fn cannot_go_back_past_the_start() {
+          let mut h = History::new("home");
+          assert_eq!(h.back(), None, "back() at the start");
+          assert_eq!(h.current(), "home", "current() after a failed back()");
+      }
+
+      #[test]
+      fn visiting_clears_the_forward_history() {
+          let mut h = History::new("home");
+          h.visit("a");
+          h.back();
+          h.visit("c");
+          assert_eq!(h.forward(), None, "forward() after visiting a new page");
+          assert_eq!(h.current(), "c", "current()");
+      }
+    hints:
+      - Keep the pages behind you on one Vec and the pages ahead of you on another; both are stacks.
+      - "`visit` pushes the current page onto `back` and clears `forward`. `back` pops from `back` and pushes the current page onto `forward`; `forward` does the opposite."
+      - "`std::mem::replace(&mut self.current, new_page)` swaps in the new page and hands you the old one without cloning."
+    why: Back and forward are two stacks; the current page moves between them.

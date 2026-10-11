@@ -1,0 +1,2242 @@
+id: smart-pointers
+title: Smart Pointers
+phase: "Idiomatic Rust"
+summary: Box for heap values and recursive types like lists and trees, Deref and Drop, Rc for shared ownership, RefCell and Cell for changing data behind a shared reference, and Weak for parent links that don't leak.
+roadmap: [Rc, "Deep Dive: Stack vs Heap"]
+steps:
+  - title: "Box: a value on the heap"
+    id: smart-pointers-1
+    text: |
+      A **smart pointer** is a value that points at data stored somewhere else (like a reference does) but also has extra powers, such as *owning* that data and cleaning it up. You've used two already without the name: `String` and `Vec<T>` each own a buffer on the heap. This module covers the smart pointers you reach for on purpose: `Box<T>`, `Rc<T>`, `RefCell<T>`, `Cell<T>` and `Weak<T>`.
+
+      ### Box<T>
+
+      `Box::new(value)` moves the value onto the **heap**. The `Box` itself is just a pointer (8 bytes on a 64-bit machine) that can live on the stack, in a struct, anywhere. The Box **owns** the value: when the Box goes out of scope, the value is dropped and the heap memory is freed. No manual `free`, no garbage collector.
+
+      ```rust run
+      fn main() {
+          let score = Box::new(41);
+          let next = *score + 1; // * follows the pointer to the value inside
+          println!("score = {score}, next = {next}");
+
+          let names = Box::new(vec!["Ferris", "Corro"]);
+          println!("{} names, first is {}", names.len(), names[0]);
+      }
+      ```
+
+      ```output
+      score = 41, next = 42
+      2 names, first is Ferris
+      ```
+
+      - `*score` **dereferences** the Box: it gives you the `i32` it points to.
+      - Printing a Box prints the value inside, and methods like `.len()` and indexing work straight through the Box. You'll see how in step 3.
+
+      When do you need a Box? Mostly in three situations:
+
+      1. A type that contains *itself* (a **recursive type**), like a list or a tree. This step and the next.
+      2. A **trait object**, `Box<dyn Trait>`, which you met in the trait objects module.
+      3. A very large value you want to move around cheaply (moving a Box copies only the pointer). This one is rare.
+
+      ### Recursive types need a pointer
+
+      Here's a linked list: each node holds a number and *the rest of the list*.
+
+      ```rust compile_fail
+      enum List {
+          Cons(i32, List),
+          Nil,
+      }
+
+      fn main() {
+          let _empty = List::Nil;
+      }
+      ```
+
+      ```error
+      error[E0072]: recursive type `List` has infinite size
+      ```
+
+      Rust stores an enum value in one block of memory big enough for its largest variant. `Cons` contains a whole `List`, which could be a `Cons` containing a whole `List`, and so on: the size would be infinite. The compiler's help line says it all: `insert some indirection (e.g., a Box, Rc, or &) to break the cycle`. A `Box<List>` is a pointer, and a pointer has the same size whatever it points to:
+
+      ```rust run
+      enum List {
+          Cons(i32, Box<List>),
+          Nil,
+      }
+
+      use List::{Cons, Nil};
+
+      fn sum(list: &List) -> i32 {
+          match list {
+              Cons(value, rest) => value + sum(rest),
+              Nil => 0,
+          }
+      }
+
+      fn main() {
+          // 3 -> 5 -> 8 -> end
+          let list = Cons(3, Box::new(Cons(5, Box::new(Cons(8, Box::new(Nil))))));
+          println!("sum = {}", sum(&list));
+      }
+      ```
+
+      ```output
+      sum = 16
+      ```
+
+      Piece by piece:
+
+      - `use List::{Cons, Nil};` lets you write `Cons` instead of `List::Cons`.
+      - Each `Box::new(...)` puts the next node on the heap. `Nil` (the empty list) ends the chain.
+      - In `sum`, matching on `&List` gives `value: &i32` and `rest: &Box<List>`. Passing `rest` to `sum`, which wants a `&List`, just works: Rust turns `&Box<List>` into `&List` for you. This is called **deref coercion**, and step 3 explains it.
+      - When `list` goes out of scope, the first node is dropped, which drops its Box, which drops the next node, and so on down the chain.
+
+      ### Common mistakes
+
+      - **Forgetting `Box::new` when building**: `Cons(5, Nil)` is `error[E0308]: mismatched types`, expected `Box<List>`, found `List`. Wrap the inner list: `Cons(5, Box::new(Nil))`.
+      - **Boxing everything.** Most values belong on the stack or inside a `Vec`. Box is for the cases above. A real program would store these numbers in a `Vec<i32>`, which is faster than a linked list; the list is here because it shows recursion so clearly.
+
+      **Your turn:** fill the blanks. The `Item` variant needs a boxed rest-of-the-shelf, and building the shelf needs to box the inner value. The program prints `total stock: 12`.
+    fill: |
+      enum Stock {
+          Item(u32, [[Box<Stock>]]),
+          End,
+      }
+
+      fn total(s: &Stock) -> u32 {
+          match s {
+              Stock::Item(qty, rest) => qty + total(rest),
+              Stock::End => 0,
+          }
+      }
+
+      fn main() {
+          let shelf = Stock::Item(5, [[Box::new]](Stock::Item(7, Box::new(Stock::End))));
+          println!("total stock: {}", total(&shelf));
+      }
+    hints:
+      - A recursive type needs a pointer in the recursive spot. Which smart pointer puts a value on the heap?
+      - "The type is `Box<Stock>`, and you create one with `Box::new(...)`."
+    tests:
+      - expect: "total stock: 12"
+    more:
+      - task: |
+          The list type and a helper that builds a list from a slice are written for you. Write two recursive functions:
+
+          - `len(list: &List) -> usize`: how many numbers are in the list.
+          - `largest(list: &List) -> Option<i32>`: the biggest number, or `None` for an empty list.
+        seed: |
+          #[derive(Debug)]
+          enum List {
+              Cons(i32, Box<List>),
+              Nil,
+          }
+
+          use List::{Cons, Nil};
+
+          fn from_slice(values: &[i32]) -> List {
+              match values {
+                  [] => Nil,
+                  [first, rest @ ..] => Cons(*first, Box::new(from_slice(rest))),
+              }
+          }
+
+          fn len(list: &List) -> usize {
+              todo!()
+          }
+
+          fn largest(list: &List) -> Option<i32> {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug)]
+          enum List {
+              Cons(i32, Box<List>),
+              Nil,
+          }
+
+          use List::{Cons, Nil};
+
+          fn from_slice(values: &[i32]) -> List {
+              match values {
+                  [] => Nil,
+                  [first, rest @ ..] => Cons(*first, Box::new(from_slice(rest))),
+              }
+          }
+
+          fn len(list: &List) -> usize {
+              match list {
+                  Cons(_, rest) => 1 + len(rest),
+                  Nil => 0,
+              }
+          }
+
+          fn largest(list: &List) -> Option<i32> {
+              match list {
+                  Nil => None,
+                  Cons(value, rest) => match largest(rest) {
+                      Some(best) if best > *value => Some(best),
+                      _ => Some(*value),
+                  },
+              }
+          }
+        harness: |
+          #[test]
+          fn counts_three_numbers() {
+              assert_eq!(len(&from_slice(&[4, 8, 15])), 3, "len of [4, 8, 15]");
+          }
+
+          #[test]
+          fn empty_list_has_length_zero() {
+              assert_eq!(len(&from_slice(&[])), 0, "len of []");
+          }
+
+          #[test]
+          fn finds_the_largest_anywhere() {
+              assert_eq!(largest(&from_slice(&[3, 42, 7])), Some(42), "largest of [3, 42, 7]");
+              assert_eq!(largest(&from_slice(&[99, 1])), Some(99), "largest of [99, 1]");
+          }
+
+          #[test]
+          fn handles_negative_numbers() {
+              assert_eq!(largest(&from_slice(&[-5, -2, -9])), Some(-2), "largest of [-5, -2, -9]");
+          }
+
+          #[test]
+          fn empty_list_has_no_largest() {
+              assert_eq!(largest(&from_slice(&[])), None, "largest of []");
+          }
+        hints:
+          - "Both functions `match list` with two arms: `Cons(value, rest)` and `Nil`. The `Cons` arm calls the function again on `rest`."
+          - "`len`: `Cons(_, rest) => 1 + len(rest)` and `Nil => 0`."
+          - "`largest`: in the `Cons` arm, compute `largest(rest)`. If it's `Some(best)` with `best > *value`, return it; otherwise return `Some(*value)`."
+      - task: |
+          A delivery route is a chain of stops. Using the `Route` enum below, write:
+
+          - `build(stops: &[&str]) -> Route`: the route visiting the stops in order (an empty slice gives `Route::End`).
+          - `describe(route: &Route) -> String`: the stops joined with ` -> `, for example `Docks -> Market -> Arena`. An empty route describes as `(no stops)`.
+
+          Use recursion for both (no Vec inside the route).
+        seed: |
+          enum Route {
+              Stop(String, Box<Route>),
+              End,
+          }
+
+          fn build(stops: &[&str]) -> Route {
+              todo!()
+          }
+
+          fn describe(route: &Route) -> String {
+              todo!()
+          }
+        solution: |
+          enum Route {
+              Stop(String, Box<Route>),
+              End,
+          }
+
+          fn build(stops: &[&str]) -> Route {
+              match stops {
+                  [] => Route::End,
+                  [first, rest @ ..] => Route::Stop(first.to_string(), Box::new(build(rest))),
+              }
+          }
+
+          fn describe(route: &Route) -> String {
+              match route {
+                  Route::End => String::from("(no stops)"),
+                  Route::Stop(name, next) => match **next {
+                      Route::End => name.clone(),
+                      _ => format!("{name} -> {}", describe(next)),
+                  },
+              }
+          }
+        harness: |
+          #[test]
+          fn describes_three_stops_in_order() {
+              assert_eq!(describe(&build(&["Docks", "Market", "Arena"])), "Docks -> Market -> Arena", "describe(build([Docks, Market, Arena]))");
+          }
+
+          #[test]
+          fn a_single_stop_has_no_arrow() {
+              assert_eq!(describe(&build(&["Depot"])), "Depot", "describe(build([Depot]))");
+          }
+
+          #[test]
+          fn empty_route_says_no_stops() {
+              assert_eq!(describe(&build(&[])), "(no stops)", "describe(build([]))");
+          }
+
+          #[test]
+          fn build_puts_the_first_stop_at_the_front() {
+              match build(&["A", "B"]) {
+                  Route::Stop(name, rest) => {
+                      assert_eq!(name, "A", "first stop");
+                      assert!(matches!(*rest, Route::Stop(_, _)), "the second node should be a Stop");
+                  }
+                  Route::End => panic!("build([A, B]) returned End"),
+              }
+          }
+        hints:
+          - "`build` matches the slice: `[] => Route::End` and `[first, rest @ ..] => Route::Stop(first.to_string(), Box::new(build(rest)))`."
+          - "`describe` needs to know whether the next node is `End` to avoid a trailing arrow. `**next` gets from `&Box<Route>` to the `Route` itself so you can match on it."
+          - "In the `Stop(name, next)` arm: `match **next { Route::End => name.clone(), _ => format!(\"{name} -> {}\", describe(next)) }`."
+
+  - title: Trees with Box
+    id: smart-pointers-2
+    text: |
+      Lists have one "next" pointer per node. **Trees** have several: a node points at its children, and each child is a smaller tree. Box handles that the same way.
+
+      ### Expression trees
+
+      A calculator, a spreadsheet or a compiler stores a formula like `(2 + 3) * 4` as a tree: the `*` node has two children, the `+` node and the number `4`. Evaluating it is a short recursive function:
+
+      ```rust run
+      enum Expr {
+          Num(i64),
+          Add(Box<Expr>, Box<Expr>),
+          Mul(Box<Expr>, Box<Expr>),
+      }
+
+      use Expr::{Add, Mul, Num};
+
+      fn eval(e: &Expr) -> i64 {
+          match e {
+              Num(n) => *n,
+              Add(a, b) => eval(a) + eval(b),
+              Mul(a, b) => eval(a) * eval(b),
+          }
+      }
+
+      fn main() {
+          // (2 + 3) * 4
+          let formula = Mul(
+              Box::new(Add(Box::new(Num(2)), Box::new(Num(3)))),
+              Box::new(Num(4)),
+          );
+          println!("{}", eval(&formula));
+      }
+      ```
+
+      ```output
+      20
+      ```
+
+      - Each variant that holds sub-expressions holds them in Boxes. `Num` is a **leaf**: it has no children, so the recursion stops there.
+      - `Num(n) => *n`: matching through a reference gives `n: &i64`, so `*n` copies the number out.
+      - `eval(a)`: `a` is a `&Box<Expr>` and deref coercion turns it into the `&Expr` that `eval` wants.
+
+      Building trees with `Box::new` everywhere gets noisy. Small helper functions like `fn num(n: i64) -> Box<Expr> { Box::new(Num(n)) }` make the code read like the formula.
+
+      ### Binary search trees with Option<Box<Node>>
+
+      When a child may be missing, use `Option<Box<Node>>`: `None` means "no child here". A **binary search tree** keeps smaller keys on the left and larger ones on the right, so walking it left-to-right visits the keys in sorted order:
+
+      ```rust run
+      struct Node {
+          key: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn insert(tree: &mut Option<Box<Node>>, key: i32) {
+          match tree {
+              None => *tree = Some(Box::new(Node { key, left: None, right: None })),
+              Some(node) => {
+                  if key < node.key {
+                      insert(&mut node.left, key);
+                  } else {
+                      insert(&mut node.right, key);
+                  }
+              }
+          }
+      }
+
+      fn in_order(tree: &Option<Box<Node>>, out: &mut Vec<i32>) {
+          if let Some(node) = tree {
+              in_order(&node.left, out);
+              out.push(node.key);
+              in_order(&node.right, out);
+          }
+      }
+
+      fn main() {
+          let mut root = None;
+          for key in [50, 30, 70, 20, 40] {
+              insert(&mut root, key);
+          }
+          let mut keys = Vec::new();
+          in_order(&root, &mut keys);
+          println!("{keys:?}");
+      }
+      ```
+
+      ```output
+      [20, 30, 40, 50, 70]
+      ```
+
+      - `insert` takes `&mut Option<Box<Node>>`: a mutable reference to "the spot where a child goes". If the spot is empty (`None`), it puts a new node there with `*tree = Some(...)`. Otherwise it recurses into the correct side.
+      - `Some(node)` gives `node: &mut Box<Node>`; `node.key` and `&mut node.left` reach through the Box automatically.
+
+      ### Common mistakes
+
+      - **`Option<Node>` without the Box**: the struct contains itself again, so you get `error[E0072]: recursive type `Node` has infinite size`. `Option` doesn't add a pointer; `Box` does.
+      - **Returning `n` instead of `*n`** in `Num(n) => ...`: `n` is a `&i64`, so it's `error[E0308]: mismatched types`.
+      - **Getting the order wrong for subtraction**: in `Sub(a, b)`, it's `eval(a) - eval(b)`, left minus right.
+
+      **Your turn:** the calculator gained two operations: `Sub(a, b)` (a minus b) and `Neg(e)` (minus e). Write `fn eval(e: &Expr) -> i64` for all five variants.
+    seed: |
+      #[derive(Debug)]
+      enum Expr {
+          Num(i64),
+          Add(Box<Expr>, Box<Expr>),
+          Sub(Box<Expr>, Box<Expr>),
+          Mul(Box<Expr>, Box<Expr>),
+          Neg(Box<Expr>),
+      }
+
+      use Expr::{Add, Mul, Neg, Num, Sub};
+
+      fn eval(e: &Expr) -> i64 {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug)]
+      enum Expr {
+          Num(i64),
+          Add(Box<Expr>, Box<Expr>),
+          Sub(Box<Expr>, Box<Expr>),
+          Mul(Box<Expr>, Box<Expr>),
+          Neg(Box<Expr>),
+      }
+
+      use Expr::{Add, Mul, Neg, Num, Sub};
+
+      fn eval(e: &Expr) -> i64 {
+          match e {
+              Num(n) => *n,
+              Add(a, b) => eval(a) + eval(b),
+              Sub(a, b) => eval(a) - eval(b),
+              Mul(a, b) => eval(a) * eval(b),
+              Neg(inner) => -eval(inner),
+          }
+      }
+    harness: |
+      fn num(n: i64) -> Box<Expr> {
+          Box::new(Num(n))
+      }
+
+      #[test]
+      fn a_number_evaluates_to_itself() {
+          assert_eq!(eval(&Num(7)), 7, "eval(7)");
+      }
+
+      #[test]
+      fn adds_and_multiplies() {
+          let e = Mul(Box::new(Add(num(2), num(3))), num(4));
+          assert_eq!(eval(&e), 20, "eval((2 + 3) * 4)");
+      }
+
+      #[test]
+      fn subtracts_right_from_left() {
+          assert_eq!(eval(&Sub(num(10), num(4))), 6, "eval(10 - 4)");
+      }
+
+      #[test]
+      fn negates() {
+          assert_eq!(eval(&Neg(num(5))), -5, "eval(-5)");
+          assert_eq!(eval(&Neg(Box::new(Neg(num(5))))), 5, "eval(-(-5))");
+      }
+
+      #[test]
+      fn evaluates_a_deep_tree() {
+          // (1 - 8) * -(2 + 1) = (-7) * (-3) = 21
+          let e = Mul(Box::new(Sub(num(1), num(8))), Box::new(Neg(Box::new(Add(num(2), num(1))))));
+          assert_eq!(eval(&e), 21, "eval((1 - 8) * -(2 + 1))");
+      }
+    hints:
+      - "`match e` with one arm per variant. The two-child arms look like `Add(a, b) => eval(a) + eval(b)`."
+      - "`Sub(a, b) => eval(a) - eval(b)` and `Neg(inner) => -eval(inner)`. Don't forget `Num(n) => *n`."
+    more:
+      - task: |
+          Write `fn show(e: &Expr) -> String` that prints a formula with every operation in parentheses:
+
+          - `Num(7)` shows as `7`
+          - `Add(2, 3)` shows as `(2 + 3)`, `Mul` uses `*`
+          - so `(2 + 3) * 4` shows as `((2 + 3) * 4)`
+        seed: |
+          enum Expr {
+              Num(i64),
+              Add(Box<Expr>, Box<Expr>),
+              Mul(Box<Expr>, Box<Expr>),
+          }
+
+          use Expr::{Add, Mul, Num};
+
+          fn show(e: &Expr) -> String {
+              todo!()
+          }
+        solution: |
+          enum Expr {
+              Num(i64),
+              Add(Box<Expr>, Box<Expr>),
+              Mul(Box<Expr>, Box<Expr>),
+          }
+
+          use Expr::{Add, Mul, Num};
+
+          fn show(e: &Expr) -> String {
+              match e {
+                  Num(n) => n.to_string(),
+                  Add(a, b) => format!("({} + {})", show(a), show(b)),
+                  Mul(a, b) => format!("({} * {})", show(a), show(b)),
+              }
+          }
+        harness: |
+          fn num(n: i64) -> Box<Expr> {
+              Box::new(Num(n))
+          }
+
+          #[test]
+          fn shows_a_plain_number() {
+              assert_eq!(show(&Num(7)), "7", "show(7)");
+          }
+
+          #[test]
+          fn shows_negative_numbers() {
+              assert_eq!(show(&Num(-3)), "-3", "show(-3)");
+          }
+
+          #[test]
+          fn wraps_an_addition_in_parentheses() {
+              assert_eq!(show(&Add(num(2), num(3))), "(2 + 3)", "show(2 + 3)");
+          }
+
+          #[test]
+          fn nests_parentheses() {
+              let e = Mul(Box::new(Add(num(2), num(3))), num(4));
+              assert_eq!(show(&e), "((2 + 3) * 4)", "show((2 + 3) * 4)");
+          }
+        hints:
+          - "Same shape as `eval`: one match arm per variant, recursing into the children."
+          - "`Add(a, b) => format!(\"({} + {})\", show(a), show(b))`, and `Num(n) => n.to_string()`."
+      - task: |
+          Build a binary search tree of order ids. Using the `Node` struct below (smaller keys go left, equal or larger go right), write:
+
+          - `insert(tree: &mut Option<Box<Node>>, key: u32)`
+          - `contains(tree: &Option<Box<Node>>, key: u32) -> bool`: walk down one side at each node, don't visit the whole tree.
+          - `height(tree: &Option<Box<Node>>) -> usize`: the number of nodes on the longest path from the root down (empty tree: 0, one node: 1).
+        seed: |
+          struct Node {
+              key: u32,
+              left: Option<Box<Node>>,
+              right: Option<Box<Node>>,
+          }
+
+          fn insert(tree: &mut Option<Box<Node>>, key: u32) {
+              todo!()
+          }
+
+          fn contains(tree: &Option<Box<Node>>, key: u32) -> bool {
+              todo!()
+          }
+
+          fn height(tree: &Option<Box<Node>>) -> usize {
+              todo!()
+          }
+        solution: |
+          struct Node {
+              key: u32,
+              left: Option<Box<Node>>,
+              right: Option<Box<Node>>,
+          }
+
+          fn insert(tree: &mut Option<Box<Node>>, key: u32) {
+              match tree {
+                  None => *tree = Some(Box::new(Node { key, left: None, right: None })),
+                  Some(node) => {
+                      if key < node.key {
+                          insert(&mut node.left, key);
+                      } else {
+                          insert(&mut node.right, key);
+                      }
+                  }
+              }
+          }
+
+          fn contains(tree: &Option<Box<Node>>, key: u32) -> bool {
+              match tree {
+                  None => false,
+                  Some(node) if key == node.key => true,
+                  Some(node) if key < node.key => contains(&node.left, key),
+                  Some(node) => contains(&node.right, key),
+              }
+          }
+
+          fn height(tree: &Option<Box<Node>>) -> usize {
+              match tree {
+                  None => 0,
+                  Some(node) => 1 + height(&node.left).max(height(&node.right)),
+              }
+          }
+        harness: |
+          fn tree_of(keys: &[u32]) -> Option<Box<Node>> {
+              let mut root = None;
+              for &k in keys {
+                  insert(&mut root, k);
+              }
+              root
+          }
+
+          #[test]
+          fn finds_inserted_keys() {
+              let t = tree_of(&[50, 30, 70, 20, 40]);
+              for k in [50, 30, 70, 20, 40] {
+                  assert!(contains(&t, k), "contains({k}) should be true");
+              }
+          }
+
+          #[test]
+          fn does_not_find_missing_keys() {
+              let t = tree_of(&[50, 30, 70]);
+              assert!(!contains(&t, 60), "contains(60)");
+              assert!(!contains(&None, 1), "contains on an empty tree");
+          }
+
+          #[test]
+          fn puts_smaller_keys_on_the_left() {
+              let t = tree_of(&[50, 30, 70]);
+              let root = t.as_ref().expect("root should exist");
+              assert_eq!(root.key, 50, "root key");
+              assert_eq!(root.left.as_ref().map(|n| n.key), Some(30), "left child");
+              assert_eq!(root.right.as_ref().map(|n| n.key), Some(70), "right child");
+          }
+
+          #[test]
+          fn measures_height() {
+              assert_eq!(height(&None), 0, "height of empty tree");
+              assert_eq!(height(&tree_of(&[5])), 1, "height of one node");
+              assert_eq!(height(&tree_of(&[50, 30, 70, 20, 40])), 3, "height of [50, 30, 70, 20, 40]");
+              assert_eq!(height(&tree_of(&[1, 2, 3, 4])), 4, "height of sorted inserts [1, 2, 3, 4]");
+          }
+        hints:
+          - "`insert` is the one from the lesson text, with `u32` keys."
+          - "`contains`: match with guards: `None => false`, `Some(node) if key == node.key => true`, then go left or right."
+          - "`height`: `None => 0`, `Some(node) => 1 + height(&node.left).max(height(&node.right))`."
+
+  - title: "Deref and Drop: what makes a pointer smart"
+    id: smart-pointers-3
+    text: |
+      Two traits give smart pointers their behavior. **`Deref`** makes a type usable like a reference to what it holds. **`Drop`** runs cleanup code when a value goes away. You met both briefly in the std traits module; here's how they work together.
+
+      ### Deref and deref coercion
+
+      `impl Deref for MyType { type Target = T; fn deref(&self) -> &T }` says "a `&MyType` can be used as a `&T`". Then two things happen automatically:
+
+      - `*value` works, and **method calls** look through the pointer: `boxed_string.len()` finds `String::len`.
+      - **Deref coercion**: when you pass `&MyType` where a `&T` is expected, Rust inserts the `deref` calls for you, as many steps as needed.
+
+      ```rust run
+      use std::ops::Deref;
+
+      struct Username(String);
+
+      impl Deref for Username {
+          type Target = String;
+
+          fn deref(&self) -> &String {
+              &self.0
+          }
+      }
+
+      fn greet(name: &str) {
+          println!("Welcome, {name}!");
+      }
+
+      fn main() {
+          let user = Username(String::from("ferris"));
+          println!("{} letters", user.len()); // String::len, through Deref
+          greet(&user); // &Username -> &String -> &str
+
+          let boxed = Box::new(String::from("corro"));
+          greet(&boxed); // &Box<String> -> &String -> &str
+      }
+      ```
+
+      ```output
+      6 letters
+      Welcome, ferris!
+      Welcome, corro!
+      ```
+
+      `Box<T>` implements `Deref<Target = T>`, `String` implements `Deref<Target = str>`, and `Vec<T>` implements `Deref<Target = [T]>`. That's why a `&String` works where a `&str` is wanted and a `&Vec<T>` where a `&[T]` is. Implement `Deref` for wrapper types that *are* a kind of pointer or container; the Rust API guidelines warn against using it to fake inheritance between unrelated structs.
+
+      ### Drop: cleanup at the end of a scope
+
+      When a value goes out of scope, Rust calls its `drop` method (if it has one), then drops its fields. That's how a Box frees its heap memory, a `File` closes, and a lock is released. This pattern of "cleanup tied to a value's lifetime" is called **RAII**. The order is fixed, so you can rely on it:
+
+      ```rust run
+      struct Noisy(&'static str);
+
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              println!("drop {}", self.0);
+          }
+      }
+
+      fn main() {
+          let _a = Noisy("a");
+          let b = Noisy("b");
+          {
+              let _inner = Noisy("inner");
+              println!("leaving inner scope");
+          }
+          drop(b); // drop right now
+          let _c = Noisy("c");
+          println!("end of main");
+      }
+      ```
+
+      ```output
+      leaving inner scope
+      drop inner
+      drop b
+      end of main
+      drop c
+      drop a
+      ```
+
+      - Values are dropped at the end of their scope, in **reverse order of declaration**: `_c` (declared last) goes before `_a`. Later values may depend on earlier ones, so they go first.
+      - `drop(b)` drops a value early. It's an ordinary function from the prelude (`std::mem::drop`) that takes ownership and does nothing, so the value is dropped when the function ends.
+      - The fields of a struct are dropped after the struct's own `drop`, in the order they're declared. Elements of a `Vec` are dropped first to last.
+
+      ### Common mistakes
+
+      - **Calling `.drop()` yourself**: `b.drop()` is `error[E0040]: explicit use of destructor method`. Use `drop(b)`; Rust must be sure it never runs twice.
+      - **`let _ = value;` drops immediately.** The pattern `_` doesn't bind anything, so a guard written `let _ = Noisy("x");` is gone on the same line. Write `let _guard = ...` to keep it alive until the end of the scope.
+      - **Using a value after `drop(x)`**: `drop` took ownership, so it's `error[E0382]: borrow of moved value`.
+
+      **Your turn:** implement `Drop` for `Connection` so dropping one prints `closing <name>`. Then finish `main`: it opens `db`, then `cache`, closes `db` early with `drop`, prints `working`, and lets `cache` close at the end. The output must be exactly:
+
+      ```
+      opened db
+      opened cache
+      closing db
+      working
+      closing cache
+      ```
+    seed: |
+      struct Connection {
+          name: String,
+      }
+
+      fn open(name: &str) -> Connection {
+          println!("opened {name}");
+          Connection { name: name.to_string() }
+      }
+
+      // impl Drop for Connection ...
+
+      fn main() {
+          let db = open("db");
+          let cache = open("cache");
+          println!("working");
+      }
+    solution: |
+      struct Connection {
+          name: String,
+      }
+
+      fn open(name: &str) -> Connection {
+          println!("opened {name}");
+          Connection { name: name.to_string() }
+      }
+
+      impl Drop for Connection {
+          fn drop(&mut self) {
+              println!("closing {}", self.name);
+          }
+      }
+
+      fn main() {
+          let db = open("db");
+          let _cache = open("cache");
+          drop(db);
+          println!("working");
+      }
+    require:
+      - pattern: 'impl\s+Drop\s+for\s+Connection'
+        message: "Implement the `Drop` trait for `Connection`."
+      - pattern: 'drop\(\s*db\s*\)'
+        message: "Close `db` early with `drop(db);`."
+    hints:
+      - "`impl Drop for Connection { fn drop(&mut self) { println!(\"closing {}\", self.name); } }`"
+      - "In main, call `drop(db);` before printing `working`. `cache` is dropped automatically when main ends."
+      - "If the compiler warns that `cache` is unused, rename it `_cache` (not `_`, which would drop it at once)."
+    tests:
+      - expect: "opened db\nopened cache\nclosing db\nworking\nclosing cache"
+    more:
+      - task: |
+          A `SortedScores` always keeps its scores sorted, so it must never hand out a `&mut` to its inner `Vec`. Implement:
+
+          - `SortedScores::new(scores: Vec<u32>) -> SortedScores`: sorts the scores and wraps them.
+          - `Deref` for `SortedScores` with `Target = [u32]`, so callers can use every read-only slice method (`len`, `first`, `last`, `iter`, indexing) without you writing them.
+
+          Don't implement `DerefMut`: that's what keeps the scores sorted.
+        seed: |
+          use std::ops::Deref;
+
+          struct SortedScores(Vec<u32>);
+
+          impl SortedScores {
+              fn new(scores: Vec<u32>) -> SortedScores {
+                  todo!()
+              }
+          }
+
+          // impl Deref for SortedScores ...
+        solution: |
+          use std::ops::Deref;
+
+          struct SortedScores(Vec<u32>);
+
+          impl SortedScores {
+              fn new(mut scores: Vec<u32>) -> SortedScores {
+                  scores.sort();
+                  SortedScores(scores)
+              }
+          }
+
+          impl Deref for SortedScores {
+              type Target = [u32];
+
+              fn deref(&self) -> &[u32] {
+                  &self.0
+              }
+          }
+        harness: |
+          #[test]
+          fn sorts_on_creation() {
+              let s = SortedScores::new(vec![30, 10, 20]);
+              assert_eq!(&s[..], &[10, 20, 30], "SortedScores::new([30, 10, 20])");
+          }
+
+          #[test]
+          fn slice_methods_work_through_deref() {
+              let s = SortedScores::new(vec![7, 3, 9, 1]);
+              assert_eq!(s.len(), 4, "len()");
+              assert_eq!(s.first(), Some(&1), "first()");
+              assert_eq!(s.last(), Some(&9), "last()");
+              assert_eq!(s[1], 3, "s[1]");
+              assert_eq!(s.iter().sum::<u32>(), 20, "iter().sum()");
+          }
+
+          #[test]
+          fn works_where_a_slice_is_expected() {
+              fn top(scores: &[u32]) -> Option<u32> {
+                  scores.last().copied()
+              }
+              let s = SortedScores::new(vec![55, 99, 12]);
+              assert_eq!(top(&s), Some(99), "top(&s)");
+          }
+
+          #[test]
+          fn empty_scores_are_fine() {
+              let s = SortedScores::new(Vec::new());
+              assert!(s.is_empty(), "is_empty()");
+          }
+        hints:
+          - "`new` takes `mut scores: Vec<u32>`, calls `scores.sort()`, then returns `SortedScores(scores)`."
+          - "`impl Deref for SortedScores { type Target = [u32]; fn deref(&self) -> &[u32] { &self.0 } }`. `&self.0` is a `&Vec<u32>`, which coerces to `&[u32]`."
+      - task: |
+          Write a tracing helper. A `Span` prints `enter <name>` when it's created with `Span::new(name)` and `exit <name>` when it's dropped. Then write `main` so the program prints exactly:
+
+          ```
+          enter request
+          enter parse
+          exit parse
+          enter save
+          exit save
+          exit request
+          ```
+
+          Create each span once and let scopes (or `drop`) end them. Don't print the lines with `println!` in `main`.
+        seed: |
+          struct Span {
+              name: &'static str,
+          }
+
+          fn main() {
+          }
+        solution: |
+          struct Span {
+              name: &'static str,
+          }
+
+          impl Span {
+              fn new(name: &'static str) -> Span {
+                  println!("enter {name}");
+                  Span { name }
+              }
+          }
+
+          impl Drop for Span {
+              fn drop(&mut self) {
+                  println!("exit {}", self.name);
+              }
+          }
+
+          fn main() {
+              let _request = Span::new("request");
+              {
+                  let _parse = Span::new("parse");
+              }
+              let save = Span::new("save");
+              drop(save);
+          }
+        require:
+          - pattern: 'impl\s+Drop\s+for\s+Span'
+            message: "Implement `Drop` for `Span` so it prints the exit line."
+        forbid:
+          - pattern: 'fn\s+main\s*\(\)\s*\{(?:(?!\n\})[\s\S])*?println!'
+            message: "Let `Span::new` and `drop` do the printing; `main` should only create spans."
+        hints:
+          - "`Span::new` prints `enter {name}` and returns `Span { name }`. `drop` prints `exit {}`."
+          - "In main: create `request` first (it lives to the end). Put `parse` in an inner `{ }` block. Create `save` after the block and `drop` it."
+        tests:
+          - expect: "enter request\nenter parse\nexit parse\nenter save\nexit save\nexit request"
+
+  - title: "Rc<T>: shared ownership"
+    id: smart-pointers-4
+    text: |
+      Ownership says every value has exactly one owner. Most of the time that's what you want. But sometimes several parts of a program need to *own* the same value, and there's no obvious one that lives longest: a song that's on several playlists, a config shared by several services, a node in a graph with several incoming edges.
+
+      **`Rc<T>`** (**reference counted**) allows that. `Rc::new(value)` puts the value on the heap together with a counter. `Rc::clone(&rc)` makes another pointer to the *same* value and adds 1 to the **strong count**. Dropping an `Rc` subtracts 1. When the count reaches 0, the value is dropped.
+
+      ```rust run
+      use std::rc::Rc;
+
+      struct Song {
+          title: String,
+      }
+
+      fn main() {
+          let song = Rc::new(Song { title: String::from("Crab Rave") });
+          println!("count after new: {}", Rc::strong_count(&song));
+
+          let workout = vec![Rc::clone(&song)];
+          {
+              let road_trip = vec![Rc::clone(&song)];
+              println!("count with two playlists: {}", Rc::strong_count(&song));
+              println!("road trip plays {}", road_trip[0].title);
+          }
+          println!("count after the road trip: {}", Rc::strong_count(&song));
+          println!("workout plays {}", workout[0].title);
+      }
+      ```
+
+      ```output
+      count after new: 1
+      count with two playlists: 3
+      road trip plays Crab Rave
+      count after the road trip: 2
+      workout plays Crab Rave
+      ```
+
+      - `Rc::clone(&song)` doesn't copy the `Song`. It copies a pointer and bumps the counter, which is very cheap. `song.clone()` does the same thing, but Rust code conventionally writes `Rc::clone(&song)` so readers can see at a glance that it's a cheap pointer copy and not a deep copy.
+      - `road_trip[0].title` reaches through the `Rc` with `Deref`, like a Box.
+      - When the inner block ends, `road_trip` is dropped, its `Rc` with it, and the count goes from 3 to 2. The song itself stays alive until the last `Rc` is gone.
+
+      ### Rc is read-only and single-threaded
+
+      An `Rc<T>` only hands out shared references (`&T`). With several owners, letting any one of them mutate would break the "one writer" rule, so this doesn't compile:
+
+      ```rust compile_fail
+      use std::rc::Rc;
+
+      fn main() {
+          let scores = Rc::new(vec![1, 2]);
+          scores.push(3);
+          println!("{scores:?}");
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow data in an `Rc` as mutable
+      ```
+
+      To change shared data, combine `Rc` with `RefCell` (next two steps). And `Rc` updates its counter without any thread synchronization, so the compiler won't let you send it to another thread. Its thread-safe twin is `Arc<T>` (atomically reference counted), coming in the concurrency modules.
+
+      ### Common mistakes
+
+      - **Expecting `Rc::clone` to copy the data.** All clones point at the same value.
+      - **Reaching for Rc to quiet the borrow checker.** If one owner clearly outlives the others, plain references (`&T`) are simpler and free. Use Rc when ownership really is shared.
+      - **Trying to mutate through it**: `error[E0596]` as above.
+
+      **Your turn:** fill the blanks: make `a` and `b` share the same config with `Rc::clone`, and print the strong count. The program prints:
+
+      ```
+      owners: 3
+      a sees retries = 5
+      owners after a is gone: 2
+      ```
+    fill: |
+      use std::rc::Rc;
+
+      struct Config {
+          retries: u32,
+      }
+
+      fn main() {
+          let config = Rc::new(Config { retries: 5 });
+          let a = [[Rc::clone(&config)‖config.clone()‖Rc::clone(& config)]];
+          let b = Rc::clone(&config);
+          println!("owners: {}", Rc::[[strong_count]](&config));
+          println!("a sees retries = {}", a.retries);
+          drop(a);
+          println!("owners after a is gone: {}", Rc::strong_count(&b));
+      }
+    hints:
+      - "A second owner of the same value is made with `Rc::clone(&config)`."
+      - "The counter is read with `Rc::strong_count(&config)`."
+    tests:
+      - expect: "owners: 3\na sees retries = 5\nowners after a is gone: 2"
+    more:
+      - task: |
+          Two lists can share the same tail when the tail is held in an `Rc`. Finish the program:
+
+          1. `shared` is the list `10 -> 20`.
+          2. `a` is `1 -> shared` and `b` is `2 -> shared` (both point at the *same* `shared`, using `Rc::clone`).
+          3. Write `fn sum(list: &List) -> i32`.
+
+          The program must print exactly:
+
+          ```
+          sum a = 31
+          sum b = 32
+          shared owners = 3
+          ```
+        seed: |
+          use std::rc::Rc;
+
+          enum List {
+              Cons(i32, Rc<List>),
+              Nil,
+          }
+
+          use List::{Cons, Nil};
+
+          fn sum(list: &List) -> i32 {
+              todo!()
+          }
+
+          fn main() {
+              let shared = Rc::new(Cons(10, Rc::new(Cons(20, Rc::new(Nil)))));
+              // build a and b here
+
+              println!("shared owners = {}", Rc::strong_count(&shared));
+          }
+        solution: |
+          use std::rc::Rc;
+
+          enum List {
+              Cons(i32, Rc<List>),
+              Nil,
+          }
+
+          use List::{Cons, Nil};
+
+          fn sum(list: &List) -> i32 {
+              match list {
+                  Cons(value, rest) => value + sum(rest),
+                  Nil => 0,
+              }
+          }
+
+          fn main() {
+              let shared = Rc::new(Cons(10, Rc::new(Cons(20, Rc::new(Nil)))));
+              let a = Cons(1, Rc::clone(&shared));
+              let b = Cons(2, Rc::clone(&shared));
+              println!("sum a = {}", sum(&a));
+              println!("sum b = {}", sum(&b));
+              println!("shared owners = {}", Rc::strong_count(&shared));
+          }
+        require:
+          - pattern: 'Rc::clone\(\s*&shared\s*\)[\s\S]*Rc::clone\(\s*&shared\s*\)'
+            message: "Build both `a` and `b` on top of `Rc::clone(&shared)`."
+        hints:
+          - "`sum` is the same as the Box version: `Cons(value, rest) => value + sum(rest)`, `Nil => 0`."
+          - "`let a = Cons(1, Rc::clone(&shared));` and the same for `b` with 2."
+        tests:
+          - expect: "sum a = 31\nsum b = 32\nshared owners = 3"
+      - task: |
+          A tournament player can be on several teams. Write:
+
+          - `fn share(player: Player, teams: &mut [Team]) -> Rc<Player>`: wraps the player in one `Rc`, adds a clone of it to every team's `members`, and returns the `Rc` (so the caller keeps one handle too).
+          - `fn on_both(player: &Rc<Player>, a: &Team, b: &Team) -> bool`: true if this exact player (the same `Rc`, not just the same name) is a member of both teams. `Rc::ptr_eq(&x, &y)` tells you whether two `Rc`s point at the same value.
+        seed: |
+          use std::rc::Rc;
+
+          #[derive(Debug)]
+          struct Player {
+              name: String,
+          }
+
+          struct Team {
+              members: Vec<Rc<Player>>,
+          }
+
+          fn share(player: Player, teams: &mut [Team]) -> Rc<Player> {
+              todo!()
+          }
+
+          fn on_both(player: &Rc<Player>, a: &Team, b: &Team) -> bool {
+              todo!()
+          }
+        solution: |
+          use std::rc::Rc;
+
+          #[derive(Debug)]
+          struct Player {
+              name: String,
+          }
+
+          struct Team {
+              members: Vec<Rc<Player>>,
+          }
+
+          fn share(player: Player, teams: &mut [Team]) -> Rc<Player> {
+              let shared = Rc::new(player);
+              for team in teams.iter_mut() {
+                  team.members.push(Rc::clone(&shared));
+              }
+              shared
+          }
+
+          fn on_both(player: &Rc<Player>, a: &Team, b: &Team) -> bool {
+              let in_team = |t: &Team| t.members.iter().any(|m| Rc::ptr_eq(m, player));
+              in_team(a) && in_team(b)
+          }
+        harness: |
+          fn empty() -> Team {
+              Team { members: Vec::new() }
+          }
+
+          #[test]
+          fn adds_the_player_to_every_team() {
+              let mut teams = vec![empty(), empty(), empty()];
+              let p = share(Player { name: "Ana".into() }, &mut teams);
+              for t in &teams {
+                  assert_eq!(t.members.len(), 1, "each team should have one member");
+                  assert_eq!(t.members[0].name, "Ana", "member name");
+              }
+              assert_eq!(p.name, "Ana", "returned handle");
+          }
+
+          #[test]
+          fn shares_one_value_instead_of_copying() {
+              let mut teams = vec![empty(), empty()];
+              let p = share(Player { name: "Bo".into() }, &mut teams);
+              assert_eq!(Rc::strong_count(&p), 3, "two teams plus the returned handle");
+              assert!(Rc::ptr_eq(&p, &teams[0].members[0]), "team 0 should hold the same Rc");
+          }
+
+          #[test]
+          fn on_both_is_true_for_a_shared_player() {
+              let mut teams = vec![empty(), empty()];
+              let p = share(Player { name: "Cy".into() }, &mut teams);
+              assert!(on_both(&p, &teams[0], &teams[1]), "on_both after share");
+          }
+
+          #[test]
+          fn on_both_compares_identity_not_names() {
+              let mut first = vec![empty()];
+              let p = share(Player { name: "Dee".into() }, &mut first);
+              let mut second = vec![empty()];
+              let _twin = share(Player { name: "Dee".into() }, &mut second);
+              assert!(!on_both(&p, &first[0], &second[0]), "a different Player with the same name is not the same player");
+          }
+        hints:
+          - "`share`: `let shared = Rc::new(player);`, then loop over `teams.iter_mut()` pushing `Rc::clone(&shared)`, then return `shared`."
+          - "`on_both`: a team contains the player if `team.members.iter().any(|m| Rc::ptr_eq(m, player))`. Check it for both teams."
+
+  - title: "RefCell and Cell: changing data behind &"
+    id: smart-pointers-5
+    text: |
+      The borrow checker enforces "many readers *or* one writer" at compile time. Sometimes your code follows that rule, but in a way the compiler can't see: a cache filled inside a method that takes `&self`, a counter of how many times something was looked up, or (next step) data shared through an `Rc`. For those cases Rust has **interior mutability**: types that let you change their contents through a shared `&` reference, checking the rules another way.
+
+      - **`RefCell<T>`**: `.borrow()` gives you a `Ref<T>` (acts like `&T`), `.borrow_mut()` gives you a `RefMut<T>` (acts like `&mut T`). The same rule applies, but it's checked **at run time**: RefCell counts the borrows that are alive, and breaking the rule panics.
+      - **`Cell<T>`**: for small `Copy` values like numbers and bools. `.get()` returns a copy, `.set(v)` replaces the value. It never hands out a reference into itself, so it can never panic.
+
+      ```rust run
+      use std::cell::{Cell, RefCell};
+
+      struct Inventory {
+          items: RefCell<Vec<String>>,
+          lookups: Cell<u32>,
+      }
+
+      impl Inventory {
+          fn add(&self, item: &str) {
+              // &self, not &mut self: the RefCell allows the change
+              self.items.borrow_mut().push(item.to_string());
+          }
+
+          fn has(&self, item: &str) -> bool {
+              self.lookups.set(self.lookups.get() + 1);
+              self.items.borrow().iter().any(|i| i == item)
+          }
+      }
+
+      fn main() {
+          let inv = Inventory { items: RefCell::new(Vec::new()), lookups: Cell::new(0) };
+          inv.add("sword");
+          inv.add("shield");
+          println!("{}", inv.has("sword"));
+          println!("{}", inv.has("bow"));
+          println!("{} items, {} lookups", inv.items.borrow().len(), inv.lookups.get());
+      }
+      ```
+
+      ```output
+      true
+      false
+      2 items, 2 lookups
+      ```
+
+      Notice `inv` isn't even declared `mut`. Each `borrow_mut()` lasts only for its statement, so the borrows never overlap and nothing panics.
+
+      ### When the runtime check fails
+
+      ```rust panics
+      use std::cell::RefCell;
+
+      fn main() {
+          let log = RefCell::new(vec![String::from("start")]);
+          let first = log.borrow(); // a shared borrow, still alive below...
+          println!("first entry: {}", first[0]);
+          log.borrow_mut().push(String::from("next")); // ...so this panics
+          println!("never printed");
+      }
+      ```
+
+      ```output
+      first entry: start
+      ```
+
+      The program stops with:
+
+      ```text
+      thread 'main' (4321) panicked at src/main.rs:7:9:
+      RefCell already borrowed
+      ```
+
+      `first` holds a `Ref`, and a `Ref` stays alive until the end of its scope (it has to run code when it's dropped, to lower the borrow count), not just until its last use. So `borrow_mut()` finds a reader and panics. The error behind it is called `BorrowMutError` (older Rust versions print `already borrowed: BorrowMutError`). Fixes:
+
+      - End the first borrow before mutating: put it in an inner `{ }` block, call `drop(first)`, or copy out what you need (`let first = log.borrow()[0].clone();`).
+      - Or ask instead of panicking: `log.try_borrow_mut()` returns a `Result`, `Err(BorrowMutError)` when the value is busy.
+
+      ### Common mistakes
+
+      - **Holding a `borrow()` while something else calls `borrow_mut()`**, often hidden in another method. Keep borrows short: borrow, use, let go.
+      - **`Cell` with a non-`Copy` type**: `cell.get()` on a `Cell<String>` doesn't compile because `get` needs `T: Copy`. Use `RefCell` (or `Cell::take`/`Cell::replace`).
+      - **Using RefCell where `&mut self` would do.** Compile-time checks are free and can't panic. Reach for RefCell only when the compiler can't see that your borrows are fine.
+      - RefCell and Cell are single-threaded. The thread-safe equivalents are `Mutex` and atomics.
+
+      **Your turn:** a ticket desk is shared through plain `&` references, so its methods take `&self`. Implement:
+
+      - `TicketDesk::new()`: no tickets yet; the first ticket will get id 1.
+      - `open(&self, title: &str) -> u32`: gives the ticket the next id (1, 2, 3, ...), records `#<id> <title>` in the log, and returns the id.
+      - `log_len(&self) -> usize` and `last_entry(&self) -> Option<String>` (a copy of the newest log line).
+
+      Use a `Cell<u32>` for the next id and a `RefCell<Vec<String>>` for the log.
+    seed: |
+      use std::cell::{Cell, RefCell};
+
+      struct TicketDesk {
+          next_id: Cell<u32>,
+          log: RefCell<Vec<String>>,
+      }
+
+      impl TicketDesk {
+          fn new() -> TicketDesk {
+              todo!()
+          }
+
+          fn open(&self, title: &str) -> u32 {
+              todo!()
+          }
+
+          fn log_len(&self) -> usize {
+              todo!()
+          }
+
+          fn last_entry(&self) -> Option<String> {
+              todo!()
+          }
+      }
+    solution: |
+      use std::cell::{Cell, RefCell};
+
+      struct TicketDesk {
+          next_id: Cell<u32>,
+          log: RefCell<Vec<String>>,
+      }
+
+      impl TicketDesk {
+          fn new() -> TicketDesk {
+              TicketDesk { next_id: Cell::new(1), log: RefCell::new(Vec::new()) }
+          }
+
+          fn open(&self, title: &str) -> u32 {
+              let id = self.next_id.get();
+              self.next_id.set(id + 1);
+              self.log.borrow_mut().push(format!("#{id} {title}"));
+              id
+          }
+
+          fn log_len(&self) -> usize {
+              self.log.borrow().len()
+          }
+
+          fn last_entry(&self) -> Option<String> {
+              self.log.borrow().last().cloned()
+          }
+      }
+    harness: |
+      #[test]
+      fn ids_start_at_one_and_count_up() {
+          let desk = TicketDesk::new();
+          assert_eq!(desk.open("printer jam"), 1, "first ticket id");
+          assert_eq!(desk.open("no wifi"), 2, "second ticket id");
+          assert_eq!(desk.open("coffee machine"), 3, "third ticket id");
+      }
+
+      #[test]
+      fn logs_each_ticket() {
+          let desk = TicketDesk::new();
+          desk.open("printer jam");
+          desk.open("no wifi");
+          assert_eq!(desk.log_len(), 2, "log_len()");
+          assert_eq!(desk.last_entry(), Some(String::from("#2 no wifi")), "last_entry()");
+      }
+
+      #[test]
+      fn a_new_desk_has_an_empty_log() {
+          let desk = TicketDesk::new();
+          assert_eq!(desk.log_len(), 0, "log_len()");
+          assert_eq!(desk.last_entry(), None, "last_entry()");
+      }
+
+      #[test]
+      fn works_through_several_shared_references() {
+          let desk = TicketDesk::new();
+          let front = &desk;
+          let phone = &desk;
+          front.open("locked out");
+          phone.open("screen cracked");
+          assert_eq!(desk.log_len(), 2, "both references write to the same log");
+          assert_eq!(desk.last_entry(), Some(String::from("#2 screen cracked")), "last_entry()");
+      }
+    hints:
+      - "`new`: `TicketDesk { next_id: Cell::new(1), log: RefCell::new(Vec::new()) }`."
+      - "`open`: read the id with `self.next_id.get()`, store `id + 1` with `.set(...)`, then `self.log.borrow_mut().push(format!(\"#{id} {title}\"))`."
+      - "`last_entry`: `self.log.borrow().last().cloned()` copies the String out so the borrow can end."
+    more:
+      - task: |
+          This program panics with `RefCell already borrowed`: it pushes to the queue while it's still iterating over it. Fix it so it prints the queue with each job over 1 followed by a copy of it times 10, appended at the end:
+
+          ```
+          [3, 1, 2, 30, 20]
+          ```
+
+          Keep the `RefCell`. Collect the new jobs first, and push them once the read borrow has ended.
+        seed: |
+          use std::cell::RefCell;
+
+          fn main() {
+              let queue = RefCell::new(vec![3, 1, 2]);
+              let jobs = queue.borrow();
+              for job in jobs.iter() {
+                  if *job > 1 {
+                      queue.borrow_mut().push(job * 10);
+                  }
+              }
+              println!("{:?}", queue.borrow());
+          }
+        solution: |
+          use std::cell::RefCell;
+
+          fn main() {
+              let queue = RefCell::new(vec![3, 1, 2]);
+              let extra: Vec<i32> = queue.borrow().iter().filter(|j| **j > 1).map(|j| j * 10).collect();
+              queue.borrow_mut().extend(extra);
+              println!("{:?}", queue.borrow());
+          }
+        hints:
+          - "`jobs` is a `Ref` that lives until the end of `main`, so every `borrow_mut()` after it panics."
+          - "First build a separate `Vec` of the new jobs from `queue.borrow()` (that borrow ends at the end of the statement), then call `queue.borrow_mut().extend(new_jobs)`."
+        tests:
+          - expect: "[3, 1, 2, 30, 20]"
+      - task: |
+          A `Report` computes its total lazily: the first call to `total()` adds up the numbers and caches the result, later calls return the cached value. `total` takes `&self`, so use a `Cell<Option<u32>>` for the cache (`Option<u32>` is `Copy`, so `Cell` works).
+
+          Also count how many times the total was actually computed in `computations: Cell<u32>`, so the tests can check the caching works. Write `Report::new(data)` and `total(&self) -> u32`.
+        seed: |
+          use std::cell::Cell;
+
+          struct Report {
+              data: Vec<u32>,
+              cached_total: Cell<Option<u32>>,
+              computations: Cell<u32>,
+          }
+
+          impl Report {
+              fn new(data: Vec<u32>) -> Report {
+                  todo!()
+              }
+
+              fn total(&self) -> u32 {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::cell::Cell;
+
+          struct Report {
+              data: Vec<u32>,
+              cached_total: Cell<Option<u32>>,
+              computations: Cell<u32>,
+          }
+
+          impl Report {
+              fn new(data: Vec<u32>) -> Report {
+                  Report { data, cached_total: Cell::new(None), computations: Cell::new(0) }
+              }
+
+              fn total(&self) -> u32 {
+                  if let Some(t) = self.cached_total.get() {
+                      return t;
+                  }
+                  let t = self.data.iter().sum();
+                  self.computations.set(self.computations.get() + 1);
+                  self.cached_total.set(Some(t));
+                  t
+              }
+          }
+        harness: |
+          #[test]
+          fn computes_the_total() {
+              let r = Report::new(vec![10, 20, 5]);
+              assert_eq!(r.total(), 35, "total of [10, 20, 5]");
+          }
+
+          #[test]
+          fn computes_only_once() {
+              let r = Report::new(vec![1, 2, 3]);
+              assert_eq!(r.computations.get(), 0, "nothing computed before the first call");
+              r.total();
+              r.total();
+              r.total();
+              assert_eq!(r.computations.get(), 1, "computations after three calls");
+          }
+
+          #[test]
+          fn caches_a_zero_total_too() {
+              let r = Report::new(vec![]);
+              assert_eq!(r.total(), 0, "total of []");
+              r.total();
+              assert_eq!(r.computations.get(), 1, "an empty report should also be computed only once");
+          }
+        hints:
+          - "`new`: `Report { data, cached_total: Cell::new(None), computations: Cell::new(0) }`."
+          - "In `total`, first `if let Some(t) = self.cached_total.get() { return t; }`."
+          - "Otherwise sum `self.data`, bump `computations` with `get() + 1` and `set`, store `Some(t)` in the cache, and return `t`."
+
+  - title: "Rc<RefCell<T>>: shared state you can change"
+    id: smart-pointers-6
+    text: |
+      `Rc<T>` gives you many owners, but read-only. `RefCell<T>` gives you mutation through a shared reference. Put them together, `Rc<RefCell<T>>`, and you get **many owners who can all change the value**. It's the standard way to share mutable state in single-threaded Rust (in threaded code the same idea is `Arc<Mutex<T>>`).
+
+      ### A shared ledger
+
+      Every account records its transactions in one bank-wide ledger. Each `Account` holds its own `Rc` to the ledger:
+
+      ```rust run
+      use std::cell::RefCell;
+      use std::rc::Rc;
+
+      struct Account {
+          name: String,
+          balance: i64,
+          ledger: Rc<RefCell<Vec<String>>>,
+      }
+
+      impl Account {
+          fn new(name: &str, ledger: &Rc<RefCell<Vec<String>>>) -> Account {
+              Account { name: name.to_string(), balance: 0, ledger: Rc::clone(ledger) }
+          }
+
+          fn deposit(&mut self, amount: i64) {
+              self.balance += amount;
+              self.ledger.borrow_mut().push(format!("{} +{}", self.name, amount));
+          }
+      }
+
+      fn main() {
+          let ledger = Rc::new(RefCell::new(Vec::new()));
+          let mut alice = Account::new("alice", &ledger);
+          let mut bob = Account::new("bob", &ledger);
+          alice.deposit(100);
+          bob.deposit(40);
+          alice.deposit(5);
+
+          println!("alice {}, bob {}", alice.balance, bob.balance);
+          for entry in ledger.borrow().iter() {
+              println!("{entry}");
+          }
+          println!("ledger owners: {}", Rc::strong_count(&ledger));
+      }
+      ```
+
+      ```output
+      alice 105, bob 40
+      alice +100
+      bob +40
+      alice +5
+      ledger owners: 3
+      ```
+
+      - `self.ledger.borrow_mut()`: the method call looks through the `Rc` (Deref) to the `RefCell`, then borrows it mutably for this one statement.
+      - All three owners (`ledger`, `alice.ledger`, `bob.ledger`) see the same three entries.
+
+      ### A graph of nodes
+
+      Graphs are the other classic: a node can be the target of many edges, so no single edge owns it.
+
+      ```rust run
+      use std::cell::RefCell;
+      use std::rc::Rc;
+
+      struct Room {
+          name: String,
+          exits: Vec<Rc<RefCell<Room>>>,
+      }
+
+      type RoomRef = Rc<RefCell<Room>>;
+
+      fn room(name: &str) -> RoomRef {
+          Rc::new(RefCell::new(Room { name: name.to_string(), exits: Vec::new() }))
+      }
+
+      fn connect(from: &RoomRef, to: &RoomRef) {
+          from.borrow_mut().exits.push(Rc::clone(to));
+      }
+
+      fn main() {
+          let gate = room("gate");
+          let hall = room("hall");
+          let arena = room("arena");
+          connect(&gate, &hall);
+          connect(&hall, &arena);
+          connect(&gate, &arena);
+
+          // Rename through one handle: every edge sees the change.
+          arena.borrow_mut().name = String::from("grand arena");
+
+          for r in [&gate, &hall, &arena] {
+              let r = r.borrow();
+              let exits: Vec<String> = r.exits.iter().map(|e| e.borrow().name.clone()).collect();
+              println!("{} -> {:?}", r.name, exits);
+          }
+      }
+      ```
+
+      ```output
+      gate -> ["hall", "grand arena"]
+      hall -> ["grand arena"]
+      grand arena -> []
+      ```
+
+      A **type alias** (`type RoomRef = Rc<RefCell<Room>>;`) gives the long type a short name. This graph only has edges going "forward". If two rooms pointed at each other, the counts would never reach zero: that's the last step's topic.
+
+      ### Common mistakes
+
+      - **Borrowing the same RefCell twice in one operation.** A `transfer(&acct, &acct, 10)` that calls `from.borrow_mut()` and `to.borrow_mut()` panics when both are the same account. Check `Rc::ptr_eq(from, to)` first.
+      - **Holding a borrow across a call** that borrows again, as in the previous step.
+      - **`Rc<RefCell<T>>` everywhere.** In code review it's often a sign that ownership wasn't thought through. Many designs are simpler with one owner (say, a `Vec<Room>`) and indexes instead of pointers. Use shared mutable state when the problem really has it.
+
+      **Your turn:** players share one scoreboard. Implement:
+
+      - `Player::join(name, board) -> Player`: keeps an `Rc` to the board and adds the name to it with 0 points.
+      - `Player::score(&self, points)`: adds the points to this player's entry on the shared board.
+      - `points_of(board, name) -> u32`: the player's points, or 0 if they never joined.
+    seed: |
+      use std::cell::RefCell;
+      use std::collections::BTreeMap;
+      use std::rc::Rc;
+
+      type Board = Rc<RefCell<BTreeMap<String, u32>>>;
+
+      struct Player {
+          name: String,
+          board: Board,
+      }
+
+      impl Player {
+          fn join(name: &str, board: &Board) -> Player {
+              todo!()
+          }
+
+          fn score(&self, points: u32) {
+              todo!()
+          }
+      }
+
+      fn points_of(board: &Board, name: &str) -> u32 {
+          todo!()
+      }
+    solution: |
+      use std::cell::RefCell;
+      use std::collections::BTreeMap;
+      use std::rc::Rc;
+
+      type Board = Rc<RefCell<BTreeMap<String, u32>>>;
+
+      struct Player {
+          name: String,
+          board: Board,
+      }
+
+      impl Player {
+          fn join(name: &str, board: &Board) -> Player {
+              board.borrow_mut().insert(name.to_string(), 0);
+              Player { name: name.to_string(), board: Rc::clone(board) }
+          }
+
+          fn score(&self, points: u32) {
+              *self.board.borrow_mut().entry(self.name.clone()).or_insert(0) += points;
+          }
+      }
+
+      fn points_of(board: &Board, name: &str) -> u32 {
+          board.borrow().get(name).copied().unwrap_or(0)
+      }
+    harness: |
+      fn new_board() -> Board {
+          Rc::new(RefCell::new(BTreeMap::new()))
+      }
+
+      #[test]
+      fn joining_adds_the_player_with_zero_points() {
+          let board = new_board();
+          let _ana = Player::join("ana", &board);
+          assert_eq!(board.borrow().get("ana"), Some(&0), "ana's entry after join");
+      }
+
+      #[test]
+      fn scores_add_up() {
+          let board = new_board();
+          let ana = Player::join("ana", &board);
+          ana.score(10);
+          ana.score(5);
+          assert_eq!(points_of(&board, "ana"), 15, "points_of(ana)");
+      }
+
+      #[test]
+      fn players_share_one_board() {
+          let board = new_board();
+          let ana = Player::join("ana", &board);
+          let bo = Player::join("bo", &board);
+          ana.score(3);
+          bo.score(7);
+          assert_eq!(points_of(&board, "ana"), 3, "points_of(ana)");
+          assert_eq!(points_of(&board, "bo"), 7, "points_of(bo)");
+          assert_eq!(Rc::strong_count(&board), 3, "the board plus one Rc per player");
+      }
+
+      #[test]
+      fn unknown_players_have_zero_points() {
+          let board = new_board();
+          assert_eq!(points_of(&board, "ghost"), 0, "points_of(ghost)");
+      }
+    hints:
+      - "`join`: `board.borrow_mut().insert(name.to_string(), 0);` then return `Player { name: name.to_string(), board: Rc::clone(board) }`."
+      - "`score`: `*self.board.borrow_mut().entry(self.name.clone()).or_insert(0) += points;`"
+      - "`points_of`: `board.borrow().get(name).copied().unwrap_or(0)`."
+    more:
+      - task: |
+          Write `fn transfer(from: &AccountRef, to: &AccountRef, amount: u64) -> Result<(), String>` for shared accounts:
+
+          - If `from` and `to` are the same account (`Rc::ptr_eq`), return `Err("same account".to_string())`. Without this check, borrowing it mutably twice would panic.
+          - If `from` has less than `amount`, return `Err("insufficient funds".to_string())` and change nothing.
+          - Otherwise move the money and return `Ok(())`.
+        seed: |
+          use std::cell::RefCell;
+          use std::rc::Rc;
+
+          #[derive(Debug)]
+          struct Account {
+              balance: u64,
+          }
+
+          type AccountRef = Rc<RefCell<Account>>;
+
+          fn transfer(from: &AccountRef, to: &AccountRef, amount: u64) -> Result<(), String> {
+              todo!()
+          }
+        solution: |
+          use std::cell::RefCell;
+          use std::rc::Rc;
+
+          #[derive(Debug)]
+          struct Account {
+              balance: u64,
+          }
+
+          type AccountRef = Rc<RefCell<Account>>;
+
+          fn transfer(from: &AccountRef, to: &AccountRef, amount: u64) -> Result<(), String> {
+              if Rc::ptr_eq(from, to) {
+                  return Err("same account".to_string());
+              }
+              let mut source = from.borrow_mut();
+              if source.balance < amount {
+                  return Err("insufficient funds".to_string());
+              }
+              source.balance -= amount;
+              to.borrow_mut().balance += amount;
+              Ok(())
+          }
+        harness: |
+          fn account(balance: u64) -> AccountRef {
+              Rc::new(RefCell::new(Account { balance }))
+          }
+
+          #[test]
+          fn moves_money_between_accounts() {
+              let a = account(100);
+              let b = account(5);
+              assert_eq!(transfer(&a, &b, 30), Ok(()), "transfer(a, b, 30)");
+              assert_eq!(a.borrow().balance, 70, "a after");
+              assert_eq!(b.borrow().balance, 35, "b after");
+          }
+
+          #[test]
+          fn rejects_overdrafts_without_changing_anything() {
+              let a = account(10);
+              let b = account(0);
+              assert_eq!(transfer(&a, &b, 11), Err("insufficient funds".to_string()), "transfer(a, b, 11)");
+              assert_eq!(a.borrow().balance, 10, "a unchanged");
+              assert_eq!(b.borrow().balance, 0, "b unchanged");
+          }
+
+          #[test]
+          fn allows_moving_the_whole_balance() {
+              let a = account(10);
+              let b = account(0);
+              assert_eq!(transfer(&a, &b, 10), Ok(()), "transfer(a, b, 10)");
+              assert_eq!(a.borrow().balance, 0, "a after");
+          }
+
+          #[test]
+          fn refuses_to_transfer_to_the_same_account() {
+              let a = account(50);
+              let same = Rc::clone(&a);
+              assert_eq!(transfer(&a, &same, 10), Err("same account".to_string()), "transfer(a, a, 10)");
+              assert_eq!(a.borrow().balance, 50, "balance unchanged");
+          }
+        hints:
+          - "Start with `if Rc::ptr_eq(from, to) { return Err(\"same account\".to_string()); }`."
+          - "`let mut source = from.borrow_mut();` then check `source.balance < amount` before changing anything."
+          - "Subtract from `source.balance`, then `to.borrow_mut().balance += amount;`, then `Ok(())`."
+      - task: |
+          A tiny social network: users follow each other. Each `User` has a name, a list of users they follow, and a follower count. Write:
+
+          - `fn user(name: &str) -> UserRef`: a new user with no follows and 0 followers.
+          - `fn follow(who: &UserRef, target: &UserRef)`: `who` follows `target` (push a clone of `target` into `who`'s `following`, add 1 to `target`'s `followers`). Following yourself or someone you already follow does nothing.
+          - `fn most_followed(users: &[UserRef]) -> Option<String>`: the name of the user with the most followers (the first one listed wins a tie), `None` for an empty slice.
+        seed: |
+          use std::cell::RefCell;
+          use std::rc::Rc;
+
+          struct User {
+              name: String,
+              following: Vec<UserRef>,
+              followers: u32,
+          }
+
+          type UserRef = Rc<RefCell<User>>;
+
+          fn user(name: &str) -> UserRef {
+              todo!()
+          }
+
+          fn follow(who: &UserRef, target: &UserRef) {
+              todo!()
+          }
+
+          fn most_followed(users: &[UserRef]) -> Option<String> {
+              todo!()
+          }
+        solution: |
+          use std::cell::RefCell;
+          use std::rc::Rc;
+
+          struct User {
+              name: String,
+              following: Vec<UserRef>,
+              followers: u32,
+          }
+
+          type UserRef = Rc<RefCell<User>>;
+
+          fn user(name: &str) -> UserRef {
+              Rc::new(RefCell::new(User { name: name.to_string(), following: Vec::new(), followers: 0 }))
+          }
+
+          fn follow(who: &UserRef, target: &UserRef) {
+              if Rc::ptr_eq(who, target) {
+                  return;
+              }
+              if who.borrow().following.iter().any(|u| Rc::ptr_eq(u, target)) {
+                  return;
+              }
+              who.borrow_mut().following.push(Rc::clone(target));
+              target.borrow_mut().followers += 1;
+          }
+
+          fn most_followed(users: &[UserRef]) -> Option<String> {
+              let mut best: Option<&UserRef> = None;
+              for u in users {
+                  match best {
+                      Some(b) if b.borrow().followers >= u.borrow().followers => {}
+                      _ => best = Some(u),
+                  }
+              }
+              best.map(|u| u.borrow().name.clone())
+          }
+        harness: |
+          #[test]
+          fn follow_updates_both_sides() {
+              let a = user("ana");
+              let b = user("bo");
+              follow(&a, &b);
+              assert_eq!(a.borrow().following.len(), 1, "ana follows one user");
+              assert_eq!(a.borrow().following[0].borrow().name, "bo", "ana follows bo");
+              assert_eq!(b.borrow().followers, 1, "bo's followers");
+          }
+
+          #[test]
+          fn following_twice_counts_once() {
+              let a = user("ana");
+              let b = user("bo");
+              follow(&a, &b);
+              follow(&a, &b);
+              assert_eq!(b.borrow().followers, 1, "bo's followers");
+              assert_eq!(a.borrow().following.len(), 1, "ana's following list");
+          }
+
+          #[test]
+          fn following_yourself_does_nothing() {
+              let a = user("ana");
+              follow(&a, &a);
+              assert_eq!(a.borrow().followers, 0, "followers");
+              assert_eq!(a.borrow().following.len(), 0, "following");
+          }
+
+          #[test]
+          fn finds_the_most_followed() {
+              let a = user("ana");
+              let b = user("bo");
+              let c = user("cy");
+              follow(&a, &c);
+              follow(&b, &c);
+              follow(&c, &b);
+              assert_eq!(most_followed(&[Rc::clone(&a), Rc::clone(&b), Rc::clone(&c)]), Some("cy".to_string()), "most_followed");
+          }
+
+          #[test]
+          fn ties_go_to_the_first_user_and_empty_is_none() {
+              let a = user("ana");
+              let b = user("bo");
+              assert_eq!(most_followed(&[Rc::clone(&a), Rc::clone(&b)]), Some("ana".to_string()), "tie at zero");
+              assert_eq!(most_followed(&[]), None, "no users");
+          }
+        hints:
+          - "`user`: `Rc::new(RefCell::new(User { name: name.to_string(), following: Vec::new(), followers: 0 }))`."
+          - "`follow`: return early if `Rc::ptr_eq(who, target)` or if `who.borrow().following` already contains `target` (compare with `Rc::ptr_eq`). Otherwise push `Rc::clone(target)` and add 1 to `target.borrow_mut().followers`."
+          - "`most_followed`: keep the best `&UserRef` so far and replace it only when a user has strictly more followers. Finish with `best.map(|u| u.borrow().name.clone())`."
+
+  - title: "Weak<T>: parent links without leaks"
+    id: smart-pointers-7
+    text: |
+      Reference counting has one weak spot: **cycles**. If `a` holds an `Rc` to `b` and `b` holds an `Rc` to `a`, each keeps the other's count above zero. When your variables go away, the counts drop to 1, never 0, and neither value is ever dropped. That's a **memory leak**. Rust's safety guarantees don't cover leaks (a leak can't corrupt memory, it just wastes it), so the compiler won't warn you:
+
+      ```rust run
+      use std::cell::RefCell;
+      use std::rc::Rc;
+
+      struct Room {
+          name: String,
+          next: RefCell<Option<Rc<Room>>>,
+      }
+
+      impl Drop for Room {
+          fn drop(&mut self) {
+              println!("dropping {}", self.name);
+          }
+      }
+
+      fn main() {
+          let a = Rc::new(Room { name: String::from("a"), next: RefCell::new(None) });
+          let b = Rc::new(Room { name: String::from("b"), next: RefCell::new(Some(Rc::clone(&a))) });
+          *a.next.borrow_mut() = Some(Rc::clone(&b)); // a -> b -> a: a cycle
+          println!("a count = {}, b count = {}", Rc::strong_count(&a), Rc::strong_count(&b));
+          println!("end of main");
+      }
+      ```
+
+      ```output
+      a count = 2, b count = 2
+      end of main
+      ```
+
+      No `dropping` lines: both rooms leaked.
+
+      ### Weak<T>: a pointer that doesn't own
+
+      `Rc::downgrade(&rc)` creates a **`Weak<T>`**: a pointer that does *not* keep the value alive. It adds to the **weak count**, not the strong count. Because the value might be gone, you can't use a Weak directly: `weak.upgrade()` returns `Option<Rc<T>>`, `Some` if the value is still alive and `None` if it has been dropped. `Weak::new()` makes an empty Weak that never upgrades, handy for "no parent yet".
+
+      The rule of thumb: **owners point down with `Rc`, back-links point up with `Weak`**. A parent owns its children; a child only refers to its parent.
+
+      ```rust run
+      use std::cell::RefCell;
+      use std::rc::{Rc, Weak};
+
+      struct Folder {
+          name: String,
+          parent: RefCell<Weak<Folder>>,
+          children: RefCell<Vec<Rc<Folder>>>,
+      }
+
+      fn folder(name: &str) -> Rc<Folder> {
+          Rc::new(Folder {
+              name: name.to_string(),
+              parent: RefCell::new(Weak::new()),
+              children: RefCell::new(Vec::new()),
+          })
+      }
+
+      fn add_child(parent: &Rc<Folder>, child: &Rc<Folder>) {
+          *child.parent.borrow_mut() = Rc::downgrade(parent);
+          parent.children.borrow_mut().push(Rc::clone(child));
+      }
+
+      fn path(f: &Rc<Folder>) -> String {
+          match f.parent.borrow().upgrade() {
+              Some(p) => format!("{}/{}", path(&p), f.name),
+              None => f.name.clone(),
+          }
+      }
+
+      fn main() {
+          let home = folder("home");
+          let docs = folder("docs");
+          let taxes = folder("taxes");
+          add_child(&home, &docs);
+          add_child(&docs, &taxes);
+          println!("{}", path(&taxes));
+          println!("docs: strong = {}, weak = {}", Rc::strong_count(&docs), Rc::weak_count(&docs));
+
+          drop(home);
+          println!("docs still has a parent: {}", docs.parent.borrow().upgrade().is_some());
+      }
+      ```
+
+      ```output
+      home/docs/taxes
+      docs: strong = 2, weak = 1
+      docs still has a parent: false
+      ```
+
+      - `docs` has strong count 2 (the `docs` variable and `home`'s children list) and weak count 1 (`taxes` points up at it).
+      - `path` walks upward: `upgrade()` turns the Weak parent link into a usable `Rc` when the parent exists.
+      - `drop(home)` drops the only strong owner of `home`, so it's freed even though `docs` still has a Weak pointing at it. Afterwards `upgrade()` returns `None`. No cycle, no leak.
+
+      ### Common mistakes
+
+      - **`Rc` in both directions** (parent to child *and* child to parent): a silent leak. If a `Drop` message never prints, look for a cycle.
+      - **Forgetting that `upgrade()` can fail.** It returns an `Option`; decide what "the parent is gone" means for your code instead of calling `.unwrap()` everywhere.
+      - **Making the owning direction Weak**: if the parent only had Weak pointers to its children, the children would be dropped immediately.
+
+      **Your turn:** build an org chart. Each `Employee` owns its direct reports (`Rc`) and points up at its manager (`Weak`). Write:
+
+      - `hire(manager, report)`: sets the report's manager link and adds the report to the manager's `reports`.
+      - `manager_name(e) -> Option<String>`: the manager's name, or `None` at the top.
+      - `chain_of_command(e) -> Vec<String>`: the names from `e`'s manager upward to the top, for example `["Bo", "Ana"]`.
+    seed: |
+      use std::cell::RefCell;
+      use std::rc::{Rc, Weak};
+
+      struct Employee {
+          name: String,
+          manager: RefCell<Weak<Employee>>,
+          reports: RefCell<Vec<Rc<Employee>>>,
+      }
+
+      fn employee(name: &str) -> Rc<Employee> {
+          Rc::new(Employee {
+              name: name.to_string(),
+              manager: RefCell::new(Weak::new()),
+              reports: RefCell::new(Vec::new()),
+          })
+      }
+
+      fn hire(manager: &Rc<Employee>, report: &Rc<Employee>) {
+          todo!()
+      }
+
+      fn manager_name(e: &Employee) -> Option<String> {
+          todo!()
+      }
+
+      fn chain_of_command(e: &Rc<Employee>) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      use std::cell::RefCell;
+      use std::rc::{Rc, Weak};
+
+      struct Employee {
+          name: String,
+          manager: RefCell<Weak<Employee>>,
+          reports: RefCell<Vec<Rc<Employee>>>,
+      }
+
+      fn employee(name: &str) -> Rc<Employee> {
+          Rc::new(Employee {
+              name: name.to_string(),
+              manager: RefCell::new(Weak::new()),
+              reports: RefCell::new(Vec::new()),
+          })
+      }
+
+      fn hire(manager: &Rc<Employee>, report: &Rc<Employee>) {
+          *report.manager.borrow_mut() = Rc::downgrade(manager);
+          manager.reports.borrow_mut().push(Rc::clone(report));
+      }
+
+      fn manager_name(e: &Employee) -> Option<String> {
+          e.manager.borrow().upgrade().map(|m| m.name.clone())
+      }
+
+      fn chain_of_command(e: &Rc<Employee>) -> Vec<String> {
+          let mut names = Vec::new();
+          let mut current = e.manager.borrow().upgrade();
+          while let Some(m) = current {
+              names.push(m.name.clone());
+              current = m.manager.borrow().upgrade();
+          }
+          names
+      }
+    harness: |
+      #[test]
+      fn hire_links_both_directions() {
+          let ana = employee("Ana");
+          let bo = employee("Bo");
+          hire(&ana, &bo);
+          assert_eq!(ana.reports.borrow().len(), 1, "Ana's reports");
+          assert_eq!(ana.reports.borrow()[0].name, "Bo", "Ana's first report");
+          assert_eq!(manager_name(&bo), Some("Ana".to_string()), "manager_name(Bo)");
+      }
+
+      #[test]
+      fn the_top_has_no_manager() {
+          let ana = employee("Ana");
+          assert_eq!(manager_name(&ana), None, "manager_name(Ana)");
+          assert_eq!(chain_of_command(&ana), Vec::<String>::new(), "chain_of_command(Ana)");
+      }
+
+      #[test]
+      fn the_manager_link_does_not_own() {
+          let ana = employee("Ana");
+          let bo = employee("Bo");
+          hire(&ana, &bo);
+          assert_eq!(Rc::strong_count(&ana), 1, "Ana's strong count (the up-link must be Weak)");
+          assert_eq!(Rc::weak_count(&ana), 1, "Ana's weak count");
+          assert_eq!(Rc::strong_count(&bo), 2, "Bo's strong count (owned by Ana's reports)");
+      }
+
+      #[test]
+      fn walks_up_the_chain() {
+          let ana = employee("Ana");
+          let bo = employee("Bo");
+          let cy = employee("Cy");
+          hire(&ana, &bo);
+          hire(&bo, &cy);
+          assert_eq!(chain_of_command(&cy), vec!["Bo".to_string(), "Ana".to_string()], "chain_of_command(Cy)");
+      }
+
+      #[test]
+      fn a_departed_manager_is_gone() {
+          let bo = employee("Bo");
+          {
+              let ana = employee("Ana");
+              hire(&ana, &bo);
+          }
+          assert_eq!(manager_name(&bo), None, "manager_name(Bo) after Ana was dropped");
+      }
+    hints:
+      - "`hire` is like `add_child` in the text: `*report.manager.borrow_mut() = Rc::downgrade(manager);` and push `Rc::clone(report)` into `manager.reports`."
+      - "`manager_name`: `e.manager.borrow().upgrade().map(|m| m.name.clone())`."
+      - "`chain_of_command`: start with `let mut current = e.manager.borrow().upgrade();` and loop `while let Some(m) = current { ... current = m.manager.borrow().upgrade(); }`."
+    more:
+      - task: |
+          Fill the blanks: give the comment a non-owning link to its thread, then follow it. The program prints:
+
+          ```
+          reply to: Release day
+          thread owners: 1
+          after drop: thread gone
+          ```
+        fill: |
+          use std::rc::{Rc, Weak};
+
+          struct Thread {
+              title: String,
+          }
+
+          struct Comment {
+              thread: Weak<Thread>,
+          }
+
+          fn main() {
+              let thread = Rc::new(Thread { title: String::from("Release day") });
+              let reply = Comment { thread: Rc::[[downgrade]](&thread) };
+              if let Some(t) = reply.thread.[[upgrade]]() {
+                  println!("reply to: {}", t.title);
+              }
+              println!("thread owners: {}", Rc::strong_count(&thread));
+              drop(thread);
+              match reply.thread.upgrade() {
+                  Some(_) => println!("after drop: thread alive"),
+                  None => println!("after drop: thread gone"),
+              }
+          }
+        hints:
+          - "A Weak is made from an Rc with `Rc::downgrade(&rc)`."
+          - "To use a Weak, turn it back into an `Option<Rc<T>>` with `.upgrade()`."
+        tests:
+          - expect: "reply to: Release day\nthread owners: 1\nafter drop: thread gone"
+      - task: |
+          This playlist program leaks: each `Track` keeps a strong `Rc` back to its `Playlist`, and the playlist owns its tracks, so nothing is ever dropped and the `Drop` messages never print. Change the back-link to a `Weak` (and update the code that sets and reads it) so the program prints exactly:
+
+          ```
+          Night Drive has 2 tracks
+          Neon is on Night Drive
+          end of main
+          dropping playlist Night Drive
+          dropping track Neon
+          dropping track Rain
+          ```
+        seed: |
+          use std::cell::RefCell;
+          use std::rc::Rc;
+
+          struct Playlist {
+              name: String,
+              tracks: RefCell<Vec<Rc<Track>>>,
+          }
+
+          struct Track {
+              title: String,
+              playlist: RefCell<Option<Rc<Playlist>>>,
+          }
+
+          impl Drop for Playlist {
+              fn drop(&mut self) {
+                  println!("dropping playlist {}", self.name);
+              }
+          }
+
+          impl Drop for Track {
+              fn drop(&mut self) {
+                  println!("dropping track {}", self.title);
+              }
+          }
+
+          fn add(list: &Rc<Playlist>, title: &str) {
+              let track = Rc::new(Track { title: title.to_string(), playlist: RefCell::new(None) });
+              *track.playlist.borrow_mut() = Some(Rc::clone(list));
+              list.tracks.borrow_mut().push(track);
+          }
+
+          fn main() {
+              let list = Rc::new(Playlist { name: String::from("Night Drive"), tracks: RefCell::new(Vec::new()) });
+              add(&list, "Neon");
+              add(&list, "Rain");
+              println!("{} has {} tracks", list.name, list.tracks.borrow().len());
+              let first = Rc::clone(&list.tracks.borrow()[0]);
+              if let Some(p) = first.playlist.borrow().as_ref() {
+                  println!("{} is on {}", first.title, p.name);
+              }
+              drop(first);
+              println!("end of main");
+          }
+        solution: |
+          use std::cell::RefCell;
+          use std::rc::{Rc, Weak};
+
+          struct Playlist {
+              name: String,
+              tracks: RefCell<Vec<Rc<Track>>>,
+          }
+
+          struct Track {
+              title: String,
+              playlist: RefCell<Weak<Playlist>>,
+          }
+
+          impl Drop for Playlist {
+              fn drop(&mut self) {
+                  println!("dropping playlist {}", self.name);
+              }
+          }
+
+          impl Drop for Track {
+              fn drop(&mut self) {
+                  println!("dropping track {}", self.title);
+              }
+          }
+
+          fn add(list: &Rc<Playlist>, title: &str) {
+              let track = Rc::new(Track { title: title.to_string(), playlist: RefCell::new(Weak::new()) });
+              *track.playlist.borrow_mut() = Rc::downgrade(list);
+              list.tracks.borrow_mut().push(track);
+          }
+
+          fn main() {
+              let list = Rc::new(Playlist { name: String::from("Night Drive"), tracks: RefCell::new(Vec::new()) });
+              add(&list, "Neon");
+              add(&list, "Rain");
+              println!("{} has {} tracks", list.name, list.tracks.borrow().len());
+              let first = Rc::clone(&list.tracks.borrow()[0]);
+              if let Some(p) = first.playlist.borrow().upgrade() {
+                  println!("{} is on {}", first.title, p.name);
+              }
+              drop(first);
+              println!("end of main");
+          }
+        require:
+          - pattern: 'Weak<\s*Playlist\s*>'
+            message: "Make the track's link to its playlist a `Weak<Playlist>`."
+          - pattern: 'Rc::downgrade'
+            message: "Create the back-link with `Rc::downgrade(list)`."
+        hints:
+          - "Change the field to `playlist: RefCell<Weak<Playlist>>` and import `Weak` from `std::rc`."
+          - "Start it as `RefCell::new(Weak::new())`, set it with `Rc::downgrade(list)`, and read it with `.upgrade()` (which already returns an `Option<Rc<Playlist>>`)."
+        tests:
+          - expect: "Night Drive has 2 tracks\nNeon is on Night Drive\nend of main\ndropping playlist Night Drive\ndropping track Neon\ndropping track Rain"

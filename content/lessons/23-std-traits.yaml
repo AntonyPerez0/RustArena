@@ -1,0 +1,1994 @@
+id: std-traits
+title: Standard Library Traits
+phase: "Errors and abstraction"
+summary: The traits that make your types feel built in. Convert with From, TryFrom and FromStr, use operators like + and [] on your own types, sort them with Ord, give them defaults, and run cleanup code with Drop.
+roadmap: [Traits, Operator Overloading, Type Conversions, Common Traits]
+steps:
+  - title: From and Into
+    id: std-traits-1
+    text: |
+      Converting one type into another is so common that the standard library has traits for it. `impl From<A> for B` says "a `B` can always be made from an `A`". The conversion can't fail, so it returns a plain `B`, not a `Result`.
+
+      You've used `From` many times already: `String::from("hi")` is `From<&str> for String`, and in the custom errors module you wrote `From` impls so `?` could convert errors. Here it is for your own units:
+
+      ```rust run
+      #[derive(Debug, Clone, Copy)]
+      struct Celsius(f64);
+
+      #[derive(Debug, Clone, Copy)]
+      struct Fahrenheit(f64);
+
+      impl From<Celsius> for Fahrenheit {
+          fn from(c: Celsius) -> Self {
+              Fahrenheit(c.0 * 9.0 / 5.0 + 32.0)
+          }
+      }
+
+      fn main() {
+          let body = Celsius(37.0);
+          let f = Fahrenheit::from(body);
+          println!("{:.1}°C is {:.1}°F", body.0, f.0);
+
+          let boiling: Fahrenheit = Celsius(100.0).into();
+          println!("water boils at {:.1}°F", boiling.0);
+      }
+      ```
+
+      ```output
+      37.0°C is 98.6°F
+      water boils at 212.0°F
+      ```
+
+      - `impl From<Celsius> for Fahrenheit` has one method, `fn from(c: Celsius) -> Self`. Inside a trait impl, `Self` is the type being implemented (here `Fahrenheit`).
+      - `Fahrenheit::from(body)` calls it directly.
+      - `.into()` is the same conversion seen from the other side. You never implement `Into` yourself: the standard library gives every type `Into<B>` for free as soon as `B: From<A>`. Always implement `From` (clippy warns with `from_over_into` if you implement `Into` directly).
+      - `.into()` has to know the **target type**, so it usually needs an annotation like `let boiling: Fahrenheit`, or a function parameter type to aim at.
+
+      ### Into in parameters: friendly APIs
+
+      A very common pattern at work: accept `impl Into<String>` so callers can pass either a `&str` or a `String`:
+
+      ```rust run
+      struct User {
+          name: String,
+      }
+
+      impl User {
+          fn new(name: impl Into<String>) -> Self {
+              User { name: name.into() }
+          }
+      }
+
+      fn main() {
+          let a = User::new("ana");
+          let b = User::new(String::from("bo"));
+          println!("{} {}", a.name, b.name);
+      }
+      ```
+
+      ```output
+      ana bo
+      ```
+
+      With a `&str` the function allocates a new `String`; with a `String` it just moves it in, no copy. Callers don't have to write `.to_string()` everywhere.
+
+      ### When From is the right trait
+
+      `From` promises a conversion that **always works** and is **obvious**: there is only one sensible answer. Celsius to Fahrenheit, `u8` to `u32`, `&str` to `String`. If a conversion can fail (a number that might be out of range), use `TryFrom` (next step). If it loses information or there are several reasonable answers (seconds to minutes: round down? up?), write a normal method with a clear name instead.
+
+      ### Common mistakes
+
+      - **`.into()` without a target type:**
+
+      ```rust compile_fail
+      struct Celsius(f64);
+      struct Fahrenheit(f64);
+
+      impl From<Celsius> for Fahrenheit {
+          fn from(c: Celsius) -> Self {
+              Fahrenheit(c.0 * 1.8 + 32.0)
+          }
+      }
+
+      fn main() {
+          let f = Celsius(100.0).into();
+          println!("{}", f.0);
+      }
+      ```
+
+      ```error
+      error[E0282]: type annotations needed
+      ```
+
+      Many types could be made from a `Celsius`, so Rust can't guess. Write `let f: Fahrenheit = ...`.
+
+      - **Implementing `From` in the wrong direction.** `impl From<Celsius> for Fahrenheit` lets you turn Celsius into Fahrenheit, not the other way. Each direction is its own impl.
+
+      **Your turn:** one foot is exactly 0.3048 meters. Implement `From<Feet> for Meters` and `From<Meters> for Feet`, so both `Meters::from(Feet(10.0))` and `let f: Feet = Meters(3.048).into();` work.
+    seed: |
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Meters(f64);
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Feet(f64);
+
+      // impl From<Feet> for Meters { ... }
+      // impl From<Meters> for Feet { ... }
+    solution: |
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Meters(f64);
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Feet(f64);
+
+      impl From<Feet> for Meters {
+          fn from(f: Feet) -> Self {
+              Meters(f.0 * 0.3048)
+          }
+      }
+
+      impl From<Meters> for Feet {
+          fn from(m: Meters) -> Self {
+              Feet(m.0 / 0.3048)
+          }
+      }
+    harness: |
+      fn close(a: f64, b: f64) -> bool {
+          (a - b).abs() < 1e-9
+      }
+
+      #[test]
+      fn ten_feet_is_3_048_meters() {
+          let m = Meters::from(Feet(10.0));
+          assert!(close(m.0, 3.048), "Meters::from(Feet(10.0)) gave {:?}, expected about 3.048", m);
+      }
+
+      #[test]
+      fn meters_convert_back_with_into() {
+          let f: Feet = Meters(3.048).into();
+          assert!(close(f.0, 10.0), "Meters(3.048).into() gave {:?}, expected about 10.0", f);
+      }
+
+      #[test]
+      fn zero_stays_zero() {
+          let m: Meters = Feet(0.0).into();
+          assert!(close(m.0, 0.0), "Feet(0.0) into Meters gave {:?}", m);
+      }
+
+      #[test]
+      fn a_round_trip_gives_the_same_length() {
+          let back = Feet::from(Meters::from(Feet(123.0)));
+          assert!(close(back.0, 123.0), "Feet(123.0) there and back gave {:?}", back);
+      }
+    hints:
+      - "Each direction is its own block: `impl From<Feet> for Meters { fn from(f: Feet) -> Self { ... } }`."
+      - "Feet to meters multiplies by 0.3048; meters to feet divides by 0.3048. Read the inner number with `.0`."
+    more:
+      - task: |
+          Colors are often stored as one number like `0xff8800` (red `ff`, green `88`, blue `00`). Implement `From<u32> for Color` and `From<Color> for u32`.
+
+          To take the number apart, `n >> 16` shifts it right by 16 bits (2 hex digits = 8 bits each), and `& 0xff` keeps only the lowest 8 bits: red is `(n >> 16) & 0xff`, green `(n >> 8) & 0xff`, blue `n & 0xff`. Going back, `(r as u32) << 16` shifts left, and `|` combines the parts. Ignore anything above the lowest 24 bits.
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Color {
+              r: u8,
+              g: u8,
+              b: u8,
+          }
+
+          // impl From<u32> for Color { ... }
+          // impl From<Color> for u32 { ... }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Color {
+              r: u8,
+              g: u8,
+              b: u8,
+          }
+
+          impl From<u32> for Color {
+              fn from(n: u32) -> Self {
+                  Color {
+                      r: ((n >> 16) & 0xff) as u8,
+                      g: ((n >> 8) & 0xff) as u8,
+                      b: (n & 0xff) as u8,
+                  }
+              }
+          }
+
+          impl From<Color> for u32 {
+              fn from(c: Color) -> Self {
+                  ((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32
+              }
+          }
+        harness: |
+          #[test]
+          fn splits_orange_into_parts() {
+              assert_eq!(Color::from(0xff8800), Color { r: 255, g: 136, b: 0 }, "Color::from(0xff8800)");
+          }
+
+          #[test]
+          fn black_and_white() {
+              assert_eq!(Color::from(0x000000), Color { r: 0, g: 0, b: 0 }, "Color::from(0x000000)");
+              assert_eq!(Color::from(0xffffff), Color { r: 255, g: 255, b: 255 }, "Color::from(0xffffff)");
+          }
+
+          #[test]
+          fn joins_parts_back_into_a_number() {
+              let n: u32 = Color { r: 0x12, g: 0x34, b: 0x56 }.into();
+              assert_eq!(n, 0x123456, "Color(0x12, 0x34, 0x56) into u32");
+          }
+
+          #[test]
+          fn ignores_bits_above_24() {
+              assert_eq!(Color::from(0xab00ff00), Color { r: 0, g: 255, b: 0 }, "Color::from(0xab00ff00)");
+          }
+        hints:
+          - "`r: ((n >> 16) & 0xff) as u8`, and the same with 8 and 0 for green and blue."
+          - "Back to a number: `((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32`."
+      - task: |
+          Usernames are stored trimmed and in lowercase. Write a newtype `struct Username(String)` (with `#[derive(Debug, PartialEq)]`) and implement **both** `From<&str>` and `From<String>` for it, each trimming spaces and lowercasing. Then write `fn welcome(user: impl Into<Username>) -> String` that returns `welcome, <name>`, so `welcome("  Ana ")` and `welcome(String::from("BO"))` both work.
+        seed: |
+          // struct Username ...
+
+          // fn welcome(user: impl Into<Username>) -> String
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Username(String);
+
+          impl From<&str> for Username {
+              fn from(s: &str) -> Self {
+                  Username(s.trim().to_lowercase())
+              }
+          }
+
+          impl From<String> for Username {
+              fn from(s: String) -> Self {
+                  Username::from(s.as_str())
+              }
+          }
+
+          fn welcome(user: impl Into<Username>) -> String {
+              let name: Username = user.into();
+              format!("welcome, {}", name.0)
+          }
+        harness: |
+          #[test]
+          fn trims_and_lowercases_a_str() {
+              assert_eq!(Username::from("  Ana "), Username(String::from("ana")), "Username::from(\"  Ana \")");
+          }
+
+          #[test]
+          fn converts_a_string_too() {
+              assert_eq!(Username::from(String::from("FERRIS")), Username(String::from("ferris")), "Username::from(String::from(\"FERRIS\"))");
+          }
+
+          #[test]
+          fn welcome_accepts_a_str() {
+              assert_eq!(welcome("  Ana "), "welcome, ana", "welcome(\"  Ana \")");
+          }
+
+          #[test]
+          fn welcome_accepts_a_string() {
+              assert_eq!(welcome(String::from("BO")), "welcome, bo", "welcome(String::from(\"BO\"))");
+          }
+        hints:
+          - "`impl From<&str> for Username { fn from(s: &str) -> Self { Username(s.trim().to_lowercase()) } }`, and the same idea for `String`."
+          - "In `welcome`, convert first: `let name: Username = user.into();` then `format!` with `name.0`."
+
+  - title: TryFrom and TryInto
+    id: std-traits-2
+    text: |
+      Some conversions can fail. An `i32` might be a valid percentage (0 to 100) or not. For those, implement `TryFrom`: it returns a `Result`, so the caller has to deal with the failure.
+
+      ```rust run
+      #[derive(Debug)]
+      struct Percent(u8);
+
+      impl TryFrom<i32> for Percent {
+          type Error = String;
+
+          fn try_from(value: i32) -> Result<Self, Self::Error> {
+              if (0..=100).contains(&value) {
+                  Ok(Percent(value as u8))
+              } else {
+                  Err(format!("{value} is not a percentage"))
+              }
+          }
+      }
+
+      fn main() {
+          println!("{:?}", Percent::try_from(42));
+          println!("{:?}", Percent::try_from(150));
+
+          let p: Result<Percent, _> = 7.try_into();
+          if let Ok(percent) = p {
+              println!("{}%", percent.0);
+          }
+      }
+      ```
+
+      ```output
+      Ok(Percent(42))
+      Err("150 is not a percentage")
+      7%
+      ```
+
+      Piece by piece:
+
+      - `type Error = String;` is an **associated type**: a type the impl chooses and the trait refers to as `Self::Error`. Each `TryFrom` impl picks its own error type: a `String`, your own error enum, anything. (The advanced traits module covers associated types in depth.)
+      - `fn try_from(value: i32) -> Result<Self, Self::Error>` does the check and returns `Ok` or `Err`.
+      - Just like `From` gives you `Into`, `TryFrom` gives you `TryInto` for free: `7.try_into()`, again with the target type written somewhere.
+      - Inside, `value as u8` is safe because we just checked the range.
+
+      ### Safer than `as`
+
+      The standard library implements `TryFrom` between all the integer types. That makes it the safe replacement for `as`, which silently chops numbers that don't fit:
+
+      ```rust run
+      fn main() {
+          let big: i32 = 300;
+          println!("{}", big as u8);
+          println!("{:?}", u8::try_from(big));
+          println!("{:?}", u8::try_from(200_i32));
+      }
+      ```
+
+      ```output
+      44
+      Err(TryFromIntError(PosOverflow))
+      Ok(200)
+      ```
+
+      `300 as u8` keeps only the lowest 8 bits and gives 44: a bug waiting to happen. Code reviewers will often ask you to replace an `as` with `try_from` when the value could be out of range. Combined with `?` from the errors module, it's one short line:
+
+      ```rust
+      let quantity: u8 = u8::try_from(input).map_err(|_| "quantity too large")?;
+      ```
+
+      ### Common mistakes
+
+      - **Forgetting `type Error`.** `TryFrom` has two parts to fill in: the type and the method. Leaving out the type gives ``error[E0046]: not all trait items implemented, missing: `Error` ``.
+      - **Returning `Self` instead of `Result<Self, Self::Error>`.** The signature must match the trait exactly.
+      - **Using `TryFrom` for conversions that can't fail.** If every input is valid, implement `From`: callers then don't have to handle an error that can never happen.
+
+      **Your turn:** implement `TryFrom<u8> for Weekday`, where 1 is Monday and 7 is Sunday. Any other number is an error with the message `invalid day: <n>` (use `type Error = String;`).
+    seed: |
+      #[derive(Debug, PartialEq)]
+      enum Weekday {
+          Monday,
+          Tuesday,
+          Wednesday,
+          Thursday,
+          Friday,
+          Saturday,
+          Sunday,
+      }
+
+      // impl TryFrom<u8> for Weekday { ... }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      enum Weekday {
+          Monday,
+          Tuesday,
+          Wednesday,
+          Thursday,
+          Friday,
+          Saturday,
+          Sunday,
+      }
+
+      impl TryFrom<u8> for Weekday {
+          type Error = String;
+
+          fn try_from(n: u8) -> Result<Self, Self::Error> {
+              match n {
+                  1 => Ok(Weekday::Monday),
+                  2 => Ok(Weekday::Tuesday),
+                  3 => Ok(Weekday::Wednesday),
+                  4 => Ok(Weekday::Thursday),
+                  5 => Ok(Weekday::Friday),
+                  6 => Ok(Weekday::Saturday),
+                  7 => Ok(Weekday::Sunday),
+                  _ => Err(format!("invalid day: {n}")),
+              }
+          }
+      }
+    harness: |
+      #[test]
+      fn one_is_monday() {
+          assert_eq!(Weekday::try_from(1), Ok(Weekday::Monday), "Weekday::try_from(1)");
+      }
+
+      #[test]
+      fn seven_is_sunday() {
+          assert_eq!(Weekday::try_from(7), Ok(Weekday::Sunday), "Weekday::try_from(7)");
+      }
+
+      #[test]
+      fn the_middle_of_the_week() {
+          assert_eq!(Weekday::try_from(3), Ok(Weekday::Wednesday), "Weekday::try_from(3)");
+          assert_eq!(Weekday::try_from(5), Ok(Weekday::Friday), "Weekday::try_from(5)");
+      }
+
+      #[test]
+      fn zero_is_an_error() {
+          assert_eq!(Weekday::try_from(0), Err(String::from("invalid day: 0")), "Weekday::try_from(0)");
+      }
+
+      #[test]
+      fn eight_is_an_error() {
+          assert_eq!(Weekday::try_from(8), Err(String::from("invalid day: 8")), "Weekday::try_from(8)");
+      }
+
+      #[test]
+      fn try_into_works_too() {
+          let d: Result<Weekday, String> = 6u8.try_into();
+          assert_eq!(d, Ok(Weekday::Saturday), "6u8.try_into()");
+      }
+    hints:
+      - "The impl needs `type Error = String;` and `fn try_from(n: u8) -> Result<Self, Self::Error>`."
+      - "A `match n` with arms `1 => Ok(Weekday::Monday)` up to 7, and `_ => Err(format!(\"invalid day: {n}\"))`."
+    more:
+      - task: |
+          Product reviews are 1 to 5 stars. Implement `TryFrom<i32> for Stars` that returns `Err(StarsError::TooLow)` below 1, `Err(StarsError::TooHigh)` above 5, and `Ok(Stars(n))` otherwise. This time the error type is your own enum.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Stars(u8);
+
+          #[derive(Debug, PartialEq)]
+          enum StarsError {
+              TooLow,
+              TooHigh,
+          }
+
+          impl TryFrom<i32> for Stars {
+              type Error = StarsError;
+
+              fn try_from(n: i32) -> Result<Self, Self::Error> {
+                  todo!()
+              }
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Stars(u8);
+
+          #[derive(Debug, PartialEq)]
+          enum StarsError {
+              TooLow,
+              TooHigh,
+          }
+
+          impl TryFrom<i32> for Stars {
+              type Error = StarsError;
+
+              fn try_from(n: i32) -> Result<Self, Self::Error> {
+                  if n < 1 {
+                      Err(StarsError::TooLow)
+                  } else if n > 5 {
+                      Err(StarsError::TooHigh)
+                  } else {
+                      Ok(Stars(n as u8))
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn accepts_one_to_five() {
+              assert_eq!(Stars::try_from(1), Ok(Stars(1)), "Stars::try_from(1)");
+              assert_eq!(Stars::try_from(5), Ok(Stars(5)), "Stars::try_from(5)");
+          }
+
+          #[test]
+          fn zero_is_too_low() {
+              assert_eq!(Stars::try_from(0), Err(StarsError::TooLow), "Stars::try_from(0)");
+          }
+
+          #[test]
+          fn negative_is_too_low() {
+              assert_eq!(Stars::try_from(-3), Err(StarsError::TooLow), "Stars::try_from(-3)");
+          }
+
+          #[test]
+          fn six_is_too_high() {
+              assert_eq!(Stars::try_from(6), Err(StarsError::TooHigh), "Stars::try_from(6)");
+          }
+
+          #[test]
+          fn a_huge_number_is_too_high_not_wrapped() {
+              assert_eq!(Stars::try_from(260), Err(StarsError::TooHigh), "Stars::try_from(260)");
+          }
+        hints:
+          - Check the two error cases first with `if n < 1` and `else if n > 5`.
+          - "Only after both checks is `n as u8` safe: `Ok(Stars(n as u8))`."
+      - task: |
+          A warehouse API receives quantities as `i64`, but the storage system keeps them as `u8`. Write `fn to_quantities(values: &[i64]) -> Result<Vec<u8>, String>` that converts every value with `u8::try_from`. On the first value that doesn't fit, return `Err` with the message `value <v> doesn't fit in a u8`. Use `?` so the error stops the loop.
+        seed: |
+          fn to_quantities(values: &[i64]) -> Result<Vec<u8>, String> {
+              todo!()
+          }
+        solution: |
+          fn to_quantities(values: &[i64]) -> Result<Vec<u8>, String> {
+              let mut out = Vec::new();
+              for &v in values {
+                  let q = u8::try_from(v).map_err(|_| format!("value {v} doesn't fit in a u8"))?;
+                  out.push(q);
+              }
+              Ok(out)
+          }
+        forbid:
+          - pattern: '\bas\s+u8\b'
+            message: "Don't use `as u8`: it silently chops values. Use `u8::try_from`."
+        harness: |
+          #[test]
+          fn converts_values_that_fit() {
+              assert_eq!(to_quantities(&[0, 12, 255]), Ok(vec![0, 12, 255]), "to_quantities(&[0, 12, 255])");
+          }
+
+          #[test]
+          fn rejects_a_value_too_big() {
+              assert_eq!(to_quantities(&[3, 300, 4]), Err(String::from("value 300 doesn't fit in a u8")), "to_quantities(&[3, 300, 4])");
+          }
+
+          #[test]
+          fn rejects_a_negative_value() {
+              assert_eq!(to_quantities(&[-1]), Err(String::from("value -1 doesn't fit in a u8")), "to_quantities(&[-1])");
+          }
+
+          #[test]
+          fn reports_the_first_bad_value() {
+              assert_eq!(to_quantities(&[999, -5]), Err(String::from("value 999 doesn't fit in a u8")), "to_quantities(&[999, -5])");
+          }
+
+          #[test]
+          fn an_empty_list_is_fine() {
+              assert_eq!(to_quantities(&[]), Ok(vec![]), "to_quantities(&[])");
+          }
+        hints:
+          - "`u8::try_from(v)` returns `Result<u8, TryFromIntError>`. Turn its error into your message with `.map_err(|_| format!(...))`."
+          - "Put `?` after it inside the loop and push the value: `let q = u8::try_from(v).map_err(|_| format!(\"value {v} doesn't fit in a u8\"))?;`"
+
+  - title: "FromStr: parse into your own type"
+    id: std-traits-3
+    text: |
+      `"42".parse::<i32>()` works because `i32` implements the trait `std::str::FromStr`. Implement it for your own type and `.parse()` works for it too. This is the idiomatic way to turn text (config files, command-line arguments, user input) into a value.
+
+      ```rust run
+      use std::str::FromStr;
+
+      #[derive(Debug)]
+      struct Setting {
+          key: String,
+          value: i64,
+      }
+
+      impl FromStr for Setting {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let (key, value) = s.split_once('=').ok_or(format!("missing '=' in {s:?}"))?;
+              let key = key.trim();
+              if key.is_empty() {
+                  return Err(String::from("empty key"));
+              }
+              let value = value.trim().parse::<i64>().map_err(|_| format!("bad number {value:?}"))?;
+              Ok(Setting { key: key.to_string(), value })
+          }
+      }
+
+      fn main() {
+          let s: Setting = "volume = 7".parse().unwrap();
+          println!("{} -> {}", s.key, s.value);
+          println!("{:?}", "volume".parse::<Setting>());
+          println!("{:?}", "=3".parse::<Setting>());
+          println!("{:?}", "lives=lots".parse::<Setting>());
+      }
+      ```
+
+      ```output
+      volume -> 7
+      Err("missing '=' in \"volume\"")
+      Err("empty key")
+      Err("bad number \"lots\"")
+      ```
+
+      Piece by piece:
+
+      - `type Err = String;` is the error type. It's spelled `Err` here (`TryFrom` uses `Error`): an old naming accident you just have to remember.
+      - `fn from_str(s: &str) -> Result<Self, Self::Err>` does the parsing.
+      - `s.split_once('=')` splits at the first `=` and returns `Some((before, after))`, or `None` if there's no `=`. `.ok_or(...)` turns that `Option` into a `Result`, and `?` returns the error early.
+      - `.map_err(|_| ...)` replaces the `ParseIntError` with a friendlier message. The `|_| ...` is a small inline function (a **closure**, a later module) that ignores the original error.
+      - You don't call `from_str` yourself: write `.parse::<Setting>()`, or `.parse()` with the type annotated on the variable.
+
+      ### Why not a `fn parse_setting(s: &str)`?
+
+      It would work, but `FromStr` plugs into the rest of the ecosystem. Code that reads "any value that can be parsed" (`T: FromStr`) works with your type automatically: command-line parsers like clap, config loaders, and your own generic helpers.
+
+      ### Common mistakes
+
+      - **`type Error` instead of `type Err`** gives ``error[E0437]: type `Error` is not a member of trait `FromStr` ``.
+      - **Forgetting `use std::str::FromStr;`.** `FromStr` isn't in the prelude, so the `impl` line can't find it (or write `impl std::str::FromStr for ...`).
+      - **`unwrap()` on user input.** It's fine in a quick example; in real code, handle the `Err` (with `match` or `?`), because users *will* type `lots`.
+
+      **Your turn:** implement `FromStr` for `Dimensions` so that `"3x4".parse::<Dimensions>()` gives `Ok(Dimensions { width: 3, height: 4 })`. Allow spaces around the numbers (`" 10 x 20 "`). Return an `Err` (any `String` message) if there's no `x` or if either side isn't a whole number.
+    seed: |
+      use std::str::FromStr;
+
+      #[derive(Debug, PartialEq)]
+      struct Dimensions {
+          width: u32,
+          height: u32,
+      }
+
+      impl FromStr for Dimensions {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              todo!()
+          }
+      }
+    solution: |
+      use std::str::FromStr;
+
+      #[derive(Debug, PartialEq)]
+      struct Dimensions {
+          width: u32,
+          height: u32,
+      }
+
+      impl FromStr for Dimensions {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let (w, h) = s.split_once('x').ok_or(format!("no 'x' in {s:?}"))?;
+              let width = w.trim().parse::<u32>().map_err(|_| format!("bad width {w:?}"))?;
+              let height = h.trim().parse::<u32>().map_err(|_| format!("bad height {h:?}"))?;
+              Ok(Dimensions { width, height })
+          }
+      }
+    harness: |
+      #[test]
+      fn parses_3x4() {
+          assert_eq!("3x4".parse::<Dimensions>(), Ok(Dimensions { width: 3, height: 4 }), "\"3x4\".parse()");
+      }
+
+      #[test]
+      fn allows_spaces_around_the_numbers() {
+          assert_eq!(" 10 x 20 ".parse::<Dimensions>(), Ok(Dimensions { width: 10, height: 20 }), "\" 10 x 20 \".parse()");
+      }
+
+      #[test]
+      fn rejects_a_missing_x() {
+          assert!("34".parse::<Dimensions>().is_err(), "\"34\".parse() should be an Err");
+      }
+
+      #[test]
+      fn rejects_a_bad_number() {
+          assert!("3xfour".parse::<Dimensions>().is_err(), "\"3xfour\".parse() should be an Err");
+          assert!("-3x4".parse::<Dimensions>().is_err(), "\"-3x4\".parse() should be an Err");
+      }
+
+      #[test]
+      fn rejects_an_empty_string() {
+          assert!("".parse::<Dimensions>().is_err(), "\"\".parse() should be an Err");
+      }
+    hints:
+      - "Start with `let (w, h) = s.split_once('x').ok_or(String::from(\"no x\"))?;`"
+      - "Then parse each side: `let width = w.trim().parse::<u32>().map_err(|_| String::from(\"bad width\"))?;` and the same for the height."
+    more:
+      - task: |
+          Implement `FromStr` for `Color` so that web colors like `"#ff8800"` parse into `Color { r: 255, g: 136, b: 0 }`. The text must be exactly 7 characters: a `#` followed by 6 hex digits (upper or lower case). Anything else is an `Err`.
+
+          `u8::from_str_radix(text, 16)` parses a hex number such as `"ff"` into 255 (it returns a `Result`, like `parse`). Slice out the pairs with `&s[1..3]`, `&s[3..5]` and `&s[5..7]`.
+        seed: |
+          use std::str::FromStr;
+
+          #[derive(Debug, PartialEq)]
+          struct Color {
+              r: u8,
+              g: u8,
+              b: u8,
+          }
+
+          impl FromStr for Color {
+              type Err = String;
+
+              fn from_str(s: &str) -> Result<Self, Self::Err> {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::str::FromStr;
+
+          #[derive(Debug, PartialEq)]
+          struct Color {
+              r: u8,
+              g: u8,
+              b: u8,
+          }
+
+          fn hex_pair(text: &str) -> Result<u8, String> {
+              u8::from_str_radix(text, 16).map_err(|_| format!("bad hex {text:?}"))
+          }
+
+          impl FromStr for Color {
+              type Err = String;
+
+              fn from_str(s: &str) -> Result<Self, Self::Err> {
+                  if s.len() != 7 || !s.is_ascii() || !s.starts_with('#') {
+                      return Err(format!("expected #rrggbb, got {s:?}"));
+                  }
+                  Ok(Color {
+                      r: hex_pair(&s[1..3])?,
+                      g: hex_pair(&s[3..5])?,
+                      b: hex_pair(&s[5..7])?,
+                  })
+              }
+          }
+        harness: |
+          #[test]
+          fn parses_orange() {
+              assert_eq!("#ff8800".parse::<Color>(), Ok(Color { r: 255, g: 136, b: 0 }), "\"#ff8800\".parse()");
+          }
+
+          #[test]
+          fn accepts_upper_case_digits() {
+              assert_eq!("#00AAff".parse::<Color>(), Ok(Color { r: 0, g: 170, b: 255 }), "\"#00AAff\".parse()");
+          }
+
+          #[test]
+          fn rejects_a_missing_hash() {
+              assert!("ff8800".parse::<Color>().is_err(), "\"ff8800\" should be an Err");
+          }
+
+          #[test]
+          fn rejects_the_wrong_length() {
+              assert!("#ff88".parse::<Color>().is_err(), "\"#ff88\" should be an Err");
+              assert!("#ff880011".parse::<Color>().is_err(), "\"#ff880011\" should be an Err");
+          }
+
+          #[test]
+          fn rejects_non_hex_digits() {
+              assert!("#gg0000".parse::<Color>().is_err(), "\"#gg0000\" should be an Err");
+          }
+        hints:
+          - "Check the shape first: `if s.len() != 7 || !s.starts_with('#') { return Err(...); }`"
+          - "Each part is `u8::from_str_radix(&s[1..3], 16).map_err(|_| String::from(\"bad hex\"))?` (then `[3..5]` and `[5..7]`)."
+      - task: |
+          A robot reads commands, one per line from stdin. Implement `FromStr` for `Command`:
+
+          - `forward <n>` becomes `Command::Forward(n)` (n is a `u32`)
+          - `turn left` / `turn right` become `Command::Turn(Side::Left)` / `Command::Turn(Side::Right)`
+          - `stop` becomes `Command::Stop`
+          - anything else is an `Err` with the message `unknown command: <line>`
+
+          Then `main` (already written) parses every line and prints what the robot does, or `error: <message>`.
+        seed: |
+          use std::io::BufRead;
+          use std::str::FromStr;
+
+          #[derive(Debug)]
+          enum Side {
+              Left,
+              Right,
+          }
+
+          #[derive(Debug)]
+          enum Command {
+              Forward(u32),
+              Turn(Side),
+              Stop,
+          }
+
+          impl FromStr for Command {
+              type Err = String;
+
+              fn from_str(s: &str) -> Result<Self, Self::Err> {
+                  Err(format!("unknown command: {s}"))
+              }
+          }
+
+          fn main() {
+              let stdin = std::io::stdin();
+              for line in stdin.lock().lines() {
+                  let line = line.unwrap();
+                  match line.trim().parse::<Command>() {
+                      Ok(Command::Forward(n)) => println!("forward {n} steps"),
+                      Ok(Command::Turn(side)) => println!("turn {:?}", side),
+                      Ok(Command::Stop) => println!("stop"),
+                      Err(e) => println!("error: {e}"),
+                  }
+              }
+          }
+        solution: |
+          use std::io::BufRead;
+          use std::str::FromStr;
+
+          #[derive(Debug)]
+          enum Side {
+              Left,
+              Right,
+          }
+
+          #[derive(Debug)]
+          enum Command {
+              Forward(u32),
+              Turn(Side),
+              Stop,
+          }
+
+          impl FromStr for Command {
+              type Err = String;
+
+              fn from_str(s: &str) -> Result<Self, Self::Err> {
+                  let unknown = || format!("unknown command: {s}");
+                  let words: Vec<&str> = s.split_whitespace().collect();
+                  match words.as_slice() {
+                      ["forward", n] => n.parse::<u32>().map(Command::Forward).map_err(|_| unknown()),
+                      ["turn", "left"] => Ok(Command::Turn(Side::Left)),
+                      ["turn", "right"] => Ok(Command::Turn(Side::Right)),
+                      ["stop"] => Ok(Command::Stop),
+                      _ => Err(unknown()),
+                  }
+              }
+          }
+
+          fn main() {
+              let stdin = std::io::stdin();
+              for line in stdin.lock().lines() {
+                  let line = line.unwrap();
+                  match line.trim().parse::<Command>() {
+                      Ok(Command::Forward(n)) => println!("forward {n} steps"),
+                      Ok(Command::Turn(side)) => println!("turn {:?}", side),
+                      Ok(Command::Stop) => println!("stop"),
+                      Err(e) => println!("error: {e}"),
+                  }
+              }
+          }
+        tests:
+          - stdin: "forward 3\nturn left\nstop\n"
+            expect: "forward 3 steps\nturn Left\nstop"
+          - stdin: "turn right\nfly\nforward x\n"
+            expect: "turn Right\nerror: unknown command: fly\nerror: unknown command: forward x"
+          - stdin: "forward 10\nturn around\nforward 0\n"
+            hidden: true
+        hints:
+          - "Split the line into words: `let words: Vec<&str> = s.split_whitespace().collect();` then `match words.as_slice()` with slice patterns like `[\"turn\", \"left\"]`."
+          - "For `[\"forward\", n]`, parse `n` and wrap it: `match n.parse::<u32>() { Ok(x) => Ok(Command::Forward(x)), Err(_) => Err(...) }`."
+
+  - title: Operator overloading
+    id: std-traits-4
+    text: |
+      Rust's operators are traits in `std::ops`. `a + b` is really `Add::add(a, b)`, so implementing `Add` for your type makes `+` work on it. This is called **operator overloading**. It's perfect for math-like types: vectors, money, matrices, durations.
+
+      ```rust run
+      use std::ops::{Add, AddAssign, Mul};
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Vector2 {
+          x: f64,
+          y: f64,
+      }
+
+      impl Add for Vector2 {
+          type Output = Vector2;
+
+          fn add(self, other: Vector2) -> Vector2 {
+              Vector2 { x: self.x + other.x, y: self.y + other.y }
+          }
+      }
+
+      impl Mul<f64> for Vector2 {
+          type Output = Vector2;
+
+          fn mul(self, k: f64) -> Vector2 {
+              Vector2 { x: self.x * k, y: self.y * k }
+          }
+      }
+
+      impl AddAssign for Vector2 {
+          fn add_assign(&mut self, other: Vector2) {
+              self.x += other.x;
+              self.y += other.y;
+          }
+      }
+
+      fn main() {
+          let mut pos = Vector2 { x: 1.0, y: 2.0 };
+          let vel = Vector2 { x: 0.5, y: -1.0 };
+          println!("{:?}", pos + vel);
+          println!("{:?}", vel * 4.0);
+          pos += vel;
+          pos += vel;
+          println!("{:?}", pos);
+      }
+      ```
+
+      ```output
+      Vector2 { x: 1.5, y: 1.0 }
+      Vector2 { x: 2.0, y: -4.0 }
+      Vector2 { x: 2.0, y: 0.0 }
+      ```
+
+      Piece by piece:
+
+      - `impl Add for Vector2` means "Vector2 + Vector2". `type Output = Vector2;` says what `+` produces (it doesn't have to be the same type).
+      - `fn add(self, other: Vector2)` takes both sides **by value**. That's why `Vector2` derives `Copy`: `pos + vel` copies them instead of moving them away.
+      - `impl Mul<f64> for Vector2` is "Vector2 * f64": the type in `<>` is the right-hand side. (For `Add` it defaults to the same type, so `impl Add` means `Add<Vector2>`.)
+      - `AddAssign` is `+=`. It takes `&mut self` and changes the value in place, so there's no `Output`.
+
+      | Operator | Trait | Operator | Trait |
+      |---|---|---|---|
+      | `a + b` | `Add` | `a += b` | `AddAssign` |
+      | `a - b` | `Sub` | `a -= b` | `SubAssign` |
+      | `a * b` | `Mul` | `a / b` | `Div` |
+      | `-a` | `Neg` | `!a` | `Not` |
+      | `a == b` | `PartialEq` | `a < b` | `PartialOrd` |
+      | `a[i]` | `Index` | `a[i] = x` | `IndexMut` |
+
+      `Neg` is the unary minus: `fn neg(self) -> Self::Output`, with only one operand.
+
+      ### Index: square brackets on your own types
+
+      `Index` makes `value[i]` work. It returns a **reference** to something inside:
+
+      ```rust run
+      use std::ops::Index;
+
+      struct Playlist {
+          songs: Vec<String>,
+      }
+
+      impl Index<usize> for Playlist {
+          type Output = String;
+
+          fn index(&self, i: usize) -> &String {
+              &self.songs[i]
+          }
+      }
+
+      fn main() {
+          let p = Playlist { songs: vec![String::from("Crab Rave"), String::from("Ferris Wheel")] };
+          println!("{}", p[1]);
+      }
+      ```
+
+      ```output
+      Ferris Wheel
+      ```
+
+      The index type doesn't have to be a number: `HashMap` implements `Index<&K>`, so `scores["ana"]` works (and panics if the key is missing, like an out-of-bounds index).
+
+      ### Workplace note
+
+      Overload an operator only when its meaning is obvious to every reader: `+` on money or vectors, yes; `+` to "add a user to a group", no (write a method). Teams usually implement the full set together (`Add`, `Sub`, `AddAssign`...), so the type isn't surprising to use.
+
+      ### Common mistakes
+
+      - **Forgetting `type Output`** gives ``error[E0046]: not all trait items implemented, missing: `Output` ``.
+      - **A non-`Copy` type is moved by `+`.** With `struct Money { cents: i64 }` (no `Copy`), `let c = a + b;` moves `a` and `b`, and using `a` afterwards is ``error[E0382]: borrow of moved value: `a` ``. Derive `Copy` for small value types.
+      - **The operands in the other order.** `impl Mul<f64> for Vector2` allows `v * 2.0` but not `2.0 * v`:
+
+      ```rust compile_fail
+      use std::ops::Mul;
+
+      #[derive(Debug, Clone, Copy)]
+      struct Vector2 {
+          x: f64,
+          y: f64,
+      }
+
+      impl Mul<f64> for Vector2 {
+          type Output = Vector2;
+
+          fn mul(self, k: f64) -> Vector2 {
+              Vector2 { x: self.x * k, y: self.y * k }
+          }
+      }
+
+      fn main() {
+          let v = Vector2 { x: 1.0, y: 2.0 };
+          println!("{:?}", 2.0 * v);
+      }
+      ```
+
+      ```error
+      error[E0277]: cannot multiply `{float}` by `Vector2`
+      ```
+
+      For that you'd also write `impl Mul<Vector2> for f64`.
+
+      **Your turn:** `Add` is already done. Implement `Sub` (`a - b`) and `Neg` (`-a`) for `Vector2`.
+    seed: |
+      use std::ops::{Add, Neg, Sub};
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Vector2 {
+          x: f64,
+          y: f64,
+      }
+
+      impl Add for Vector2 {
+          type Output = Vector2;
+
+          fn add(self, other: Vector2) -> Vector2 {
+              Vector2 { x: self.x + other.x, y: self.y + other.y }
+          }
+      }
+
+      // impl Sub for Vector2 { ... }
+      // impl Neg for Vector2 { ... }
+    solution: |
+      use std::ops::{Add, Neg, Sub};
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Vector2 {
+          x: f64,
+          y: f64,
+      }
+
+      impl Add for Vector2 {
+          type Output = Vector2;
+
+          fn add(self, other: Vector2) -> Vector2 {
+              Vector2 { x: self.x + other.x, y: self.y + other.y }
+          }
+      }
+
+      impl Sub for Vector2 {
+          type Output = Vector2;
+
+          fn sub(self, other: Vector2) -> Vector2 {
+              Vector2 { x: self.x - other.x, y: self.y - other.y }
+          }
+      }
+
+      impl Neg for Vector2 {
+          type Output = Vector2;
+
+          fn neg(self) -> Vector2 {
+              Vector2 { x: -self.x, y: -self.y }
+          }
+      }
+    harness: |
+      fn v(x: f64, y: f64) -> Vector2 {
+          Vector2 { x, y }
+      }
+
+      #[test]
+      fn subtracts_component_by_component() {
+          assert_eq!(v(5.0, 3.0) - v(1.0, 4.0), v(4.0, -1.0), "(5, 3) - (1, 4)");
+      }
+
+      #[test]
+      fn subtracting_itself_gives_zero() {
+          let a = v(2.5, -7.0);
+          assert_eq!(a - a, v(0.0, 0.0), "a - a");
+      }
+
+      #[test]
+      fn negates_both_components() {
+          assert_eq!(-v(1.5, -2.0), v(-1.5, 2.0), "-(1.5, -2)");
+      }
+
+      #[test]
+      fn a_minus_b_is_a_plus_minus_b() {
+          let (a, b) = (v(3.0, 1.0), v(0.5, 0.25));
+          assert_eq!(a - b, a + -b, "a - b compared with a + -b");
+      }
+    hints:
+      - "`Sub` looks just like `Add`: `type Output = Vector2;` and `fn sub(self, other: Vector2) -> Vector2`."
+      - "`Neg` has only one operand: `fn neg(self) -> Vector2 { Vector2 { x: -self.x, y: -self.y } }`, plus `type Output = Vector2;`."
+    more:
+      - task: |
+          Make `Money` (a whole number of cents) work with `+`, `+=` and `*` by a quantity. Implement `Add` (Money + Money), `AddAssign` (`total += price`) and `Mul<i64>` (Money * quantity).
+        seed: |
+          use std::ops::{Add, AddAssign, Mul};
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Money {
+              cents: i64,
+          }
+        solution: |
+          use std::ops::{Add, AddAssign, Mul};
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          struct Money {
+              cents: i64,
+          }
+
+          impl Add for Money {
+              type Output = Money;
+
+              fn add(self, other: Money) -> Money {
+                  Money { cents: self.cents + other.cents }
+              }
+          }
+
+          impl AddAssign for Money {
+              fn add_assign(&mut self, other: Money) {
+                  self.cents += other.cents;
+              }
+          }
+
+          impl Mul<i64> for Money {
+              type Output = Money;
+
+              fn mul(self, qty: i64) -> Money {
+                  Money { cents: self.cents * qty }
+              }
+          }
+        harness: |
+          fn m(cents: i64) -> Money {
+              Money { cents }
+          }
+
+          #[test]
+          fn adds_two_amounts() {
+              assert_eq!(m(250) + m(175), m(425), "$2.50 + $1.75");
+          }
+
+          #[test]
+          fn add_assign_updates_a_running_total() {
+              let mut total = m(0);
+              total += m(300);
+              total += m(-50);
+              assert_eq!(total, m(250), "0 += 300, += -50");
+          }
+
+          #[test]
+          fn multiplies_by_a_quantity() {
+              assert_eq!(m(199) * 3, m(597), "$1.99 * 3");
+          }
+
+          #[test]
+          fn combines_operators() {
+              let mut cart = m(1000) * 2;
+              cart += m(450) * 4 + m(5);
+              assert_eq!(cart, m(3805), "a whole shopping cart");
+          }
+        hints:
+          - "Three impl blocks. `Add` and `Mul<i64>` need `type Output = Money;`; `AddAssign` has none."
+          - "`fn add_assign(&mut self, other: Money) { self.cents += other.cents; }`"
+      - task: |
+          A game board stores its cells in one `Vec<char>`, row after row. Implement `Index<(usize, usize)>` for `Grid` so `grid[(row, col)]` returns the cell at that row and column. The cell's position in `cells` is `row * width + col`.
+        seed: |
+          use std::ops::Index;
+
+          struct Grid {
+              width: usize,
+              cells: Vec<char>,
+          }
+        solution: |
+          use std::ops::Index;
+
+          struct Grid {
+              width: usize,
+              cells: Vec<char>,
+          }
+
+          impl Index<(usize, usize)> for Grid {
+              type Output = char;
+
+              fn index(&self, (row, col): (usize, usize)) -> &char {
+                  &self.cells[row * self.width + col]
+              }
+          }
+        harness: |
+          fn board() -> Grid {
+              // . X .
+              // O . .
+              Grid { width: 3, cells: vec!['.', 'X', '.', 'O', '.', '.'] }
+          }
+
+          #[test]
+          fn reads_the_first_row() {
+              assert_eq!(board()[(0, 1)], 'X', "grid[(0, 1)]");
+          }
+
+          #[test]
+          fn reads_the_second_row() {
+              assert_eq!(board()[(1, 0)], 'O', "grid[(1, 0)]");
+          }
+
+          #[test]
+          fn reads_the_last_cell() {
+              assert_eq!(board()[(1, 2)], '.', "grid[(1, 2)]");
+          }
+
+          #[test]
+          fn works_with_another_width() {
+              let g = Grid { width: 2, cells: vec!['a', 'b', 'c', 'd'] };
+              assert_eq!(g[(1, 1)], 'd', "grid[(1, 1)] with width 2");
+          }
+        hints:
+          - "`impl Index<(usize, usize)> for Grid` with `type Output = char;`."
+          - "`fn index(&self, pos: (usize, usize)) -> &char { &self.cells[pos.0 * self.width + pos.1] }`"
+
+  - title: "Ordering: PartialOrd and Ord for sorting"
+    id: std-traits-5
+    text: |
+      `v.sort()` needs the items to implement `Ord`, a **total order**: for any two values, one is less, greater or equal. Deriving `Ord` (previous module) compares the fields in the order they're written. When you need a different order, implement it yourself.
+
+      A leaderboard: higher scores first, and players with the same score alphabetically.
+
+      ```rust run
+      use std::cmp::Ordering;
+
+      #[derive(Debug, PartialEq, Eq)]
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      impl Ord for Player {
+          fn cmp(&self, other: &Self) -> Ordering {
+              other.score.cmp(&self.score).then(self.name.cmp(&other.name))
+          }
+      }
+
+      impl PartialOrd for Player {
+          fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+              Some(self.cmp(other))
+          }
+      }
+
+      fn main() {
+          let mut board = vec![
+              Player { name: String::from("cy"), score: 80 },
+              Player { name: String::from("bo"), score: 95 },
+              Player { name: String::from("al"), score: 80 },
+          ];
+          board.sort();
+          for p in &board {
+              println!("{} {}", p.score, p.name);
+          }
+      }
+      ```
+
+      ```output
+      95 bo
+      80 al
+      80 cy
+      ```
+
+      Piece by piece:
+
+      - `std::cmp::Ordering` is an enum with three values: `Less`, `Equal`, `Greater`. `a.cmp(&b)` on numbers and strings returns one.
+      - `other.score.cmp(&self.score)` compares in **reverse** (other first), which puts higher scores first. You could also write `self.score.cmp(&other.score).reverse()`.
+      - `.then(...)` breaks ties: it's used only when the first comparison says `Equal`.
+      - `PartialOrd` is required too (it powers `<` and `>`). When you have `Ord`, implement it as `Some(self.cmp(other))` so the two always agree.
+      - `Ord` also needs `Eq` and `PartialEq`, here derived.
+
+      ### Keep them consistent
+
+      `==`, `cmp` and `<` must agree: if `cmp` says `Equal`, `==` must say `true`. Here `PartialEq` compares both fields and `cmp` uses both fields, so they agree. If `cmp` ignored the name, two players with the same score would be "equal" for sorting but not for `==`, and collections like `BTreeSet` would treat them as duplicates. Compare the same fields in all of them.
+
+      ### Implement Ord, or use sort_by?
+
+      Implement `Ord` when the type has one **natural** order that everyone expects: versions, priorities, dates. For a one-off order in one place ("sort these players by name for this report"), use `sort_by` or `sort_by_key` from the vectors module and leave the type alone:
+
+      ```rust
+      board.sort_by(|a, b| a.name.cmp(&b.name));
+      ```
+
+      ### Floats aren't Ord
+
+      `f64` has `NaN`, which isn't less, equal or greater than anything, so floats only implement `PartialOrd`:
+
+      ```rust compile_fail
+      fn main() {
+          let mut times: Vec<f64> = vec![9.58, 9.63, 9.69];
+          times.sort();
+          println!("{:?}", times);
+      }
+      ```
+
+      ```error
+      error[E0277]: the trait bound `f64: Ord` is not satisfied
+      ```
+
+      Use `times.sort_by(|a, b| a.total_cmp(b));`. `total_cmp` gives every float (even NaN) a fixed place in the order.
+
+      **Your turn:** implement `Ord` and `PartialOrd` for `Task` so that sorting puts the **highest priority first**, then the **earliest due day**, then the title alphabetically.
+    seed: |
+      use std::cmp::Ordering;
+
+      #[derive(Debug, PartialEq, Eq)]
+      struct Task {
+          priority: u8,
+          due_day: u32,
+          title: String,
+      }
+
+      impl Ord for Task {
+          fn cmp(&self, other: &Self) -> Ordering {
+              todo!()
+          }
+      }
+
+      impl PartialOrd for Task {
+          fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+              todo!()
+          }
+      }
+    solution: |
+      use std::cmp::Ordering;
+
+      #[derive(Debug, PartialEq, Eq)]
+      struct Task {
+          priority: u8,
+          due_day: u32,
+          title: String,
+      }
+
+      impl Ord for Task {
+          fn cmp(&self, other: &Self) -> Ordering {
+              other
+                  .priority
+                  .cmp(&self.priority)
+                  .then(self.due_day.cmp(&other.due_day))
+                  .then(self.title.cmp(&other.title))
+          }
+      }
+
+      impl PartialOrd for Task {
+          fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+              Some(self.cmp(other))
+          }
+      }
+    harness: |
+      fn t(priority: u8, due_day: u32, title: &str) -> Task {
+          Task { priority, due_day, title: title.to_string() }
+      }
+
+      fn titles(tasks: &[Task]) -> Vec<String> {
+          let mut out = Vec::new();
+          for task in tasks {
+              out.push(task.title.clone());
+          }
+          out
+      }
+
+      #[test]
+      fn highest_priority_comes_first() {
+          let mut v = vec![t(1, 5, "low"), t(3, 9, "high"), t(2, 1, "mid")];
+          v.sort();
+          assert_eq!(titles(&v), vec!["high", "mid", "low"], "sorted titles");
+      }
+
+      #[test]
+      fn same_priority_sorts_by_due_day() {
+          let mut v = vec![t(2, 10, "later"), t(2, 3, "sooner")];
+          v.sort();
+          assert_eq!(titles(&v), vec!["sooner", "later"], "sorted titles");
+      }
+
+      #[test]
+      fn then_by_title() {
+          let mut v = vec![t(2, 3, "write docs"), t(2, 3, "fix bug"), t(5, 30, "deploy")];
+          v.sort();
+          assert_eq!(titles(&v), vec!["deploy", "fix bug", "write docs"], "sorted titles");
+      }
+
+      #[test]
+      fn comparison_operators_agree() {
+          assert!(t(5, 1, "a") < t(4, 1, "a"), "a priority-5 task should sort before a priority-4 task");
+          assert_eq!(t(1, 1, "a").cmp(&t(1, 1, "a")), Ordering::Equal, "identical tasks");
+      }
+    hints:
+      - "Reverse the priority by putting `other` first: `other.priority.cmp(&self.priority)`."
+      - "Chain the tie-breakers with `.then(self.due_day.cmp(&other.due_day)).then(self.title.cmp(&other.title))`."
+      - "`partial_cmp` is always `Some(self.cmp(other))`."
+    more:
+      - task: |
+          Sort `Employee`s by **years of service, most first**, and for equal years by name alphabetically. Implement `Ord` and `PartialOrd`.
+        seed: |
+          use std::cmp::Ordering;
+
+          #[derive(Debug, PartialEq, Eq)]
+          struct Employee {
+              name: String,
+              years: u32,
+          }
+
+          impl Ord for Employee {
+              fn cmp(&self, other: &Self) -> Ordering {
+                  todo!()
+              }
+          }
+
+          impl PartialOrd for Employee {
+              fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::cmp::Ordering;
+
+          #[derive(Debug, PartialEq, Eq)]
+          struct Employee {
+              name: String,
+              years: u32,
+          }
+
+          impl Ord for Employee {
+              fn cmp(&self, other: &Self) -> Ordering {
+                  other.years.cmp(&self.years).then(self.name.cmp(&other.name))
+              }
+          }
+
+          impl PartialOrd for Employee {
+              fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                  Some(self.cmp(other))
+              }
+          }
+        harness: |
+          fn e(name: &str, years: u32) -> Employee {
+              Employee { name: name.to_string(), years }
+          }
+
+          #[test]
+          fn most_years_first() {
+              let mut v = vec![e("ana", 2), e("bo", 10), e("cy", 5)];
+              v.sort();
+              assert_eq!(v, vec![e("bo", 10), e("cy", 5), e("ana", 2)], "sorted employees");
+          }
+
+          #[test]
+          fn equal_years_by_name() {
+              let mut v = vec![e("zed", 4), e("amy", 4), e("max", 4)];
+              v.sort();
+              assert_eq!(v, vec![e("amy", 4), e("max", 4), e("zed", 4)], "sorted employees");
+          }
+
+          #[test]
+          fn the_most_senior_sorts_first() {
+              let v = vec![e("ana", 2), e("bo", 10)];
+              let mut most = &v[0];
+              for x in &v {
+                  if x < most {
+                      most = x;
+                  }
+              }
+              assert_eq!(most, &e("bo", 10), "the employee that sorts first");
+          }
+        hints:
+          - "`other.years.cmp(&self.years)` puts more years first."
+          - "Add `.then(self.name.cmp(&other.name))`, and make `partial_cmp` return `Some(self.cmp(other))`."
+      - task: |
+          Write `fn leaderboard(entries: &[(&str, f64)]) -> Vec<String>` for a race: each entry is a name and a time in seconds. Return lines like `1. ana 9.58`, fastest time first, with equal times ordered by name. Use `sort_by` on a copy of the entries (`entries.to_vec()`), with `total_cmp` for the times and `.then(...)` for the names. Print times with `{}`.
+        seed: |
+          fn leaderboard(entries: &[(&str, f64)]) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          fn leaderboard(entries: &[(&str, f64)]) -> Vec<String> {
+              let mut sorted = entries.to_vec();
+              sorted.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(b.0)));
+              let mut lines = Vec::new();
+              let mut place = 1;
+              for (name, time) in sorted {
+                  lines.push(format!("{place}. {name} {time}"));
+                  place += 1;
+              }
+              lines
+          }
+        harness: |
+          #[test]
+          fn fastest_time_first() {
+              let got = leaderboard(&[("bo", 9.69), ("ana", 9.58), ("cy", 9.63)]);
+              assert_eq!(got, vec!["1. ana 9.58", "2. cy 9.63", "3. bo 9.69"], "leaderboard");
+          }
+
+          #[test]
+          fn ties_are_ordered_by_name() {
+              let got = leaderboard(&[("zoe", 10.5), ("max", 10.5)]);
+              assert_eq!(got, vec!["1. max 10.5", "2. zoe 10.5"], "leaderboard with a tie");
+          }
+
+          #[test]
+          fn one_runner() {
+              assert_eq!(leaderboard(&[("solo", 12.0)]), vec!["1. solo 12"], "leaderboard with one runner");
+          }
+
+          #[test]
+          fn no_runners() {
+              assert_eq!(leaderboard(&[]), Vec::<String>::new(), "leaderboard(&[])");
+          }
+        hints:
+          - "`let mut sorted = entries.to_vec();` then `sorted.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(b.0)));`"
+          - "Loop over `sorted` with a counter starting at 1 and push `format!(\"{place}. {name} {time}\")`."
+
+  - title: Default and AsRef
+    id: std-traits-6
+    text: |
+      Two small traits that make your types pleasant to use.
+
+      ### Default: a sensible starting value
+
+      `#[derive(Default)]` fills every field with zero, `false` or empty. When the right starting value is something else, implement `Default` yourself:
+
+      ```rust run
+      #[derive(Debug)]
+      struct ServerConfig {
+          host: String,
+          port: u16,
+          workers: u32,
+      }
+
+      impl Default for ServerConfig {
+          fn default() -> Self {
+              ServerConfig { host: String::from("localhost"), port: 8080, workers: 4 }
+          }
+      }
+
+      fn main() {
+          let dev = ServerConfig::default();
+          let prod = ServerConfig { host: String::from("0.0.0.0"), workers: 16, ..Default::default() };
+          println!("{}:{} x{}", dev.host, dev.port, dev.workers);
+          println!("{}:{} x{}", prod.host, prod.port, prod.workers);
+
+          let missing: Option<u32> = None;
+          println!("{}", missing.unwrap_or_default());
+      }
+      ```
+
+      ```output
+      localhost:8080 x4
+      0.0.0.0:8080 x16
+      0
+      ```
+
+      - `fn default() -> Self` is the only method.
+      - `..Default::default()` is the struct update syntax from the structs module: "the rest of the fields come from the default". It's the idiomatic way to override a few settings.
+      - Lots of the standard library builds on `Default`: `unwrap_or_default()`, `HashMap`'s `entry(k).or_default()`, `std::mem::take`, and `#[derive(Default)]` on a struct whose fields are your types.
+
+      For an enum, derive it and mark the default variant with `#[default]`:
+
+      ```rust
+      #[derive(Debug, Default)]
+      enum Theme {
+          #[default]
+          Light,
+          Dark,
+      }
+      ```
+
+      Clippy's `new_without_default` lint suggests adding `Default` whenever a type has a `new()` that takes no arguments; teams usually implement both, with one calling the other.
+
+      ### AsRef: "anything I can borrow as a `&str`"
+
+      `AsRef<T>` is a cheap reference conversion: `x.as_ref()` borrows `x` as a `&T`. It's used for parameters that should accept several types:
+
+      ```rust run
+      fn shout<S: AsRef<str>>(text: S) -> String {
+          let s: &str = text.as_ref();
+          format!("{}!", s.to_uppercase())
+      }
+
+      fn main() {
+          let owned = String::from("gg");
+          println!("{}", shout("hello"));
+          println!("{}", shout(&owned));
+          println!("{}", shout(owned));
+      }
+      ```
+
+      ```output
+      HELLO!
+      GG!
+      GG!
+      ```
+
+      `&str`, `&String` and `String` all implement `AsRef<str>`. You'll see this all over the standard library: `std::fs::read_to_string` takes `impl AsRef<Path>`, which is why you can pass it a `&str`, a `String` or a `PathBuf`.
+
+      **AsRef or Into?** `AsRef` **borrows** (no copy, no allocation): use it when you only need to look at the data. `Into` **converts** and takes ownership: use it when you need to store an owned value, like `User::new(name: impl Into<String>)`. For plain functions that take text, a simple `&str` parameter is still the most common choice; `AsRef` shines in generic code and when callers would otherwise write `&` everywhere.
+
+      ### Common mistakes
+
+      - **Implementing `Default` with values that aren't really defaults.** A default port of 8080 is reasonable. A default user name of `"admin"` is a security bug waiting to happen. If there's no safe default, don't implement `Default`: make callers choose.
+      - **Calling `as_ref()` without a type.** Many types implement several `AsRef`s (`String` is `AsRef<str>`, `AsRef<[u8]>`, `AsRef<Path>`...), so `let s = owned.as_ref();` needs an annotation: `let s: &str = owned.as_ref();`.
+
+      **Your turn:** implement `Default` for `GameSettings` (volume `80`, difficulty `"normal"`, fullscreen `true`), and write `fn quiet_settings() -> GameSettings` that returns the defaults with only the volume changed to `10`, using `..Default::default()`.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct GameSettings {
+          volume: u8,
+          difficulty: String,
+          fullscreen: bool,
+      }
+
+      // impl Default for GameSettings { ... }
+
+      fn quiet_settings() -> GameSettings {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct GameSettings {
+          volume: u8,
+          difficulty: String,
+          fullscreen: bool,
+      }
+
+      impl Default for GameSettings {
+          fn default() -> Self {
+              GameSettings { volume: 80, difficulty: String::from("normal"), fullscreen: true }
+          }
+      }
+
+      fn quiet_settings() -> GameSettings {
+          GameSettings { volume: 10, ..Default::default() }
+      }
+    require:
+      - pattern: '\.\.\s*(Default::default|GameSettings::default|Self::default)\(\)'
+        message: "Build `quiet_settings` with the struct update syntax: `..Default::default()`."
+    harness: |
+      #[test]
+      fn default_has_the_right_values() {
+          let d = GameSettings::default();
+          assert_eq!(d, GameSettings { volume: 80, difficulty: String::from("normal"), fullscreen: true }, "GameSettings::default()");
+      }
+
+      #[test]
+      fn quiet_settings_only_changes_the_volume() {
+          assert_eq!(quiet_settings(), GameSettings { volume: 10, difficulty: String::from("normal"), fullscreen: true }, "quiet_settings()");
+      }
+
+      #[test]
+      fn default_works_through_unwrap_or_default() {
+          let saved: Option<GameSettings> = None;
+          assert_eq!(saved.unwrap_or_default().volume, 80, "None.unwrap_or_default().volume");
+      }
+    hints:
+      - "`impl Default for GameSettings { fn default() -> Self { GameSettings { ... } } }` with all three fields."
+      - "`GameSettings { volume: 10, ..Default::default() }`"
+    more:
+      - task: |
+          Derive `Default` for the `Theme` enum with `Dark` as the default variant (use `#[default]`), then implement `Default` for `Prefs` by hand: the default theme (`Theme::default()`) and a font size of `14`.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          enum Theme {
+              Light,
+              Dark,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Prefs {
+              theme: Theme,
+              font_size: u8,
+          }
+        solution: |
+          #[derive(Debug, PartialEq, Default)]
+          enum Theme {
+              Light,
+              #[default]
+              Dark,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Prefs {
+              theme: Theme,
+              font_size: u8,
+          }
+
+          impl Default for Prefs {
+              fn default() -> Self {
+                  Prefs { theme: Theme::default(), font_size: 14 }
+              }
+          }
+        harness: |
+          #[test]
+          fn the_default_theme_is_dark() {
+              assert_eq!(Theme::default(), Theme::Dark, "Theme::default()");
+          }
+
+          #[test]
+          fn default_prefs() {
+              assert_eq!(Prefs::default(), Prefs { theme: Theme::Dark, font_size: 14 }, "Prefs::default()");
+          }
+
+          #[test]
+          fn light_is_still_available() {
+              let p = Prefs { theme: Theme::Light, ..Default::default() };
+              assert_eq!(p, Prefs { theme: Theme::Light, font_size: 14 }, "light prefs");
+          }
+        hints:
+          - "Add `Default` to the enum's derive list and put `#[default]` on the line above `Dark`."
+          - "`impl Default for Prefs { fn default() -> Self { Prefs { theme: Theme::default(), font_size: 14 } } }`"
+      - task: |
+          Write `fn word_count<S: AsRef<str>>(text: S) -> usize` that counts the words (split on whitespace), so it accepts a `&str`, a `String` or a `&String`. Then implement `AsRef<str>` for the `Headline` newtype, so `word_count(&headline)` works too.
+        seed: |
+          struct Headline(String);
+
+          fn word_count<S: AsRef<str>>(text: S) -> usize {
+              todo!()
+          }
+        solution: |
+          struct Headline(String);
+
+          impl AsRef<str> for Headline {
+              fn as_ref(&self) -> &str {
+                  &self.0
+              }
+          }
+
+          fn word_count<S: AsRef<str>>(text: S) -> usize {
+              let mut n = 0;
+              for _ in text.as_ref().split_whitespace() {
+                  n += 1;
+              }
+              n
+          }
+        harness: |
+          #[test]
+          fn counts_words_in_a_str() {
+              assert_eq!(word_count("crabs walk sideways"), 3, "word_count(\"crabs walk sideways\")");
+          }
+
+          #[test]
+          fn accepts_a_string_and_a_reference_to_one() {
+              let s = String::from("  two   words ");
+              assert_eq!(word_count(&s), 2, "word_count(&String)");
+              assert_eq!(word_count(s), 2, "word_count(String)");
+          }
+
+          #[test]
+          fn accepts_a_headline() {
+              let h = Headline(String::from("Rust tops survey again"));
+              assert_eq!(word_count(&h), 4, "word_count(&headline)");
+          }
+
+          #[test]
+          fn empty_text_has_no_words() {
+              assert_eq!(word_count(""), 0, "word_count(\"\")");
+          }
+        hints:
+          - "Inside `word_count`, `text.as_ref()` gives you a `&str`; loop over `.split_whitespace()` and count."
+          - "`impl AsRef<str> for Headline { fn as_ref(&self) -> &str { &self.0 } }`"
+
+  - title: Drop and Deref
+    id: std-traits-7
+    text: |
+      ### Drop: code that runs when a value goes away
+
+      In the ownership module you saw that a value is **dropped** at the end of its scope: its memory is freed. `Drop` lets you run your own code at that moment.
+
+      ```rust run
+      struct Connection {
+          id: u32,
+      }
+
+      impl Drop for Connection {
+          fn drop(&mut self) {
+              println!("closing connection {}", self.id);
+          }
+      }
+
+      fn main() {
+          let _a = Connection { id: 1 };
+          {
+              let _b = Connection { id: 2 };
+              println!("inner scope ends");
+          }
+          let c = Connection { id: 3 };
+          drop(c);
+          println!("main ends");
+      }
+      ```
+
+      ```output
+      inner scope ends
+      closing connection 2
+      closing connection 3
+      main ends
+      closing connection 1
+      ```
+
+      - `fn drop(&mut self)` runs automatically. `_b` is dropped when the inner block ends; `_a` when `main` ends.
+      - Values in the same scope are dropped in **reverse** order of creation (last in, first out), so things created later, which may depend on earlier ones, go away first.
+      - `drop(c)` drops a value early. It's an ordinary function (`std::mem::drop`) that takes ownership and lets the value go out of scope. You can't call `c.drop()` yourself: ``error[E0040]: explicit use of destructor method``.
+
+      This pattern is called **RAII** ("resource acquisition is initialization"): a value owns a resource and releases it in `Drop`, so you can't forget. Files close themselves, `MutexGuard`s unlock their mutex, network connections hang up. You rarely write `Drop` for plain data; you write it for types that own something outside your program's memory.
+
+      A type can't be both `Copy` and `Drop` (``error[E0184]: the trait `Copy` cannot be implemented for this type; the type has a destructor``): if copies existed, the cleanup would run several times.
+
+      ### Deref (briefly): `*` and automatic method calls
+
+      `Deref` lets a wrapper type act like a reference to what it contains. You use it all the time without noticing: a `String` derefs to `str` (that's why `&String` works where `&str` is expected) and a `Vec<T>` derefs to `[T]`.
+
+      ```rust run
+      use std::ops::Deref;
+
+      struct Username(String);
+
+      impl Deref for Username {
+          type Target = str;
+
+          fn deref(&self) -> &str {
+              &self.0
+          }
+      }
+
+      fn greet(name: &str) -> String {
+          format!("hi {name}")
+      }
+
+      fn main() {
+          let u = Username(String::from("ferris"));
+          println!("{} {}", u.len(), u.to_uppercase());
+          println!("{}", greet(&u));
+      }
+      ```
+
+      ```output
+      6 FERRIS
+      hi ferris
+      ```
+
+      - `type Target = str;` is what the wrapper derefs to, and `deref` returns a reference to it.
+      - `u.len()`: `Username` has no `len` method, so Rust derefs and finds `str::len`.
+      - `greet(&u)`: a `&Username` turns into a `&str` automatically. This is **deref coercion**.
+
+      Use `Deref` for smart pointers and thin wrappers like this one. Don't use it to fake inheritance ("my `Admin` derefs to `User` so it gets all of `User`'s methods"): it confuses readers and the Rust API guidelines advise against it. The smart pointers module comes back to `Deref` and `Drop` in depth.
+
+      **Your turn:** implement `Drop` for `Connection` so it prints `close <id>` when it's dropped. Don't change `main`. The program must print exactly:
+
+      ```
+      open 1
+      open 2
+      using 2
+      close 2
+      open 3
+      close 1
+      end of main
+      close 3
+      ```
+    seed: |
+      struct Connection {
+          id: u32,
+      }
+
+      impl Connection {
+          fn open(id: u32) -> Connection {
+              println!("open {id}");
+              Connection { id }
+          }
+      }
+
+      // impl Drop for Connection { ... }
+
+      fn main() {
+          let a = Connection::open(1);
+          {
+              let b = Connection::open(2);
+              println!("using {}", b.id);
+          }
+          let _c = Connection::open(3);
+          drop(a);
+          println!("end of main");
+      }
+    solution: |
+      struct Connection {
+          id: u32,
+      }
+
+      impl Connection {
+          fn open(id: u32) -> Connection {
+              println!("open {id}");
+              Connection { id }
+          }
+      }
+
+      impl Drop for Connection {
+          fn drop(&mut self) {
+              println!("close {}", self.id);
+          }
+      }
+
+      fn main() {
+          let a = Connection::open(1);
+          {
+              let b = Connection::open(2);
+              println!("using {}", b.id);
+          }
+          let _c = Connection::open(3);
+          drop(a);
+          println!("end of main");
+      }
+    tests:
+      - expect: "open 1\nopen 2\nusing 2\nclose 2\nopen 3\nclose 1\nend of main\nclose 3"
+    hints:
+      - "`impl Drop for Connection { fn drop(&mut self) { ... } }`"
+      - "Inside, `println!(\"close {}\", self.id);`. Rust calls it at the right moments for you."
+    more:
+      - task: |
+          Fill in the blanks so `Noisy` prints `drop <name>` when it's dropped. Three values are created in one scope; notice the order they're dropped in. The program prints:
+
+          ```
+          made all three
+          drop c
+          drop b
+          drop a
+          ```
+        fill: |
+          struct Noisy(&'static str);
+
+          impl [[Drop]] for Noisy {
+              fn [[drop]](&mut self) {
+                  println!("drop {}", self.0);
+              }
+          }
+
+          fn main() {
+              let _a = Noisy("a");
+              let _b = Noisy("b");
+              let _c = Noisy("c");
+              println!("made all three");
+          }
+        hints:
+          - The trait and its one method have the same name, one capitalized and one not.
+          - Values in one scope are dropped in reverse order, so `c` goes first.
+        tests:
+          - expect: "made all three\ndrop c\ndrop b\ndrop a"
+      - task: |
+          A `Tag` wraps a `String` that's always lowercase. Write `fn new(text: &str) -> Tag` that lowercases the text, and implement `Deref` with `Target = str`, so a `Tag` can use every `str` method (`len`, `starts_with`...) and be passed where a `&str` is expected.
+        seed: |
+          use std::ops::Deref;
+
+          struct Tag(String);
+
+          impl Tag {
+              fn new(text: &str) -> Tag {
+                  todo!()
+              }
+          }
+
+          fn is_rust_related(tag: &str) -> bool {
+              tag.contains("rust")
+          }
+        solution: |
+          use std::ops::Deref;
+
+          struct Tag(String);
+
+          impl Tag {
+              fn new(text: &str) -> Tag {
+                  Tag(text.to_lowercase())
+              }
+          }
+
+          impl Deref for Tag {
+              type Target = str;
+
+              fn deref(&self) -> &str {
+                  &self.0
+              }
+          }
+
+          fn is_rust_related(tag: &str) -> bool {
+              tag.contains("rust")
+          }
+        harness: |
+          #[test]
+          fn new_lowercases_the_text() {
+              let t = Tag::new("RustLang");
+              assert_eq!(&*t, "rustlang", "*Tag::new(\"RustLang\")");
+          }
+
+          #[test]
+          fn str_methods_work_on_a_tag() {
+              let t = Tag::new("GameDev");
+              assert_eq!(t.len(), 7, "tag.len()");
+              assert!(t.starts_with("game"), "tag.starts_with(\"game\") should be true");
+          }
+
+          #[test]
+          fn a_tag_can_be_passed_as_a_str() {
+              assert!(is_rust_related(&Tag::new("Learning-RUST")), "is_rust_related(&tag) should be true");
+              assert!(!is_rust_related(&Tag::new("python")), "is_rust_related(&python tag) should be false");
+          }
+        hints:
+          - "`new` is `Tag(text.to_lowercase())`."
+          - "`impl Deref for Tag { type Target = str; fn deref(&self) -> &str { &self.0 } }`"

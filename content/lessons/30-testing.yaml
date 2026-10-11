@@ -1,0 +1,1975 @@
+id: testing
+title: Testing
+phase: "Idiomatic Rust"
+summary: "Write tests that actually catch bugs. #[test] and the assert macros, edge cases and planted bugs (mutants), #[should_panic] and tests returning Result, fixing bugs test-first, and how unit, integration and doc tests are organized."
+roadmap: [Testing, "Unit & Integration Testing"]
+steps:
+  - title: Your first test
+    id: testing-1
+    text: |
+      So far you've checked your programs by running them and reading the output. That works once. A **test** is a small function that checks some code *automatically*, so you can rerun every check in a second, every time anything changes. Professional Rust code is full of them, and `cargo test` runs them all.
+
+      ### Checks you already know: assert!
+
+      The **assert macros** panic when a check fails, and do nothing when it passes:
+
+      - `assert!(condition)` panics if the condition is `false`.
+      - `assert_eq!(left, right)` panics if the two values are not equal, and shows both.
+      - `assert_ne!(left, right)` panics if they *are* equal.
+
+      ```rust run
+      fn ticket_price(age: u32) -> u32 {
+          if age < 12 { 500 } else { 1200 }
+      }
+
+      fn main() {
+          assert_eq!(ticket_price(8), 500);
+          assert_eq!(ticket_price(40), 1200);
+          assert!(ticket_price(11) < ticket_price(12));
+          assert_ne!(ticket_price(0), 0);
+          println!("all checks passed");
+      }
+      ```
+
+      ```output
+      all checks passed
+      ```
+
+      ### Turning checks into tests
+
+      Checks in `main` are clumsy: the first failure stops everything, and they run every time the program runs. Real tests live in their own functions, marked with the `#[test]` **attribute**:
+
+      ```rust
+      fn ticket_price(age: u32) -> u32 {
+          if age < 12 { 500 } else { 1200 }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn children_pay_500() {
+              assert_eq!(ticket_price(8), 500);
+          }
+
+          #[test]
+          fn adults_pay_1200() {
+              assert_eq!(ticket_price(40), 1200);
+          }
+      }
+      ```
+
+      ```text
+      $ cargo test
+         Compiling tickets v0.1.0 (/home/you/tickets)
+          Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+           Running unittests src/main.rs (target/debug/deps/tickets-1f2e3d4c5b6a7980)
+
+      running 2 tests
+      test tests::adults_pay_1200 ... ok
+      test tests::children_pay_500 ... ok
+
+      test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+      ```
+
+      Piece by piece:
+
+      - `#[test]` marks a function as a test. A test **passes** if it returns normally and **fails** if it panics, which is exactly what a failing `assert!` does.
+      - `#[cfg(test)]` means "compile this module only when testing". `cargo build` and `cargo run` leave it out, so test code never ends up in your program.
+      - `mod tests` is a child module, so it starts with `use super::*;` to bring the parent's functions (including private ones) into scope.
+      - `cargo test` compiles your code in test mode. Instead of running your `main`, Rust builds a **test runner**: a program with its own `main` that calls every `#[test]` function, each one separately, and reports which passed. One failing test doesn't stop the others.
+      - Name tests like sentences about behavior (`children_pay_500`): when one fails, the name tells you what broke.
+
+      ### Test exercises on this site
+
+      In test exercises you write `#[test]` functions, and **Check** runs `cargo test`. Your code doesn't need a `fn main`, because the test runner brings its own. Then the site does something extra: it plants bugs, called **mutants**, in the code you're testing (one at a time) and runs your tests again. Each mutant must make at least one of your tests fail. A test suite that passes no matter what the code does isn't protecting anything.
+
+      ### Common mistakes
+
+      - **Forgetting `#[test]`**: the function is just a helper and never runs. `cargo test` reports `running 0 tests`.
+      - **Forgetting `use super::*;`**: `error[E0425]: cannot find function `ticket_price` in this scope`.
+      - **Tests that never fail**: a test with no assertion, or one that checks the code against itself (`assert_eq!(ticket_price(8), ticket_price(8))`), passes even when the code is wrong.
+
+      **Your turn:** `ticket_price` has three prices: children under 12 pay 500, seniors aged 65 and over pay 700, everyone else pays 1200. Write **three tests** in the `tests` module, one for each kind of visitor. Don't change `ticket_price`.
+    mode: test
+    minTests: 3
+    seed: |
+      fn ticket_price(age: u32) -> u32 {
+          if age < 12 {
+              500
+          } else if age >= 65 {
+              700
+          } else {
+              1200
+          }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+      }
+    solution: |
+      fn ticket_price(age: u32) -> u32 {
+          if age < 12 {
+              500
+          } else if age >= 65 {
+              700
+          } else {
+              1200
+          }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+          #[test]
+          fn children_pay_500() {
+              assert_eq!(ticket_price(8), 500);
+          }
+
+          #[test]
+          fn adults_pay_1200() {
+              assert_eq!(ticket_price(30), 1200);
+          }
+
+          #[test]
+          fn seniors_pay_700() {
+              assert_eq!(ticket_price(70), 700);
+          }
+      }
+    mutants:
+      - name: children are charged the adult price
+        find: "500"
+        replace: "1200"
+      - name: seniors are charged the adult price
+        find: "700"
+        replace: "1200"
+      - name: adults are charged the senior price
+        find: "1200"
+        replace: "700"
+    hints:
+      - "Each test is `#[test] fn some_name() { assert_eq!(ticket_price(AGE), PRICE); }` inside `mod tests`."
+      - "Pick one age from each group: a child (say 8), an adult (30) and a senior (70)."
+      - "`#[test] fn seniors_pay_700() { assert_eq!(ticket_price(70), 700); }`, and the same shape for the other two."
+    more:
+      - task: |
+          `is_valid_username` accepts names of 3 to 12 characters (counting characters, not bytes) made only of lowercase letters, digits and `_`. Write at least **3 tests** that check valid and invalid names. Use `assert!` for names that should pass and `assert!(!...)` for names that should fail.
+        mode: test
+        minTests: 3
+        seed: |
+          fn is_valid_username(name: &str) -> bool {
+              let len_ok = (3..=12).contains(&name.chars().count());
+              let chars_ok = name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+              len_ok && chars_ok
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          fn is_valid_username(name: &str) -> bool {
+              let len_ok = (3..=12).contains(&name.chars().count());
+              let chars_ok = name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+              len_ok && chars_ok
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+              #[test]
+              fn accepts_a_normal_name() {
+                  assert!(is_valid_username("ferris_42"));
+              }
+
+              #[test]
+              fn rejects_names_that_are_too_short_or_too_long() {
+                  assert!(!is_valid_username("ab"));
+                  assert!(!is_valid_username("abcdefghijklm"));
+              }
+
+              #[test]
+              fn rejects_capitals_and_spaces() {
+                  assert!(!is_valid_username("Ferris"));
+                  assert!(!is_valid_username("big crab"));
+              }
+          }
+        mutants:
+          - name: length is not checked
+            find: "len_ok && chars_ok"
+            replace: "chars_ok"
+          - name: characters are not checked
+            find: "len_ok && chars_ok"
+            replace: "len_ok"
+          - name: capital letters are allowed
+            find: "c.is_ascii_lowercase()"
+            replace: "c.is_ascii_alphabetic()"
+        hints:
+          - "Write one test for a good name (`assert!(is_valid_username(\"ferris_42\"))`) and several for bad ones."
+          - "Make sure some bad name is bad only because of its length, and another only because of its characters (like a capital letter)."
+      - task: |
+          `cart_total` adds up the prices in a cart (in cents) and adds a 499 cent shipping fee, but shipping is free when the items cost 5000 or more. An empty cart costs 0 (no shipping). Write at least **3 tests**, including one for the empty cart. Use `assert_eq!`.
+        mode: test
+        minTests: 3
+        seed: |
+          fn cart_total(prices: &[u32]) -> u32 {
+              let items: u32 = prices.iter().sum();
+              if items == 0 || items >= 5000 {
+                  items
+              } else {
+                  items + 499
+              }
+          }
+        solution: |
+          fn cart_total(prices: &[u32]) -> u32 {
+              let items: u32 = prices.iter().sum();
+              if items == 0 || items >= 5000 {
+                  items
+              } else {
+                  items + 499
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn small_orders_pay_shipping() {
+                  assert_eq!(cart_total(&[1000, 250]), 1749);
+              }
+
+              #[test]
+              fn big_orders_ship_free() {
+                  assert_eq!(cart_total(&[3000, 2500]), 5500);
+              }
+
+              #[test]
+              fn empty_cart_costs_nothing() {
+                  assert_eq!(cart_total(&[]), 0);
+              }
+          }
+        mutants:
+          - name: shipping is always charged
+            find: "items == 0 || items >= 5000"
+            replace: "items == 0"
+          - name: empty carts pay shipping
+            find: "items == 0 || items >= 5000"
+            replace: "items >= 5000"
+          - name: only the first item is counted
+            find: "prices.iter().sum()"
+            replace: "prices.iter().take(1).sum()"
+        hints:
+          - "There's no `tests` module this time: write `#[cfg(test)] mod tests { use super::*; ... }` yourself."
+          - "Use carts with two or more items, one under 5000 and one over, plus `cart_total(&[])`."
+
+  - title: "assert_eq!, messages, and comparing your own types"
+    id: testing-2
+    text: |
+      When a test fails, the first thing you read is its message. Good messages save real time.
+
+      ### What a failure looks like
+
+      `assert_eq!` and `assert_ne!` print both values when they fail. By convention the first argument is the value your code produced and the second is the one you expected, though Rust only calls them `left` and `right`. Any extra arguments after the two values are a **custom message**, written like a `format!` string:
+
+      ```rust panics
+      fn add_vat(cents: u32) -> u32 {
+          cents + cents / 5
+      }
+
+      fn main() {
+          assert_eq!(add_vat(100), 120);
+          println!("100 is fine");
+          let price = 7;
+          assert_eq!(add_vat(price), 9, "add_vat({price}) should round up");
+          println!("7 is fine");
+      }
+      ```
+
+      ```output
+      100 is fine
+      ```
+
+      The second assert fails (`7 / 5` is 1, so the result is 8) and the program stops with:
+
+      ```text
+      thread 'main' (4242) panicked at src/main.rs:9:5:
+      assertion `left == right` failed: add_vat(7) should round up
+        left: 8
+       right: 9
+      ```
+
+      The message names the input, so you know which case failed without opening the test. That matters most in tests that check many inputs.
+
+      ### Comparing your own types
+
+      `assert_eq!` needs two things from the values: `PartialEq` (to compare them with `==`) and `Debug` (to print them when they differ). For your own structs and enums, derive both:
+
+      ```rust run
+      #[derive(Debug, PartialEq)]
+      struct Order {
+          qty: u32,
+          item: String,
+      }
+
+      fn parse_order(line: &str) -> Option<Order> {
+          let (qty, item) = line.split_once(" x ")?;
+          let qty: u32 = qty.trim().parse().ok()?;
+          Some(Order { qty, item: item.trim().to_string() })
+      }
+
+      fn main() {
+          assert_eq!(parse_order("3 x apple"), Some(Order { qty: 3, item: String::from("apple") }));
+          assert_eq!(parse_order("lots of apples"), None);
+          println!("{:?}", parse_order("2 x pear"));
+      }
+      ```
+
+      ```output
+      Some(Order { qty: 2, item: "pear" })
+      ```
+
+      Comparing the whole `Option<Order>` in one assert checks every field at once, and if it fails you see both complete values.
+
+      ### Floating point
+
+      `0.1 + 0.2 == 0.3` is `false` with floats (try it), so don't `assert_eq!` computed `f64`s. Check they're close instead: `assert!((actual - expected).abs() < 1e-9, "got {actual}")`.
+
+      ### Common mistakes
+
+      - **Missing `Debug`**: `assert_eq!` on a struct without it is `error[E0277]: `Order` doesn't implement `Debug``. Missing `PartialEq` gives `error[E0369]: binary operation `==` cannot be applied`.
+      - **Only checking the happy path.** A test with a typical input catches typos; bugs live in the unusual inputs.
+      - **`assert!(a == b)` instead of `assert_eq!(a, b)`**: it works, but a failure only says the condition was false, without showing the two values.
+
+      **Your turn:** `apply_discount` takes an order total in cents and a discount code: `SAVE10` takes 10% off, `HALF` halves the total (rounding down, so an odd number of cents loses the half cent), and any other code changes nothing. Write at least **3 tests**, and give at least one `assert_eq!` a custom message. Your tests must catch every planted bug.
+    mode: test
+    minTests: 3
+    seed: |
+      fn apply_discount(total_cents: u32, code: &str) -> u32 {
+          match code {
+              "SAVE10" => total_cents - total_cents / 10,
+              "HALF" => total_cents / 2,
+              _ => total_cents,
+          }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+      }
+    solution: |
+      fn apply_discount(total_cents: u32, code: &str) -> u32 {
+          match code {
+              "SAVE10" => total_cents - total_cents / 10,
+              "HALF" => total_cents / 2,
+              _ => total_cents,
+          }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+          #[test]
+          fn save10_takes_ten_percent_off() {
+              assert_eq!(apply_discount(2000, "SAVE10"), 1800, "SAVE10 on 2000");
+          }
+
+          #[test]
+          fn half_rounds_down() {
+              assert_eq!(apply_discount(1001, "HALF"), 500, "HALF on 1001");
+          }
+
+          #[test]
+          fn unknown_codes_change_nothing() {
+              assert_eq!(apply_discount(1500, "FREESTUFF"), 1500, "unknown code");
+          }
+      }
+    require:
+      - pattern: 'assert_(eq|ne)!\([^;]+,[^;]+,\s*""'
+        message: "Give at least one `assert_eq!` a custom message as its third argument."
+    mutants:
+      - name: SAVE10 takes off 20%
+        find: "total_cents - total_cents / 10"
+        replace: "total_cents - total_cents / 5"
+      - name: HALF rounds up
+        find: "total_cents / 2"
+        replace: "(total_cents + 1) / 2"
+      - name: unknown codes get 10% off
+        find: "_ => total_cents,"
+        replace: "_ => total_cents - total_cents / 10,"
+    hints:
+      - "One test per code: `SAVE10`, `HALF`, and some made-up code."
+      - "To catch the rounding bug, test `HALF` with an odd total, like 1001 (which should give 500)."
+      - "A message goes after the two values: `assert_eq!(apply_discount(2000, \"SAVE10\"), 1800, \"SAVE10 on 2000\");`"
+    more:
+      - task: |
+          `parse_order` turns a line like `3 x apple` into an `Order`. Quantities must be whole numbers of at least 1, and spaces around the item name are ignored. Anything else gives `None`. Write at least **3 tests** that compare whole `Option<Order>` values with `assert_eq!`.
+        mode: test
+        minTests: 3
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Order {
+              qty: u32,
+              item: String,
+          }
+
+          fn parse_order(line: &str) -> Option<Order> {
+              let (qty, item) = line.split_once(" x ")?;
+              let qty: u32 = qty.trim().parse().ok()?;
+              if qty == 0 {
+                  return None;
+              }
+              Some(Order { qty, item: item.trim().to_string() })
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Order {
+              qty: u32,
+              item: String,
+          }
+
+          fn parse_order(line: &str) -> Option<Order> {
+              let (qty, item) = line.split_once(" x ")?;
+              let qty: u32 = qty.trim().parse().ok()?;
+              if qty == 0 {
+                  return None;
+              }
+              Some(Order { qty, item: item.trim().to_string() })
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+              #[test]
+              fn parses_quantity_and_trimmed_item() {
+                  let expected = Order { qty: 3, item: String::from("green apple") };
+                  assert_eq!(parse_order("3 x  green apple "), Some(expected));
+              }
+
+              #[test]
+              fn rejects_zero_quantity() {
+                  assert_eq!(parse_order("0 x pear"), None);
+              }
+
+              #[test]
+              fn rejects_a_quantity_that_is_not_a_number() {
+                  assert_eq!(parse_order("many x pear"), None);
+              }
+          }
+        mutants:
+          - name: item name is not trimmed
+            find: "item.trim().to_string()"
+            replace: "item.to_string()"
+          - name: zero quantity is accepted
+            find: "qty == 0"
+            replace: "qty > 1_000_000"
+          - name: quantity is off by one
+            find: "Some(Order { qty, item"
+            replace: "Some(Order { qty: qty + 1, item"
+          - name: bad numbers become 1
+            find: "qty.trim().parse().ok()?"
+            replace: "qty.trim().parse().unwrap_or(1)"
+        hints:
+          - "Build the expected value and compare: `assert_eq!(parse_order(\"3 x apple\"), Some(Order { qty: 3, item: String::from(\"apple\") }));`"
+          - "Add extra spaces around the item name in one test, and test a `0` quantity and a quantity that isn't a number."
+      - task: |
+          `to_fahrenheit` converts Celsius to Fahrenheit (`F = C * 9 / 5 + 32`). Float results shouldn't be compared with `==`, so write a helper `fn close(a: f64, b: f64) -> bool` (true when they differ by less than `1e-9`) and use it in at least **2 tests** with `assert!`, including a custom message that shows the actual value.
+        mode: test
+        minTests: 2
+        seed: |
+          fn to_fahrenheit(celsius: f64) -> f64 {
+              celsius * 9.0 / 5.0 + 32.0
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              fn close(a: f64, b: f64) -> bool {
+                  todo!()
+              }
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          fn to_fahrenheit(celsius: f64) -> f64 {
+              celsius * 9.0 / 5.0 + 32.0
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              fn close(a: f64, b: f64) -> bool {
+                  (a - b).abs() < 1e-9
+              }
+
+              // Write your #[test] functions here.
+              #[test]
+              fn freezing_point() {
+                  let f = to_fahrenheit(0.0);
+                  assert!(close(f, 32.0), "0 C gave {f}");
+              }
+
+              #[test]
+              fn boiling_point() {
+                  let f = to_fahrenheit(100.0);
+                  assert!(close(f, 212.0), "100 C gave {f}");
+              }
+
+              #[test]
+              fn body_temperature() {
+                  let f = to_fahrenheit(37.0);
+                  assert!(close(f, 98.6), "37 C gave {f}");
+              }
+          }
+        require:
+          - pattern: '\.abs\(\)'
+            message: "Write `close` with `(a - b).abs() < 1e-9`."
+        forbid:
+          - pattern: 'assert_eq!\(\s*to_fahrenheit'
+            message: "Don't compare floats with `assert_eq!`; use `assert!(close(...))`."
+        mutants:
+          - name: adds 23 instead of 32
+            find: "+ 32.0"
+            replace: "+ 23.0"
+          - name: multiplies by 5/9 instead of 9/5
+            find: "celsius * 9.0 / 5.0"
+            replace: "celsius * 5.0 / 9.0"
+        hints:
+          - "`fn close(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }`"
+          - "Two well-known points: 0 C is 32 F and 100 C is 212 F. `assert!(close(to_fahrenheit(100.0), 212.0), \"got {}\", to_fahrenheit(100.0));`"
+
+  - title: Tests that catch bugs
+    id: testing-3
+    text: |
+      A test suite is only as good as the bugs it would catch. Here's a classic: in the Gregorian calendar, a year is a **leap year** if it's divisible by 4, *except* years divisible by 100, *except again* years divisible by 400. So 2024 is a leap year, 1900 isn't, and 2000 is.
+
+      Suppose someone forgot the century rules:
+
+      ```rust run
+      fn is_leap_year(year: u32) -> bool {
+          year % 4 == 0 // bug: ignores the 100 and 400 rules
+      }
+
+      fn main() {
+          // "typical" checks, the kind people write first
+          for (year, expected) in [(2024, true), (2023, false), (2020, true)] {
+              println!("{year}: expected {expected}, got {}", is_leap_year(year));
+          }
+          println!("1900: got {} (should be false)", is_leap_year(1900));
+      }
+      ```
+
+      ```output
+      2024: expected true, got true
+      2023: expected false, got false
+      2020: expected true, got true
+      1900: got true (should be false)
+      ```
+
+      Every "typical" check passes, and the bug sails through. Tests that only use ordinary inputs prove very little.
+
+      ### Think in rules and boundaries
+
+      Good tests come from reading the specification and asking "what would a wrong implementation get wrong?":
+
+      - **One test per rule.** The leap year rules need at least: a normal leap year (2024), a normal non-leap year (2023), a century that isn't a leap year (1900) and a century that is (2000).
+      - **Boundaries.** Off-by-one errors live at the edges: if adults are 18 and over, test 17 *and* 18. For `<` versus `<=`, the boundary value itself is the one that tells them apart.
+      - **Special inputs.** Empty strings and slices, zero, negative numbers, the maximum value, non-ASCII text.
+
+      ### Mutation testing
+
+      How do you know your tests are good enough? Break the code on purpose and see if a test notices. Each broken copy is a **mutant**; a mutant your tests don't notice has **survived**, and it points at a missing test. That's what this site does with the planted bugs in each exercise, and at work the tool `cargo-mutants` does it automatically for a whole project (it flips `<` to `<=`, replaces function bodies with default values, and so on).
+
+      ### Common mistakes
+
+      - **Testing the implementation instead of the rules**: copying the formula into the test (`assert_eq!(is_leap_year(y), y % 4 == 0)`) repeats the bug instead of catching it. Write expected values you worked out by hand.
+      - **One giant test.** Small tests with clear names tell you which rule broke.
+      - **Chasing 100% coverage.** Running every line isn't the same as checking every rule: a test can execute code without asserting anything useful about it.
+
+      **Your turn:** `is_leap_year` is correct. Write at least **3 tests** that catch all the planted bugs: a missing 400-year rule, a missing 100-year rule, "every second year is a leap year", and "only multiples of 400 are leap years".
+    mode: test
+    minTests: 3
+    seed: |
+      fn is_leap_year(year: u32) -> bool {
+          (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+      }
+    solution: |
+      fn is_leap_year(year: u32) -> bool {
+          (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+          #[test]
+          fn ordinary_years() {
+              assert!(is_leap_year(2024), "2024");
+              assert!(!is_leap_year(2023), "2023");
+              assert!(!is_leap_year(2022), "2022");
+          }
+
+          #[test]
+          fn centuries_are_not_leap_years() {
+              assert!(!is_leap_year(1900), "1900");
+              assert!(!is_leap_year(2100), "2100");
+          }
+
+          #[test]
+          fn every_fourth_century_is_a_leap_year() {
+              assert!(is_leap_year(2000), "2000");
+              assert!(is_leap_year(1600), "1600");
+          }
+      }
+    mutants:
+      - name: the 400-year rule is missing
+        find: " || year % 400 == 0"
+        replace: ""
+      - name: the 100-year rule is missing
+        find: "year % 4 == 0 && year % 100 != 0"
+        replace: "year % 4 == 0"
+      - name: every second year is a leap year
+        find: "year % 4 == 0"
+        replace: "year % 2 == 0"
+      - name: only multiples of 400 are leap years
+        find: "(year % 4 == 0 && year % 100 != 0) || "
+        replace: ""
+    hints:
+      - "Each rule needs its own example year: a normal leap year, a normal non-leap year, a century that isn't leap, and one that is."
+      - "\"Every second year\" is only caught by an even year that isn't a multiple of 4, like 2022."
+      - "Good years to use: 2024 (leap), 2022 (not), 1900 (not), 2000 (leap)."
+    more:
+      - task: |
+          `grade` turns a score into a letter: 90 and up is `A`, 80 to 89 `B`, 70 to 79 `C`, 60 to 69 `D`, below 60 `F`. Write at least **2 tests** that catch the boundary bugs. Test the exact boundary values.
+        mode: test
+        minTests: 2
+        seed: |
+          fn grade(score: u32) -> char {
+              if score >= 90 {
+                  'A'
+              } else if score >= 80 {
+                  'B'
+              } else if score >= 70 {
+                  'C'
+              } else if score >= 60 {
+                  'D'
+              } else {
+                  'F'
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          fn grade(score: u32) -> char {
+              if score >= 90 {
+                  'A'
+              } else if score >= 80 {
+                  'B'
+              } else if score >= 70 {
+                  'C'
+              } else if score >= 60 {
+                  'D'
+              } else {
+                  'F'
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+              #[test]
+              fn boundaries_get_the_higher_grade() {
+                  assert_eq!(grade(90), 'A');
+                  assert_eq!(grade(80), 'B');
+                  assert_eq!(grade(70), 'C');
+                  assert_eq!(grade(60), 'D');
+              }
+
+              #[test]
+              fn just_below_boundaries_get_the_lower_grade() {
+                  assert_eq!(grade(89), 'B');
+                  assert_eq!(grade(59), 'F');
+                  assert_eq!(grade(0), 'F');
+              }
+          }
+        mutants:
+          - name: "90 is not an A"
+            find: "score >= 90"
+            replace: "score > 90"
+          - name: "80 is not a B"
+            find: "score >= 80"
+            replace: "score > 80"
+          - name: "60 is not a D"
+            find: "score >= 60"
+            replace: "score > 60"
+          - name: "the D range starts at 50"
+            find: "score >= 60"
+            replace: "score >= 50"
+          - name: "failing scores get a D"
+            find: "'F'"
+            replace: "'D'"
+        hints:
+          - "A `>=` changed to `>` only shows up at the boundary itself: test `grade(90)`, `grade(80)`, `grade(60)`."
+          - "To catch a boundary that moved down (60 became 50), test a score just below it, like 59."
+      - task: |
+          Write at least **3 tests** for `fizzbuzz`: multiples of 15 give `FizzBuzz`, other multiples of 3 give `Fizz`, other multiples of 5 give `Buzz`, and every other number is printed as itself. There's no `tests` module in the starter: write it yourself.
+        mode: test
+        minTests: 3
+        seed: |
+          fn fizzbuzz(n: u32) -> String {
+              if n % 15 == 0 {
+                  "FizzBuzz".to_string()
+              } else if n % 3 == 0 {
+                  "Fizz".to_string()
+              } else if n % 5 == 0 {
+                  "Buzz".to_string()
+              } else {
+                  n.to_string()
+              }
+          }
+        solution: |
+          fn fizzbuzz(n: u32) -> String {
+              if n % 15 == 0 {
+                  "FizzBuzz".to_string()
+              } else if n % 3 == 0 {
+                  "Fizz".to_string()
+              } else if n % 5 == 0 {
+                  "Buzz".to_string()
+              } else {
+                  n.to_string()
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn multiples_of_fifteen() {
+                  assert_eq!(fizzbuzz(15), "FizzBuzz");
+                  assert_eq!(fizzbuzz(45), "FizzBuzz");
+              }
+
+              #[test]
+              fn multiples_of_three_or_five() {
+                  assert_eq!(fizzbuzz(9), "Fizz");
+                  assert_eq!(fizzbuzz(10), "Buzz");
+              }
+
+              #[test]
+              fn other_numbers_are_unchanged() {
+                  assert_eq!(fizzbuzz(7), "7");
+                  assert_eq!(fizzbuzz(1), "1");
+              }
+          }
+        mutants:
+          - name: FizzBuzz only every 30
+            find: "n % 15 == 0"
+            replace: "n % 30 == 0"
+          - name: Buzz says Fizz
+            find: "\"Buzz\".to_string()"
+            replace: "\"Fizz\".to_string()"
+          - name: plain numbers are off by one
+            find: "n.to_string()"
+            replace: "(n + 1).to_string()"
+          - name: multiples of 3 are missed
+            find: "n % 3 == 0"
+            replace: "n % 6 == 0"
+        hints:
+          - "Start with `#[cfg(test)] mod tests { use super::*; #[test] fn ... }`."
+          - "Use 15 for FizzBuzz, an odd multiple of 3 like 9 for Fizz, 10 for Buzz, and 7 for a plain number."
+
+  - title: "Testing failures: should_panic and Result"
+    id: testing-4
+    text: |
+      Code that rejects bad input is just as important to test as code that handles good input. Rust gives you two tools, matching the two ways code reports failure.
+
+      ### #[should_panic]: the code is supposed to panic
+
+      Some functions panic on misuse: indexing past the end, or a `withdraw` that refuses to overdraw. Add `#[should_panic]` under `#[test]`, and the test **passes only if the code panics**. Add `expected = "..."` to also check the panic message *contains* that text, so the test doesn't pass by accident because of some other panic:
+
+      ```rust
+      #[test]
+      #[should_panic(expected = "insufficient funds")]
+      fn spending_more_than_the_balance_panics() {
+          let mut wallet = Wallet { balance: 10 };
+          wallet.spend(25);
+      }
+      ```
+
+      In the `cargo test` output, these tests are marked: `test tests::spending_more_than_the_balance_panics - should panic ... ok`.
+
+      ### Tests that return Result
+
+      Most Rust code reports errors with `Result`. You can check those with plain asserts (`assert!(r.is_err())`, `assert_eq!(r, Ok(250))`), and a test function may also return `Result<(), E>` itself. Then you can use `?` inside it: if any step returns `Err`, the test fails with that error. It reads like normal code instead of a pile of `.unwrap()`s:
+
+      ```rust
+      #[test]
+      fn parses_and_spends() -> Result<(), String> {
+          let amount = parse_amount("250")?; // an Err here fails the test
+          let mut wallet = Wallet { balance: 1000 };
+          wallet.spend(amount);
+          assert_eq!(wallet.balance, 750);
+          Ok(())
+      }
+      ```
+
+      The same checks work in a normal program, so here they are, running:
+
+      ```rust run
+      fn parse_amount(s: &str) -> Result<u64, String> {
+          let n: u64 = s.trim().parse().map_err(|_| format!("not a number: {s:?}"))?;
+          if n == 0 {
+              return Err(String::from("amount must be positive"));
+          }
+          Ok(n)
+      }
+
+      fn main() {
+          println!("{:?}", parse_amount("250"));
+          println!("{:?}", parse_amount("0"));
+          println!("{:?}", parse_amount("ten"));
+          assert!(parse_amount("-3").is_err());
+          assert!(matches!(parse_amount(" 7 "), Ok(7)));
+          println!("checks passed");
+      }
+      ```
+
+      ```output
+      Ok(250)
+      Err("amount must be positive")
+      Err("not a number: \"ten\"")
+      checks passed
+      ```
+
+      `matches!(value, pattern)` (from the enums module) is handy in tests when you care about the shape of a value but not every detail, like "it's an `Err` of any kind".
+
+      ### Ignoring slow tests
+
+      `#[ignore]` under `#[test]` skips a test in a normal run (it shows as `ignored`). Run those with `cargo test -- --ignored`. Teams use it for tests that are slow or need a network.
+
+      ### Common mistakes
+
+      - **`#[should_panic]` without `expected`**: the test passes on *any* panic, including an unrelated `unwrap` on `None` in your setup code.
+      - **Using `#[should_panic]` for functions that return `Result`**: they don't panic on bad input, they return `Err`. Assert on the `Result` instead.
+      - **Forgetting `Ok(())`** at the end of a test that returns `Result`: `error[E0308]: mismatched types`.
+
+      **Your turn:** write tests for `Wallet::spend` and `parse_amount`:
+
+      1. A `#[should_panic(expected = "insufficient funds")]` test that spends more than the balance.
+      2. A test that spending the *whole* balance leaves exactly 0.
+      3. A test that returns `Result<(), String>` and uses `?` on `parse_amount` with an amount that has spaces around it (like `" 250 "`).
+      4. A test that `parse_amount("0")` is an error.
+
+      (Tests 2 to 4 are the ones that count toward the minimum of 3.)
+    mode: test
+    minTests: 3
+    seed: |
+      struct Wallet {
+          balance: u64,
+      }
+
+      impl Wallet {
+          fn spend(&mut self, amount: u64) {
+              if amount > self.balance {
+                  panic!("insufficient funds: have {}, need {}", self.balance, amount);
+              }
+              self.balance -= amount;
+          }
+      }
+
+      fn parse_amount(s: &str) -> Result<u64, String> {
+          let n: u64 = s.trim().parse().map_err(|_| format!("not a number: {s:?}"))?;
+          if n == 0 {
+              return Err(String::from("amount must be positive"));
+          }
+          Ok(n)
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+      }
+    solution: |
+      struct Wallet {
+          balance: u64,
+      }
+
+      impl Wallet {
+          fn spend(&mut self, amount: u64) {
+              if amount > self.balance {
+                  panic!("insufficient funds: have {}, need {}", self.balance, amount);
+              }
+              self.balance -= amount;
+          }
+      }
+
+      fn parse_amount(s: &str) -> Result<u64, String> {
+          let n: u64 = s.trim().parse().map_err(|_| format!("not a number: {s:?}"))?;
+          if n == 0 {
+              return Err(String::from("amount must be positive"));
+          }
+          Ok(n)
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+          #[test]
+          #[should_panic(expected = "insufficient funds")]
+          fn overspending_panics() {
+              let mut w = Wallet { balance: 10 };
+              w.spend(25);
+          }
+
+          #[test]
+          fn spending_everything_leaves_zero() {
+              let mut w = Wallet { balance: 40 };
+              w.spend(40);
+              assert_eq!(w.balance, 0);
+          }
+
+          #[test]
+          fn parses_an_amount_with_spaces() -> Result<(), String> {
+              let amount = parse_amount(" 250 ")?;
+              let mut w = Wallet { balance: 1000 };
+              w.spend(amount);
+              assert_eq!(w.balance, 750);
+              Ok(())
+          }
+
+          #[test]
+          fn zero_is_not_an_amount() {
+              assert!(parse_amount("0").is_err());
+          }
+      }
+    require:
+      - pattern: '#\[should_panic\(\s*expected\s*='
+        message: "Write a `#[should_panic(expected = \"insufficient funds\")]` test."
+      - pattern: 'fn\s+\w+\s*\(\s*\)\s*->\s*Result<\s*\(\s*\)'
+        message: "Write a test that returns `Result<(), String>` and uses `?`."
+    mutants:
+      - name: spending the exact balance panics
+        find: "amount > self.balance"
+        replace: "amount >= self.balance"
+      - name: spend doesn't take the money
+        find: "self.balance -= amount;"
+        replace: "self.balance -= amount / 2;"
+      - name: zero is accepted
+        find: "if n == 0"
+        replace: "if n > 1_000_000"
+      - name: spaces are not trimmed
+        find: "s.trim().parse()"
+        replace: "s.parse()"
+    hints:
+      - "The should-panic test: `#[test] #[should_panic(expected = \"insufficient funds\")] fn overspending_panics() { let mut w = Wallet { balance: 10 }; w.spend(25); }`"
+      - "The Result test: `fn parses_with_spaces() -> Result<(), String> { let amount = parse_amount(\" 250 \")?; ...; Ok(()) }`. Check the amount by spending it from a wallet and asserting the new balance, or with `assert_eq!(amount, 250)`."
+      - "For the zero case: `assert!(parse_amount(\"0\").is_err());`"
+    more:
+      - task: |
+          `parse_hex_color` reads colors like `#ff8000` into `(red, green, blue)`. It needs the `#`, exactly 6 hex digits, and returns `Err` otherwise. Write at least **3 tests**; at least one must return `Result<(), String>` and use `?`.
+        mode: test
+        minTests: 3
+        seed: |
+          fn parse_hex_color(s: &str) -> Result<(u8, u8, u8), String> {
+              let hex = s.strip_prefix('#').ok_or("missing #")?;
+              if hex.len() != 6 {
+                  return Err(format!("expected 6 hex digits, got {}", hex.len()));
+              }
+              let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string());
+              Ok((channel(0)?, channel(2)?, channel(4)?))
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          fn parse_hex_color(s: &str) -> Result<(u8, u8, u8), String> {
+              let hex = s.strip_prefix('#').ok_or("missing #")?;
+              if hex.len() != 6 {
+                  return Err(format!("expected 6 hex digits, got {}", hex.len()));
+              }
+              let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string());
+              Ok((channel(0)?, channel(2)?, channel(4)?))
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+              #[test]
+              fn reads_each_channel() -> Result<(), String> {
+                  assert_eq!(parse_hex_color("#ff8000")?, (255, 128, 0));
+                  assert_eq!(parse_hex_color("#0a0b0c")?, (10, 11, 12));
+                  Ok(())
+              }
+
+              #[test]
+              fn needs_the_hash() {
+                  assert!(parse_hex_color("ff8000").is_err());
+              }
+
+              #[test]
+              fn needs_six_digits() {
+                  assert!(parse_hex_color("#fff").is_err());
+                  assert!(parse_hex_color("#ff80001").is_err());
+              }
+          }
+        require:
+          - pattern: 'fn\s+\w+\s*\(\s*\)\s*->\s*Result<\s*\(\s*\)'
+            message: "Write at least one test that returns `Result<(), String>` and uses `?`."
+        mutants:
+          - name: green and blue are swapped
+            find: "channel(2)?, channel(4)?"
+            replace: "channel(4)?, channel(2)?"
+          - name: the # is optional
+            find: ".ok_or(\"missing #\")?"
+            replace: ".unwrap_or(s)"
+          - name: short colors are not rejected
+            find: "hex.len() != 6"
+            replace: "hex.len() > 6"
+        hints:
+          - "`fn reads_each_channel() -> Result<(), String> { assert_eq!(parse_hex_color(\"#ff8000\")?, (255, 128, 0)); Ok(()) }`"
+          - "Use a color whose green and blue differ, so swapping them is noticed."
+          - "Test the errors with `assert!(parse_hex_color(\"ff8000\").is_err())` (no `#`) and a 3-digit color like `#fff`."
+      - task: |
+          A `Grid` stores `width * height` cells row by row. `get(row, col)` panics with a message containing `out of bounds` for a bad position, and `try_get` returns `None` instead. Write:
+
+          - a `#[should_panic(expected = "out of bounds")]` test for `get`,
+          - at least **2 more tests**: that `get` reads the right cell in a grid that is *not* square, and that `try_get` returns `None` outside the grid and `Some` inside.
+        mode: test
+        minTests: 2
+        seed: |
+          struct Grid {
+              width: usize,
+              height: usize,
+              cells: Vec<u8>,
+          }
+
+          impl Grid {
+              fn new(width: usize, height: usize) -> Grid {
+                  Grid { width, height, cells: (0..width * height).map(|i| i as u8).collect() }
+              }
+
+              fn index(&self, row: usize, col: usize) -> usize {
+                  row * self.width + col
+              }
+
+              fn try_get(&self, row: usize, col: usize) -> Option<u8> {
+                  if row < self.height && col < self.width {
+                      Some(self.cells[self.index(row, col)])
+                  } else {
+                      None
+                  }
+              }
+
+              fn get(&self, row: usize, col: usize) -> u8 {
+                  match self.try_get(row, col) {
+                      Some(v) => v,
+                      None => panic!("cell ({row}, {col}) is out of bounds"),
+                  }
+              }
+          }
+        solution: |
+          struct Grid {
+              width: usize,
+              height: usize,
+              cells: Vec<u8>,
+          }
+
+          impl Grid {
+              fn new(width: usize, height: usize) -> Grid {
+                  Grid { width, height, cells: (0..width * height).map(|i| i as u8).collect() }
+              }
+
+              fn index(&self, row: usize, col: usize) -> usize {
+                  row * self.width + col
+              }
+
+              fn try_get(&self, row: usize, col: usize) -> Option<u8> {
+                  if row < self.height && col < self.width {
+                      Some(self.cells[self.index(row, col)])
+                  } else {
+                      None
+                  }
+              }
+
+              fn get(&self, row: usize, col: usize) -> u8 {
+                  match self.try_get(row, col) {
+                      Some(v) => v,
+                      None => panic!("cell ({row}, {col}) is out of bounds"),
+                  }
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              #[should_panic(expected = "out of bounds")]
+              fn get_outside_the_grid_panics() {
+                  Grid::new(3, 2).get(2, 0);
+              }
+
+              #[test]
+              fn get_reads_row_by_row() {
+                  // 3 wide, 2 high: row 0 is 0 1 2, row 1 is 3 4 5
+                  let g = Grid::new(3, 2);
+                  assert_eq!(g.get(0, 2), 2);
+                  assert_eq!(g.get(1, 0), 3);
+              }
+
+              #[test]
+              fn try_get_checks_both_directions() {
+                  let g = Grid::new(3, 2);
+                  assert_eq!(g.try_get(1, 2), Some(5));
+                  assert_eq!(g.try_get(2, 0), None);
+                  assert_eq!(g.try_get(0, 3), None);
+              }
+          }
+        require:
+          - pattern: '#\[should_panic\(\s*expected\s*='
+            message: "Write a `#[should_panic(expected = \"out of bounds\")]` test for `get`."
+        mutants:
+          - name: rows and columns are swapped
+            find: "row * self.width + col"
+            replace: "col * self.width + row"
+          - name: try_get never returns None
+            find: "if row < self.height && col < self.width"
+            replace: "if true"
+          - name: the column limit is not checked
+            find: "row < self.height && col < self.width"
+            replace: "row < self.height"
+        hints:
+          - "`Grid::new(3, 2)` holds 0 to 5: row 0 is `0 1 2`, row 1 is `3 4 5`. So `get(1, 0)` is 3."
+          - "In a non-square grid, swapping rows and columns reads a different cell: check `get(0, 2)` and `get(1, 0)`."
+          - "Test `try_get` past the last row *and* past the last column."
+
+  - title: Fixing bugs test-first
+    id: testing-5
+    text: |
+      Tests aren't only for after the code is written. Many developers write them *first*.
+
+      ### Test-driven development
+
+      **TDD** is a short loop, repeated many times:
+
+      1. **Red**: write a test for the next small piece of behavior. Run it and watch it fail (that proves the test can fail).
+      2. **Green**: write the simplest code that makes it pass.
+      3. **Refactor**: clean up the code, rerunning the tests to make sure nothing broke.
+
+      ### Bugs: reproduce, then fix
+
+      Even teams that don't do strict TDD follow it for bugs. When a bug is reported, first write a test that reproduces it. It fails. Then fix the code until it passes. That test, a **regression test**, stays in the suite forever, so the bug can't quietly come back.
+
+      A bug report says "two spaces between words count as an extra word":
+
+      ```rust run
+      fn word_count(text: &str) -> usize {
+          text.split(' ').count()
+      }
+
+      fn main() {
+          println!("{}", word_count("hello world"));
+          println!("{}", word_count("hello  world"));
+          println!("{}", word_count(""));
+      }
+      ```
+
+      ```output
+      2
+      3
+      1
+      ```
+
+      Splitting on single spaces creates empty "words" between two spaces (and one empty word for an empty string). The regression tests come first:
+
+      ```rust
+      #[test]
+      fn double_spaces_do_not_add_words() {
+          assert_eq!(word_count("hello  world"), 2);
+      }
+
+      #[test]
+      fn empty_text_has_no_words() {
+          assert_eq!(word_count(""), 0);
+      }
+      ```
+
+      Both fail. The fix is to split on runs of whitespace, and now everything passes:
+
+      ```rust run
+      fn word_count(text: &str) -> usize {
+          text.split_whitespace().count()
+      }
+
+      fn main() {
+          assert_eq!(word_count("hello world"), 2);
+          assert_eq!(word_count("hello  world"), 2);
+          assert_eq!(word_count(""), 0);
+          assert_eq!(word_count("  tabs\tand\nnewlines "), 3);
+          println!("all fixed");
+      }
+      ```
+
+      ```output
+      all fixed
+      ```
+
+      ### Reading a failing test
+
+      When `cargo test` reports a failure, read it top to bottom: which test failed, the panic message (for `assert_eq!`, the `left` and `right` values), and the file and line. A test can fail because the code is wrong *or* because the test is wrong; check the expected value against the specification before "fixing" the code.
+
+      ### Common mistakes
+
+      - **Fixing first, testing later (or never).** Without a test that failed before the fix, you don't know the fix fixed anything.
+      - **Deleting or loosening a failing test** to make the suite green. The test is usually telling you something true.
+      - **Fixing only the reported input.** Ask what the bug's whole family looks like (two spaces, three spaces, tabs, leading spaces) and test a few.
+
+      **Your turn:** `average` has a bug, and the starter's tests already show it: one of them fails. Fix `average` so that an empty slice gives `None` (instead of dividing by zero), keep both tests, and add **a third test** of your own (for example, that the average rounds down).
+    mode: test
+    minTests: 3
+    seed: |
+      /// The average of the scores, rounded down, or None if there are none.
+      fn average(scores: &[u32]) -> Option<u32> {
+          let total: u32 = scores.iter().sum();
+          Some(total / scores.len() as u32)
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn averages_three_scores() {
+              assert_eq!(average(&[70, 80, 90]), Some(80));
+          }
+
+          #[test]
+          fn empty_list_has_no_average() {
+              assert_eq!(average(&[]), None);
+          }
+      }
+    solution: |
+      /// The average of the scores, rounded down, or None if there are none.
+      fn average(scores: &[u32]) -> Option<u32> {
+          if scores.is_empty() {
+              return None;
+          }
+          let total: u32 = scores.iter().sum();
+          Some(total / scores.len() as u32)
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn averages_three_scores() {
+              assert_eq!(average(&[70, 80, 90]), Some(80));
+          }
+
+          #[test]
+          fn empty_list_has_no_average() {
+              assert_eq!(average(&[]), None);
+          }
+
+          #[test]
+          fn rounds_down() {
+              assert_eq!(average(&[1, 2]), Some(1));
+          }
+      }
+    harness: |
+      #[test]
+      fn an_empty_slice_gives_none() {
+          assert_eq!(average(&[]), None, "average(&[])");
+      }
+
+      #[test]
+      fn a_single_score_is_its_own_average() {
+          assert_eq!(average(&[42]), Some(42), "average(&[42])");
+      }
+
+      #[test]
+      fn the_average_rounds_down() {
+          assert_eq!(average(&[90, 95]), Some(92), "average(&[90, 95])");
+      }
+
+      #[test]
+      fn several_scores_still_work() {
+          assert_eq!(average(&[10, 20, 30, 40]), Some(25), "average(&[10, 20, 30, 40])");
+      }
+    hints:
+      - "Run the tests first and read which one fails, and its panic message (`attempt to divide by zero`)."
+      - "Return early for an empty slice: `if scores.is_empty() { return None; }`."
+      - "Then add a third `#[test]`, for example `assert_eq!(average(&[1, 2]), Some(1));`."
+    more:
+      - task: |
+          `initials` should turn a name into its capitalized initials: `ada lovelace` gives `AL`. The starter's tests show two bugs: extra spaces crash it, and so does a name starting with an accented letter. Fix `initials` so all three tests pass (keep them).
+        mode: test
+        minTests: 3
+        seed: |
+          fn initials(name: &str) -> String {
+              name.split(' ').map(|w| w[0..1].to_uppercase()).collect()
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn two_words() {
+                  assert_eq!(initials("ada lovelace"), "AL");
+              }
+
+              #[test]
+              fn extra_spaces_are_ignored() {
+                  assert_eq!(initials("  grace   hopper "), "GH");
+              }
+
+              #[test]
+              fn accented_letters_work() {
+                  assert_eq!(initials("émile zola"), "ÉZ");
+              }
+          }
+        solution: |
+          fn initials(name: &str) -> String {
+              name.split_whitespace()
+                  .filter_map(|w| w.chars().next())
+                  .flat_map(|c| c.to_uppercase())
+                  .collect()
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn two_words() {
+                  assert_eq!(initials("ada lovelace"), "AL");
+              }
+
+              #[test]
+              fn extra_spaces_are_ignored() {
+                  assert_eq!(initials("  grace   hopper "), "GH");
+              }
+
+              #[test]
+              fn accented_letters_work() {
+                  assert_eq!(initials("émile zola"), "ÉZ");
+              }
+          }
+        harness: |
+          #[test]
+          fn an_empty_name_has_no_initials() {
+              assert_eq!(initials(""), "", "initials(\"\")");
+          }
+
+          #[test]
+          fn three_names() {
+              assert_eq!(initials("mary ann evans"), "MAE", "initials(\"mary ann evans\")");
+          }
+
+          #[test]
+          fn tabs_count_as_spaces() {
+              assert_eq!(initials("linus\ttorvalds"), "LT", "initials with a tab");
+          }
+
+          #[test]
+          fn non_latin_letters() {
+              assert_eq!(initials("ðórr ögn"), "ÐÖ", "initials(\"ðórr ögn\")");
+          }
+        hints:
+          - "`split(' ')` makes empty words between spaces, and `w[0..1]` panics on an empty word and on letters that take more than one byte."
+          - "Use `split_whitespace()`, and take each word's first character with `w.chars().next()` (an `Option<char>`)."
+          - "`name.split_whitespace().filter_map(|w| w.chars().next()).flat_map(|c| c.to_uppercase()).collect()`"
+      - task: |
+          Practice the TDD loop from scratch. Write `parse_time(s: &str) -> Option<u32>`, which turns `"HH:MM"` into minutes after midnight (`"01:30"` gives `90`). Hours go from 0 to 23 and minutes from 0 to 59; anything else (a missing colon, letters, `"24:00"`, `"12:60"`) gives `None`.
+
+          Write at least **3 tests first**, watch them fail against `todo!()`, then write the function until they pass.
+        mode: test
+        minTests: 3
+        seed: |
+          fn parse_time(s: &str) -> Option<u32> {
+              todo!()
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here first.
+          }
+        solution: |
+          fn parse_time(s: &str) -> Option<u32> {
+              let (h, m) = s.split_once(':')?;
+              let h: u32 = h.parse().ok()?;
+              let m: u32 = m.parse().ok()?;
+              if h > 23 || m > 59 {
+                  return None;
+              }
+              Some(h * 60 + m)
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here first.
+              #[test]
+              fn parses_a_valid_time() {
+                  assert_eq!(parse_time("01:30"), Some(90));
+                  assert_eq!(parse_time("00:00"), Some(0));
+                  assert_eq!(parse_time("23:59"), Some(1439));
+              }
+
+              #[test]
+              fn rejects_out_of_range_values() {
+                  assert_eq!(parse_time("24:00"), None);
+                  assert_eq!(parse_time("12:60"), None);
+              }
+
+              #[test]
+              fn rejects_malformed_text() {
+                  assert_eq!(parse_time("1230"), None);
+                  assert_eq!(parse_time("ab:cd"), None);
+              }
+          }
+        harness: |
+          #[test]
+          fn converts_hours_and_minutes() {
+              assert_eq!(parse_time("01:30"), Some(90), "parse_time(\"01:30\")");
+              assert_eq!(parse_time("12:05"), Some(725), "parse_time(\"12:05\")");
+          }
+
+          #[test]
+          fn accepts_the_extremes() {
+              assert_eq!(parse_time("00:00"), Some(0), "parse_time(\"00:00\")");
+              assert_eq!(parse_time("23:59"), Some(1439), "parse_time(\"23:59\")");
+          }
+
+          #[test]
+          fn rejects_hour_24_and_minute_60() {
+              assert_eq!(parse_time("24:00"), None, "parse_time(\"24:00\")");
+              assert_eq!(parse_time("10:60"), None, "parse_time(\"10:60\")");
+          }
+
+          #[test]
+          fn rejects_text_without_a_colon_or_with_letters() {
+              assert_eq!(parse_time("1030"), None, "parse_time(\"1030\")");
+              assert_eq!(parse_time("ten:30"), None, "parse_time(\"ten:30\")");
+              assert_eq!(parse_time(""), None, "parse_time(\"\")");
+          }
+        hints:
+          - "Start with tests like `assert_eq!(parse_time(\"01:30\"), Some(90));` and `assert_eq!(parse_time(\"24:00\"), None);`."
+          - "Split with `s.split_once(':')?`, then parse each half with `.parse().ok()?`."
+          - "Reject `h > 23 || m > 59`, otherwise return `Some(h * 60 + m)`."
+
+  - title: Organizing tests
+    id: testing-6
+    text: |
+      As a project grows, so does its test suite. Rust has three kinds of tests, and `cargo test` runs all of them.
+
+      ### Unit tests: next to the code
+
+      Everything you've written so far: a `#[cfg(test)] mod tests` at the bottom of each file, testing that file's functions, including private ones. They're fast and precise. Put shared setup in ordinary helper functions inside the module (no `#[test]` on them):
+
+      ```rust
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          fn stocked() -> Inventory {      // a helper, not a test
+              let mut inv = Inventory::new();
+              inv.add("apple", 5);
+              inv
+          }
+
+          #[test]
+          fn removing_some_leaves_the_rest() {
+              let mut inv = stocked();
+              assert_eq!(inv.remove("apple", 2), Ok(3));
+          }
+      }
+      ```
+
+      ### Integration tests: the tests/ folder
+
+      Files in a `tests/` folder next to `src/` are **integration tests**. Each file is compiled as a separate crate that uses your library like any other user would, so it can only reach your `pub` items:
+
+      ```text
+      calendar/
+      ├── Cargo.toml
+      ├── src/
+      │   └── lib.rs          pub fn is_leap_year(...), with unit tests inside
+      └── tests/
+          ├── leap_years.rs   integration tests
+          └── common/
+              └── mod.rs      helpers shared by several test files
+      ```
+
+      ```rust
+      // tests/leap_years.rs
+      use calendar::is_leap_year;
+
+      #[test]
+      fn year_2000_is_a_leap_year() {
+          assert!(is_leap_year(2000));
+      }
+      ```
+
+      No `#[cfg(test)]` needed there: the whole folder only exists for tests. Integration tests need a library crate (`src/lib.rs`); a binary-only project usually moves its logic into `lib.rs` and keeps `main.rs` small, partly so it can be tested this way.
+
+      ### Doc tests: examples that can't go stale
+
+      Code blocks in documentation comments (`///`, covered in the tooling module) are compiled and run by `cargo test` too. An example in the docs that no longer works fails the build:
+
+      ```rust
+      /// Returns true for leap years.
+      ///
+      /// ```
+      /// assert!(calendar::is_leap_year(2024));
+      /// assert!(!calendar::is_leap_year(1900));
+      /// ```
+      pub fn is_leap_year(year: u32) -> bool {
+          (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+      }
+      ```
+
+      ```text
+      $ cargo test
+           Running unittests src/lib.rs (target/debug/deps/calendar-02d0b668d0f176bb)
+      running 2 tests
+      test tests::century_is_not_leap ... ok
+      test tests::divisible_by_four_is_leap ... ok
+      test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+           Running tests/leap_years.rs (target/debug/deps/leap_years-6feefd48868830b4)
+      running 1 test
+      test year_2000_is_a_leap_year ... ok
+      test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+         Doc-tests calendar
+      running 1 test
+      test src/lib.rs - is_leap_year (line 3) ... ok
+      test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+      ```
+
+      (On this site everything lives in one file, so exercises use unit tests; integration and doc tests need a real Cargo project.)
+
+      ### Running some of the tests
+
+      | Command | Runs |
+      |---|---|
+      | `cargo test leap` | only tests whose name contains `leap` |
+      | `cargo test --test leap_years` | one integration test file |
+      | `cargo test --doc` | only doc tests |
+      | `cargo test -- --nocapture` | shows `println!` output from passing tests (hidden by default) |
+      | `cargo test -- --ignored` | the `#[ignore]` tests |
+
+      ### Table-driven tests
+
+      When many inputs follow the same rule, list them as data and loop. Adding a case is one line, and the message says which case failed:
+
+      ```rust run
+      fn wind_label(kmh: u32) -> &'static str {
+          match kmh {
+              0..=19 => "calm",
+              20..=49 => "breezy",
+              50..=88 => "gale",
+              _ => "storm",
+          }
+      }
+
+      fn main() {
+          let cases = [(0, "calm"), (19, "calm"), (20, "breezy"), (49, "breezy"), (50, "gale"), (89, "storm")];
+          for (kmh, expected) in cases {
+              assert_eq!(wind_label(kmh), expected, "wind_label({kmh})");
+          }
+          println!("{} cases passed", cases.len());
+      }
+      ```
+
+      ```output
+      6 cases passed
+      ```
+
+      ### Common mistakes
+
+      - **Integration tests reaching for private items**: `error[E0603]: function `helper` is private`. Test through the public API, or write a unit test instead.
+      - **Tests that depend on each other**: tests run in parallel and in any order. Each test should set up its own data (that's what helpers are for).
+      - **Debug `println!` in tests that "doesn't show up"**: passing tests' output is captured. Use `-- --nocapture`.
+
+      **Your turn:** write **one table-driven test** for `classify_temp`: an array of `(celsius, expected)` pairs and a `for (celsius, expected) in ...` loop with an `assert_eq!` that has a message. Choose the cases so every planted boundary bug is caught: 0 and below is `freezing`, 1 to 14 `cold`, 15 to 24 `mild`, 25 and up `hot`.
+    mode: test
+    minTests: 1
+    seed: |
+      fn classify_temp(celsius: i32) -> &'static str {
+          if celsius <= 0 {
+              "freezing"
+          } else if celsius < 15 {
+              "cold"
+          } else if celsius < 25 {
+              "mild"
+          } else {
+              "hot"
+          }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write a table-driven #[test] here.
+      }
+    solution: |
+      fn classify_temp(celsius: i32) -> &'static str {
+          if celsius <= 0 {
+              "freezing"
+          } else if celsius < 15 {
+              "cold"
+          } else if celsius < 25 {
+              "mild"
+          } else {
+              "hot"
+          }
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write a table-driven #[test] here.
+          #[test]
+          fn classifies_every_band_and_boundary() {
+              let cases = [
+                  (-10, "freezing"),
+                  (0, "freezing"),
+                  (1, "cold"),
+                  (14, "cold"),
+                  (15, "mild"),
+                  (24, "mild"),
+                  (25, "hot"),
+                  (40, "hot"),
+              ];
+              for (celsius, expected) in cases {
+                  assert_eq!(classify_temp(celsius), expected, "classify_temp({celsius})");
+              }
+          }
+      }
+    require:
+      - pattern: 'for\s*\(\s*\w+\s*,\s*\w+\s*\)\s+in'
+        message: "Loop over the cases with `for (celsius, expected) in cases`."
+      - pattern: 'assert_eq!\([^;]+,[^;]+,\s*""'
+        message: "Give the `assert_eq!` in the loop a message that names the input, like `\"classify_temp({celsius})\"`."
+    mutants:
+      - name: "0 counts as cold"
+        find: "celsius <= 0"
+        replace: "celsius < 0"
+      - name: "15 counts as cold"
+        find: "celsius < 15"
+        replace: "celsius <= 15"
+      - name: "25 counts as mild"
+        find: "celsius < 25"
+        replace: "celsius <= 25"
+      - name: "hot weather is called mild"
+        find: "\"hot\""
+        replace: "\"mild\""
+      - name: "1 counts as freezing"
+        find: "celsius <= 0"
+        replace: "celsius <= 1"
+    hints:
+      - "`let cases = [(0, \"freezing\"), (1, \"cold\"), ...];` then `for (celsius, expected) in cases { assert_eq!(classify_temp(celsius), expected, \"classify_temp({celsius})\"); }`"
+      - "Include both sides of every boundary: 0 and 1, 14 and 15, 24 and 25."
+    more:
+      - task: |
+          Write tests for `Inventory`. First write a helper `fn stocked() -> Inventory` (not a test) in the tests module that returns an inventory with 5 apples and 2 pears. Then write at least **3 tests** that start from `stocked()`.
+
+          The rules: `add` increases the count, `remove` fails with `Err` if the item is unknown or there aren't enough, and otherwise returns `Ok` with the amount left; `count` is 0 for unknown items.
+        mode: test
+        minTests: 3
+        seed: |
+          use std::collections::HashMap;
+
+          struct Inventory {
+              stock: HashMap<String, u32>,
+          }
+
+          impl Inventory {
+              fn new() -> Inventory {
+                  Inventory { stock: HashMap::new() }
+              }
+
+              fn add(&mut self, item: &str, qty: u32) {
+                  *self.stock.entry(item.to_string()).or_insert(0) += qty;
+              }
+
+              fn remove(&mut self, item: &str, qty: u32) -> Result<u32, String> {
+                  let have = self.stock.get_mut(item).ok_or_else(|| format!("unknown item: {item}"))?;
+                  if *have < qty {
+                      return Err(format!("only {} {item} left", *have));
+                  }
+                  *have -= qty;
+                  Ok(*have)
+              }
+
+              fn count(&self, item: &str) -> u32 {
+                  self.stock.get(item).copied().unwrap_or(0)
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              fn stocked() -> Inventory {
+                  todo!()
+              }
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          struct Inventory {
+              stock: HashMap<String, u32>,
+          }
+
+          impl Inventory {
+              fn new() -> Inventory {
+                  Inventory { stock: HashMap::new() }
+              }
+
+              fn add(&mut self, item: &str, qty: u32) {
+                  *self.stock.entry(item.to_string()).or_insert(0) += qty;
+              }
+
+              fn remove(&mut self, item: &str, qty: u32) -> Result<u32, String> {
+                  let have = self.stock.get_mut(item).ok_or_else(|| format!("unknown item: {item}"))?;
+                  if *have < qty {
+                      return Err(format!("only {} {item} left", *have));
+                  }
+                  *have -= qty;
+                  Ok(*have)
+              }
+
+              fn count(&self, item: &str) -> u32 {
+                  self.stock.get(item).copied().unwrap_or(0)
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              fn stocked() -> Inventory {
+                  let mut inv = Inventory::new();
+                  inv.add("apple", 5);
+                  inv.add("pear", 2);
+                  inv
+              }
+
+              // Write your #[test] functions here.
+              #[test]
+              fn adding_more_increases_the_count() {
+                  let mut inv = stocked();
+                  inv.add("apple", 3);
+                  assert_eq!(inv.count("apple"), 8);
+              }
+
+              #[test]
+              fn removing_returns_what_is_left() {
+                  let mut inv = stocked();
+                  assert_eq!(inv.remove("apple", 2), Ok(3));
+                  assert_eq!(inv.count("apple"), 3);
+                  assert_eq!(inv.remove("pear", 2), Ok(0));
+              }
+
+              #[test]
+              fn removing_too_much_or_unknown_items_fails() {
+                  let mut inv = stocked();
+                  assert!(inv.remove("pear", 3).is_err());
+                  assert!(inv.remove("kiwi", 1).is_err());
+                  assert_eq!(inv.count("pear"), 2);
+                  assert_eq!(inv.count("kiwi"), 0);
+              }
+          }
+        require:
+          - pattern: 'fn\s+stocked\s*\(\s*\)\s*->\s*Inventory'
+            message: "Write the helper `fn stocked() -> Inventory`."
+          - pattern: 'stocked\(\)[\s\S]*stocked\(\)[\s\S]*stocked\(\)[\s\S]*stocked\(\)'
+            message: "Start your tests from the `stocked()` helper."
+        mutants:
+          - name: add replaces instead of adding
+            find: "or_insert(0) += qty"
+            replace: "or_insert(0) = qty"
+          - name: removing everything is refused
+            find: "*have < qty"
+            replace: "*have <= qty"
+          - name: remove doesn't subtract
+            find: "*have -= qty;"
+            replace: "*have -= 0;"
+          - name: unknown items count as 1
+            find: "copied().unwrap_or(0)"
+            replace: "copied().unwrap_or(1)"
+        hints:
+          - "`fn stocked() -> Inventory { let mut inv = Inventory::new(); inv.add(\"apple\", 5); inv.add(\"pear\", 2); inv }`"
+          - "Each test starts with `let mut inv = stocked();`. Test adding to an existing item, removing some and all of an item, removing too much, and an unknown item."
+      - task: |
+          A sensor keeps its last few readings in a `RingBuffer`: it holds at most `capacity` items, and pushing into a full buffer throws away the **oldest** reading. Write at least **3 tests** for `push`, `latest`, `oldest` and `len`. Write the `tests` module yourself.
+        mode: test
+        minTests: 3
+        seed: |
+          struct RingBuffer {
+              items: Vec<i32>,
+              capacity: usize,
+          }
+
+          impl RingBuffer {
+              fn new(capacity: usize) -> RingBuffer {
+                  RingBuffer { items: Vec::new(), capacity }
+              }
+
+              fn push(&mut self, value: i32) {
+                  if self.items.len() == self.capacity {
+                      self.items.remove(0);
+                  }
+                  self.items.push(value);
+              }
+
+              fn latest(&self) -> Option<i32> {
+                  self.items.last().copied()
+              }
+
+              fn oldest(&self) -> Option<i32> {
+                  self.items.first().copied()
+              }
+
+              fn len(&self) -> usize {
+                  self.items.len()
+              }
+          }
+        solution: |
+          struct RingBuffer {
+              items: Vec<i32>,
+              capacity: usize,
+          }
+
+          impl RingBuffer {
+              fn new(capacity: usize) -> RingBuffer {
+                  RingBuffer { items: Vec::new(), capacity }
+              }
+
+              fn push(&mut self, value: i32) {
+                  if self.items.len() == self.capacity {
+                      self.items.remove(0);
+                  }
+                  self.items.push(value);
+              }
+
+              fn latest(&self) -> Option<i32> {
+                  self.items.last().copied()
+              }
+
+              fn oldest(&self) -> Option<i32> {
+                  self.items.first().copied()
+              }
+
+              fn len(&self) -> usize {
+                  self.items.len()
+              }
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              #[test]
+              fn an_empty_buffer_has_nothing() {
+                  let b = RingBuffer::new(3);
+                  assert_eq!(b.len(), 0);
+                  assert_eq!(b.latest(), None);
+                  assert_eq!(b.oldest(), None);
+              }
+
+              #[test]
+              fn keeps_readings_in_order() {
+                  let mut b = RingBuffer::new(3);
+                  b.push(10);
+                  b.push(20);
+                  assert_eq!(b.oldest(), Some(10));
+                  assert_eq!(b.latest(), Some(20));
+              }
+
+              #[test]
+              fn a_full_buffer_drops_the_oldest() {
+                  let mut b = RingBuffer::new(2);
+                  b.push(1);
+                  b.push(2);
+                  b.push(3);
+                  assert_eq!(b.len(), 2);
+                  assert_eq!(b.oldest(), Some(2));
+                  assert_eq!(b.latest(), Some(3));
+              }
+          }
+        mutants:
+          - name: keeps one item too many
+            find: "self.items.len() == self.capacity"
+            replace: "self.items.len() == self.capacity + 1"
+          - name: drops the newest instead of the oldest
+            find: "self.items.remove(0);"
+            replace: "self.items.pop();"
+          - name: latest returns the oldest
+            find: "self.items.last().copied()"
+            replace: "self.items.first().copied()"
+        hints:
+          - "Start with `#[cfg(test)] mod tests { use super::*; ... }`."
+          - "The interesting case is overflow: push 3 values into a buffer of capacity 2, then check `len()`, `oldest()` and `latest()`."

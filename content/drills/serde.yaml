@@ -1,0 +1,269 @@
+topic: serde
+drills:
+  - type: predict
+    pre: |
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      struct Badge {
+          name: String,
+          level: u8,
+          expires: Option<String>,
+      }
+    body: |
+      let b = Badge { name: String::from("crab"), level: 2, expires: None };
+      println!("{}", serde_json::to_string(&b).unwrap());
+    why: Keys follow the struct's field order, and an Option that is None is written as null.
+
+  - type: predict
+    pre: |
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Stats {
+          total_wins: u32,
+          best_streak: u32,
+      }
+    body: |
+      let s = Stats { total_wins: 12, best_streak: 4 };
+      println!("{}", serde_json::to_string(&s).unwrap());
+    why: "rename_all = \"camelCase\" renames every field in the JSON: total_wins becomes totalWins."
+
+  - type: predict
+    pre: |
+      use serde_json::json;
+    body: |
+      let v = json!({ "zeta": 1, "alpha": [true, null], "mid": "x" });
+      println!("{v}");
+    why: serde_json's Map is a BTreeMap by default, so object keys are printed in sorted order, not the order you wrote them.
+
+  - type: predict
+    pre: |
+      use serde_json::Value;
+    body: |
+      let v: Value = serde_json::from_str(r#"{"user": {"name": "Ana"}}"#).unwrap();
+      println!("{}", v["user"]["name"]);
+      println!("{}", v["user"]["age"]);
+    why: Printing a Value prints JSON, so the string keeps its quotes. A missing key indexes to Value::Null, printed as null, without panicking.
+
+  - type: predict
+    pre: |
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      enum Signal {
+          Stop,
+          Go { speed: u32 },
+      }
+    body: |
+      println!("{}", serde_json::to_string(&Signal::Stop).unwrap());
+      println!("{}", serde_json::to_string(&Signal::Go { speed: 3 }).unwrap());
+    why: By default enums are externally tagged. A unit variant becomes a plain string; a variant with data becomes an object with the variant name as its only key.
+
+  - type: fill
+    prompt: Derive both directions so the value can be written and read back.
+    pre: |
+      use serde::{Deserialize, Serialize};
+
+      #[derive(Serialize, [[Deserialize]])]
+      struct Score {
+          points: u32,
+      }
+    body: |
+      let json = serde_json::to_string(&Score { points: 7 }).unwrap();
+      let back: Score = serde_json::from_str(&json).unwrap();
+      println!("{} {}", json, back.points);
+    why: Serialize and Deserialize are separate traits; a round trip needs both derives.
+
+  - type: fill
+    prompt: Leave the key out of the JSON when the value is None.
+    pre: |
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      struct Profile {
+          name: String,
+          #[serde(skip_serializing_if = "[[Option::is_none]]")]
+          bio: Option<String>,
+      }
+    body: |
+      let p = Profile { name: String::from("Bo"), bio: None };
+      println!("{}", serde_json::to_string(&p).unwrap());
+    why: skip_serializing_if takes the path of a function fn(&T) -> bool; Option::is_none skips the key entirely instead of writing null.
+
+  - type: fill
+    prompt: Parse a JSON array of numbers.
+    body: |
+      let nums: [[Vec<u32>]] = serde_json::from_str("[4, 5, 6]").unwrap();
+      println!("{}", nums.iter().sum::<u32>());
+    why: A JSON array deserializes into a Vec; the annotation tells from_str which type to produce.
+
+  - type: fill
+    prompt: Make the enum internally tagged, with the variant name in a "type" field.
+    pre: |
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      #[serde([[tag = "type"]])]
+      enum Msg {
+          Ping { id: u32 },
+      }
+    body: |
+      println!("{}", serde_json::to_string(&Msg::Ping { id: 1 }).unwrap());
+    why: "#[serde(tag = \"type\")] puts the variant name inside the object, next to the variant's fields."
+
+  - type: bug
+    pre: |
+      use serde_json::Value;
+    body: |
+      let v: Value = serde_json::from_str(r#"{"city": "Oslo"}"#).unwrap();
+      let city = &v["city"]; // BUG
+      println!("Weather for {}", city);
+    fix: 'let city = v["city"].as_str().unwrap_or("unknown");'
+    prompt: "This should print `Weather for Oslo`, without quotes. Click the line with the bug."
+    why: Displaying a Value prints JSON, so a string keeps its quotes. as_str() gives the Rust text.
+
+  - type: bug
+    pre: |
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      #[serde(rename_all = "snake_case")] // BUG
+      struct User {
+          user_name: String,
+      }
+    body: |
+      let u: User = serde_json::from_str(r#"{"userName": "ferris"}"#).unwrap();
+      println!("{}", u.user_name);
+    fix: '#[serde(rename_all = "camelCase")]'
+    prompt: "The JSON uses camelCase keys. This should print `ferris`. Click the line with the bug."
+    why: With snake_case, serde looks for user_name and reports a missing field. The JSON has userName, which is camelCase.
+
+  - type: bug
+    pre: |
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Config {
+          host: String,
+          port: u16, // BUG
+      }
+    body: |
+      let c: Config = serde_json::from_str(r#"{"host": "localhost"}"#).unwrap();
+      println!("{}:{:?}", c.host, c.port);
+    fix: 'port: Option<u16>,'
+    prompt: "The port is optional in this API, so this should print `localhost:None`. Click the line that makes the program panic."
+    why: A missing non-Option field is a "missing field" error. Option fields become None when the key is missing.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Note {
+          text: String,
+      }
+    body: |
+      let n = Note { text: String::from("hi") };
+      println!("{}", serde_json::to_string(&n).unwrap());
+    why: Note only derives Deserialize. Writing JSON needs Serialize, a separate trait.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use serde::Deserialize;
+
+      struct Color(u8, u8, u8);
+
+      #[derive(Deserialize)]
+      struct Theme {
+          name: String,
+          accent: Color,
+      }
+    body: |
+      let t: Theme = serde_json::from_str(r#"{"name": "x", "accent": [1, 2, 3]}"#).unwrap();
+    why: Every field of a derived struct must implement Deserialize too, and Color has no derive.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      use serde_json::Value;
+    body: |
+      let v: Value = serde_json::from_str("[1, 2, 3]").unwrap();
+      println!("{}", v[5]);
+    why: It compiles and even runs. Indexing a Value past the end gives Value::Null instead of panicking.
+
+  - type: choice
+    prompt: What does serde_json do with a JSON key that your struct has no field for?
+    choices: ["Returns an error", "Ignores it", "Panics", "Stores it in a hidden map"]
+    answer: 2
+    why: "Unknown fields are ignored by default, which keeps clients working when an API adds fields. #[serde(deny_unknown_fields)] makes them an error, useful for config files."
+
+  - type: choice
+    prompt: Why is the serde ecosystem split into serde and crates like serde_json and toml?
+    choices: ["serde_json is the old version of serde", "serde defines the traits and derives once; each format crate implements one format for every type that derives them", "Each format needs its own derive macro", "serde only works with JSON, the others are wrappers"]
+    answer: 2
+    why: Your types derive Serialize/Deserialize once, and any format crate can then read and write them.
+
+  - type: boss
+    prompt: |
+      A warehouse API returns `{"items": [{"sku": "A1", "stock": 3, "minStock": 5}, ...]}`. Derive what's needed (keys are camelCase; `minStock` may be missing, meaning 0) and write `fn low_stock(json: &str) -> Result<Vec<String>, serde_json::Error>` returning the SKUs whose `stock` is below `minStock`, in order.
+    seed: |
+      use serde::Deserialize;
+
+      struct Item {
+          sku: String,
+          stock: u32,
+          min_stock: u32,
+      }
+
+      struct Report {
+          items: Vec<Item>,
+      }
+
+      fn low_stock(json: &str) -> Result<Vec<String>, serde_json::Error> {
+          todo!()
+      }
+    solution: |
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Item {
+          sku: String,
+          stock: u32,
+          #[serde(default)]
+          min_stock: u32,
+      }
+
+      #[derive(Deserialize)]
+      struct Report {
+          items: Vec<Item>,
+      }
+
+      fn low_stock(json: &str) -> Result<Vec<String>, serde_json::Error> {
+          let report: Report = serde_json::from_str(json)?;
+          Ok(report.items.into_iter().filter(|i| i.stock < i.min_stock).map(|i| i.sku).collect())
+      }
+    harness: |
+      #[test]
+      fn finds_items_below_minimum() {
+          let json = r#"{"items": [{"sku": "A1", "stock": 3, "minStock": 5}, {"sku": "B2", "stock": 9, "minStock": 2}, {"sku": "C3", "stock": 0, "minStock": 1}]}"#;
+          assert_eq!(low_stock(json).unwrap(), vec!["A1", "C3"], "low_stock(three items)");
+      }
+
+      #[test]
+      fn missing_min_stock_means_zero() {
+          assert_eq!(low_stock(r#"{"items": [{"sku": "Z", "stock": 0}]}"#).unwrap(), Vec::<String>::new(), "low_stock(no minStock)");
+      }
+
+      #[test]
+      fn invalid_json_is_an_error() {
+          assert!(low_stock(r#"{"items": [{"sku": 1}]}"#).is_err(), "low_stock(sku is a number) should be Err");
+      }
+    hints:
+      - "`#[serde(rename_all = \"camelCase\")]` on Item and `#[serde(default)]` on min_stock."
+      - "Parse with `?`, then `into_iter().filter(|i| i.stock < i.min_stock).map(|i| i.sku).collect()`."
+    why: Attributes adapt the JSON's naming and defaults to your Rust types, and `?` passes parse errors to the caller.

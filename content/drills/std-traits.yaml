@@ -1,0 +1,418 @@
+topic: std-traits
+drills:
+  - type: predict
+    pre: |
+      struct Dollars(u64);
+      struct Cents(u64);
+
+      impl From<Dollars> for Cents {
+          fn from(d: Dollars) -> Self {
+              Cents(d.0 * 100)
+          }
+      }
+    body: |
+      let c: Cents = Dollars(3).into();
+      println!("{}", c.0);
+    why: Implementing From<Dollars> for Cents also gives Dollars an into() that produces Cents.
+
+  - type: predict
+    body: |
+      let big: i32 = 260;
+      println!("{}", big as u8);
+      println!("{}", u8::try_from(big).is_ok());
+    why: "as u8 keeps only the lowest 8 bits, so 260 becomes 4. u8::try_from checks the range and returns an Err instead."
+
+  - type: predict
+    pre: |
+      use std::ops::{Add, Neg};
+
+      #[derive(Clone, Copy)]
+      struct P {
+          x: i32,
+          y: i32,
+      }
+
+      impl Add for P {
+          type Output = P;
+          fn add(self, o: P) -> P {
+              P { x: self.x + o.x, y: self.y + o.y }
+          }
+      }
+
+      impl Neg for P {
+          type Output = P;
+          fn neg(self) -> P {
+              P { x: -self.x, y: -self.y }
+          }
+      }
+    body: |
+      let a = P { x: 1, y: 2 };
+      let b = -a + P { x: 5, y: 5 };
+      println!("{} {}", b.x, b.y);
+    why: "-a calls Neg::neg and gives (-1, -2); + then calls Add::add with (5, 5)."
+
+  - type: predict
+    pre: |
+      struct Loud(&'static str);
+
+      impl Drop for Loud {
+          fn drop(&mut self) {
+              println!("drop {}", self.0);
+          }
+      }
+    body: |
+      let _x = Loud("x");
+      {
+          let _y = Loud("y");
+      }
+      let _z = Loud("z");
+      println!("end");
+    why: _y is dropped when its block ends. At the end of main, the rest are dropped in reverse order of creation, z before x.
+
+  - type: predict
+    body: |
+      println!("{:?}", 2.cmp(&5).then(9.cmp(&1)));
+      println!("{:?}", 5.cmp(&5).then(9.cmp(&1)));
+    why: then is only used when the first comparison is Equal. 2 < 5 decides the first line; 5 == 5, so the second line uses 9 vs 1.
+
+  - type: predict
+    pre: |
+      use std::str::FromStr;
+
+      struct Pair(i32, i32);
+
+      impl FromStr for Pair {
+          type Err = String;
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let (a, b) = s.split_once(',').ok_or("no comma")?;
+              let a = a.trim().parse::<i32>().map_err(|_| "bad a")?;
+              let b = b.trim().parse::<i32>().map_err(|_| "bad b")?;
+              Ok(Pair(a, b))
+          }
+      }
+    body: |
+      let p: Pair = "4, 6".parse().unwrap();
+      println!("{}", p.0 * p.1);
+      println!("{}", "4;6".parse::<Pair>().is_err());
+    why: parse() calls your from_str. "4, 6" splits at the comma into 4 and 6; "4;6" has no comma, so it's an Err.
+
+  - type: fill
+    prompt: Say what the + operator produces.
+    pre: |
+      use std::ops::Add;
+
+      #[derive(Debug, Clone, Copy)]
+      struct Money {
+          cents: i64,
+      }
+
+      impl Add for Money {
+          type [[Output]] = Money;
+          fn add(self, o: Money) -> Money {
+              Money { cents: self.cents + o.cents }
+          }
+      }
+    body: |
+      println!("{:?}", Money { cents: 150 } + Money { cents: 25 });
+    why: Operator traits have an associated type Output, the type the expression produces.
+
+  - type: fill
+    prompt: FromStr's error type has a short name.
+    pre: |
+      use std::str::FromStr;
+
+      #[derive(Debug)]
+      struct Level(u8);
+
+      impl FromStr for Level {
+          type [[Err]] = String;
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              s.parse::<u8>().map(Level).map_err(|_| format!("bad level {s}"))
+          }
+      }
+    body: |
+      println!("{:?}", "7".parse::<Level>());
+    why: FromStr names its error type Err (TryFrom uses Error). It's a historical quirk worth remembering.
+
+  - type: fill
+    prompt: Make partial_cmp agree with cmp.
+    pre: |
+      use std::cmp::Ordering;
+
+      #[derive(PartialEq, Eq)]
+      struct Rank(u32);
+
+      impl Ord for Rank {
+          fn cmp(&self, other: &Self) -> Ordering {
+              other.0.cmp(&self.0)
+          }
+      }
+
+      impl PartialOrd for Rank {
+          fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+              Some(self.[[cmp]](other))
+          }
+      }
+    body: |
+      println!("{}", Rank(1) < Rank(2));
+    why: When a type has Ord, partial_cmp should just wrap cmp so < and sort() always agree. This Ord is reversed, so Rank(1) sorts after Rank(2).
+
+  - type: bug
+    pre: |
+      use std::cmp::Ordering;
+
+      #[derive(PartialEq, Eq)]
+      struct Player {
+          name: &'static str,
+          score: u32,
+      }
+
+      impl Ord for Player {
+          fn cmp(&self, other: &Self) -> Ordering {
+              self.score.cmp(&other.score) // BUG
+          }
+      }
+
+      impl PartialOrd for Player {
+          fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+              Some(self.cmp(other))
+          }
+      }
+    body: |
+      let mut v = vec![Player { name: "al", score: 3 }, Player { name: "bo", score: 9 }];
+      v.sort();
+      println!("leader: {}", v[0].name);
+    fix: "other.score.cmp(&self.score)"
+    prompt: "The leaderboard should put the highest score first and print `leader: bo`. Click the line with the bug."
+    why: self.score.cmp(&other.score) sorts ascending. Swapping self and other reverses the order so the highest score comes first.
+
+  - type: bug
+    pre: |
+      struct Percent(u8);
+
+      impl TryFrom<i32> for Percent {
+          type Error = String;
+          fn try_from(v: i32) -> Result<Self, Self::Error> {
+              if v <= 100 { // BUG
+                  Ok(Percent(v as u8))
+              } else {
+                  Err(format!("{v} is out of range"))
+              }
+          }
+      }
+    body: |
+      match Percent::try_from(-5) {
+          Ok(p) => println!("ok {}", p.0),
+          Err(e) => println!("{e}"),
+      }
+    fix: "if (0..=100).contains(&v) {"
+    why: The check forgot negative numbers, and -5 as u8 silently becomes 251. Checking the whole range 0..=100 makes the conversion safe.
+
+  - type: bug
+    pre: |
+      use std::ops::Sub;
+
+      #[derive(Clone, Copy)]
+      struct Money {
+          cents: i64,
+      }
+
+      impl Sub for Money {
+          type Output = Money;
+          fn sub(self, o: Money) -> Money {
+              Money { cents: self.cents + o.cents } // BUG
+          }
+      }
+    body: |
+      let change = Money { cents: 1000 } - Money { cents: 350 };
+      println!("{}", change.cents);
+    fix: "Money { cents: self.cents - o.cents }"
+    why: The operator does whatever the impl says. Sub must subtract, otherwise a - b quietly adds.
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Celsius(f64);
+      struct Fahrenheit(f64);
+
+      impl From<Celsius> for Fahrenheit {
+          fn from(c: Celsius) -> Self {
+              Fahrenheit(c.0 * 1.8 + 32.0)
+          }
+      }
+    body: |
+      let f = Celsius(20.0).into();
+      println!("{}", f.0);
+    why: "into() needs to know the target type, and nothing says it's Fahrenheit. Writing let f: Fahrenheit fixes it."
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::ops::Mul;
+
+      #[derive(Clone, Copy)]
+      struct Vector2 {
+          x: f64,
+          y: f64,
+      }
+
+      impl Mul<f64> for Vector2 {
+          type Output = Vector2;
+          fn mul(self, k: f64) -> Vector2 {
+              Vector2 { x: self.x * k, y: self.y * k }
+          }
+      }
+    body: |
+      let v = Vector2 { x: 1.0, y: 2.0 };
+      let w = 3.0 * v;
+      println!("{}", w.x);
+    why: "Mul<f64> for Vector2 only covers Vector2 * f64. 3.0 * v would need impl Mul<Vector2> for f64."
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::ops::Add;
+
+      struct Money {
+          cents: i64,
+      }
+
+      impl Add for Money {
+          type Output = Money;
+          fn add(self, o: Money) -> Money {
+              Money { cents: self.cents + o.cents }
+          }
+      }
+    body: |
+      let a = Money { cents: 5 };
+      let b = Money { cents: 7 };
+      let c = a + b;
+      println!("{} {}", c.cents, a.cents);
+    why: add takes self by value. Money isn't Copy, so a + b moves a, and a can't be used afterwards. Deriving Clone and Copy fixes it.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::ops::Deref;
+
+      struct Username(String);
+
+      impl Deref for Username {
+          type Target = str;
+          fn deref(&self) -> &str {
+              &self.0
+          }
+      }
+
+      fn shout(s: &str) -> String {
+          s.to_uppercase()
+      }
+    body: |
+      let u = Username(String::from("ferris"));
+      println!("{} {}", shout(&u), u.len());
+    why: Deref coercion turns &Username into &str, and method calls like len() look through Deref too.
+
+  - type: choice
+    prompt: You want both Fahrenheit::from(c) and c.into() to work. What do you implement?
+    choices:
+      - "impl Into<Fahrenheit> for Celsius"
+      - "impl From<Celsius> for Fahrenheit"
+      - "Both From and Into"
+      - "impl TryFrom<Celsius> for Fahrenheit"
+    answer: 2
+    why: The standard library gives you Into for free whenever From is implemented, so implement From only. TryFrom is for conversions that can fail.
+
+  - type: boss
+    prompt: |
+      Make `Money` (whole cents) feel built in:
+
+      - `Display` shows dollars with two decimals: `$12.05`, `$0.70`.
+      - `FromStr` parses `"12.05"`, `"$12.05"` or `"7"` (whole dollars). If there's a `.`, exactly two digits must follow it. Anything else is an `Err` (any `String`).
+      - `Add` adds two amounts.
+    seed: |
+      use std::fmt;
+      use std::ops::Add;
+      use std::str::FromStr;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Money {
+          cents: u64,
+      }
+    solution: |
+      use std::fmt;
+      use std::ops::Add;
+      use std::str::FromStr;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct Money {
+          cents: u64,
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "${}.{:02}", self.cents / 100, self.cents % 100)
+          }
+      }
+
+      impl FromStr for Money {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let text = s.strip_prefix('$').unwrap_or(s);
+              let bad = || format!("bad amount {s:?}");
+              let (dollars, cents) = match text.split_once('.') {
+                  Some((d, c)) => {
+                      if c.len() != 2 {
+                          return Err(bad());
+                      }
+                      (d, c.parse::<u64>().map_err(|_| bad())?)
+                  }
+                  None => (text, 0),
+              };
+              let dollars = dollars.parse::<u64>().map_err(|_| bad())?;
+              Ok(Money { cents: dollars * 100 + cents })
+          }
+      }
+
+      impl Add for Money {
+          type Output = Money;
+
+          fn add(self, other: Money) -> Money {
+              Money { cents: self.cents + other.cents }
+          }
+      }
+    harness: |
+      #[test]
+      fn displays_dollars_and_cents() {
+          assert_eq!(Money { cents: 1205 }.to_string(), "$12.05", "1205 cents");
+          assert_eq!(Money { cents: 70 }.to_string(), "$0.70", "70 cents");
+      }
+
+      #[test]
+      fn parses_with_and_without_a_dollar_sign() {
+          assert_eq!("12.05".parse::<Money>(), Ok(Money { cents: 1205 }), "\"12.05\"");
+          assert_eq!("$3.50".parse::<Money>(), Ok(Money { cents: 350 }), "\"$3.50\"");
+      }
+
+      #[test]
+      fn parses_whole_dollars() {
+          assert_eq!("7".parse::<Money>(), Ok(Money { cents: 700 }), "\"7\"");
+      }
+
+      #[test]
+      fn rejects_bad_amounts() {
+          assert!("abc".parse::<Money>().is_err(), "\"abc\" should be an Err");
+          assert!("1.5".parse::<Money>().is_err(), "\"1.5\" should be an Err");
+          assert!("".parse::<Money>().is_err(), "\"\" should be an Err");
+      }
+
+      #[test]
+      fn adds_and_displays() {
+          let total = "$1.99".parse::<Money>().unwrap() + "0.01".parse::<Money>().unwrap();
+          assert_eq!(total.to_string(), "$2.00", "$1.99 + $0.01");
+      }
+    hints:
+      - "Display: `write!(f, \"${}.{:02}\", self.cents / 100, self.cents % 100)`."
+      - "FromStr: drop an optional `$` with `s.strip_prefix('$').unwrap_or(s)`, then `split_once('.')` to separate dollars and cents."
+      - "If there's a cents part, check `c.len() == 2` before parsing it. The total is `dollars * 100 + cents`."
+    why: Display, FromStr and the operator traits together make a domain type as easy to use as a built-in number.

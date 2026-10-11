@@ -1,0 +1,234 @@
+topic: control
+drills:
+  - type: predict
+    after: control-1
+    body: |
+      let n = 7;
+      if n % 2 == 0 {
+          println!("even");
+      } else if n > 5 {
+          println!("big odd");
+      } else {
+          println!("small odd");
+      }
+    why: 7 is odd, so the first condition is false; 7 > 5 is true, so the `else if` branch runs and the rest is skipped.
+
+  - type: predict
+    after: control-3
+    body: |
+      let mut c = 0;
+      let x = loop {
+          c += 3;
+          if c > 10 {
+              break c * 2;
+          }
+      };
+      println!("{x}");
+    why: "`c` goes 3, 6, 9, 12. At 12 the condition is true, and `break c * 2` makes the loop's value 24."
+
+  - type: predict
+    after: control-5
+    body: |
+      for i in (0..10).step_by(3) {
+          print!("{i},");
+      }
+      println!();
+    why: "`step_by(3)` takes 0, 3, 6 and 9; the next value, 12, is past the end of the range."
+
+  - type: predict
+    after: control-6
+    body: |
+      for i in 1..=6 {
+          if i % 3 == 0 {
+              continue;
+          }
+          print!("{i}");
+      }
+      println!();
+    why: "`continue` skips the rest of the body for 3 and 6, so only 1, 2, 4 and 5 are printed."
+
+  - type: predict
+    after: control-4
+    body: |
+      let mut n = 1;
+      while n < 100 {
+          n *= 3;
+      }
+      println!("{n}");
+    why: "`n` goes 1, 3, 9, 27, 81, 243. The condition is checked before each iteration, so the loop stops only once `n` reaches 243."
+
+  - type: predict
+    after: control-7
+    body: |
+      'outer: for i in 1..=3 {
+          for j in 1..=3 {
+              if j == 2 {
+                  continue 'outer;
+              }
+              print!("{i}{j} ");
+          }
+      }
+      println!();
+    why: "For every `i`, only `j = 1` prints; at `j = 2`, `continue 'outer` jumps straight to the next `i`."
+
+  - type: fill
+    after: control-5
+    prompt: Include 5 in the range.
+    body: |
+      let mut total = 0;
+      for i in 1[[..=]]5 {
+          total += i;
+      }
+      println!("{total}");
+    why: "`1..=5` is inclusive (1 to 5, sum 15); `1..5` would stop at 4."
+
+  - type: fill
+    after: control-2
+    prompt: Complete the if expression.
+    body: |
+      let n = 250;
+      let size = if n > 100 { "big" } [[else]] { "small" };
+      println!("{size}");
+    why: "An `if` used as a value needs an `else`, so there is a value either way."
+
+  - type: fill
+    after: control-5
+    prompt: Count down instead of up.
+    body: |
+      for i in (1..=3).[[rev]]() {
+          print!("{i} ");
+      }
+      println!("go");
+    why: "`.rev()` runs the range backwards: 3, 2, 1."
+
+  - type: bug
+    after: control-5
+    body: |
+      let mut sum = 0;
+      for i in 1..10 { // BUG
+          sum += i;
+      }
+      println!("{sum}");
+    fix: "for i in 1..=10 {"
+    prompt: "This should print the sum of 1 to 10, which is 55. Click the line with the bug."
+    why: "`1..10` stops at 9 (the sum is 45). The inclusive range `1..=10` includes 10."
+
+  - type: bug
+    after: control-1
+    body: |
+      let score = 100;
+      if score = 100 { // BUG
+          println!("perfect");
+      }
+    fix: "if score == 100 {"
+    prompt: "This should print `perfect`. Click the line with the bug."
+    why: "A single `=` is an assignment, not a comparison. Comparing needs `==`."
+
+  - type: bug
+    after: control-1
+    body: |
+      let score = 95;
+      if score >= 50 { // BUG
+          println!("pass");
+      } else if score >= 90 {
+          println!("excellent");
+      }
+    fix: "if score >= 50 && score < 90 {"
+    prompt: "A score of 95 should print `excellent`. Click the line with the bug."
+    why: The first true condition wins. 95 >= 50 is true, so the `excellent` branch was never reached; the first branch must exclude scores of 90 and above (or the checks must be swapped).
+
+  - type: compiles
+    answer: no
+    after: control-1
+    body: |
+      let lives = 3;
+      if lives {
+          println!("alive");
+      }
+    why: "Conditions must be `bool`; Rust doesn't treat numbers as true or false. Write `if lives > 0`."
+
+  - type: compiles
+    answer: no
+    after: control-2
+    body: |
+      let n = 3;
+      let label = if n > 2 { 5 } else { "five" };
+      println!("{label}");
+    why: All branches of an `if` expression must have the same type; here one is an integer and the other text.
+
+  - type: compiles
+    answer: yes
+    after: control-3
+    body: |
+      let x = loop {
+          break 5;
+      };
+      println!("{x}");
+    why: "`loop` is an expression, and `break 5` gives it the value 5."
+
+  - type: choice
+    after: control-3
+    prompt: "Which loop can produce a value with `break value`?"
+    choices: ["for", "while", "loop", "All three"]
+    answer: 3
+    why: "Only `loop` can, because it's the only loop guaranteed to end through a `break`. A `for` or `while` loop might run zero times and would have no value."
+
+  - type: choice
+    after: control-5
+    prompt: "How many times does the body of `for i in 0..5` run?"
+    choices: ["4", "5", "6"]
+    answer: 2
+    why: "`0..5` is half-open: it includes 0 but not 5, so `i` takes the 5 values 0, 1, 2, 3, 4."
+
+  - type: boss
+    after: control-4
+    prompt: |
+      The **digital root** of a number is what you get by adding up its digits, then adding up the digits of the result, and so on, until a single digit is left. For example, 942 becomes 9 + 4 + 2 = 15, which becomes 1 + 5 = 6.
+
+      Write `fn digital_root(n: u64) -> u64` using loops (one loop to sum the digits, inside another that repeats while the number has more than one digit).
+    seed: |
+      fn digital_root(n: u64) -> u64 {
+          todo!()
+      }
+    solution: |
+      fn digital_root(mut n: u64) -> u64 {
+          while n >= 10 {
+              let mut sum = 0;
+              while n > 0 {
+                  sum += n % 10;
+                  n /= 10;
+              }
+              n = sum;
+          }
+          n
+      }
+    harness: |
+      #[test]
+      fn single_digits_stay_the_same() {
+          assert_eq!(digital_root(0), 0, "digital_root(0)");
+          assert_eq!(digital_root(9), 9, "digital_root(9)");
+      }
+
+      #[test]
+      fn two_rounds_of_adding() {
+          assert_eq!(digital_root(38), 2, "digital_root(38)");
+          assert_eq!(digital_root(942), 6, "digital_root(942)");
+      }
+
+      #[test]
+      fn longer_numbers() {
+          assert_eq!(digital_root(132189), 6, "digital_root(132189)");
+          assert_eq!(digital_root(493193), 2, "digital_root(493193)");
+      }
+
+      #[test]
+      fn the_largest_u64() {
+          assert_eq!(digital_root(u64::MAX), 6, "digital_root(u64::MAX)");
+      }
+    require:
+      - pattern: '\b(while|loop|for)\b[\s\S]*\b(while|loop|for)\b'
+        message: Use two loops, one inside the other.
+    hints:
+      - "The inner loop is the digit sum from the while-loop step: add `n % 10`, then `n /= 10`, until `n` is 0."
+      - "Wrap it in `while n >= 10 { ... n = sum; }` and return `n` at the end."
+    why: Nested loops let you repeat a whole process (summing digits) until a condition holds, with the inner loop doing one round of work.

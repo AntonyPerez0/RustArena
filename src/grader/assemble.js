@@ -6,22 +6,63 @@
 // time limit) and prints one `@@ARENA` record per run. That way one request to the Rust
 // Playground grades every test, and the Playground's lack of stdin doesn't matter.
 
-/** Blank markers in fill-in templates look like [[answer]] or [[answer‖alt1‖alt2]] (U+2016 separates accepted alternatives). */
-export const BLANK_RE = /\[\[(?!\[)(.*?)\]\](?!\])/g;
+/**
+ * Blank markers in fill-in templates look like [[answer]] or [[answer‖alt1‖alt2]] (U+2016 separates
+ * accepted alternatives). Brackets inside an answer are balanced, so `[[v[0]]]` is a blank holding
+ * `v[0]`, and in `arr[[[2]]]` the blank holds `2` between the array's own brackets.
+ * Returns each blank's position and inner text.
+ */
+export function findBlanks(template) {
+  const out = [];
+  const t = String(template);
+  let i = 0;
+  while (i < t.length) {
+    // A blank opens at "[[" that isn't followed by another "[" (in "[[[", it's the last two).
+    if (t[i] === "[" && t[i + 1] === "[" && t[i + 2] !== "[") {
+      let j = i + 2;
+      let depth = 0;
+      let end = -1;
+      while (j < t.length && t[j] !== "\n") {
+        if (t[j] === "[") depth++;
+        else if (t[j] === "]") {
+          if (depth === 0 && t[j + 1] === "]") {
+            end = j;
+            break;
+          }
+          depth = Math.max(0, depth - 1);
+        }
+        j++;
+      }
+      if (end >= 0) {
+        out.push({ start: i, end: end + 2, inner: t.slice(i + 2, end) });
+        i = end + 2;
+        continue;
+      }
+    }
+    i++;
+  }
+  return out;
+}
 
 /** Split a fill template into text parts and blank answers. */
 export function parseTemplate(template) {
   const parts = [];
   const blanks = [];
   let last = 0;
-  for (const m of template.matchAll(BLANK_RE)) {
-    parts.push(template.slice(last, m.index));
-    const alts = m[1].split("‖");
+  for (const b of findBlanks(template)) {
+    parts.push(template.slice(last, b.start));
+    const alts = b.inner.split("‖");
     blanks.push({ answer: alts[0], accept: alts });
-    last = m.index + m[0].length;
+    last = b.end;
   }
   parts.push(template.slice(last));
   return { parts, blanks };
+}
+
+/** The template with its first blank filled with `value` (other blanks untouched). */
+export function fillFirstBlank(template, value) {
+  const b = findBlanks(template)[0];
+  return b ? template.slice(0, b.start) + value + template.slice(b.end) : template;
 }
 
 /** Rebuild source from a template and the learner's blank values. */
@@ -188,7 +229,12 @@ export function testLabel(fn) {
  * The learner's code comes first and is unchanged apart from main's name, so compiler line
  * numbers match the editor.
  */
-export function wrapProgram(code, { cases = [{}], harness, limitMs = 2000 } = {}) {
+/**
+ * @param {string} code
+ * @param {{ cases?: { stdin?: string, args?: string[], files?: Record<string, string> }[], harness?: string, limitMs?: number }} [opts]
+ * @returns {string}
+ */
+export function wrapProgram(code, { cases = [{}], harness = undefined, limitMs = 2000 } = {}) {
   const user = String(code).replace(/\s*$/, "\n");
   const runner = RUNNER.replace("__LIMIT__", String(limitMs));
   if (harness != null) {
@@ -384,6 +430,10 @@ export function drillDisplay(pre, body) {
 }
 
 /** What one test run gets: { stdin, files, args }. */
+/**
+ * @param {{ stdin?: string, files?: Record<string, string>, args?: (string|number)[] } | undefined} t
+ * @returns {{ stdin?: string, files?: Record<string, string>, args?: string[] }}
+ */
 export function runCase(t) {
   if (!t) return {};
   const c = { stdin: t.stdin ?? "" };

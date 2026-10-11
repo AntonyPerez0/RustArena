@@ -1,0 +1,201 @@
+topic: ownership
+drills:
+  - type: predict
+    body: |
+      let a = 7;
+      let mut b = a;
+      b += 1;
+      println!("{} {}", a, b);
+    why: i32 is a Copy type, so `let mut b = a;` gives b its own copy. Changing b doesn't touch a.
+
+  - type: predict
+    body: |
+      let s = String::from("crab");
+      let mut t = s.clone();
+      t.push_str("s");
+      println!("{} {}", s, t);
+    why: clone makes a second String with its own heap text, so pushing onto t leaves s unchanged.
+
+  - type: predict
+    pre: |
+      fn add_star(mut s: String) -> String {
+          s.push('*');
+          s
+      }
+    body: |
+      let s = add_star(String::from("a"));
+      let s = add_star(s);
+      println!("{}", s);
+    why: Each call takes ownership of the String, adds a star and gives it back, so the two calls add two stars.
+
+  - type: predict
+    body: |
+      let x = String::from("outer");
+      {
+          let x = String::from("inner");
+          println!("{}", x);
+      }
+      println!("{}", x);
+    why: The inner x only lives until the inner block's closing brace, where it's dropped. After it, the name x means the outer String again.
+
+  - type: fill
+    prompt: Keep `s` usable by giving `t` its own copy.
+    body: |
+      let s = String::from("map");
+      let t = [[s.clone()]];
+      println!("{} and {}", s, t);
+    why: "`let t = s;` would move the String into t. `s.clone()` makes an independent copy, so both can be printed."
+
+  - type: fill
+    prompt: Give the String back to the caller.
+    pre: |
+      fn shout(mut s: String) -> String {
+          s.push_str("!");
+          [[s]]
+      }
+    body: |
+      let msg = shout(String::from("go"));
+      println!("{}", msg);
+    why: The function owns s. Ending the body with `s` (no semicolon) returns it, which moves it out to the caller.
+
+  - type: fill
+    prompt: Let the function change the String it owns.
+    pre: |
+      fn add_tax([[mut]] total: String) -> String {
+          total.push_str(" + tax");
+          total
+      }
+    body: |
+      println!("{}", add_tax(String::from("10 EUR")));
+    why: A parameter is a variable like any other. To change it with push_str, it must be declared `mut`.
+
+  - type: bug
+    body: |
+      let name = String::from("Ferris");
+      let greeting = name; // BUG
+      println!("{} says hi", name);
+      println!("{}", greeting);
+    fix: 'let greeting = name.clone();'
+    why: "`let greeting = name;` moves the String, so `name` can't be printed afterwards. Both are used, so greeting needs its own copy."
+
+  - type: bug
+    pre: |
+      fn add_line(mut log: String) -> String {
+          log.push_str("ok;");
+          log
+      }
+    body: |
+      let log = String::new();
+      add_line(log); // BUG
+      println!("[{}]", log);
+    fix: 'let log = add_line(log);'
+    why: add_line takes ownership and gives the String back. If you don't keep the returned value, log has moved and can't be printed.
+
+  - type: compiles
+    answer: no
+    body: |
+      let s = String::from("hi");
+      let t = s;
+      println!("{} {}", s, t);
+    why: "Assigning s to t moves the String. Using s afterwards is error E0382: borrow of moved value."
+
+  - type: compiles
+    answer: yes
+    body: |
+      let a = 42;
+      let b = a;
+      println!("{} {}", a, b);
+    why: i32 is Copy, so assignment copies the number and both variables stay valid.
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn eat(food: String) {
+          println!("ate {}", food);
+      }
+    body: |
+      let snack = String::from("kelp");
+      eat(snack);
+      eat(snack);
+    why: The first call moves snack into the function, which drops it at its end. The second call uses a moved value.
+
+  - type: compiles
+    answer: yes
+    body: |
+      let p = (1, 2.5, true);
+      let q = p;
+      println!("{:?} {:?}", p, q);
+    why: A tuple whose parts are all Copy types (integer, float, bool) is Copy too, so q is a copy and p is still usable.
+
+  - type: compiles
+    answer: no
+    body: |
+      let names = vec![String::from("Ana"), String::from("Ben")];
+      let first = names[0];
+      println!("{}", first);
+    why: "You can't move a String out of a vector by index (E0507): it would leave a hole the vector still thinks it owns. Clone it or borrow it."
+
+  - type: compiles
+    answer: yes
+    body: |
+      let mut level = String::from("1-1");
+      let done = level;
+      level = String::from("1-2");
+      println!("{} {}", done, level);
+    why: Moving out of level leaves it empty. Because it's mut, it can be given a new String and used again.
+
+  - type: choice
+    prompt: Where does a String keep its characters?
+    choices: ["On the stack, inside the String", "On the heap; the String holds a pointer, length and capacity", "In the binary's read-only data"]
+    answer: 2
+    why: The String itself is a small handle on the stack (pointer, length, capacity); the text is on the heap so it can grow. Only string literals live in the binary.
+
+  - type: choice
+    prompt: When does Rust free the heap memory of a String?
+    choices: ["When a garbage collector notices it's unused", "When you call free on it", "When its owner goes out of scope (or it's passed to drop)", "Only when the program exits"]
+    answer: 3
+    why: Rust has no garbage collector and no free. The compiler inserts the cleanup where the owner's scope ends; drop(value) just moves the value into a function that ends immediately.
+
+  - type: boss
+    prompt: |
+      Write `fn merge(a: Vec<String>, b: Vec<String>) -> Vec<String>` that returns all of `a`'s strings followed by all of `b`'s, in order. The function owns both vectors, so it can move every string: don't use `.clone()`.
+    seed: |
+      fn merge(a: Vec<String>, b: Vec<String>) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      fn merge(mut a: Vec<String>, b: Vec<String>) -> Vec<String> {
+          for item in b {
+              a.push(item);
+          }
+          a
+      }
+    harness: |
+      #[test]
+      fn puts_b_after_a() {
+          let a = vec![String::from("sword"), String::from("shield")];
+          let b = vec![String::from("potion")];
+          assert_eq!(merge(a, b), vec!["sword", "shield", "potion"], "merge([sword, shield], [potion])");
+      }
+
+      #[test]
+      fn works_when_a_is_empty() {
+          assert_eq!(merge(Vec::new(), vec![String::from("key")]), vec!["key"], "merge([], [key])");
+      }
+
+      #[test]
+      fn works_when_b_is_empty() {
+          assert_eq!(merge(vec![String::from("map")], Vec::new()), vec!["map"], "merge([map], [])");
+      }
+
+      #[test]
+      fn works_when_both_are_empty() {
+          assert_eq!(merge(Vec::new(), Vec::new()), Vec::<String>::new(), "merge([], [])");
+      }
+    forbid:
+      - pattern: '\.clone\(\)'
+        message: The function owns both vectors, so move the strings instead of cloning them.
+    hints:
+      - "To push onto `a`, the parameter must be `mut a: Vec<String>`."
+      - "`for item in b { a.push(item); }` moves each string out of b. Then return `a`."
+    why: A function that owns its arguments can move their contents wherever it likes; no copies are needed.

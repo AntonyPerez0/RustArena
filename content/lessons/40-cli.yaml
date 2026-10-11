@@ -1,0 +1,1679 @@
+id: cli
+title: Building Command-Line Tools
+phase: "Rust at work"
+summary: Write real command-line programs. Arguments and flags, exit codes and stderr, reading files and standard input, and the Config/run structure every Rust CLI uses, plus how clap does the parsing for you.
+roadmap: [CLI Utilities, clap, std::env]
+steps:
+  - title: Command-line arguments
+    id: cli-1
+    text: |
+      Rust is a favorite for command-line tools (`ripgrep`, `fd`, `bat`, `uv` and Cargo itself are written in it): they start instantly, ship as one file, and don't crash on odd input. A command-line tool gets its instructions as **arguments**: the words typed after its name.
+
+      ```text
+      $ grep -n error app.log
+             ^^^^^^^^^^^^^^^^^  three arguments: "-n", "error", "app.log"
+      ```
+
+      The shell splits the line into words (quotes keep spaces together: `"big world"` is one argument) and the program receives them as a list of strings. In Rust that list comes from `std::env::args()`:
+
+      ```rust run
+      use std::env;
+
+      fn main() {
+          let args: Vec<String> = env::args().skip(1).collect();
+          println!("got {} arguments", args.len());
+          for (i, arg) in args.iter().enumerate() {
+              println!("{i}: {arg}");
+          }
+      }
+      ```
+
+      ```output
+      got 0 arguments
+      ```
+
+      The example above ran without arguments. With Cargo, everything after `--` goes to your program (before it, the arguments are for Cargo itself):
+
+      ```text
+      $ cargo run -- hello "big world" 42
+      got 3 arguments
+      0: hello
+      1: big world
+      2: 42
+      ```
+
+      Piece by piece:
+
+      - `env::args()` returns an **iterator** of `String`s. The **first item is the program's own path** (like `target/debug/greet`), which is why we `skip(1)`.
+      - `collect()` gathers the rest into a `Vec<String>` you can index, count and pass around.
+      - Arguments are always text. `"42"` is a `String`; to use it as a number you `parse` it, and handle the error when it isn't one.
+      - `env::args()` panics if an argument isn't valid Unicode (rare; possible with odd file names on Linux). Tools that must accept any file name use `env::args_os()`, which yields `OsString`s.
+
+      ### Common mistakes
+
+      **Indexing without checking.** `args[1]` panics when the user gave no arguments, the most common way a CLI crashes:
+
+      ```rust panics
+      fn main() {
+          let args: Vec<String> = std::env::args().collect();
+          let name = &args[1];
+          println!("Hello, {name}!");
+      }
+      ```
+
+      ```text
+      thread 'main' panicked at src/main.rs:3:17:
+      index out of bounds: the len is 1 but the index is 1
+      ```
+
+      Ask for an `Option` instead and handle the `None`, usually by printing a **usage** line that shows how to call the tool:
+
+      ```rust run
+      fn main() {
+          match std::env::args().nth(1) {
+              Some(name) => println!("Hello, {name}!"),
+              None => println!("usage: greet <name>"),
+          }
+      }
+      ```
+
+      ```output
+      usage: greet <name>
+      ```
+
+      - **Forgetting `skip(1)`**: the program's path shows up as the first "real" argument.
+      - **Printing `args[0]`** in messages: it's a full path that differs between machines. Write the tool's name yourself (`usage: greet ...`).
+
+      **Your turn:** write `greet`: print `Hello, <name>!` for every argument, one per line. With no arguments, print `usage: greet <name>...`. (On this site the tests run your program with different arguments.)
+    seed: |
+      use std::env;
+
+      fn main() {
+          let args: Vec<String> = env::args().collect();
+      }
+    solution: |
+      use std::env;
+
+      fn main() {
+          let args: Vec<String> = env::args().skip(1).collect();
+          if args.is_empty() {
+              println!("usage: greet <name>...");
+          }
+          for name in &args {
+              println!("Hello, {name}!");
+          }
+      }
+    tests:
+      - args: ["Ferris"]
+      - args: ["Ana", "Bo"]
+      - args: []
+      - args: ["Mary Jane", "Li"]
+        hidden: true
+    hints:
+      - "`env::args().skip(1).collect()` leaves out the program's own path."
+      - "Check `args.is_empty()` for the usage line, then loop over `&args`."
+    more:
+      - task: |
+          Write `args`: print every argument with its position, starting at 1, as `1: first`. Then print a final line `total: N`. With no arguments it just prints `total: 0`.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let args: Vec<String> = std::env::args().skip(1).collect();
+              for (i, arg) in args.iter().enumerate() {
+                  println!("{}: {arg}", i + 1);
+              }
+              println!("total: {}", args.len());
+          }
+        tests:
+          - args: ["build", "--release"]
+          - args: []
+          - args: ["a b", "", "c"]
+            hidden: true
+        hints:
+          - "`enumerate()` counts from 0, so print `i + 1`."
+      - task: |
+          Write `stats`: every argument is a number (`f64`). Print `count: N`, `min: X` and `max: Y` with two decimals each. Arguments that aren't numbers are skipped, with a line `skipping "x"` printed for each (in order, before the results). If no numbers are left, print `no numbers` instead of the three result lines.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let mut numbers = Vec::new();
+              for arg in std::env::args().skip(1) {
+                  match arg.parse::<f64>() {
+                      Ok(n) => numbers.push(n),
+                      Err(_) => println!("skipping {arg:?}"),
+                  }
+              }
+              if numbers.is_empty() {
+                  println!("no numbers");
+                  return;
+              }
+              let min = numbers.iter().copied().fold(f64::INFINITY, f64::min);
+              let max = numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+              println!("count: {}", numbers.len());
+              println!("min: {min:.2}");
+              println!("max: {max:.2}");
+          }
+        tests:
+          - args: ["3", "-1.5", "10"]
+          - args: ["4", "four", "2"]
+          - args: ["x"]
+          - args: []
+            hidden: true
+          - args: ["7"]
+            hidden: true
+        hints:
+          - "Loop over `std::env::args().skip(1)` and `match arg.parse::<f64>()`."
+          - "Floats aren't `Ord`, so `max()` doesn't work on them. `fold(f64::NEG_INFINITY, f64::max)` does."
+
+  - title: Flags and options
+    id: cli-2
+    text: |
+      Real tools take three kinds of arguments:
+
+      - **Positional arguments**: meaning comes from position, like the pattern and file in `grep error app.log`.
+      - **Flags**: on/off switches, a short form `-i` and a long form `--ignore-case`.
+      - **Options**: a name followed by a value, like `--max 5` or `-m 5`.
+
+      The standard way to parse them by hand is a loop over an iterator, with `match` on each argument. Taking a **slice of strings** instead of reading `env::args()` inside the function makes the parser easy to test, so `main` just does `let args: Vec<String> = env::args().skip(1).collect();` and passes `&args`:
+
+      ```rust run
+      struct Config {
+          pattern: String,
+          files: Vec<String>,
+          ignore_case: bool,
+          max: Option<usize>,
+      }
+
+      fn parse_args(args: &[String]) -> Result<Config, String> {
+          let mut pattern = None;
+          let mut files = Vec::new();
+          let mut ignore_case = false;
+          let mut max = None;
+          let mut iter = args.iter();
+          while let Some(arg) = iter.next() {
+              match arg.as_str() {
+                  "-i" | "--ignore-case" => ignore_case = true,
+                  "-m" | "--max" => {
+                      let value = iter.next().ok_or("missing value for --max")?;
+                      let n = value.parse().map_err(|_| format!("invalid number for --max: {value}"))?;
+                      max = Some(n);
+                  }
+                  flag if flag.starts_with('-') => return Err(format!("unknown flag: {flag}")),
+                  _ if pattern.is_none() => pattern = Some(arg.clone()),
+                  _ => files.push(arg.clone()),
+              }
+          }
+          let pattern = pattern.ok_or("missing pattern")?;
+          Ok(Config { pattern, files, ignore_case, max })
+      }
+
+      fn main() {
+          let tries = [
+              vec!["-i", "error", "app.log"],
+              vec!["--max", "2", "warn", "a.log", "b.log"],
+              vec!["error", "-x"],
+              vec!["-m"],
+          ];
+          for t in tries {
+              let args: Vec<String> = t.iter().map(|s| s.to_string()).collect();
+              match parse_args(&args) {
+                  Ok(c) => println!("pattern={} files={:?} ignore_case={} max={:?}", c.pattern, c.files, c.ignore_case, c.max),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      pattern=error files=["app.log"] ignore_case=true max=None
+      pattern=warn files=["a.log", "b.log"] ignore_case=false max=Some(2)
+      error: unknown flag: -x
+      error: missing value for --max
+      ```
+
+      Piece by piece:
+
+      - `while let Some(arg) = iter.next()` instead of `for`: an option needs to **take the next argument** as its value, which `iter.next()` inside the loop does.
+      - `match arg.as_str()` matches a `String` against string literals; `|` gives the short and long forms the same arm.
+      - `ok_or("...")` turns the `None` of a missing value into an error, and `?` returns it. A `&str` error converts into the `String` error type automatically.
+      - The guard `flag if flag.starts_with('-')` catches unknown flags, so a typo like `--ignore-cse` is reported instead of being treated as a file name.
+      - All the results land in a **Config struct**. The rest of the program reads the config, never the raw arguments.
+
+      ### Conventions users expect
+
+      - `-h`/`--help` prints help; `-V`/`--version` prints the version.
+      - `--` means "end of options": everything after it is positional, so you can search for a pattern that starts with `-`.
+      - `-` as a file name means standard input (step 5).
+      - Order usually doesn't matter: `grep -i error` and `grep error -i` both work (ours does too).
+
+      In real projects the **clap** crate handles all of this and generates `--help` for you (last step). Writing a parser once by hand shows you what clap does and helps when you write small tools without dependencies.
+
+      ### Common mistakes
+
+      - **Using a `for` loop** and then calling `iter.next()` inside it: `for arg in iter` moves the iterator into the loop (`borrow of moved value: iter`), and `for arg in &mut iter` borrows it mutably for the whole loop, so a second `iter.next()` is refused. Use `while let`.
+      - **Not rejecting unknown flags**: they silently become positional arguments, and the user's typo becomes "file not found: --verbos".
+      - **Parsing in `main` with `env::args()` directly**: then you can only test it by running the program. A function taking `&[String]` can be tested with plain vectors.
+
+      **Your turn:** write `parse_args` for a log-search tool. Flags: `-i`/`--ignore-case`, `-n`/`--line-numbers`, and the option `-m N`/`--max N`. The first positional argument is the pattern, the optional second one is the file; a third positional is an error. Errors (exact text): `missing pattern`, `unexpected argument: <arg>`, `unknown flag: <flag>`, `missing value for --max`, `invalid number for --max: <value>`.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct Config {
+          pattern: String,
+          file: Option<String>,
+          ignore_case: bool,
+          line_numbers: bool,
+          max: Option<usize>,
+      }
+
+      fn parse_args(args: &[String]) -> Result<Config, String> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct Config {
+          pattern: String,
+          file: Option<String>,
+          ignore_case: bool,
+          line_numbers: bool,
+          max: Option<usize>,
+      }
+
+      fn parse_args(args: &[String]) -> Result<Config, String> {
+          let mut pattern = None;
+          let mut file = None;
+          let mut ignore_case = false;
+          let mut line_numbers = false;
+          let mut max = None;
+          let mut iter = args.iter();
+          while let Some(arg) = iter.next() {
+              match arg.as_str() {
+                  "-i" | "--ignore-case" => ignore_case = true,
+                  "-n" | "--line-numbers" => line_numbers = true,
+                  "-m" | "--max" => {
+                      let value = iter.next().ok_or("missing value for --max")?;
+                      let n = value.parse().map_err(|_| format!("invalid number for --max: {value}"))?;
+                      max = Some(n);
+                  }
+                  flag if flag.starts_with('-') => return Err(format!("unknown flag: {flag}")),
+                  _ if pattern.is_none() => pattern = Some(arg.clone()),
+                  _ if file.is_none() => file = Some(arg.clone()),
+                  _ => return Err(format!("unexpected argument: {arg}")),
+              }
+          }
+          let pattern = pattern.ok_or("missing pattern")?;
+          Ok(Config { pattern, file, ignore_case, line_numbers, max })
+      }
+    harness: |
+      fn args(list: &[&str]) -> Vec<String> {
+          list.iter().map(|s| s.to_string()).collect()
+      }
+
+      #[test]
+      fn pattern_alone_uses_defaults() {
+          let c = parse_args(&args(&["error"])).unwrap();
+          assert_eq!(c, Config { pattern: "error".into(), file: None, ignore_case: false, line_numbers: false, max: None }, "parse_args([error])");
+      }
+
+      #[test]
+      fn short_and_long_flags_work_in_any_order() {
+          let c = parse_args(&args(&["warn", "--line-numbers", "app.log", "-i"])).unwrap();
+          assert_eq!(c, Config { pattern: "warn".into(), file: Some("app.log".into()), ignore_case: true, line_numbers: true, max: None }, "parse_args([warn, --line-numbers, app.log, -i])");
+      }
+
+      #[test]
+      fn max_takes_the_next_argument() {
+          assert_eq!(parse_args(&args(&["-m", "3", "x"])).unwrap().max, Some(3), "parse_args([-m, 3, x]).max");
+          assert_eq!(parse_args(&args(&["x", "--max", "10"])).unwrap().max, Some(10), "parse_args([x, --max, 10]).max");
+      }
+
+      #[test]
+      fn bad_max_values_are_errors() {
+          assert_eq!(parse_args(&args(&["x", "--max"])), Err("missing value for --max".to_string()), "parse_args([x, --max])");
+          assert_eq!(parse_args(&args(&["x", "-m", "lots"])), Err("invalid number for --max: lots".to_string()), "parse_args([x, -m, lots])");
+      }
+
+      #[test]
+      fn unknown_flags_and_extra_arguments_are_errors() {
+          assert_eq!(parse_args(&args(&["x", "-z"])), Err("unknown flag: -z".to_string()), "parse_args([x, -z])");
+          assert_eq!(parse_args(&args(&["x", "a.log", "b.log"])), Err("unexpected argument: b.log".to_string()), "parse_args([x, a.log, b.log])");
+      }
+
+      #[test]
+      fn no_pattern_is_an_error() {
+          assert_eq!(parse_args(&args(&["-i"])), Err("missing pattern".to_string()), "parse_args([-i])");
+          assert_eq!(parse_args(&args(&[])), Err("missing pattern".to_string()), "parse_args([])");
+      }
+    hints:
+      - "Keep one `let mut` variable per setting, loop with `while let Some(arg) = iter.next()`, and build the Config at the end."
+      - "`\"-m\" | \"--max\" => { let value = iter.next().ok_or(\"missing value for --max\")?; ... }`"
+      - "Positional arms in order: `_ if pattern.is_none() => ...`, `_ if file.is_none() => ...`, `_ => return Err(format!(\"unexpected argument: {arg}\"))`."
+    more:
+      - task: |
+          Users also type `--max=5` and group short flags as `-in`. Write `fn expand(args: &[String]) -> Vec<String>` that normalizes the arguments before parsing: a long option with `=` (`--max=5`) becomes two arguments (`--max`, `5`); a single dash followed by **two or more letters** (`-in`) becomes one flag per letter (`-i`, `-n`). Everything else is kept as is, and after a `--` argument nothing more is changed (the `--` itself is kept).
+        seed: |
+          fn expand(args: &[String]) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          fn expand(args: &[String]) -> Vec<String> {
+              let mut out = Vec::new();
+              let mut done = false;
+              for arg in args {
+                  if done {
+                      out.push(arg.clone());
+                      continue;
+                  }
+                  if arg == "--" {
+                      done = true;
+                      out.push(arg.clone());
+                  } else if let Some(long) = arg.strip_prefix("--") {
+                      match long.split_once('=') {
+                          Some((name, value)) => {
+                              out.push(format!("--{name}"));
+                              out.push(value.to_string());
+                          }
+                          None => out.push(arg.clone()),
+                      }
+                  } else if arg.len() > 2 && arg.starts_with('-') && arg[1..].chars().all(|c| c.is_ascii_alphabetic()) {
+                      for c in arg[1..].chars() {
+                          out.push(format!("-{c}"));
+                      }
+                  } else {
+                      out.push(arg.clone());
+                  }
+              }
+              out
+          }
+        harness: |
+          fn args(list: &[&str]) -> Vec<String> {
+              list.iter().map(|s| s.to_string()).collect()
+          }
+
+          #[test]
+          fn splits_long_options_with_equals() {
+              assert_eq!(expand(&args(&["--max=5", "error"])), args(&["--max", "5", "error"]), "expand([--max=5, error])");
+          }
+
+          #[test]
+          fn splits_grouped_short_flags() {
+              assert_eq!(expand(&args(&["-in", "error"])), args(&["-i", "-n", "error"]), "expand([-in, error])");
+          }
+
+          #[test]
+          fn leaves_other_arguments_alone() {
+              assert_eq!(expand(&args(&["-i", "--verbose", "-5", "a=b", "-"])), args(&["-i", "--verbose", "-5", "a=b", "-"]), "expand(mixed)");
+          }
+
+          #[test]
+          fn stops_after_double_dash() {
+              assert_eq!(expand(&args(&["-in", "--", "-xy", "--max=1"])), args(&["-i", "-n", "--", "-xy", "--max=1"]), "expand([-in, --, -xy, --max=1])");
+          }
+
+          #[test]
+          fn empty_input_gives_empty_output() {
+              assert_eq!(expand(&[]), Vec::<String>::new(), "expand([])");
+          }
+        hints:
+          - "`arg.strip_prefix(\"--\")` gives the part after `--` as an `Option<&str>`; `split_once('=')` splits name and value."
+          - "For short groups: the argument starts with `-`, is longer than 2 characters, and everything after the dash is an ASCII letter (so `-5` stays a number): `arg[1..].chars().all(|c| c.is_ascii_alphabetic())`."
+          - "Keep a `done` flag that you set when you see `--`; after that, push every argument unchanged."
+      - task: |
+          Write `seq`: `seq [-s SEP] [-w] FIRST LAST` prints the whole numbers from FIRST to LAST (inclusive, counting down if LAST is smaller), separated by SEP (default: a newline). With `-w`, pad every number with zeros to the width of the widest one (`08`, `09`, `10`). You can assume the arguments are valid.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let args: Vec<String> = std::env::args().skip(1).collect();
+              let mut sep = String::from("\n");
+              let mut pad = false;
+              let mut numbers = Vec::new();
+              let mut iter = args.iter();
+              while let Some(arg) = iter.next() {
+                  match arg.as_str() {
+                      "-s" => sep = iter.next().cloned().unwrap_or_default(),
+                      "-w" => pad = true,
+                      n => numbers.push(n.parse::<i64>().unwrap_or(0)),
+                  }
+              }
+              let (first, last) = (numbers[0], numbers[1]);
+              let values: Vec<i64> = if first <= last { (first..=last).collect() } else { (last..=first).rev().collect() };
+              let width = if pad { values.iter().map(|v| v.to_string().len()).max().unwrap_or(0) } else { 0 };
+              let text: Vec<String> = values.iter().map(|v| format!("{v:0width$}")).collect();
+              println!("{}", text.join(&sep));
+          }
+        tests:
+          - args: ["1", "4"]
+          - args: ["-s", ", ", "3", "1"]
+          - args: ["-w", "8", "11"]
+          - args: ["5", "5", "-s", "-"]
+            hidden: true
+          - args: ["-w", "-s", " ", "98", "101"]
+            hidden: true
+        hints:
+          - "Parse with `while let Some(arg) = iter.next()`; `-s` takes the next argument as the separator."
+          - "Build the list with `(first..=last)` or `(last..=first).rev()`, then `join` the formatted numbers with the separator."
+          - "`format!(\"{v:0width$}\")` pads with zeros to `width` characters."
+
+  - title: Exit codes and stderr
+    id: cli-3
+    text: |
+      Every program ends with an **exit code**, a small number it hands back to whoever started it. `0` means success, anything else means failure. Humans rarely see it, but everything else does: shell scripts (`mytool && deploy`), CI pipelines (a non-zero code fails the build), and other programs. A tool that prints "error" but exits with 0 tells the script everything went fine.
+
+      ```text
+      $ grep crab notes.txt; echo "exit code: $?"
+      the crab sleeps
+      exit code: 0
+      $ grep lobster notes.txt; echo "exit code: $?"
+      exit code: 1
+      $ grep lobster missing.txt; echo "exit code: $?"
+      grep: missing.txt: No such file or directory
+      exit code: 2
+      ```
+
+      Common conventions: `0` success, `1` a general failure (or "nothing found", for search tools), `2` the tool was called wrong (bad arguments). Codes go from 0 to 255.
+
+      ### Returning an exit code from main
+
+      ```rust run
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let words = ["alpha", "beta", "gamma"];
+          for w in words {
+              println!("{w}");
+          }
+          eprintln!("debug: printed {} words", words.len());
+          ExitCode::SUCCESS
+      }
+      ```
+
+      ```output
+      alpha
+      beta
+      gamma
+      ```
+
+      - `fn main() -> ExitCode` lets `main` choose the code: `ExitCode::SUCCESS` (0), `ExitCode::FAILURE` (1), or any `u8` with `ExitCode::from(2)`.
+      - The `debug:` line isn't in the output above because `eprintln!` writes to **standard error** (stderr), a second output stream. Messages for humans (errors, warnings, progress) go to stderr; the tool's real **results** go to stdout. That way `mytool > results.txt` puts only results in the file while errors still appear on screen, and a pipe like `mytool | sort` doesn't sort your error messages.
+
+      Here is a typical `main` for a tool that can be called wrong:
+
+      ```rust
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          if args.is_empty() {
+              eprintln!("usage: shout <word>...");
+              return ExitCode::from(2);
+          }
+          println!("{}", args.join(" ").to_uppercase());
+          ExitCode::SUCCESS
+      }
+      ```
+
+      ```text
+      $ shout hello crab
+      HELLO CRAB
+      $ shout; echo $?
+      usage: shout <word>...
+      2
+      ```
+
+      ### `std::process::exit`
+
+      `std::process::exit(2)` ends the program immediately from anywhere. It's handy in small tools, but it doesn't return: values in scope are never dropped (their `Drop` code doesn't run), and a function that might call it is hard to test. Prefer returning `ExitCode` (or a `Result`) up to `main`, and keep `exit` for the top level.
+
+      (Recall from the last module: a `main` that returns `Err` exits with 1, and a panic exits with 101.)
+
+      ### Common mistakes
+
+      - **Errors on stdout** with `println!`: they end up in the output file or the next program in the pipe.
+      - **Exiting with 0 after an error.** Check: does `mytool bad-input && echo ok` print `ok`? It shouldn't.
+      - **`exit(256)`**: codes are taken modulo 256 on Unix, so 256 becomes 0, which means success. `ExitCode::from` takes a `u8`, which avoids that.
+
+      **Your turn:** write `average`: print the average of the numeric arguments with two decimals. With no arguments, print `usage: average <number>...` to **stderr** and exit with code 2. If an argument isn't a number, print `error: "x" is not a number` to stderr and exit with code 1 (print nothing to stdout in both cases).
+    seed: |
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          ExitCode::SUCCESS
+      }
+    solution: |
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          if args.is_empty() {
+              eprintln!("usage: average <number>...");
+              return ExitCode::from(2);
+          }
+          let mut sum = 0.0;
+          for arg in &args {
+              match arg.parse::<f64>() {
+                  Ok(n) => sum += n,
+                  Err(_) => {
+                      eprintln!("error: {arg:?} is not a number");
+                      return ExitCode::FAILURE;
+                  }
+              }
+          }
+          println!("{:.2}", sum / args.len() as f64);
+          ExitCode::SUCCESS
+      }
+    require:
+      - pattern: 'eprintln!'
+        message: Print error messages to stderr with `eprintln!`.
+    tests:
+      - args: ["3", "4", "5"]
+      - args: []
+        exit: 2
+        allowEmpty: true
+      - args: ["1", "x"]
+        exit: 1
+        allowEmpty: true
+      - args: ["-2.5", "2.5", "10"]
+        hidden: true
+      - args: ["7", "eight", "9"]
+        exit: 1
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "Check `args.is_empty()` first: `eprintln!(\"usage: average <number>...\"); return ExitCode::from(2);`"
+      - "Parse each argument with `match arg.parse::<f64>()`; on `Err`, print with `eprintln!` and `return ExitCode::FAILURE;`."
+      - "Only print the result after every argument parsed: `println!(\"{:.2}\", sum / args.len() as f64);`"
+    more:
+      - task: |
+          Write `contains <word> <text>...` with grep's exit codes: if one of the text arguments equals `word`, print `found at position N` (N counts the text arguments from 1, first match) and exit 0. If none does, print nothing and exit 1. With fewer than two arguments, print `usage: contains <word> <text>...` to stderr and exit 2.
+        seed: |
+          use std::process::ExitCode;
+
+          fn main() -> ExitCode {
+              ExitCode::SUCCESS
+          }
+        solution: |
+          use std::process::ExitCode;
+
+          fn main() -> ExitCode {
+              let args: Vec<String> = std::env::args().skip(1).collect();
+              let [word, texts @ ..] = args.as_slice() else {
+                  eprintln!("usage: contains <word> <text>...");
+                  return ExitCode::from(2);
+              };
+              if texts.is_empty() {
+                  eprintln!("usage: contains <word> <text>...");
+                  return ExitCode::from(2);
+              }
+              match texts.iter().position(|t| t == word) {
+                  Some(i) => {
+                      println!("found at position {}", i + 1);
+                      ExitCode::SUCCESS
+                  }
+                  None => ExitCode::FAILURE,
+              }
+          }
+        tests:
+          - args: ["crab", "fish", "crab", "crab"]
+          - args: ["crab", "fish", "eel"]
+            exit: 1
+            allowEmpty: true
+          - args: ["crab"]
+            exit: 2
+            allowEmpty: true
+          - args: []
+            exit: 2
+            allowEmpty: true
+            hidden: true
+          - args: ["Crab", "crab", "Crab"]
+            hidden: true
+        hints:
+          - "`texts.iter().position(|t| t == word)` finds the first match as an `Option<usize>`."
+          - "A slice pattern `let [word, texts @ ..] = args.as_slice() else { ... };` splits off the first argument."
+      - task: |
+          Write `temp`, a converter: `temp 100C` prints `212.0F`, `temp -40F` prints `-40.0C` (one decimal). Structure it the way real tools are built: a `run(args: &[String]) -> Result<String, CliError>` that does the work, and a `main` that prints the result or the error and picks the exit code. `CliError::Usage` (wrong number of arguments) exits 2 with `usage: temp <value><C|F>`; `CliError::Invalid(String)` exits 1 with `error: <message>`, for a unit other than `C`/`F` (`unknown unit in "30K"`) or a value that isn't a number (`bad number in "abcC"`). Errors go to stderr.
+        seed: |
+          use std::process::ExitCode;
+
+          enum CliError {
+              Usage,
+              Invalid(String),
+          }
+
+          fn run(args: &[String]) -> Result<String, CliError> {
+              todo!()
+          }
+
+          fn main() -> ExitCode {
+              ExitCode::SUCCESS
+          }
+        solution: |
+          use std::process::ExitCode;
+
+          enum CliError {
+              Usage,
+              Invalid(String),
+          }
+
+          fn run(args: &[String]) -> Result<String, CliError> {
+              let [input] = args else {
+                  return Err(CliError::Usage);
+              };
+              let (value, unit) = if let Some(v) = input.strip_suffix('C') {
+                  (v, 'C')
+              } else if let Some(v) = input.strip_suffix('F') {
+                  (v, 'F')
+              } else {
+                  return Err(CliError::Invalid(format!("unknown unit in {input:?}")));
+              };
+              let n: f64 = value.parse().map_err(|_| CliError::Invalid(format!("bad number in {input:?}")))?;
+              Ok(match unit {
+                  'C' => format!("{:.1}F", n * 9.0 / 5.0 + 32.0),
+                  _ => format!("{:.1}C", (n - 32.0) * 5.0 / 9.0),
+              })
+          }
+
+          fn main() -> ExitCode {
+              let args: Vec<String> = std::env::args().skip(1).collect();
+              match run(&args) {
+                  Ok(out) => {
+                      println!("{out}");
+                      ExitCode::SUCCESS
+                  }
+                  Err(CliError::Usage) => {
+                      eprintln!("usage: temp <value><C|F>");
+                      ExitCode::from(2)
+                  }
+                  Err(CliError::Invalid(msg)) => {
+                      eprintln!("error: {msg}");
+                      ExitCode::FAILURE
+                  }
+              }
+          }
+        tests:
+          - args: ["100C"]
+          - args: ["-40F"]
+          - args: ["30K"]
+            exit: 1
+            allowEmpty: true
+          - args: []
+            exit: 2
+            allowEmpty: true
+          - args: ["abcC"]
+            exit: 1
+            allowEmpty: true
+            hidden: true
+          - args: ["98.6F"]
+            hidden: true
+          - args: ["1C", "2C"]
+            exit: 2
+            allowEmpty: true
+            hidden: true
+        hints:
+          - "`let [input] = args else { return Err(CliError::Usage); };` accepts exactly one argument."
+          - "`input.strip_suffix('C')` returns the number part if the text ends with `C`."
+          - "In `main`, `match run(&args)` with one arm per outcome, each returning its `ExitCode`."
+
+  - title: Reading files
+    id: cli-4
+    text: |
+      Most tools work on files. `std::fs` has the functions you'll use every day:
+
+      ```rust run
+      use std::fs;
+      use std::io::ErrorKind;
+
+      fn main() {
+          fs::write("notes.txt", "buy milk\nfeed the crab\n").expect("could not write notes.txt");
+          let text = fs::read_to_string("notes.txt").expect("could not read notes.txt");
+          println!("{} lines", text.lines().count());
+
+          match fs::read_to_string("missing.txt") {
+              Ok(t) => println!("read {} bytes", t.len()),
+              Err(e) if e.kind() == ErrorKind::NotFound => println!("missing.txt does not exist"),
+              Err(e) => println!("error: {e}"),
+          }
+      }
+      ```
+
+      ```output
+      2 lines
+      missing.txt does not exist
+      ```
+
+      Piece by piece:
+
+      - `fs::write(path, contents)` creates the file (or replaces it) with the given text.
+      - `fs::read_to_string(path)` reads a whole file into a `String`. It returns `io::Result<String>`, which is `Result<String, io::Error>`.
+      - A relative path like `notes.txt` is relative to the **current working directory**: the folder the user ran the tool from, not where the program file lives.
+      - `e.kind()` tells you what kind of I/O error it was: `ErrorKind::NotFound`, `ErrorKind::PermissionDenied`, `ErrorKind::IsADirectory`... Match on it when your tool should react differently (a missing config file might just mean "use defaults"). Printing `e` gives the OS's message, like `No such file or directory (os error 2)`.
+
+      ### Big files: line by line
+
+      `read_to_string` loads the whole file into memory. That's fine for configs and most inputs; for a 20 GB log, read it **line by line** with a `BufReader`, which keeps only a buffer in memory:
+
+      ```rust run
+      use std::fs::File;
+      use std::io::{BufRead, BufReader};
+
+      fn main() -> std::io::Result<()> {
+          std::fs::write("app.log", "INFO start\nERROR disk full\nINFO stop\nERROR timeout\n")?;
+          let reader = BufReader::new(File::open("app.log")?);
+          for (i, line) in reader.lines().enumerate() {
+              let line = line?;
+              if line.starts_with("ERROR") {
+                  println!("{}: {line}", i + 1);
+              }
+          }
+          Ok(())
+      }
+      ```
+
+      ```output
+      2: ERROR disk full
+      4: ERROR timeout
+      ```
+
+      - `File::open` opens for reading; `BufReader::new` wraps it so reads happen in big chunks instead of one system call per byte.
+      - `.lines()` (from the `BufRead` trait, hence the import) yields `io::Result<String>` for each line, because reading can fail halfway (a disk error, invalid UTF-8). `let line = line?;` handles it.
+      - To add to a file instead of replacing it, open it with `OpenOptions::new().append(true).create(true).open(path)?` and write lines with `writeln!(file, "...")?` (from `std::io::Write`).
+
+      ### Common mistakes
+
+      - **Checking `Path::new(p).exists()` before opening.** The file can disappear between the check and the open. Just open it and handle the error.
+      - **`unwrap` on `read_to_string`** of a path the user typed: a typo becomes a panic. Print a message that names the file and exit with a failure code.
+      - **Forgetting `use std::io::BufRead;`**: then `.lines()` on a `BufReader` fails with ``error[E0599]: no method named `lines` found for struct `BufReader<R>` ``, and the compiler suggests the import.
+
+      **Your turn:** write `wc`. For each file named in the arguments print `<lines> <words> <bytes> <name>` (words are whitespace-separated; bytes is the length of the text). If more than one file was given, end with a `<lines> <words> <bytes> total` line summing the files that could be read. A file that can't be read prints `wc: <name>: <error>` to stderr, the tool carries on with the other files, and exits with code 1 at the end. No arguments: `usage: wc <file>...` to stderr, exit code 2.
+    seed: |
+      use std::fs;
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let files: Vec<String> = std::env::args().skip(1).collect();
+          ExitCode::SUCCESS
+      }
+    solution: |
+      use std::fs;
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let files: Vec<String> = std::env::args().skip(1).collect();
+          if files.is_empty() {
+              eprintln!("usage: wc <file>...");
+              return ExitCode::from(2);
+          }
+          let mut failed = false;
+          let mut total = (0, 0, 0);
+          for name in &files {
+              match fs::read_to_string(name) {
+                  Ok(text) => {
+                      let counts = (text.lines().count(), text.split_whitespace().count(), text.len());
+                      println!("{} {} {} {name}", counts.0, counts.1, counts.2);
+                      total = (total.0 + counts.0, total.1 + counts.1, total.2 + counts.2);
+                  }
+                  Err(e) => {
+                      eprintln!("wc: {name}: {e}");
+                      failed = true;
+                  }
+              }
+          }
+          if files.len() > 1 {
+              println!("{} {} {} total", total.0, total.1, total.2);
+          }
+          if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+      }
+    tests:
+      - args: ["poem.txt"]
+        files: { "poem.txt": "the crab\nwalks sideways\non the sand\n" }
+      - args: ["a.txt", "b.txt"]
+        files: { "a.txt": "one two\n", "b.txt": "three\nfour five six\n" }
+      - args: ["a.txt", "nope.txt"]
+        files: { "a.txt": "hello world\n" }
+        exit: 1
+      - args: []
+        exit: 2
+        allowEmpty: true
+        hidden: true
+      - args: ["empty.txt", "café.txt"]
+        files: { "empty.txt": "", "café.txt": "crème brûlée\n" }
+        hidden: true
+    hints:
+      - "Loop over the file names and `match fs::read_to_string(name)`; on `Err(e)`, `eprintln!(\"wc: {name}: {e}\")` and remember that something failed."
+      - "`text.lines().count()`, `text.split_whitespace().count()` and `text.len()` give the three numbers."
+      - "After the loop: print the total if `files.len() > 1`, then return `ExitCode::FAILURE` if anything failed."
+    more:
+      - task: |
+          Write `head [-n N] <file>`: print the first N lines of the file (default 10). A bad or missing N (`-n x`, `-n` at the end) or a missing file name prints a usage line to stderr and exits 2; a file that can't be read prints `head: <name>: <error>` to stderr and exits 1.
+        seed: |
+          use std::process::ExitCode;
+
+          fn main() -> ExitCode {
+              ExitCode::SUCCESS
+          }
+        solution: |
+          use std::process::ExitCode;
+
+          fn main() -> ExitCode {
+              let args: Vec<String> = std::env::args().skip(1).collect();
+              let usage = || {
+                  eprintln!("usage: head [-n N] <file>");
+                  ExitCode::from(2)
+              };
+              let (count, name) = match args.as_slice() {
+                  [name] => (10, name),
+                  [flag, n, name] if flag == "-n" => match n.parse::<usize>() {
+                      Ok(n) => (n, name),
+                      Err(_) => return usage(),
+                  },
+                  _ => return usage(),
+              };
+              match std::fs::read_to_string(name) {
+                  Ok(text) => {
+                      for line in text.lines().take(count) {
+                          println!("{line}");
+                      }
+                      ExitCode::SUCCESS
+                  }
+                  Err(e) => {
+                      eprintln!("head: {name}: {e}");
+                      ExitCode::FAILURE
+                  }
+              }
+          }
+        tests:
+          - args: ["-n", "2", "log.txt"]
+            files: { "log.txt": "l1\nl2\nl3\n" }
+          - args: ["log.txt"]
+            files: { "log.txt": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n" }
+          - args: ["-n", "x", "log.txt"]
+            files: { "log.txt": "a\n" }
+            exit: 2
+            allowEmpty: true
+          - args: ["gone.txt"]
+            exit: 1
+            allowEmpty: true
+            hidden: true
+          - args: ["-n", "5", "short.txt"]
+            files: { "short.txt": "only\ntwo\n" }
+            hidden: true
+          - args: ["log.txt", "-n"]
+            files: { "log.txt": "a\n" }
+            exit: 2
+            allowEmpty: true
+            hidden: true
+        hints:
+          - "Match on `args.as_slice()`: `[name]` means the default count, `[flag, n, name] if flag == \"-n\"` the explicit one, anything else is a usage error."
+          - "`text.lines().take(count)` gives at most `count` lines."
+      - task: |
+          Write `colsum <file> <column>`, a tiny CSV summarizer. The file's first line is a header of comma-separated column names; every other non-empty line has the same number of comma-separated fields. Print `sum of <column>: <total>` with two decimals. Errors go to stderr: wrong number of arguments exits 2; a file that can't be read, an unknown column (`unknown column "x"`) or a value that isn't a number (`line 3: "abc" is not a number`) exits 1.
+        seed: |
+          use std::process::ExitCode;
+
+          fn main() -> ExitCode {
+              ExitCode::SUCCESS
+          }
+        solution: |
+          use std::process::ExitCode;
+
+          fn sum_column(text: &str, column: &str) -> Result<f64, String> {
+              let mut lines = text.lines();
+              let header = lines.next().unwrap_or("");
+              let index = header
+                  .split(',')
+                  .position(|name| name.trim() == column)
+                  .ok_or(format!("unknown column {column:?}"))?;
+              let mut total = 0.0;
+              for (i, line) in lines.enumerate() {
+                  if line.trim().is_empty() {
+                      continue;
+                  }
+                  let field = line.split(',').nth(index).unwrap_or("").trim();
+                  let value: f64 = field.parse().map_err(|_| format!("line {}: {field:?} is not a number", i + 2))?;
+                  total += value;
+              }
+              Ok(total)
+          }
+
+          fn main() -> ExitCode {
+              let args: Vec<String> = std::env::args().skip(1).collect();
+              let [file, column] = args.as_slice() else {
+                  eprintln!("usage: colsum <file> <column>");
+                  return ExitCode::from(2);
+              };
+              let text = match std::fs::read_to_string(file) {
+                  Ok(t) => t,
+                  Err(e) => {
+                      eprintln!("colsum: {file}: {e}");
+                      return ExitCode::FAILURE;
+                  }
+              };
+              match sum_column(&text, column) {
+                  Ok(total) => {
+                      println!("sum of {column}: {total:.2}");
+                      ExitCode::SUCCESS
+                  }
+                  Err(msg) => {
+                      eprintln!("colsum: {msg}");
+                      ExitCode::FAILURE
+                  }
+              }
+          }
+        tests:
+          - args: ["sales.csv", "amount"]
+            files: { "sales.csv": "date,item,amount\n2024-01-02,mug,4.50\n2024-01-03,tea,12.25\n\n2024-01-04,mug,4.50\n" }
+          - args: ["sales.csv", "price"]
+            files: { "sales.csv": "date,item,amount\n2024-01-02,mug,4.50\n" }
+            exit: 1
+            allowEmpty: true
+          - args: ["sales.csv"]
+            exit: 2
+            allowEmpty: true
+          - args: ["sales.csv", "amount"]
+            files: { "sales.csv": "date,item,amount\n2024-01-02,mug,4.50\n2024-01-03,tea,abc\n" }
+            exit: 1
+            allowEmpty: true
+            hidden: true
+          - args: ["missing.csv", "amount"]
+            exit: 1
+            allowEmpty: true
+            hidden: true
+          - args: ["t.csv", "qty"]
+            files: { "t.csv": "qty, sku\n3,A\n-1,B\n" }
+            hidden: true
+        hints:
+          - "Put the CSV logic in `fn sum_column(text: &str, column: &str) -> Result<f64, String>` and keep `main` for arguments, files and exit codes."
+          - "Find the column's index in the header with `split(',').position(|name| name.trim() == column)`."
+          - "For each data line, `line.split(',').nth(index)` gives the field. Data lines start at file line 2."
+
+  - title: Reading stdin when no file is given
+    id: cli-5
+    text: |
+      Unix tools follow a convention that makes them combine like building blocks: **if no file is given (or the file is `-`), read standard input**. That's what lets you write pipelines:
+
+      ```text
+      $ cat app.log | grep ERROR | wc -l
+      $ grep ERROR app.log | sort | uniq -c
+      ```
+
+      Each `|` connects one program's stdout to the next one's stdin. Your tool joins the party by accepting both. A clean way: a function that returns a **reader** for either source, as a trait object (`Box<dyn BufRead>`), since a file reader and stdin are different types:
+
+      ```rust run
+      use std::fs::File;
+      use std::io::{self, BufRead, BufReader};
+
+      fn open(path: Option<&str>) -> io::Result<Box<dyn BufRead>> {
+          match path {
+              None | Some("-") => Ok(Box::new(io::stdin().lock())),
+              Some(p) => Ok(Box::new(BufReader::new(File::open(p)?))),
+          }
+      }
+
+      fn main() -> io::Result<()> {
+          let path = std::env::args().nth(1);
+          let reader = open(path.as_deref())?;
+          let mut lines = 0;
+          let mut longest = 0;
+          for line in reader.lines() {
+              let line = line?;
+              lines += 1;
+              longest = longest.max(line.chars().count());
+          }
+          println!("{lines} lines, longest {longest} chars");
+          Ok(())
+      }
+      ```
+
+      ```input
+      one
+      three
+      fifteen
+      ```
+
+      ```output
+      3 lines, longest 7 chars
+      ```
+
+      Piece by piece:
+
+      - `io::stdin().lock()` gives a locked handle to standard input that implements `BufRead`, just like a `BufReader<File>` does. Both fit in a `Box<dyn BufRead>`, so the rest of the program doesn't care where the text comes from.
+      - `path.as_deref()` turns an `Option<String>` into an `Option<&str>`, which is what `match` with string literals wants.
+      - If reading line by line isn't needed, the simpler version is `io::stdin().read_to_string(&mut text)` (from `std::io::Read`) or `io::read_to_string(io::stdin())`.
+
+      ### Keep the logic away from the I/O
+
+      The most useful habit for testable tools: functions that **decide** things take `&str` and return values; only `main` (or `run`) touches files, stdin, args and exit codes.
+
+      ```rust run
+      fn matching_lines<'a>(text: &'a str, pattern: &str) -> Vec<(usize, &'a str)> {
+          text.lines()
+              .enumerate()
+              .filter(|(_, line)| line.contains(pattern))
+              .map(|(i, line)| (i + 1, line))
+              .collect()
+      }
+
+      fn main() {
+          let text = "INFO boot\nERROR disk\nINFO ok\nERROR net";
+          for (n, line) in matching_lines(text, "ERROR") {
+              println!("{n}:{line}");
+          }
+      }
+      ```
+
+      ```output
+      2:ERROR disk
+      4:ERROR net
+      ```
+
+      `matching_lines` can be tested with a string literal in a unit test: no files, no processes.
+
+      ### Common mistakes
+
+      - **Waiting forever.** A tool that reads stdin when no file is given just sits there if a human runs it in a terminal without a pipe; it's waiting for typed input (end it with Ctrl+D). Some tools print a hint when stdin is a terminal: `std::io::IsTerminal` has `io::stdin().is_terminal()`.
+      - **Locking stdin inside a loop** (`io::stdin().lock()` per line): lock once and read through that handle.
+      - **Mixing `print!` and slow output**: for tools that print millions of lines, lock stdout once (`let mut out = io::stdout().lock();`) and use `writeln!(out, ...)`, or wrap it in a `BufWriter`.
+
+      **Your turn:** write `find [-i] [-n] <pattern> [file]`, a small grep. Print every line containing the pattern (`-i`: ignore case, compare the lowercase versions; `-n`: prefix each line with its line number and `:`). Read the file if one is given (and isn't `-`), otherwise standard input. Exit codes like grep: `0` if at least one line matched, `1` if none did, `2` for errors (no pattern, an unknown flag, a file that can't be read), with a message on stderr.
+    seed: |
+      use std::fs::File;
+      use std::io::{self, BufRead, BufReader};
+      use std::process::ExitCode;
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          ExitCode::SUCCESS
+      }
+    solution: |
+      use std::fs::File;
+      use std::io::{self, BufRead, BufReader};
+      use std::process::ExitCode;
+
+      fn open(path: Option<&str>) -> io::Result<Box<dyn BufRead>> {
+          match path {
+              None | Some("-") => Ok(Box::new(io::stdin().lock())),
+              Some(p) => Ok(Box::new(BufReader::new(File::open(p)?))),
+          }
+      }
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          let mut ignore_case = false;
+          let mut numbers = false;
+          let mut positional = Vec::new();
+          for arg in &args {
+              match arg.as_str() {
+                  "-i" => ignore_case = true,
+                  "-n" => numbers = true,
+                  flag if flag.starts_with('-') && flag != "-" => {
+                      eprintln!("find: unknown flag {flag}");
+                      return ExitCode::from(2);
+                  }
+                  _ => positional.push(arg.as_str()),
+              }
+          }
+          let (pattern, path) = match positional.as_slice() {
+              [pattern] => (*pattern, None),
+              [pattern, path] => (*pattern, Some(*path)),
+              _ => {
+                  eprintln!("usage: find [-i] [-n] <pattern> [file]");
+                  return ExitCode::from(2);
+              }
+          };
+          let reader = match open(path) {
+              Ok(r) => r,
+              Err(e) => {
+                  eprintln!("find: {}: {e}", path.unwrap_or("-"));
+                  return ExitCode::from(2);
+              }
+          };
+          let needle = if ignore_case { pattern.to_lowercase() } else { pattern.to_string() };
+          let mut found = false;
+          for (i, line) in reader.lines().enumerate() {
+              let Ok(line) = line else {
+                  eprintln!("find: could not read input");
+                  return ExitCode::from(2);
+              };
+              let hay = if ignore_case { line.to_lowercase() } else { line.clone() };
+              if hay.contains(&needle) {
+                  found = true;
+                  if numbers {
+                      println!("{}:{line}", i + 1);
+                  } else {
+                      println!("{line}");
+                  }
+              }
+          }
+          if found { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+      }
+    tests:
+      - args: ["ERROR"]
+        stdin: "INFO boot\nERROR disk full\nINFO ok\nERROR timeout\n"
+      - args: ["-n", "crab", "notes.txt"]
+        files: { "notes.txt": "the crab\nthe fish\ncrabs everywhere\n" }
+      - args: ["-i", "warn", "-"]
+        stdin: "WARN low disk\nwarning: hot\ninfo\n"
+      - args: ["lobster"]
+        stdin: "crab\nfish\n"
+        exit: 1
+        allowEmpty: true
+      - args: ["x", "missing.txt"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+      - args: []
+        exit: 2
+        allowEmpty: true
+        hidden: true
+      - args: ["-n", "-i", "ÉTÉ", "fr.txt"]
+        files: { "fr.txt": "printemps\nl'été dernier\nautomne\n" }
+        hidden: true
+      - args: ["-z", "x"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "Collect flags into booleans and everything else into a `positional` Vec; then `match positional.as_slice()` on `[pattern]` and `[pattern, path]`."
+      - "Reuse the `open(path: Option<&str>) -> io::Result<Box<dyn BufRead>>` function from the example to get one reader for both cases."
+      - "For `-i`, lowercase both the pattern and each line before `contains`. Track whether anything matched to choose the exit code."
+    more:
+      - task: |
+          Write `uniq [-c] [file]`: print the input with **consecutive** duplicate lines collapsed into one. With `-c`, prefix each line with how many times it repeated and a space (`3 ERROR`). Read the file if given, otherwise standard input. A file that can't be read prints `uniq: <name>: <error>` to stderr and exits with code 1.
+        seed: |
+          use std::io::Read;
+          use std::process::ExitCode;
+
+          fn main() -> ExitCode {
+              ExitCode::SUCCESS
+          }
+        solution: |
+          use std::io::Read;
+          use std::process::ExitCode;
+
+          fn main() -> ExitCode {
+              let args: Vec<String> = std::env::args().skip(1).collect();
+              let count = args.iter().any(|a| a == "-c");
+              let file = args.iter().find(|a| *a != "-c");
+              let read = match file {
+                  Some(path) => std::fs::read_to_string(path),
+                  None => {
+                      let mut s = String::new();
+                      std::io::stdin().read_to_string(&mut s).map(|_| s)
+                  }
+              };
+              let text = match read {
+                  Ok(t) => t,
+                  Err(e) => {
+                      eprintln!("uniq: {}: {e}", file.map_or("-", |f| f.as_str()));
+                      return ExitCode::FAILURE;
+                  }
+              };
+              let mut groups: Vec<(&str, usize)> = Vec::new();
+              for line in text.lines() {
+                  match groups.last_mut() {
+                      Some((last, n)) if *last == line => *n += 1,
+                      _ => groups.push((line, 1)),
+                  }
+              }
+              for (line, n) in groups {
+                  if count {
+                      println!("{n} {line}");
+                  } else {
+                      println!("{line}");
+                  }
+              }
+              ExitCode::SUCCESS
+          }
+        tests:
+          - stdin: "a\na\nb\na\na\na\n"
+          - args: ["-c"]
+            stdin: "ERROR\nERROR\nINFO\nERROR\n"
+          - args: ["-c", "log.txt"]
+            files: { "log.txt": "x\nx\nx\ny\n" }
+            hidden: true
+          - args: ["log.txt"]
+            files: { "log.txt": "same\nsame\n" }
+            hidden: true
+          - args: ["-c", "nope.txt"]
+            exit: 1
+            allowEmpty: true
+            hidden: true
+        hints:
+          - "Read all the text first (file or stdin), then walk the lines keeping a list of `(line, count)` groups."
+          - "`groups.last_mut()` lets you bump the count when the line equals the previous one."
+      - task: |
+          Keep logic away from I/O: write `fn search<'a>(text: &'a str, pattern: &str, ignore_case: bool) -> Vec<(usize, &'a str)>` that returns the matching lines with their 1-based line numbers. With `ignore_case`, compare `to_lowercase()` versions (which also handles non-ASCII letters like `É`).
+        seed: |
+          fn search<'a>(text: &'a str, pattern: &str, ignore_case: bool) -> Vec<(usize, &'a str)> {
+              todo!()
+          }
+        solution: |
+          fn search<'a>(text: &'a str, pattern: &str, ignore_case: bool) -> Vec<(usize, &'a str)> {
+              let needle = if ignore_case { pattern.to_lowercase() } else { pattern.to_string() };
+              text.lines()
+                  .enumerate()
+                  .filter(|(_, line)| {
+                      if ignore_case {
+                          line.to_lowercase().contains(&needle)
+                      } else {
+                          line.contains(&needle)
+                      }
+                  })
+                  .map(|(i, line)| (i + 1, line))
+                  .collect()
+          }
+        harness: |
+          #[test]
+          fn finds_matching_lines_with_numbers() {
+              assert_eq!(search("a crab\nno\nmore crabs", "crab", false), vec![(1, "a crab"), (3, "more crabs")], "search(.., \"crab\", false)");
+          }
+
+          #[test]
+          fn is_case_sensitive_by_default() {
+              assert_eq!(search("Crab\ncrab", "crab", false), vec![(2, "crab")], "search(\"Crab\\ncrab\", \"crab\", false)");
+          }
+
+          #[test]
+          fn ignore_case_matches_any_case() {
+              assert_eq!(search("Crab\ncrab\nCRAB!", "cRaB", true), vec![(1, "Crab"), (2, "crab"), (3, "CRAB!")], "search(.., \"cRaB\", true)");
+          }
+
+          #[test]
+          fn ignore_case_handles_unicode() {
+              assert_eq!(search("ÉTÉ\nhiver", "été", true), vec![(1, "ÉTÉ")], "search(\"ÉTÉ\\nhiver\", \"été\", true)");
+          }
+
+          #[test]
+          fn no_match_gives_an_empty_list() {
+              assert_eq!(search("", "x", false), vec![], "search(\"\", \"x\", false)");
+          }
+        hints:
+          - "`text.lines().enumerate()` gives `(index, line)`; the line number is `index + 1`."
+          - "Lowercase the pattern once before the loop, and each line inside the filter when `ignore_case` is true."
+
+  - title: "Putting it together: Config, run() and clap"
+    id: cli-6
+    text: |
+      Every well-built Rust CLI ends up with the same shape:
+
+      ```rust
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          let command = match parse_args(&args) {      // 1. arguments -> a typed Config/Command
+              Ok(c) => c,
+              Err(msg) => {
+                  eprintln!("{msg}\n{USAGE}");
+                  return ExitCode::from(2);            //    usage errors: exit 2
+              }
+          };
+          match run(command) {                         // 2. do the work, returning Result
+              Ok(()) => ExitCode::SUCCESS,
+              Err(e) => {
+                  eprintln!("error: {e}");             // 3. report on stderr
+                  ExitCode::FAILURE                    //    failures: exit 1
+              }
+          }
+      }
+      ```
+
+      - **Parsing** turns strings into a typed value (a `Config` struct, or an enum with one variant per subcommand). After this point, nothing looks at raw arguments.
+      - **`run`** does the work and returns `Result`, so it can use `?` everywhere (with anyhow and context from the last module, in a real project).
+      - **`main`** is the only place that knows about exit codes and the usage text.
+      - The decisions inside `run` live in small functions over `&str` and plain values, which unit tests can call directly.
+
+      ### clap: what teams use for real
+
+      Hand-written parsing is fine for small tools. For anything bigger, teams use the **clap** crate. You describe the arguments as a struct, and `#[derive(Parser)]` generates the parser, `--help`, `--version`, error messages with suggestions ("did you mean `--verbose`?"), and exit code 2 for usage errors. clap isn't available on this site, so here's what it looks like (not compiled):
+
+      ```toml
+      [dependencies]
+      clap = { version = "4", features = ["derive"] }
+      ```
+
+      ```rust
+      use clap::{Parser, Subcommand};
+
+      /// A tiny todo list
+      #[derive(Parser)]
+      #[command(version, about)]
+      struct Cli {
+          /// File that stores the tasks
+          #[arg(short, long, default_value = "todo.txt")]
+          file: String,
+
+          #[command(subcommand)]
+          command: Command,
+      }
+
+      #[derive(Subcommand)]
+      enum Command {
+          /// Show all tasks
+          List,
+          /// Add a task
+          Add { text: Vec<String> },
+          /// Mark task N as done
+          Done { n: usize },
+      }
+
+      fn main() {
+          let cli = Cli::parse(); // on bad arguments: prints the error and exits with 2
+          match cli.command {
+              Command::List => { /* ... */ }
+              Command::Add { text } => { /* ... */ }
+              Command::Done { n } => { /* ... */ }
+          }
+      }
+      ```
+
+      The `///` doc comments become the help text:
+
+      ```text
+      $ todo --help
+      A tiny todo list
+
+      Usage: todo [OPTIONS] <COMMAND>
+
+      Commands:
+        list  Show all tasks
+        add   Add a task
+        done  Mark task N as done
+        help  Print this message or the help of the given subcommand(s)
+
+      Options:
+        -f, --file <FILE>  File that stores the tasks [default: todo.txt]
+        -h, --help         Print help
+        -V, --version      Print version
+      ```
+
+      Notice it's the same design as this module's: a typed struct, an enum of subcommands, `match` in `main`. The **Pro Track** builds a complete CLI with clap, anyhow and integration tests; everything you practiced here carries over directly.
+
+      ### Common mistakes
+
+      - **Business logic in `main`.** It can't be unit-tested and mixes concerns. Move it to functions.
+      - **`process::exit` deep in helper functions**: the code becomes impossible to test and skips cleanup. Return errors; let `main` decide.
+      - **A usage message that doesn't say what's wrong.** Print the specific problem first (`unknown command "lst"`), then the usage.
+
+      **Your turn:** build `todo`, a todo list stored in `todo.txt`, one task per line written as `[ ] text` or `[x] text` (done). Commands:
+      - `list`: print each task as `1. [ ] buy milk`; if there are none (or the file doesn't exist yet), print `no tasks`.
+      - `add <words>...`: append `[ ] <words joined by spaces>` to the file and print `added 3: buy milk`.
+      - `done <n>`: mark task n as done, write the file back, and print `done 2: feed the crab`. If there's no task n, print `error: no task 7` to stderr and exit 1.
+      - No command, an unknown command, `add` without words or `done` without a valid number: print `usage: todo list | add <text> | done <n>` to stderr and exit 2.
+    seed: |
+      use std::fs;
+      use std::process::ExitCode;
+
+      const FILE: &str = "todo.txt";
+      const USAGE: &str = "usage: todo list | add <text> | done <n>";
+
+      enum Command {
+          List,
+          Add(String),
+          Done(usize),
+      }
+
+      fn parse_args(args: &[String]) -> Option<Command> {
+          todo!()
+      }
+
+      fn load() -> Vec<String> {
+          fs::read_to_string(FILE).unwrap_or_default().lines().map(String::from).collect()
+      }
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          ExitCode::SUCCESS
+      }
+    solution: |
+      use std::fs;
+      use std::process::ExitCode;
+
+      const FILE: &str = "todo.txt";
+      const USAGE: &str = "usage: todo list | add <text> | done <n>";
+
+      enum Command {
+          List,
+          Add(String),
+          Done(usize),
+      }
+
+      fn parse_args(args: &[String]) -> Option<Command> {
+          match args {
+              [cmd] if cmd == "list" => Some(Command::List),
+              [cmd, words @ ..] if cmd == "add" && !words.is_empty() => Some(Command::Add(words.join(" "))),
+              [cmd, n] if cmd == "done" => n.parse().ok().map(Command::Done),
+              _ => None,
+          }
+      }
+
+      fn load() -> Vec<String> {
+          fs::read_to_string(FILE).unwrap_or_default().lines().map(String::from).collect()
+      }
+
+      fn save(tasks: &[String]) -> Result<(), String> {
+          let mut text = tasks.join("\n");
+          text.push('\n');
+          fs::write(FILE, text).map_err(|e| format!("could not write {FILE}: {e}"))
+      }
+
+      fn run(command: Command) -> Result<(), String> {
+          let mut tasks = load();
+          match command {
+              Command::List => {
+                  if tasks.is_empty() {
+                      println!("no tasks");
+                  }
+                  for (i, task) in tasks.iter().enumerate() {
+                      println!("{}. {task}", i + 1);
+                  }
+              }
+              Command::Add(text) => {
+                  tasks.push(format!("[ ] {text}"));
+                  save(&tasks)?;
+                  println!("added {}: {text}", tasks.len());
+              }
+              Command::Done(n) => {
+                  let task = n
+                      .checked_sub(1)
+                      .and_then(|i| tasks.get_mut(i))
+                      .ok_or(format!("no task {n}"))?;
+                  let text = task.get(4..).unwrap_or("").to_string();
+                  *task = format!("[x] {text}");
+                  save(&tasks)?;
+                  println!("done {n}: {text}");
+              }
+          }
+          Ok(())
+      }
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = std::env::args().skip(1).collect();
+          let Some(command) = parse_args(&args) else {
+              eprintln!("{USAGE}");
+              return ExitCode::from(2);
+          };
+          match run(command) {
+              Ok(()) => ExitCode::SUCCESS,
+              Err(msg) => {
+                  eprintln!("error: {msg}");
+                  ExitCode::FAILURE
+              }
+          }
+      }
+    require:
+      - pattern: 'fs::write|OpenOptions'
+        message: Save the tasks back to `todo.txt` (with `fs::write`, for example).
+    tests:
+      - args: ["list"]
+        files: { "todo.txt": "[ ] buy milk\n[x] feed the crab\n" }
+      - args: ["add", "call", "mom"]
+        files: { "todo.txt": "[ ] buy milk\n" }
+      - args: ["done", "2"]
+        files: { "todo.txt": "[ ] buy milk\n[ ] feed the crab\n" }
+      - args: ["done", "7"]
+        files: { "todo.txt": "[ ] buy milk\n" }
+        exit: 1
+        allowEmpty: true
+      - args: ["lst"]
+        exit: 2
+        allowEmpty: true
+      - args: ["list"]
+        hidden: true
+      - args: ["add", "first task"]
+        hidden: true
+      - args: ["done", "zero"]
+        files: { "todo.txt": "[ ] a\n" }
+        exit: 2
+        allowEmpty: true
+        hidden: true
+      - args: ["done", "0"]
+        files: { "todo.txt": "[ ] a\n" }
+        exit: 1
+        allowEmpty: true
+        hidden: true
+      - args: []
+        exit: 2
+        allowEmpty: true
+        hidden: true
+      - args: ["add"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "Parse with a slice pattern: `match args { [cmd] if cmd == \"list\" => ..., [cmd, words @ ..] if cmd == \"add\" && !words.is_empty() => ..., [cmd, n] if cmd == \"done\" => n.parse().ok().map(Command::Done), _ => None }`."
+      - "Put the work in `fn run(command: Command) -> Result<(), String>`: `load()` the tasks, change the Vec, and save with `fs::write(FILE, tasks.join(\"\\n\") + \"\\n\")`."
+      - "For `done n`, `n.checked_sub(1).and_then(|i| tasks.get_mut(i))` is `None` for 0 and for numbers past the end. The task's text starts at byte 4, after `[ ] `."
+    more:
+      - task: |
+          Test the hard part without files: write `fn mark_done(contents: &str, n: usize) -> Result<String, String>` that takes the whole `todo.txt` text and returns the new text with task n (1-based) marked `[x]`, each line ending in `\n`. A task that's already done stays done. A missing task gives `Err("no task 7")`.
+        seed: |
+          fn mark_done(contents: &str, n: usize) -> Result<String, String> {
+              todo!()
+          }
+        solution: |
+          fn mark_done(contents: &str, n: usize) -> Result<String, String> {
+              let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+              let line = n
+                  .checked_sub(1)
+                  .and_then(|i| lines.get_mut(i))
+                  .ok_or(format!("no task {n}"))?;
+              if let Some(rest) = line.strip_prefix("[ ] ") {
+                  *line = format!("[x] {rest}");
+              }
+              Ok(lines.iter().map(|l| format!("{l}\n")).collect())
+          }
+        harness: |
+          #[test]
+          fn marks_the_right_task() {
+              assert_eq!(mark_done("[ ] a\n[ ] b\n[ ] c\n", 2), Ok(String::from("[ ] a\n[x] b\n[ ] c\n")), "mark_done(.., 2)");
+          }
+
+          #[test]
+          fn adds_a_final_newline() {
+              assert_eq!(mark_done("[ ] only", 1), Ok(String::from("[x] only\n")), "mark_done(\"[ ] only\", 1)");
+          }
+
+          #[test]
+          fn done_tasks_stay_done() {
+              assert_eq!(mark_done("[x] a\n", 1), Ok(String::from("[x] a\n")), "mark_done(\"[x] a\", 1)");
+          }
+
+          #[test]
+          fn missing_tasks_are_errors() {
+              assert_eq!(mark_done("[ ] a\n", 7), Err(String::from("no task 7")), "mark_done(.., 7)");
+              assert_eq!(mark_done("[ ] a\n", 0), Err(String::from("no task 0")), "mark_done(.., 0)");
+              assert_eq!(mark_done("", 1), Err(String::from("no task 1")), "mark_done(\"\", 1)");
+          }
+        hints:
+          - "Collect the lines into a `Vec<String>` and use `n.checked_sub(1).and_then(|i| lines.get_mut(i))` to find the task."
+          - "`line.strip_prefix(\"[ ] \")` returns the text if the task isn't done yet."
+          - "Rebuild with `lines.iter().map(|l| format!(\"{l}\\n\")).collect()`."
+      - task: |
+          Model the arguments the way clap does: write `fn parse_command(args: &[String]) -> Result<Command, String>` for a key-value store CLI with subcommands `get <key>`, `set <key> <value>`, `del <key>...` (one or more keys) and `list [--limit N]`. Errors: no subcommand gives `missing command`; an unknown one gives `unknown command "x"`; anything else wrong with a subcommand's arguments gives `usage: <subcommand> ...` with that subcommand's usage from the list below.
+          - `usage: get <key>`
+          - `usage: set <key> <value>`
+          - `usage: del <key>...`
+          - `usage: list [--limit N]`
+        seed: |
+          #[derive(Debug, PartialEq)]
+          enum Command {
+              Get { key: String },
+              Set { key: String, value: String },
+              Del { keys: Vec<String> },
+              List { limit: Option<usize> },
+          }
+
+          fn parse_command(args: &[String]) -> Result<Command, String> {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          enum Command {
+              Get { key: String },
+              Set { key: String, value: String },
+              Del { keys: Vec<String> },
+              List { limit: Option<usize> },
+          }
+
+          fn parse_command(args: &[String]) -> Result<Command, String> {
+              let Some((cmd, rest)) = args.split_first() else {
+                  return Err(String::from("missing command"));
+              };
+              match cmd.as_str() {
+                  "get" => match rest {
+                      [key] => Ok(Command::Get { key: key.clone() }),
+                      _ => Err(String::from("usage: get <key>")),
+                  },
+                  "set" => match rest {
+                      [key, value] => Ok(Command::Set { key: key.clone(), value: value.clone() }),
+                      _ => Err(String::from("usage: set <key> <value>")),
+                  },
+                  "del" if !rest.is_empty() => Ok(Command::Del { keys: rest.to_vec() }),
+                  "del" => Err(String::from("usage: del <key>...")),
+                  "list" => match rest {
+                      [] => Ok(Command::List { limit: None }),
+                      [flag, n] if flag == "--limit" => n
+                          .parse()
+                          .map(|n| Command::List { limit: Some(n) })
+                          .map_err(|_| String::from("usage: list [--limit N]")),
+                      _ => Err(String::from("usage: list [--limit N]")),
+                  },
+                  other => Err(format!("unknown command {other:?}")),
+              }
+          }
+        harness: |
+          fn args(list: &[&str]) -> Vec<String> {
+              list.iter().map(|s| s.to_string()).collect()
+          }
+
+          #[test]
+          fn parses_each_subcommand() {
+              assert_eq!(parse_command(&args(&["get", "color"])), Ok(Command::Get { key: "color".into() }), "get color");
+              assert_eq!(parse_command(&args(&["set", "color", "red"])), Ok(Command::Set { key: "color".into(), value: "red".into() }), "set color red");
+              assert_eq!(parse_command(&args(&["del", "a", "b"])), Ok(Command::Del { keys: vec!["a".into(), "b".into()] }), "del a b");
+              assert_eq!(parse_command(&args(&["list"])), Ok(Command::List { limit: None }), "list");
+              assert_eq!(parse_command(&args(&["list", "--limit", "5"])), Ok(Command::List { limit: Some(5) }), "list --limit 5");
+          }
+
+          #[test]
+          fn missing_and_unknown_commands() {
+              assert_eq!(parse_command(&args(&[])), Err("missing command".to_string()), "no arguments");
+              assert_eq!(parse_command(&args(&["put", "x"])), Err("unknown command \"put\"".to_string()), "put x");
+          }
+
+          #[test]
+          fn wrong_arguments_show_the_subcommand_usage() {
+              assert_eq!(parse_command(&args(&["get"])), Err("usage: get <key>".to_string()), "get");
+              assert_eq!(parse_command(&args(&["set", "k"])), Err("usage: set <key> <value>".to_string()), "set k");
+              assert_eq!(parse_command(&args(&["del"])), Err("usage: del <key>...".to_string()), "del");
+              assert_eq!(parse_command(&args(&["list", "--limit", "many"])), Err("usage: list [--limit N]".to_string()), "list --limit many");
+              assert_eq!(parse_command(&args(&["list", "extra"])), Err("usage: list [--limit N]".to_string()), "list extra");
+          }
+        hints:
+          - "`args.split_first()` gives `Some((first, rest))` or `None` for an empty slice."
+          - "Match on `cmd.as_str()`, then on the `rest` slice with patterns like `[key]` and `[key, value]`."
+          - "For `list`, `[flag, n] if flag == \"--limit\"` and parse `n`, mapping a parse error to the usage text."

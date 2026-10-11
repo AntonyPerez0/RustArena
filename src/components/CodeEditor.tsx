@@ -1,13 +1,12 @@
 import { useId, useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { rust } from "@codemirror/lang-rust";
-import { oneDark } from "@codemirror/theme-one-dark";
 import { keymap, EditorView } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
 import { linter, lintGutter, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
 import type { Diagnostic } from "../grader/friendly";
 import { useResolvedTheme } from "../lib/appearance";
-import { lightEditorTheme } from "./lightTheme";
+import { darkEditorTheme, lightEditorTheme } from "./lightTheme";
 
 type Props = {
   value: string;
@@ -64,7 +63,7 @@ export default function CodeEditor({ value, onChange, onRun, diagnostics = [], m
       <CodeMirror
         value={value}
         onChange={onChange}
-        theme={theme === "light" ? lightEditorTheme : oneDark}
+        theme={theme === "light" ? lightEditorTheme : darkEditorTheme}
         extensions={extensions}
         minHeight={minHeight}
         readOnly={readOnly}

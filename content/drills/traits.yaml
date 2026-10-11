@@ -1,0 +1,410 @@
+topic: traits
+drills:
+  - type: predict
+    pre: |
+      trait Greet {
+          fn name(&self) -> String;
+          fn hello(&self) -> String {
+              format!("Hi, {}", self.name())
+          }
+      }
+
+      struct Ana;
+      struct Bo;
+
+      impl Greet for Ana {
+          fn name(&self) -> String {
+              String::from("Ana")
+          }
+      }
+
+      impl Greet for Bo {
+          fn name(&self) -> String {
+              String::from("Bo")
+          }
+          fn hello(&self) -> String {
+              String::from("Yo!")
+          }
+      }
+    body: |
+      println!("{} / {}", Ana.hello(), Bo.hello());
+    why: Ana keeps the default hello, which calls her name(). Bo overrides hello, so his version runs instead.
+
+  - type: predict
+    pre: |
+      #[derive(PartialEq, PartialOrd)]
+      enum Level {
+          Low,
+          Mid,
+          High,
+      }
+    body: |
+      println!("{}", Level::High > Level::Low);
+      println!("{}", Level::Mid < Level::Low);
+    why: Derived PartialOrd on an enum orders the variants in the order they are written, so Low < Mid < High.
+
+  - type: predict
+    pre: |
+      #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+      struct Entry {
+          score: u32,
+          name: String,
+      }
+    body: |
+      let mut v = vec![
+          Entry { score: 7, name: String::from("cy") },
+          Entry { score: 3, name: String::from("zed") },
+          Entry { score: 7, name: String::from("al") },
+      ];
+      v.sort();
+      println!("{} {} {}", v[0].name, v[1].name, v[2].name);
+    why: Derived Ord compares the fields in the order they're declared. score decides first (3 before 7), and the two 7s are ordered by name.
+
+  - type: predict
+    pre: |
+      use std::fmt;
+
+      struct Coins(u32);
+
+      impl fmt::Display for Coins {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{} coins", self.0)
+          }
+      }
+    body: |
+      let c = Coins(5);
+      let s = c.to_string();
+      println!("[{}] {}", c, s.len());
+    why: "{} calls Display::fmt, and to_string() comes for free with Display. \"5 coins\" has 7 characters."
+
+  - type: predict
+    pre: |
+      #[derive(Debug, Default)]
+      struct Stats {
+          hp: u32,
+          alive: bool,
+          name: String,
+      }
+    body: |
+      let s = Stats { hp: 10, ..Default::default() };
+      println!("{:?}", s);
+    why: "Default gives every field its type's empty value (0, false, \"\"); the struct update syntax keeps hp: 10 and fills in the rest."
+
+  - type: predict
+    pre: |
+      trait Double {
+          fn double(&self) -> Self;
+      }
+
+      impl Double for i32 {
+          fn double(&self) -> i32 {
+              self * 2
+          }
+      }
+
+      impl Double for String {
+          fn double(&self) -> String {
+              format!("{}{}", self, self)
+          }
+      }
+    body: |
+      println!("{} {}", 21.double(), String::from("ab").double());
+    why: Your own trait can be implemented for built-in types. Each type gets its own version of double.
+
+  - type: fill
+    prompt: Implement the trait for Post.
+    pre: |
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      struct Post {
+          text: String,
+      }
+
+      impl Summary [[for]] Post {
+          fn summarize(&self) -> String {
+              format!("Post: {}", self.text)
+          }
+      }
+    body: |
+      let p = Post { text: String::from("gg") };
+      println!("{}", p.summarize());
+    why: "The syntax is impl TraitName for TypeName { ... }."
+
+  - type: fill
+    prompt: Accept a reference to any type that implements Summary.
+    pre: |
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      impl Summary for u32 {
+          fn summarize(&self) -> String {
+              format!("{} points", self)
+          }
+      }
+
+      fn show(item: &[[impl]] Summary) {
+          println!("{}", item.summarize());
+      }
+    body: |
+      show(&40);
+    why: "&impl Summary means a reference to some type that implements Summary. It's short for fn show<T: Summary>(item: &T)."
+
+  - type: fill
+    prompt: T must be printable with {} and comparable with >.
+    pre: |
+      use std::fmt::Display;
+
+      fn bigger<T>(a: T, b: T) -> String
+      where
+          T: Display [[+]] PartialOrd,
+      {
+          if a > b { format!("{a}") } else { format!("{b}") }
+      }
+    body: |
+      println!("{}", bigger(3, 8));
+    why: Multiple bounds are joined with +. Display allows {}, PartialOrd allows >.
+
+  - type: bug
+    pre: |
+      #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+      struct Entry { name: String, score: u32 } // BUG
+    body: |
+      let mut v = vec![
+          Entry { name: String::from("al"), score: 9 },
+          Entry { name: String::from("bo"), score: 2 },
+      ];
+      v.sort();
+      println!("lowest score: {}", v[0].name);
+    fix: "struct Entry { score: u32, name: String }"
+    prompt: "This should sort by score and print `lowest score: bo`. Click the line with the bug."
+    why: Derived Ord compares fields in declaration order, so name must come after score for the sort to go by score first.
+
+  - type: bug
+    pre: |
+      use std::fmt;
+
+      struct Tag(String);
+
+      impl fmt::Display for Tag {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              println!("#{}", self.0); // BUG
+              Ok(())
+          }
+      }
+    body: |
+      let s = Tag(String::from("rust")).to_string();
+      println!("tag: {}", s);
+    fix: 'write!(f, "#{}", self.0)?;'
+    prompt: "This should print `tag: #rust` on one line. Click the line with the bug."
+    why: Display must write into the formatter f. println! inside fmt prints to the screen right away, and to_string() gets an empty string.
+
+  - type: bug
+    pre: |
+      trait Describe {
+          fn describe(&self) -> String;
+      }
+
+      impl Describe for bool {
+          fn describe(&self) -> String {
+              if *self { String::from("yes") } else { String::from("no") }
+          }
+      }
+
+      fn show<T>(item: &T) -> String { // BUG
+          format!("answer: {}", item.describe())
+      }
+    body: |
+      println!("{}", show(&true));
+    fix: "fn show<T: Describe>(item: &T) -> String {"
+    why: "Without the bound T: Describe, the compiler can't know that T has a describe method."
+
+  - type: compiles
+    answer: no
+    pre: |
+      trait Summary {
+          fn summarize(&self) -> String;
+          fn short(&self) -> String;
+      }
+
+      struct Post;
+
+      impl Summary for Post {
+          fn summarize(&self) -> String {
+              String::from("post")
+          }
+      }
+    body: |
+      println!("{}", Post.summarize());
+    why: "short has no default body, so every implementation must provide it (error E0046: not all trait items implemented)."
+
+  - type: compiles
+    answer: no
+    pre: |
+      #[derive(Clone, Copy)]
+      struct Player {
+          name: String,
+          hp: u32,
+      }
+    body: |
+      let p = Player { name: String::from("ana"), hp: 10 };
+      let q = p;
+      println!("{}", p.hp + q.hp);
+    why: A String owns heap memory and isn't Copy, so a struct containing one can't derive Copy (E0204).
+
+  - type: compiles
+    answer: yes
+    pre: |
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      impl Summary for i32 {
+          fn summarize(&self) -> String {
+              format!("int {}", self)
+          }
+      }
+
+      impl Summary for char {
+          fn summarize(&self) -> String {
+              format!("char {}", self)
+          }
+      }
+
+      fn both(a: &impl Summary, b: &impl Summary) -> String {
+          format!("{} and {}", a.summarize(), b.summarize())
+      }
+    body: |
+      println!("{}", both(&1, &'x'));
+    why: Each impl Summary parameter is its own type parameter, so a and b may be different types.
+
+  - type: compiles
+    answer: no
+    pre: |
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      impl Summary for i32 {
+          fn summarize(&self) -> String {
+              format!("int {}", self)
+          }
+      }
+
+      impl Summary for char {
+          fn summarize(&self) -> String {
+              format!("char {}", self)
+          }
+      }
+
+      fn both<T: Summary>(a: &T, b: &T) -> String {
+          format!("{} and {}", a.summarize(), b.summarize())
+      }
+    body: |
+      println!("{}", both(&1, &'x'));
+    why: "With one type parameter T, a and b must be the same type. Passing an i32 and a char is a mismatched types error."
+
+  - type: choice
+    prompt: "Why can't you write #[derive(Display)]?"
+    choices:
+      - "Display is only for numbers and strings"
+      - "There's no single obvious way to show a type to users, so you write the format yourself"
+      - "Display needs unsafe code"
+      - "You can, but only on enums"
+    answer: 2
+    why: Derive works when there's one obvious implementation (compare every field, print every field for Debug). How a type should look to users is a design choice, so Display is written by hand.
+
+  - type: boss
+    prompt: |
+      A game scores different events. Write a trait `Scorable` with:
+
+      - a required method `fn points(&self) -> u32`,
+      - a default method `fn bonus(&self) -> u32` that returns `0`,
+      - a default method `fn total(&self) -> u32` that returns `points + bonus`.
+
+      Implement it for `Kill` (100 points, plus a bonus of 50 when `headshot` is true) and `Assist` (40 points, default bonus). Then write `fn team_total<T: Scorable>(events: &[T]) -> u32` that adds up `total()` for every event.
+    seed: |
+      struct Kill {
+          headshot: bool,
+      }
+
+      struct Assist;
+
+      // Write the trait, the two impls and team_total
+    solution: |
+      struct Kill {
+          headshot: bool,
+      }
+
+      struct Assist;
+
+      trait Scorable {
+          fn points(&self) -> u32;
+
+          fn bonus(&self) -> u32 {
+              0
+          }
+
+          fn total(&self) -> u32 {
+              self.points() + self.bonus()
+          }
+      }
+
+      impl Scorable for Kill {
+          fn points(&self) -> u32 {
+              100
+          }
+          fn bonus(&self) -> u32 {
+              if self.headshot { 50 } else { 0 }
+          }
+      }
+
+      impl Scorable for Assist {
+          fn points(&self) -> u32 {
+              40
+          }
+      }
+
+      fn team_total<T: Scorable>(events: &[T]) -> u32 {
+          let mut sum = 0;
+          for e in events {
+              sum += e.total();
+          }
+          sum
+      }
+    harness: |
+      #[test]
+      fn a_headshot_kill_is_worth_150() {
+          assert_eq!(Kill { headshot: true }.total(), 150, "headshot kill total()");
+      }
+
+      #[test]
+      fn a_plain_kill_is_worth_100() {
+          assert_eq!(Kill { headshot: false }.total(), 100, "plain kill total()");
+      }
+
+      #[test]
+      fn an_assist_has_no_bonus() {
+          assert_eq!(Assist.bonus(), 0, "Assist.bonus()");
+          assert_eq!(Assist.total(), 40, "Assist.total()");
+      }
+
+      #[test]
+      fn team_total_adds_every_event() {
+          let kills = vec![Kill { headshot: true }, Kill { headshot: false }];
+          assert_eq!(team_total(&kills), 250, "team_total of two kills");
+          assert_eq!(team_total(&[Assist, Assist, Assist]), 120, "team_total of three assists");
+      }
+
+      #[test]
+      fn no_events_scores_zero() {
+          let none: Vec<Kill> = Vec::new();
+          assert_eq!(team_total(&none), 0, "team_total(&[])");
+      }
+    hints:
+      - "Default methods have a body inside the trait: `fn bonus(&self) -> u32 { 0 }`."
+      - "`Kill` overrides `bonus`; `Assist` only writes `points`."
+      - "`team_total` loops over the slice and adds `e.total()`."
+    why: A small required core (points) plus default methods built on it (bonus, total) is the classic trait design.

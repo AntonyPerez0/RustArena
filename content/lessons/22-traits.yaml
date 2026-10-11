@@ -1,0 +1,1840 @@
+id: traits
+title: Traits
+phase: "Errors and abstraction"
+summary: Shared behavior. Define your own traits, give them default methods, accept "anything that can do X" with trait bounds and impl Trait, implement Display, and let derive write the standard traits for you.
+roadmap: [Traits, Trait Definitions & Implementations, Trait Bounds, Generics & Type-Level Programming]
+steps:
+  - title: Defining and implementing a trait
+    id: traits-1
+    text: |
+      A **trait** describes behavior that several types can share: a list of methods a type promises to have. You've been using traits all along without writing one. `{:?}` works because a type implements the `Debug` trait, `==` works through `PartialEq`, and in the generics module you wrote bounds like `T: PartialOrd`. Now you'll write your own.
+
+      A news app shows a one-line preview for very different kinds of content:
+
+      ```rust run
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      struct Article {
+          title: String,
+          author: String,
+      }
+
+      struct Post {
+          user: String,
+          text: String,
+      }
+
+      impl Summary for Article {
+          fn summarize(&self) -> String {
+              format!("{}, by {}", self.title, self.author)
+          }
+      }
+
+      impl Summary for Post {
+          fn summarize(&self) -> String {
+              format!("@{}: {}", self.user, self.text)
+          }
+      }
+
+      fn main() {
+          let a = Article { title: String::from("Rust 2024 is out"), author: String::from("Ana") };
+          let p = Post { user: String::from("ferris"), text: String::from("click clack") };
+          println!("{}", a.summarize());
+          println!("{}", p.summarize());
+      }
+      ```
+
+      ```output
+      Rust 2024 is out, by Ana
+      @ferris: click clack
+      ```
+
+      Piece by piece:
+
+      - `trait Summary { ... }` defines the trait. Inside are method **signatures**: the name, parameters and return type, ending with `;` instead of a body. These are the **required methods**.
+      - `impl Summary for Article { ... }` **implements** the trait for a type: "an Article can summarize itself, and here's how". It looks like the impl blocks from the methods module, but it may only contain the trait's methods, with exactly the trait's signatures.
+      - Calling a trait method looks like calling any method: `a.summarize()`.
+
+      The trait decides **what** every implementing type can do; each type decides **how**. Why not just give each struct its own `summarize` method? You could, but nothing would connect them. With a trait, you can write one function that accepts "anything that implements `Summary`" (step 3), and the compiler checks that every type really has the method.
+
+      ### Your trait on types you didn't write
+
+      You can implement your own trait for built-in types too:
+
+      ```rust run
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      impl Summary for i32 {
+          fn summarize(&self) -> String {
+              format!("the number {}", self)
+          }
+      }
+
+      impl Summary for Vec<String> {
+          fn summarize(&self) -> String {
+              format!("a list of {} items", self.len())
+          }
+      }
+
+      fn main() {
+          let tags = vec![String::from("rust"), String::from("crab")];
+          println!("{}", 42.summarize());
+          println!("{}", tags.summarize());
+      }
+      ```
+
+      ```output
+      the number 42
+      a list of 2 items
+      ```
+
+      There's one limit, the **orphan rule**: you may write `impl SomeTrait for SomeType` only if the trait or the type (or both) is defined in your crate. `impl Summary for i32` is fine because `Summary` is yours. Implementing the standard library's `Display` for `Vec<String>` is not allowed, because neither is yours. (The advanced traits module shows the standard workaround.)
+
+      ### Common mistakes
+
+      - **Forgetting a required method.** Every method without a body must be implemented:
+
+      ```rust compile_fail
+      trait Summary {
+          fn summarize(&self) -> String;
+          fn short(&self) -> String;
+      }
+
+      struct Post {
+          text: String,
+      }
+
+      impl Summary for Post {
+          fn summarize(&self) -> String {
+              self.text.clone()
+          }
+      }
+
+      fn main() {
+          let p = Post { text: String::from("hi") };
+          println!("{}", p.summarize());
+      }
+      ```
+
+      ```error
+      error[E0046]: not all trait items implemented, missing: `short`
+      ```
+
+      - **A different signature.** Writing `fn summarize(self)` when the trait says `&self` gives `error[E0053]: method summarize has an incompatible type for trait`. Copy the signature from the trait exactly.
+      - **Extra methods in the trait impl.** `impl Summary for Post` may only contain `Summary`'s methods (`error[E0407]: method ... is not a member of trait`). Put the type's other methods in a plain `impl Post` block.
+
+      **Your turn:** fill in the blanks. Define a trait `Describe` with one method, and implement it for `Book` and `Movie`, so the program prints:
+
+      ```
+      Book: Dune (1965)
+      Movie: Alien, 117 min
+      ```
+    fill: |
+      [[trait]] Describe {
+          fn describe(&self) -> String;
+      }
+
+      struct Book {
+          title: String,
+          year: u32,
+      }
+
+      struct Movie {
+          title: String,
+          minutes: u32,
+      }
+
+      impl Describe [[for]] Book {
+          fn describe(&self) -> String {
+              format!("Book: {} ({})", self.title, self.year)
+          }
+      }
+
+      [[impl Describe for Movie]] {
+          fn describe([[&self]]) -> String {
+              format!("Movie: {}, {} min", self.title, self.minutes)
+          }
+      }
+
+      fn main() {
+          let b = Book { title: String::from("Dune"), year: 1965 };
+          let m = Movie { title: String::from("Alien"), minutes: 117 };
+          println!("{}", b.describe());
+          println!("{}", m.describe());
+      }
+    hints:
+      - A trait is defined with the keyword `trait`, and implemented with `impl TraitName for TypeName`.
+      - The method takes the value by reference, exactly like the trait's signature says.
+    tests:
+      - expect: "Book: Dune (1965)\nMovie: Alien, 117 min"
+    more:
+      - task: |
+          The `Describe` trait now has a third type, `Podcast`. Implement `Describe` for it so that `describe()` returns `Podcast: <name> (<episodes> episodes)`, for example `Podcast: Rustacean Station (120 episodes)`. With exactly one episode it should say `1 episode`, not `1 episodes`.
+        seed: |
+          trait Describe {
+              fn describe(&self) -> String;
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Podcast {
+              name: String,
+              episodes: u32,
+          }
+
+          // Implement Describe for Podcast here
+        solution: |
+          trait Describe {
+              fn describe(&self) -> String;
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Podcast {
+              name: String,
+              episodes: u32,
+          }
+
+          impl Describe for Podcast {
+              fn describe(&self) -> String {
+                  let word = if self.episodes == 1 { "episode" } else { "episodes" };
+                  format!("Podcast: {} ({} {})", self.name, self.episodes, word)
+              }
+          }
+        harness: |
+          fn pod(name: &str, episodes: u32) -> Podcast {
+              Podcast { name: name.to_string(), episodes }
+          }
+
+          #[test]
+          fn describes_a_podcast_with_many_episodes() {
+              assert_eq!(pod("Rustacean Station", 120).describe(), "Podcast: Rustacean Station (120 episodes)", "describe()");
+          }
+
+          #[test]
+          fn uses_the_singular_for_one_episode() {
+              assert_eq!(pod("New Show", 1).describe(), "Podcast: New Show (1 episode)", "describe()");
+          }
+
+          #[test]
+          fn zero_episodes_is_plural() {
+              assert_eq!(pod("Soon", 0).describe(), "Podcast: Soon (0 episodes)", "describe()");
+          }
+        hints:
+          - "Start with `impl Describe for Podcast {` and copy the method signature from the trait."
+          - "Pick the word first: `let word = if self.episodes == 1 { \"episode\" } else { \"episodes\" };`"
+      - task: |
+          A game awards points for picking things up. Starting from the two structs, write a trait `Points` with one method `fn points(&self) -> u32`, and implement it:
+
+          - `Coin`: 10 points, or 50 if `gold` is true.
+          - `Gem`: 25 points per carat.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Coin {
+              gold: bool,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Gem {
+              carats: u32,
+          }
+
+          // Define the trait Points, then implement it for Coin and Gem
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Coin {
+              gold: bool,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Gem {
+              carats: u32,
+          }
+
+          trait Points {
+              fn points(&self) -> u32;
+          }
+
+          impl Points for Coin {
+              fn points(&self) -> u32 {
+                  if self.gold { 50 } else { 10 }
+              }
+          }
+
+          impl Points for Gem {
+              fn points(&self) -> u32 {
+                  25 * self.carats
+              }
+          }
+        harness: |
+          #[test]
+          fn a_plain_coin_is_worth_10() {
+              assert_eq!(Coin { gold: false }.points(), 10, "a plain coin");
+          }
+
+          #[test]
+          fn a_gold_coin_is_worth_50() {
+              assert_eq!(Coin { gold: true }.points(), 50, "a gold coin");
+          }
+
+          #[test]
+          fn a_gem_is_worth_25_per_carat() {
+              assert_eq!(Gem { carats: 3 }.points(), 75, "a 3-carat gem");
+          }
+
+          #[test]
+          fn a_zero_carat_gem_is_worth_nothing() {
+              assert_eq!(Gem { carats: 0 }.points(), 0, "a 0-carat gem");
+          }
+        hints:
+          - "The trait: `trait Points { fn points(&self) -> u32; }`"
+          - "Then two blocks, `impl Points for Coin { ... }` and `impl Points for Gem { ... }`, each with the full method."
+
+  - title: Default methods
+    id: traits-2
+    text: |
+      A trait can give a method a **default implementation**: a body that every implementing type gets for free unless it writes its own. A default method can call the trait's other methods, even the required ones that don't have a body yet: whatever type it ends up running on is guaranteed to have them.
+
+      ```rust run
+      trait LogEntry {
+          fn level(&self) -> String;
+          fn message(&self) -> String;
+
+          fn render(&self) -> String {
+              format!("[{}] {}", self.level(), self.message())
+          }
+      }
+
+      struct Login {
+          user: String,
+      }
+
+      struct DiskFull {
+          percent: u32,
+      }
+
+      impl LogEntry for Login {
+          fn level(&self) -> String {
+              String::from("INFO")
+          }
+          fn message(&self) -> String {
+              format!("{} logged in", self.user)
+          }
+      }
+
+      impl LogEntry for DiskFull {
+          fn level(&self) -> String {
+              String::from("WARN")
+          }
+          fn message(&self) -> String {
+              format!("disk {}% full", self.percent)
+          }
+          fn render(&self) -> String {
+              format!("!!! [{}] {} !!!", self.level(), self.message())
+          }
+      }
+
+      fn main() {
+          let a = Login { user: String::from("ana") };
+          let b = DiskFull { percent: 97 };
+          println!("{}", a.render());
+          println!("{}", b.render());
+      }
+      ```
+
+      ```output
+      [INFO] ana logged in
+      !!! [WARN] disk 97% full !!!
+      ```
+
+      - `level` and `message` are required: no body, every type must write them.
+      - `render` is a **provided method**: it has a body. `Login` doesn't mention `render`, so it gets the default. `DiskFull` writes its own `render`, which **overrides** the default for that type only.
+
+      This is how good traits are designed: a small core of required methods, plus convenience methods built on top. The standard library does it everywhere. The `Iterator` trait (coming up in the iterators module) has exactly one required method, `next`, and around 75 provided ones (`map`, `filter`, `sum`, `count`...) that all work by calling `next`.
+
+      ### Common mistakes
+
+      - **Reading fields in a default method.** A trait knows nothing about the fields of the types that will implement it. A default method can only use the trait's methods:
+
+      ```rust compile_fail
+      trait LogEntry {
+          fn render(&self) -> String {
+              format!("[INFO] {}", self.message)
+          }
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0609]: no field `message` on type `&Self`
+      ```
+
+      `Self` (capital S) means "whatever type implements this trait". The fix is to add a required method (`fn message(&self) -> String;`) and call it.
+
+      - **Expecting to call the default from an override.** Once a type overrides `render`, there's no way to call the default version from inside it. If both need the same logic, put it in another method (as `DiskFull` does by calling `level()` and `message()`).
+
+      **Your turn:** a support desk has two kinds of tickets. Give the `Ticket` trait a **default** method `label` that returns `#<id> <title>`, for example `#42 Printer on fire`. `Bug` should use the default. `Incident` should override `label` to put `URGENT ` in front: `URGENT #7 Database down`.
+    seed: |
+      trait Ticket {
+          fn id(&self) -> u32;
+          fn title(&self) -> String;
+
+          fn label(&self) -> String {
+              todo!()
+          }
+      }
+
+      struct Bug {
+          id: u32,
+          title: String,
+      }
+
+      struct Incident {
+          id: u32,
+          title: String,
+      }
+
+      impl Ticket for Bug {
+          fn id(&self) -> u32 {
+              self.id
+          }
+          fn title(&self) -> String {
+              self.title.clone()
+          }
+      }
+
+      impl Ticket for Incident {
+          fn id(&self) -> u32 {
+              self.id
+          }
+          fn title(&self) -> String {
+              self.title.clone()
+          }
+          // Override label here
+      }
+    solution: |
+      trait Ticket {
+          fn id(&self) -> u32;
+          fn title(&self) -> String;
+
+          fn label(&self) -> String {
+              format!("#{} {}", self.id(), self.title())
+          }
+      }
+
+      struct Bug {
+          id: u32,
+          title: String,
+      }
+
+      struct Incident {
+          id: u32,
+          title: String,
+      }
+
+      impl Ticket for Bug {
+          fn id(&self) -> u32 {
+              self.id
+          }
+          fn title(&self) -> String {
+              self.title.clone()
+          }
+      }
+
+      impl Ticket for Incident {
+          fn id(&self) -> u32 {
+              self.id
+          }
+          fn title(&self) -> String {
+              self.title.clone()
+          }
+          fn label(&self) -> String {
+              format!("URGENT #{} {}", self.id(), self.title())
+          }
+      }
+    harness: |
+      struct Chore;
+
+      impl Ticket for Chore {
+          fn id(&self) -> u32 {
+              3
+          }
+          fn title(&self) -> String {
+              String::from("Water the plants")
+          }
+      }
+
+      #[test]
+      fn a_bug_uses_the_default_label() {
+          let b = Bug { id: 42, title: String::from("Printer on fire") };
+          assert_eq!(b.label(), "#42 Printer on fire", "label() of bug 42");
+      }
+
+      #[test]
+      fn an_incident_label_starts_with_urgent() {
+          let i = Incident { id: 7, title: String::from("Database down") };
+          assert_eq!(i.label(), "URGENT #7 Database down", "label() of incident 7");
+      }
+
+      #[test]
+      fn any_new_ticket_type_gets_the_default() {
+          assert_eq!(Chore.label(), "#3 Water the plants", "a new ticket type's label()");
+      }
+    hints:
+      - "The default body goes in the trait, and it can only call trait methods: `self.id()` and `self.title()`, not the fields."
+      - "`format!(\"#{} {}\", self.id(), self.title())` for the default. For `Incident`, write a whole `fn label(&self) -> String` inside its impl block."
+    more:
+      - task: |
+          Give the `Greeter` trait a default method `greet` that returns `Hello, <name>!`. `Visitor` keeps the default; `Pirate` overrides it to return `Ahoy, <name>!`.
+        seed: |
+          trait Greeter {
+              fn name(&self) -> String;
+
+              fn greet(&self) -> String {
+                  todo!()
+              }
+          }
+
+          struct Visitor {
+              name: String,
+          }
+
+          struct Pirate {
+              name: String,
+          }
+
+          impl Greeter for Visitor {
+              fn name(&self) -> String {
+                  self.name.clone()
+              }
+          }
+
+          impl Greeter for Pirate {
+              fn name(&self) -> String {
+                  self.name.clone()
+              }
+          }
+        solution: |
+          trait Greeter {
+              fn name(&self) -> String;
+
+              fn greet(&self) -> String {
+                  format!("Hello, {}!", self.name())
+              }
+          }
+
+          struct Visitor {
+              name: String,
+          }
+
+          struct Pirate {
+              name: String,
+          }
+
+          impl Greeter for Visitor {
+              fn name(&self) -> String {
+                  self.name.clone()
+              }
+          }
+
+          impl Greeter for Pirate {
+              fn name(&self) -> String {
+                  self.name.clone()
+              }
+              fn greet(&self) -> String {
+                  format!("Ahoy, {}!", self.name())
+              }
+          }
+        harness: |
+          #[test]
+          fn a_visitor_gets_the_default_greeting() {
+              let v = Visitor { name: String::from("Ana") };
+              assert_eq!(v.greet(), "Hello, Ana!", "Visitor.greet()");
+          }
+
+          #[test]
+          fn a_pirate_says_ahoy() {
+              let p = Pirate { name: String::from("Ferris") };
+              assert_eq!(p.greet(), "Ahoy, Ferris!", "Pirate.greet()");
+          }
+
+          #[test]
+          fn works_with_an_empty_name() {
+              let v = Visitor { name: String::new() };
+              assert_eq!(v.greet(), "Hello, !", "Visitor with an empty name");
+          }
+        hints:
+          - "Default: `format!(\"Hello, {}!\", self.name())`."
+          - Add a `fn greet(&self) -> String` with the pirate version inside `impl Greeter for Pirate`.
+      - task: |
+          Bank accounts. Write the trait `Account` yourself, with:
+
+          - a required method `fn balance(&self) -> i64` (in cents),
+          - a default method `fn overdraft_limit(&self) -> i64` that returns `0`,
+          - a default method `fn can_withdraw(&self, amount: i64) -> bool` that is true when `balance + overdraft_limit` is at least `amount`.
+
+          Implement it for `Savings` (keeps both defaults) and `Checking` (overrides `overdraft_limit` to return `10000`, so it may go 100 dollars below zero). Notice that `can_withdraw` calls `overdraft_limit`, so the override changes its result too.
+        seed: |
+          struct Savings {
+              cents: i64,
+          }
+
+          struct Checking {
+              cents: i64,
+          }
+
+          // Write the Account trait and implement it for both types
+        solution: |
+          struct Savings {
+              cents: i64,
+          }
+
+          struct Checking {
+              cents: i64,
+          }
+
+          trait Account {
+              fn balance(&self) -> i64;
+
+              fn overdraft_limit(&self) -> i64 {
+                  0
+              }
+
+              fn can_withdraw(&self, amount: i64) -> bool {
+                  self.balance() + self.overdraft_limit() >= amount
+              }
+          }
+
+          impl Account for Savings {
+              fn balance(&self) -> i64 {
+                  self.cents
+              }
+          }
+
+          impl Account for Checking {
+              fn balance(&self) -> i64 {
+                  self.cents
+              }
+              fn overdraft_limit(&self) -> i64 {
+                  10000
+              }
+          }
+        harness: |
+          #[test]
+          fn savings_can_withdraw_its_whole_balance() {
+              assert!(Savings { cents: 5000 }.can_withdraw(5000), "Savings with 5000 withdrawing 5000 should be allowed");
+          }
+
+          #[test]
+          fn savings_cannot_go_below_zero() {
+              assert!(!Savings { cents: 5000 }.can_withdraw(5001), "Savings with 5000 withdrawing 5001 should be refused");
+          }
+
+          #[test]
+          fn checking_can_use_the_overdraft() {
+              assert!(Checking { cents: 5000 }.can_withdraw(15000), "Checking with 5000 withdrawing 15000 should be allowed");
+          }
+
+          #[test]
+          fn checking_stops_at_the_overdraft_limit() {
+              assert!(!Checking { cents: 5000 }.can_withdraw(15001), "Checking with 5000 withdrawing 15001 should be refused");
+          }
+
+          #[test]
+          fn the_limits_are_right() {
+              assert_eq!(Savings { cents: 0 }.overdraft_limit(), 0, "Savings overdraft_limit()");
+              assert_eq!(Checking { cents: 0 }.overdraft_limit(), 10000, "Checking overdraft_limit()");
+          }
+        hints:
+          - "In the trait: `fn balance(&self) -> i64;` (no body), then the two default methods with bodies."
+          - "`can_withdraw` is `self.balance() + self.overdraft_limit() >= amount`."
+          - "`impl Account for Checking` needs `balance` and its own `fn overdraft_limit(&self) -> i64 { 10000 }`."
+
+  - title: "Traits as parameters: bounds and impl Trait"
+    id: traits-3
+    text: |
+      The real payoff of a trait: functions that accept **any** type with that behavior. You already know the syntax from generics, where you wrote bounds like `T: PartialOrd`. A **trait bound** works the same with your own traits.
+
+      ```rust run
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      struct Article {
+          title: String,
+      }
+
+      struct Post {
+          user: String,
+          text: String,
+      }
+
+      impl Summary for Article {
+          fn summarize(&self) -> String {
+              format!("Article: {}", self.title)
+          }
+      }
+
+      impl Summary for Post {
+          fn summarize(&self) -> String {
+              format!("@{}: {}", self.user, self.text)
+          }
+      }
+
+      fn preview(item: &impl Summary) {
+          println!("Preview -> {}", item.summarize());
+      }
+
+      fn feed<T: Summary>(items: &[T]) {
+          for item in items {
+              println!("- {}", item.summarize());
+          }
+      }
+
+      fn main() {
+          let a = Article { title: String::from("Crabs can't jump") };
+          let p = Post { user: String::from("ana"), text: String::from("first!") };
+          preview(&a);
+          preview(&p);
+
+          let posts = vec![
+              Post { user: String::from("bo"), text: String::from("gg") },
+              Post { user: String::from("cy"), text: String::from("wp") },
+          ];
+          feed(&posts);
+      }
+      ```
+
+      ```output
+      Preview -> Article: Crabs can't jump
+      Preview -> @ana: first!
+      - @bo: gg
+      - @cy: wp
+      ```
+
+      - `item: &impl Summary` reads "a reference to some type that implements `Summary`". It's called **impl Trait in argument position**, and it's short for the generic version `fn preview<T: Summary>(item: &T)`.
+      - `fn feed<T: Summary>(items: &[T])` is the longer form: a type parameter `T` with a bound. Use it when you need to name the type, like here, where `T` appears inside `&[T]`.
+      - Inside the function you may only use what the bound promises. `item.summarize()` is fine; `item.title` is not, because not every `Summary` type has a title.
+
+      Like all generics, this is **monomorphized**: the compiler writes a separate copy of `preview` for `Article` and one for `Post`. Calling through a trait bound is exactly as fast as calling the method directly.
+
+      ### One type, or many?
+
+      These two signatures are not the same:
+
+      ```rust
+      fn both(a: &impl Summary, b: &impl Summary)      // a and b may be different types
+      fn both<T: Summary>(a: &T, b: &T)                // a and b must be the SAME type T
+      ```
+
+      And `feed(&[T])` takes a slice where every item is the same type `T`: a `Vec` can't mix Articles and Posts. Mixing types in one collection needs **trait objects**, a later module.
+
+      ### Common mistakes
+
+      - **Forgetting the bound.** Without it, `T` could be any type at all, so the compiler won't let you call `summarize`. Read the help line: it tells you the fix.
+
+      ```rust compile_fail
+      trait Summary {
+          fn summarize(&self) -> String;
+      }
+
+      fn feed<T>(items: &[T]) {
+          for item in items {
+              println!("{}", item.summarize());
+          }
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0599]: no method named `summarize` found for reference `&T` in the current scope
+        = help: items from traits can only be used if the type parameter is bounded by the trait
+      help: the following trait defines an item `summarize`, perhaps you need to restrict type parameter `T` with it:
+        |
+      5 | fn feed<T: Summary>(items: &[T]) {
+      ```
+
+      - **Using a field through the bound**: `item.title` on an `&impl Summary` gives `error[E0609]: no field title on type &impl Summary`. Add a method to the trait if every type should provide it.
+
+      **Your turn:** a café's menu items implement `Priced`. Write two functions:
+
+      - `fn total_cents<T: Priced>(items: &[T]) -> u32`: the sum of the prices (0 for an empty slice).
+      - `fn can_afford(item: &impl Priced, budget_cents: u32) -> bool`: true if the item's price is at most the budget.
+    seed: |
+      trait Priced {
+          fn price_cents(&self) -> u32;
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Coffee {
+          shots: u32,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Bagel {
+          toasted: bool,
+      }
+
+      impl Priced for Coffee {
+          fn price_cents(&self) -> u32 {
+              250 + 75 * self.shots
+          }
+      }
+
+      impl Priced for Bagel {
+          fn price_cents(&self) -> u32 {
+              if self.toasted { 350 } else { 300 }
+          }
+      }
+
+      fn total_cents<T: Priced>(items: &[T]) -> u32 {
+          todo!()
+      }
+
+      fn can_afford(item: &impl Priced, budget_cents: u32) -> bool {
+          todo!()
+      }
+    solution: |
+      trait Priced {
+          fn price_cents(&self) -> u32;
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Coffee {
+          shots: u32,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Bagel {
+          toasted: bool,
+      }
+
+      impl Priced for Coffee {
+          fn price_cents(&self) -> u32 {
+              250 + 75 * self.shots
+          }
+      }
+
+      impl Priced for Bagel {
+          fn price_cents(&self) -> u32 {
+              if self.toasted { 350 } else { 300 }
+          }
+      }
+
+      fn total_cents<T: Priced>(items: &[T]) -> u32 {
+          let mut total = 0;
+          for item in items {
+              total += item.price_cents();
+          }
+          total
+      }
+
+      fn can_afford(item: &impl Priced, budget_cents: u32) -> bool {
+          item.price_cents() <= budget_cents
+      }
+    harness: |
+      #[test]
+      fn totals_several_coffees() {
+          let order = vec![Coffee { shots: 1 }, Coffee { shots: 2 }];
+          assert_eq!(total_cents(&order), 725, "total_cents of coffees with 1 and 2 shots");
+      }
+
+      #[test]
+      fn totals_bagels_too() {
+          let order = vec![Bagel { toasted: true }, Bagel { toasted: false }, Bagel { toasted: true }];
+          assert_eq!(total_cents(&order), 1000, "total_cents of three bagels");
+      }
+
+      #[test]
+      fn an_empty_order_costs_nothing() {
+          let order: Vec<Coffee> = Vec::new();
+          assert_eq!(total_cents(&order), 0, "total_cents(&[])");
+      }
+
+      #[test]
+      fn can_afford_at_exactly_the_price() {
+          assert!(can_afford(&Bagel { toasted: false }, 300), "can_afford(plain bagel, 300) should be true");
+      }
+
+      #[test]
+      fn cannot_afford_one_cent_short() {
+          assert!(!can_afford(&Coffee { shots: 2 }, 399), "can_afford(2-shot coffee, 399) should be false");
+      }
+    hints:
+      - "Loop over the slice with `for item in items` and add up `item.price_cents()`."
+      - "`can_afford` is one line: `item.price_cents() <= budget_cents`."
+    more:
+      - task: |
+          Write `fn cheaper(a: &impl Priced, b: &impl Priced) -> u32` that returns the lower of the two prices. Because each parameter has its own `impl Priced`, you can compare a coffee with a bagel.
+        seed: |
+          trait Priced {
+              fn price_cents(&self) -> u32;
+          }
+
+          struct Coffee {
+              shots: u32,
+          }
+
+          struct Bagel {
+              toasted: bool,
+          }
+
+          impl Priced for Coffee {
+              fn price_cents(&self) -> u32 {
+                  250 + 75 * self.shots
+              }
+          }
+
+          impl Priced for Bagel {
+              fn price_cents(&self) -> u32 {
+                  if self.toasted { 350 } else { 300 }
+              }
+          }
+
+          fn cheaper(a: &impl Priced, b: &impl Priced) -> u32 {
+              todo!()
+          }
+        solution: |
+          trait Priced {
+              fn price_cents(&self) -> u32;
+          }
+
+          struct Coffee {
+              shots: u32,
+          }
+
+          struct Bagel {
+              toasted: bool,
+          }
+
+          impl Priced for Coffee {
+              fn price_cents(&self) -> u32 {
+                  250 + 75 * self.shots
+              }
+          }
+
+          impl Priced for Bagel {
+              fn price_cents(&self) -> u32 {
+                  if self.toasted { 350 } else { 300 }
+              }
+          }
+
+          fn cheaper(a: &impl Priced, b: &impl Priced) -> u32 {
+              let (pa, pb) = (a.price_cents(), b.price_cents());
+              if pa <= pb { pa } else { pb }
+          }
+        harness: |
+          #[test]
+          fn compares_a_coffee_with_a_bagel() {
+              assert_eq!(cheaper(&Coffee { shots: 1 }, &Bagel { toasted: true }), 325, "cheaper(1-shot coffee, toasted bagel)");
+          }
+
+          #[test]
+          fn compares_a_bagel_with_a_coffee() {
+              assert_eq!(cheaper(&Bagel { toasted: false }, &Coffee { shots: 3 }), 300, "cheaper(plain bagel, 3-shot coffee)");
+          }
+
+          #[test]
+          fn works_for_two_of_the_same_type() {
+              assert_eq!(cheaper(&Coffee { shots: 2 }, &Coffee { shots: 0 }), 250, "cheaper(2 shots, 0 shots)");
+          }
+
+          #[test]
+          fn equal_prices_give_that_price() {
+              assert_eq!(cheaper(&Bagel { toasted: true }, &Bagel { toasted: true }), 350, "cheaper of two equal bagels");
+          }
+        hints:
+          - Call `price_cents()` on both, then return the smaller one.
+          - "`if pa <= pb { pa } else { pb }` (or `pa.min(pb)`)."
+      - task: |
+          Write `fn digest<T: Summary>(items: &[T]) -> String` that numbers the summaries, one per line, like this for two posts:
+
+          ```
+          1. @bo: gg
+          2. @cy: wp
+          ```
+
+          Lines are separated by `\n` with no newline at the end. An empty slice gives an empty string.
+        seed: |
+          trait Summary {
+              fn summarize(&self) -> String;
+          }
+
+          struct Post {
+              user: String,
+              text: String,
+          }
+
+          impl Summary for Post {
+              fn summarize(&self) -> String {
+                  format!("@{}: {}", self.user, self.text)
+              }
+          }
+
+          // Write digest here
+        solution: |
+          trait Summary {
+              fn summarize(&self) -> String;
+          }
+
+          struct Post {
+              user: String,
+              text: String,
+          }
+
+          impl Summary for Post {
+              fn summarize(&self) -> String {
+                  format!("@{}: {}", self.user, self.text)
+              }
+          }
+
+          fn digest<T: Summary>(items: &[T]) -> String {
+              let mut out = String::new();
+              let mut n = 0;
+              for item in items {
+                  n += 1;
+                  if n > 1 {
+                      out.push('\n');
+                  }
+                  out.push_str(&format!("{}. {}", n, item.summarize()));
+              }
+              out
+          }
+        harness: |
+          fn post(user: &str, text: &str) -> Post {
+              Post { user: user.to_string(), text: text.to_string() }
+          }
+
+          #[test]
+          fn numbers_two_posts() {
+              let posts = vec![post("bo", "gg"), post("cy", "wp")];
+              assert_eq!(digest(&posts), "1. @bo: gg\n2. @cy: wp", "digest of two posts");
+          }
+
+          #[test]
+          fn one_post_has_no_newline() {
+              assert_eq!(digest(&[post("ana", "hi")]), "1. @ana: hi", "digest of one post");
+          }
+
+          #[test]
+          fn an_empty_slice_gives_an_empty_string() {
+              let none: Vec<Post> = Vec::new();
+              assert_eq!(digest(&none), "", "digest(&[])");
+          }
+
+          #[test]
+          fn works_for_any_summary_type() {
+              struct Num(u32);
+              impl Summary for Num {
+                  fn summarize(&self) -> String {
+                      format!("n={}", self.0)
+                  }
+              }
+              assert_eq!(digest(&[Num(1), Num(2), Num(3)]), "1. n=1\n2. n=2\n3. n=3", "digest of three numbers");
+          }
+        hints:
+          - "The signature is `fn digest<T: Summary>(items: &[T]) -> String`."
+          - "Keep a counter `n` that goes up by one per item, and push `'\\n'` before every line except the first."
+          - "Each line is `format!(\"{}. {}\", n, item.summarize())`, added with `push_str`."
+
+  - title: Implementing Display
+    id: traits-4
+    text: |
+      `{}` in `println!` and `format!` works with any type that implements the standard trait `std::fmt::Display`. Numbers and strings implement it; your types don't, until you write it. You met this briefly for error types; here's the full picture.
+
+      ```rust run
+      use std::fmt;
+
+      struct Money {
+          cents: i64,
+      }
+
+      impl fmt::Display for Money {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let sign = if self.cents < 0 { "-" } else { "" };
+              let abs = self.cents.abs();
+              write!(f, "{}${}.{:02}", sign, abs / 100, abs % 100)
+          }
+      }
+
+      fn main() {
+          let price = Money { cents: 1205 };
+          let refund = Money { cents: -350 };
+          println!("Price: {price}");
+          println!("Refund: {}", refund);
+          let text = price.to_string();
+          println!("{} characters", text.len());
+      }
+      ```
+
+      ```output
+      Price: $12.05
+      Refund: -$3.50
+      6 characters
+      ```
+
+      Piece by piece:
+
+      - `use std::fmt;` lets you write `fmt::Display`, `fmt::Formatter` and `fmt::Result` instead of the full paths.
+      - The one required method is `fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result`. Copy that signature; you'll write it many times. (Docs and editors often show `Formatter<'_>`; the `'_` is a lifetime, the topic of a later module, and you may leave it out.)
+      - `f` is where the text goes. `write!(f, ...)` works like `format!` but writes into `f`, and it returns the `fmt::Result` you need, so it's the last expression (no semicolon).
+      - Implementing `Display` also gives you `.to_string()` for free: the standard library implements `ToString` for every type that implements `Display`.
+
+      ### Display or Debug?
+
+      `Debug` (`{:?}`) is for developers: derive it on almost every type and get a faithful dump of the fields. `Display` (`{}`) is for users: you choose the exact format, so it **can't be derived**. Should `Money` show `$12.05`, `12.05 USD` or `12,05 €`? Only you know.
+
+      Several lines? Use `writeln!(f, ...)?;` for each line except the last, then end with `write!`. The `?` passes a formatting error on, like you did with `Result` in the errors module.
+
+      ### Common mistakes
+
+      - **A semicolon after the last `write!`.** The method then returns `()` instead of `fmt::Result`:
+
+      ```rust compile_fail
+      use std::fmt;
+
+      struct Tag(String);
+
+      impl fmt::Display for Tag {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "#{}", self.0);
+          }
+      }
+
+      fn main() {
+          println!("{}", Tag(String::from("rust")));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      - **`println!` inside `fmt`.** It prints straight to the screen instead of into the result, so `format!("{}", x)` and `x.to_string()` get an empty string. Always write into `f`.
+      - **`write!(f, "{}", self)` inside `Display` for the same type.** That calls `fmt` again, forever, until the program crashes with a stack overflow. Format the fields, not `self`.
+      - **Using `{}` on a type without `Display`** gives ``error[E0277]: `Money` doesn't implement `std::fmt::Display` ``. The compiler suggests `{:?}`, which is fine for debugging but not for output users read.
+
+      **Your turn:** implement `Display` for `Temperature` so it shows the value with one decimal place followed by `°C`: `21.5°C`, `-3.0°C`.
+    seed: |
+      use std::fmt;
+
+      #[derive(Debug, PartialEq)]
+      struct Temperature {
+          celsius: f64,
+      }
+
+      // impl fmt::Display for Temperature { ... }
+    solution: |
+      use std::fmt;
+
+      #[derive(Debug, PartialEq)]
+      struct Temperature {
+          celsius: f64,
+      }
+
+      impl fmt::Display for Temperature {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{:.1}°C", self.celsius)
+          }
+      }
+    harness: |
+      #[test]
+      fn shows_one_decimal_and_the_unit() {
+          assert_eq!(Temperature { celsius: 21.5 }.to_string(), "21.5°C", "21.5");
+      }
+
+      #[test]
+      fn shows_negative_temperatures() {
+          assert_eq!(Temperature { celsius: -3.0 }.to_string(), "-3.0°C", "-3.0");
+      }
+
+      #[test]
+      fn rounds_to_one_decimal() {
+          assert_eq!(Temperature { celsius: 36.66 }.to_string(), "36.7°C", "36.66");
+      }
+
+      #[test]
+      fn works_inside_format() {
+          let t = Temperature { celsius: 0.0 };
+          assert_eq!(format!("now: {}", t), "now: 0.0°C", "format! with a prefix");
+      }
+    hints:
+      - "Start with `impl fmt::Display for Temperature {` and the method `fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result`."
+      - "The body is one expression with no semicolon: `write!(f, \"{:.1}°C\", self.celsius)`."
+    more:
+      - task: |
+          Race results. Implement `Display` for `RaceTime` (a number of seconds) so it shows `m:ss` under an hour, like `1:05` or `0:09`, and `h:mm:ss` from one hour on, like `1:01:05`. Minutes and seconds after the first number always have two digits.
+        seed: |
+          use std::fmt;
+
+          #[derive(Debug, PartialEq)]
+          struct RaceTime {
+              seconds: u32,
+          }
+
+          impl fmt::Display for RaceTime {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::fmt;
+
+          #[derive(Debug, PartialEq)]
+          struct RaceTime {
+              seconds: u32,
+          }
+
+          impl fmt::Display for RaceTime {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  let h = self.seconds / 3600;
+                  let m = self.seconds % 3600 / 60;
+                  let s = self.seconds % 60;
+                  if h > 0 {
+                      write!(f, "{}:{:02}:{:02}", h, m, s)
+                  } else {
+                      write!(f, "{}:{:02}", m, s)
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn shows_minutes_and_seconds() {
+              assert_eq!(RaceTime { seconds: 65 }.to_string(), "1:05", "65 seconds");
+          }
+
+          #[test]
+          fn pads_seconds_under_a_minute() {
+              assert_eq!(RaceTime { seconds: 9 }.to_string(), "0:09", "9 seconds");
+          }
+
+          #[test]
+          fn shows_hours_from_one_hour_on() {
+              assert_eq!(RaceTime { seconds: 3665 }.to_string(), "1:01:05", "3665 seconds");
+          }
+
+          #[test]
+          fn exactly_one_hour() {
+              assert_eq!(RaceTime { seconds: 3600 }.to_string(), "1:00:00", "3600 seconds");
+          }
+
+          #[test]
+          fn just_under_an_hour() {
+              assert_eq!(RaceTime { seconds: 3599 }.to_string(), "59:59", "3599 seconds");
+          }
+        hints:
+          - "Hours are `seconds / 3600`, minutes `seconds % 3600 / 60`, seconds `seconds % 60`."
+          - "`{:02}` pads a number to two digits with a zero. Use an `if` with a `write!` in each branch (no semicolons)."
+      - task: |
+          Playing cards. Implement `Display` for **both** types:
+
+          - `Suit` shows as `♠`, `♥`, `♦` or `♣`.
+          - `Card` shows its rank then its suit: rank 1 is `A`, 11 is `J`, 12 is `Q`, 13 is `K`, anything else is the number. So `A♠`, `10♥`, `Q♦`.
+
+          Inside `Card`'s `fmt` you can use `{}` on `self.suit`, because `Suit` implements `Display` too.
+        seed: |
+          use std::fmt;
+
+          #[derive(Debug, PartialEq)]
+          enum Suit {
+              Spades,
+              Hearts,
+              Diamonds,
+              Clubs,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Card {
+              rank: u8,
+              suit: Suit,
+          }
+        solution: |
+          use std::fmt;
+
+          #[derive(Debug, PartialEq)]
+          enum Suit {
+              Spades,
+              Hearts,
+              Diamonds,
+              Clubs,
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct Card {
+              rank: u8,
+              suit: Suit,
+          }
+
+          impl fmt::Display for Suit {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  let symbol = match self {
+                      Suit::Spades => "♠",
+                      Suit::Hearts => "♥",
+                      Suit::Diamonds => "♦",
+                      Suit::Clubs => "♣",
+                  };
+                  write!(f, "{}", symbol)
+              }
+          }
+
+          impl fmt::Display for Card {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  let rank = match self.rank {
+                      1 => String::from("A"),
+                      11 => String::from("J"),
+                      12 => String::from("Q"),
+                      13 => String::from("K"),
+                      n => n.to_string(),
+                  };
+                  write!(f, "{}{}", rank, self.suit)
+              }
+          }
+        harness: |
+          #[test]
+          fn shows_each_suit() {
+              assert_eq!(Suit::Spades.to_string(), "♠", "Suit::Spades");
+              assert_eq!(Suit::Hearts.to_string(), "♥", "Suit::Hearts");
+              assert_eq!(Suit::Diamonds.to_string(), "♦", "Suit::Diamonds");
+              assert_eq!(Suit::Clubs.to_string(), "♣", "Suit::Clubs");
+          }
+
+          #[test]
+          fn an_ace_shows_as_a() {
+              assert_eq!(Card { rank: 1, suit: Suit::Spades }.to_string(), "A♠", "rank 1 of spades");
+          }
+
+          #[test]
+          fn number_cards_show_their_number() {
+              assert_eq!(Card { rank: 10, suit: Suit::Hearts }.to_string(), "10♥", "rank 10 of hearts");
+          }
+
+          #[test]
+          fn face_cards_show_letters() {
+              assert_eq!(Card { rank: 11, suit: Suit::Clubs }.to_string(), "J♣", "rank 11");
+              assert_eq!(Card { rank: 12, suit: Suit::Diamonds }.to_string(), "Q♦", "rank 12");
+              assert_eq!(Card { rank: 13, suit: Suit::Spades }.to_string(), "K♠", "rank 13");
+          }
+        hints:
+          - "For `Suit`, `match self` and pick the symbol, then `write!(f, \"{}\", symbol)`."
+          - "For `Card`, turn the rank into a `String` with a `match` (use `n => n.to_string()` for the rest), then `write!(f, \"{}{}\", rank, self.suit)`."
+
+  - title: "Multiple bounds, where clauses and returning impl Trait"
+    id: traits-5
+    text: |
+      A type parameter can need several traits at once. Join them with `+`: `T: Display + PartialOrd` means "T can be printed with `{}` **and** compared with `<` and `>`". When the bounds get long, move them into a **where clause** after the signature, so the function's name and parameters stay readable.
+
+      ```rust run
+      use std::fmt::Display;
+
+      fn announce_max<T>(items: &[T]) -> String
+      where
+          T: Display + PartialOrd,
+      {
+          let mut best = &items[0];
+          for item in items {
+              if item > best {
+                  best = item;
+              }
+          }
+          format!("winner: {best}")
+      }
+
+      fn main() {
+          println!("{}", announce_max(&[3, 9, 4]));
+          println!("{}", announce_max(&["pear", "apple", "plum"]));
+          println!("{}", announce_max(&[1.5, 0.25]));
+      }
+      ```
+
+      ```output
+      winner: 9
+      winner: plum
+      winner: 1.5
+      ```
+
+      - `PartialOrd` makes `item > best` legal; `Display` makes `{best}` legal. Remove either one and that line stops compiling.
+      - The `where` clause says the same as `fn announce_max<T: Display + PartialOrd>(items: &[T])`. Pick whichever reads better. Teams usually switch to `where` once there are two or more type parameters or more than a couple of bounds, and `rustfmt` lays it out exactly as above.
+      - Strings compare alphabetically, so `"plum"` beats `"pear"` and `"apple"`.
+
+      Several type parameters, each with its own bounds:
+
+      ```rust
+      fn log_pair<K, V>(key: K, value: V) -> String
+      where
+          K: Display,
+          V: Debug + Clone,
+      ```
+
+      ### Returning impl Trait
+
+      `impl Trait` also works in the **return** type: "this function returns some type that implements the trait, and that's all you need to know".
+
+      ```rust run
+      use std::fmt::Display;
+
+      fn badge(points: u32) -> impl Display {
+          format!("[{points} pts]")
+      }
+
+      fn main() {
+          let b = badge(120);
+          println!("Ferris {b}");
+      }
+      ```
+
+      ```output
+      Ferris [120 pts]
+      ```
+
+      The caller can only use `b` as a `Display`: it can't call `String` methods on it, even though it really is a `String`. That's the point: the function is free to change the concrete type later without breaking callers. You'll use this most with iterators and closures, whose real types are long or can't even be written down.
+
+      ### Common mistakes
+
+      - **Returning different types from `-> impl Trait`.** `impl Trait` stands for **one** concrete type, chosen by the function body. Two branches with different types don't compile:
+
+      ```rust compile_fail
+      use std::fmt::Display;
+
+      fn label(n: u32) -> impl Display {
+          if n == 0 { "none" } else { n }
+      }
+
+      fn main() {
+          println!("{}", label(3));
+      }
+      ```
+
+      ```error
+      error[E0308]: `if` and `else` have incompatible types
+      ```
+
+      Here the fix is to return the same type from both branches (`n.to_string()` and `String::from("none")`). The compiler also suggests `Box<dyn Display>`; that's a trait object, coming up in a later module.
+
+      - **A missing bound.** If you compare with `>` but only wrote `T: Display`, you get ``error[E0369]: binary operation `>` cannot be applied to type `&T` ``, with a help line suggesting `T: PartialOrd`.
+
+      **Your turn:** write `fn describe_range<T>(items: &[T]) -> String` that returns the smallest and largest item as `min..max`, for example `2..9`. An empty slice returns `empty`. Put the bounds (`Display` and `PartialOrd`) in a `where` clause.
+    seed: |
+      use std::fmt::Display;
+
+      fn describe_range<T>(items: &[T]) -> String {
+          todo!()
+      }
+    solution: |
+      use std::fmt::Display;
+
+      fn describe_range<T>(items: &[T]) -> String
+      where
+          T: Display + PartialOrd,
+      {
+          if items.is_empty() {
+              return String::from("empty");
+          }
+          let mut min = &items[0];
+          let mut max = &items[0];
+          for item in items {
+              if item < min {
+                  min = item;
+              }
+              if item > max {
+                  max = item;
+              }
+          }
+          format!("{min}..{max}")
+      }
+    require:
+      - pattern: '\bwhere\b'
+        message: Put the bounds in a `where` clause.
+    harness: |
+      #[test]
+      fn finds_min_and_max_of_numbers() {
+          assert_eq!(describe_range(&[4, 2, 9, 7]), "2..9", "describe_range(&[4, 2, 9, 7])");
+      }
+
+      #[test]
+      fn works_with_strings() {
+          assert_eq!(describe_range(&["kiwi", "apple", "pear"]), "apple..pear", "describe_range(&[\"kiwi\", \"apple\", \"pear\"])");
+      }
+
+      #[test]
+      fn works_with_negative_floats() {
+          assert_eq!(describe_range(&[-1.5, 2.5, 0.0]), "-1.5..2.5", "describe_range(&[-1.5, 2.5, 0.0])");
+      }
+
+      #[test]
+      fn one_item_is_both_min_and_max() {
+          assert_eq!(describe_range(&[5]), "5..5", "describe_range(&[5])");
+      }
+
+      #[test]
+      fn an_empty_slice_says_empty() {
+          let none: [i32; 0] = [];
+          assert_eq!(describe_range(&none), "empty", "describe_range(&[])");
+      }
+    hints:
+      - "The signature becomes `fn describe_range<T>(items: &[T]) -> String where T: Display + PartialOrd,` followed by the body's `{`."
+      - "Return early for an empty slice. Otherwise start `min` and `max` at `&items[0]` and update them in a loop, like `announce_max`."
+    more:
+      - task: |
+          Write `fn count_matches<T>(items: &[T], target: &T) -> String` that counts how many items equal `target` and returns `<count> x <target>`, for example `3 x apple`. Use a `where` clause with the two bounds you need (one for `==`, one for printing).
+        seed: |
+          use std::fmt::Display;
+
+          fn count_matches<T>(items: &[T], target: &T) -> String {
+              todo!()
+          }
+        solution: |
+          use std::fmt::Display;
+
+          fn count_matches<T>(items: &[T], target: &T) -> String
+          where
+              T: Display + PartialEq,
+          {
+              let mut count = 0;
+              for item in items {
+                  if item == target {
+                      count += 1;
+                  }
+              }
+              format!("{count} x {target}")
+          }
+        require:
+          - pattern: '\bwhere\b'
+            message: Put the bounds in a `where` clause.
+        harness: |
+          #[test]
+          fn counts_strings() {
+              assert_eq!(count_matches(&["apple", "pear", "apple", "apple"], &"apple"), "3 x apple", "count_matches(fruit, \"apple\")");
+          }
+
+          #[test]
+          fn counts_numbers() {
+              assert_eq!(count_matches(&[1, 2, 2, 3], &2), "2 x 2", "count_matches(&[1, 2, 2, 3], &2)");
+          }
+
+          #[test]
+          fn zero_matches() {
+              assert_eq!(count_matches(&['a', 'b'], &'z'), "0 x z", "count_matches(&['a', 'b'], &'z')");
+          }
+
+          #[test]
+          fn empty_slice() {
+              let none: [u8; 0] = [];
+              assert_eq!(count_matches(&none, &7), "0 x 7", "count_matches(&[], &7)");
+          }
+        hints:
+          - "`==` needs `PartialEq`, `{}` needs `Display`: `where T: Display + PartialEq,`"
+          - "Comparing `item == target` works because both are `&T`."
+      - task: |
+          Write `fn breaking_news(headline: &str) -> impl Summary` that returns an `Article` with that title and the author `Newsroom`. Callers only know they get "something that implements `Summary`", so the tests can only call `summarize()` on it.
+        seed: |
+          trait Summary {
+              fn summarize(&self) -> String;
+          }
+
+          struct Article {
+              title: String,
+              author: String,
+          }
+
+          impl Summary for Article {
+              fn summarize(&self) -> String {
+                  format!("{}, by {}", self.title, self.author)
+              }
+          }
+
+          fn breaking_news(headline: &str) -> impl Summary {
+              Article { title: String::new(), author: String::new() }
+          }
+        solution: |
+          trait Summary {
+              fn summarize(&self) -> String;
+          }
+
+          struct Article {
+              title: String,
+              author: String,
+          }
+
+          impl Summary for Article {
+              fn summarize(&self) -> String {
+                  format!("{}, by {}", self.title, self.author)
+              }
+          }
+
+          fn breaking_news(headline: &str) -> impl Summary {
+              Article { title: headline.to_string(), author: String::from("Newsroom") }
+          }
+        harness: |
+          #[test]
+          fn uses_the_headline_and_the_newsroom() {
+              assert_eq!(breaking_news("Crab elected mayor").summarize(), "Crab elected mayor, by Newsroom", "breaking_news(\"Crab elected mayor\").summarize()");
+          }
+
+          #[test]
+          fn works_with_another_headline() {
+              assert_eq!(breaking_news("Rust 2.0? No.").summarize(), "Rust 2.0? No., by Newsroom", "breaking_news(\"Rust 2.0? No.\").summarize()");
+          }
+
+          #[test]
+          fn works_with_an_empty_headline() {
+              assert_eq!(breaking_news("").summarize(), ", by Newsroom", "breaking_news(\"\").summarize()");
+          }
+        hints:
+          - The return type stays `impl Summary`; the body still builds a normal `Article`.
+          - "`Article { title: headline.to_string(), author: String::from(\"Newsroom\") }`"
+
+  - title: Deriving the standard traits
+    id: traits-6
+    text: |
+      Many standard traits have one obvious implementation: compare the fields one by one, copy every field, print every field. For those, `#[derive(...)]` writes the `impl` for you. You've used `#[derive(Debug)]` since the structs module; here's the whole family.
+
+      | Derive | What you get | Needs |
+      |---|---|---|
+      | `Debug` | `{:?}` and `{:#?}` | every field is `Debug` |
+      | `Clone` | `.clone()`, a deep copy | every field is `Clone` |
+      | `Copy` | values are copied instead of moved | `Clone`, and every field is `Copy` (no `String`, no `Vec`) |
+      | `PartialEq` | `==` and `!=`, field by field | every field is `PartialEq` |
+      | `Eq` | a promise that `x == x` is always true | `PartialEq`; not possible with `f64` fields (NaN != NaN) |
+      | `Hash` | can be a `HashMap` key or in a `HashSet` | usually derived together with `Eq` |
+      | `PartialOrd` | `<`, `>`, `<=`, `>=` | `PartialEq` |
+      | `Ord` | `.sort()`, `.max()`, `BTreeMap` keys | `Eq` and `PartialOrd` |
+      | `Default` | `Type::default()`: zeros, `false`, empty strings and vectors | every field is `Default` |
+
+      ```rust run
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+      enum Priority {
+          Low,
+          Medium,
+          High,
+      }
+
+      #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+      struct Ticket {
+          priority: Priority,
+          id: u32,
+      }
+
+      #[derive(Debug, Default)]
+      struct Settings {
+          volume: u8,
+          muted: bool,
+          nickname: String,
+      }
+
+      fn main() {
+          let mut tickets = vec![
+              Ticket { priority: Priority::High, id: 7 },
+              Ticket { priority: Priority::Low, id: 3 },
+              Ticket { priority: Priority::High, id: 2 },
+          ];
+          tickets.sort();
+          for t in &tickets {
+              println!("{:?} #{}", t.priority, t.id);
+          }
+
+          let p = Priority::Medium;
+          let q = p; // Copy: p is still usable
+          println!("{} {}", p == q, Priority::High > Priority::Low);
+          let s = Settings::default();
+          println!("volume {}, muted {}, nickname {:?}", s.volume, s.muted, s.nickname);
+      }
+      ```
+
+      ```output
+      Low #3
+      High #2
+      High #7
+      true true
+      volume 0, muted false, nickname ""
+      ```
+
+      How derived comparisons work:
+
+      - **Structs** compare field by field **in the order the fields are written**: first `priority`, and only if those are equal, `id`. That's why the two High tickets end up sorted by id. Reordering the fields changes the sort order.
+      - **Enums** compare by the order the variants are written: `Low < Medium < High`. Put variants in a meaningful order and sorting comes for free.
+
+      ### Which ones should you derive?
+
+      Derive `Debug` on almost everything: error messages and `dbg!` need it, and tests need it for `assert_eq!`. For small value types (ids, coordinates, enums without data), `Clone, Copy, PartialEq, Eq, Hash` is a common set. Libraries derive every standard trait that makes sense for a type, because users of the library can't add them later (the orphan rule). Don't derive what doesn't make sense: `Copy` on a big struct hides expensive copies, and `Default` for a type with no sensible empty value invites bugs.
+
+      ### Common mistakes
+
+      - **`Copy` with a `String` field.** A `String` owns heap memory, so it can't be copied bit by bit:
+
+      ```rust compile_fail
+      #[derive(Clone, Copy)]
+      struct Player {
+          name: String,
+          hp: u32,
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0204]: the trait `Copy` cannot be implemented for this type
+      ```
+
+      - **`Eq` or `Ord` with an `f64` field**: ``error[E0277]: the trait bound `f64: Eq` is not satisfied``. Floats only have `PartialEq`/`PartialOrd`. Store cents as an integer, or compare floats by hand.
+      - **Deriving `Copy` without `Clone`, or `Ord` without `PartialOrd` and `Eq`.** Each needs the traits listed in its "Needs" column. The error names the missing one.
+      - **Expecting `derive(Display)`.** It doesn't exist; there's no single obvious way to show a type to users. Write it by hand (previous step).
+
+      **Your turn:** release versions need to be compared, sorted, copied, used in a `HashSet` and printed with `{:?}`. Add **one** `#[derive(...)]` line to `Version` so all the hidden tests compile and pass. The field order already gives the right sort order (major, then minor, then patch).
+    seed: |
+      struct Version {
+          major: u32,
+          minor: u32,
+          patch: u32,
+      }
+
+      fn v(major: u32, minor: u32, patch: u32) -> Version {
+          Version { major, minor, patch }
+      }
+    solution: |
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+      struct Version {
+          major: u32,
+          minor: u32,
+          patch: u32,
+      }
+
+      fn v(major: u32, minor: u32, patch: u32) -> Version {
+          Version { major, minor, patch }
+      }
+    require:
+      - pattern: '#\[derive\('
+        message: "Use `#[derive(...)]` rather than writing the impls by hand."
+    harness: |
+      use std::collections::HashSet;
+
+      #[test]
+      fn equal_versions_compare_equal() {
+          assert_eq!(v(1, 2, 3), v(1, 2, 3), "v(1, 2, 3) == v(1, 2, 3)");
+          assert!(v(1, 2, 3) != v(1, 2, 4), "v(1, 2, 3) != v(1, 2, 4)");
+      }
+
+      #[test]
+      fn a_higher_minor_beats_a_higher_patch() {
+          assert!(v(1, 10, 0) > v(1, 9, 99), "1.10.0 > 1.9.99");
+      }
+
+      #[test]
+      fn sorts_from_oldest_to_newest() {
+          let mut list = vec![v(2, 0, 0), v(1, 4, 2), v(1, 4, 0), v(0, 9, 9)];
+          list.sort();
+          assert_eq!(list, vec![v(0, 9, 9), v(1, 4, 0), v(1, 4, 2), v(2, 0, 0)], "sorted versions");
+      }
+
+      #[test]
+      fn can_be_copied() {
+          let a = v(3, 1, 4);
+          let b = a;
+          assert_eq!(a, b, "a copy of a Version");
+      }
+
+      #[test]
+      fn works_in_a_hash_set() {
+          let mut seen = HashSet::new();
+          seen.insert(v(1, 0, 0));
+          seen.insert(v(1, 0, 0));
+          seen.insert(v(1, 0, 1));
+          assert_eq!(seen.len(), 2, "distinct versions in the set");
+      }
+    hints:
+      - "The tests need `{:?}` and `==` (for `assert_eq!`), `<` and `.sort()`, copying, and hashing."
+      - "`#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]` above `struct Version`."
+    more:
+      - task: |
+          Fill the blank so `Config` gets a `default()` with every field set to its type's empty value, and the struct update syntax fills in the rest. The program should print `3 false ""`.
+        fill: |
+          #[derive(Debug, [[Default]])]
+          struct Config {
+              retries: u32,
+              verbose: bool,
+              name: String,
+          }
+
+          fn main() {
+              let c = Config { retries: 3, ..Default::default() };
+              println!("{} {} {:?}", c.retries, c.verbose, c.name);
+          }
+        hints:
+          - The trait that provides `default()` has the same name, with a capital D.
+        tests:
+          - expect: "3 false \"\""
+      - task: |
+          A ladder ranks players by `rank` first and then by `name` (alphabetically). Add the derives `Rank` and `Player` need, then write `fn top_player(players: &[Player]) -> Option<Player>` that returns a clone of the highest player, or `None` for an empty slice. Use the derived comparison (`>`) rather than comparing fields yourself.
+        seed: |
+          enum Rank {
+              Bronze,
+              Silver,
+              Gold,
+          }
+
+          struct Player {
+              rank: Rank,
+              name: String,
+          }
+
+          fn top_player(players: &[Player]) -> Option<Player> {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, Clone, PartialEq, PartialOrd)]
+          enum Rank {
+              Bronze,
+              Silver,
+              Gold,
+          }
+
+          #[derive(Debug, Clone, PartialEq, PartialOrd)]
+          struct Player {
+              rank: Rank,
+              name: String,
+          }
+
+          fn top_player(players: &[Player]) -> Option<Player> {
+              if players.is_empty() {
+                  return None;
+              }
+              let mut best = &players[0];
+              for p in players {
+                  if p > best {
+                      best = p;
+                  }
+              }
+              Some(best.clone())
+          }
+        harness: |
+          fn p(rank: Rank, name: &str) -> Player {
+              Player { rank, name: name.to_string() }
+          }
+
+          #[test]
+          fn the_highest_rank_wins() {
+              let list = vec![p(Rank::Silver, "zed"), p(Rank::Gold, "amy"), p(Rank::Bronze, "max")];
+              assert_eq!(top_player(&list), Some(p(Rank::Gold, "amy")), "top_player of silver, gold, bronze");
+          }
+
+          #[test]
+          fn ties_go_to_the_later_name() {
+              let list = vec![p(Rank::Gold, "bea"), p(Rank::Gold, "cal"), p(Rank::Silver, "zoe")];
+              assert_eq!(top_player(&list), Some(p(Rank::Gold, "cal")), "two gold players");
+          }
+
+          #[test]
+          fn one_player_is_the_top() {
+              assert_eq!(top_player(&[p(Rank::Bronze, "solo")]), Some(p(Rank::Bronze, "solo")), "one player");
+          }
+
+          #[test]
+          fn no_players_gives_none() {
+              assert_eq!(top_player(&[]), None, "top_player(&[])");
+          }
+        hints:
+          - "The tests use `assert_eq!` on `Option<Player>`, so both types need `Debug` and `PartialEq`. Comparing with `>` needs `PartialOrd`, and returning a copy needs `Clone`."
+          - "Keep a `best` reference, update it when `p > best`, and return `Some(best.clone())`."

@@ -1,0 +1,271 @@
+topic: functions
+drills:
+  - type: predict
+    after: functions-3
+    pre: |
+      fn double(x: i32) -> i32 {
+          x * 2
+      }
+    body: |
+      println!("{}", double(double(3)) + 1);
+    why: The inner call gives 6, the outer call gives 12, and then 1 is added. A call is replaced by its return value.
+
+  - type: predict
+    after: functions-4
+    body: |
+      let y = {
+          let x = 4;
+          x * x + 1
+      };
+      println!("{y}");
+    why: A block's value is its final expression, so `y` is 4 * 4 + 1 = 17.
+
+  - type: predict
+    after: functions-4
+    pre: |
+      fn nothing() {}
+    body: |
+      let r = nothing();
+      println!("{r:?}");
+    why: "A function without `->` returns the unit value `()`, which prints as `()` with `{:?}`."
+
+  - type: predict
+    after: functions-5
+    pre: |
+      fn clamp_hp(hp: i32) -> i32 {
+          if hp < 0 {
+              return 0;
+          }
+          hp
+      }
+    body: |
+      println!("{} {}", clamp_hp(-5), clamp_hp(30));
+    why: For -5 the guard clause returns 0 early; for 30 the condition is false, so the final expression `hp` is returned.
+
+  - type: predict
+    after: functions-2
+    pre: |
+      fn add_one(x: i32) -> i32 {
+          let x = x + 1;
+          x
+      }
+    body: |
+      let x = 5;
+      let y = add_one(x);
+      println!("{x} {y}");
+    why: "The function gets its own `x` (a copy of the value 5). Shadowing it inside the function doesn't touch `main`'s `x`."
+
+  - type: predict
+    after: functions-1
+    pre: |
+      fn a() {
+          print!("a");
+      }
+
+      fn b() {
+          a();
+          print!("b");
+          a();
+      }
+    body: |
+      b();
+      println!();
+    why: "`b` calls `a` (prints a), prints b, then calls `a` again (prints a). Each call returns to the line after it."
+
+  - type: fill
+    after: functions-3
+    prompt: Declare the return type.
+    pre: |
+      fn square(n: i32) [[-> i32]] {
+          n * n
+      }
+    body: |
+      println!("{}", square(7));
+    why: "A function that returns a value declares its type after `->` in the signature."
+
+  - type: fill
+    after: functions-2
+    prompt: Give the parameter the type of a string literal.
+    pre: |
+      fn greet(name: [[&str]]) {
+          println!("Hi, {name}!");
+      }
+    body: |
+      greet("Ferris");
+    why: "String literals like `\"Ferris\"` have the type `&str`, and parameter types must always be written."
+
+  - type: fill
+    after: functions-5
+    prompt: Leave the function early when the divisor is zero.
+    pre: |
+      fn safe_div(a: i32, b: i32) -> i32 {
+          if b == 0 {
+              [[return]] 0;
+          }
+          a / b
+      }
+    body: |
+      println!("{} {}", safe_div(9, 3), safe_div(9, 0));
+    why: "`return` ends the function immediately with the given value."
+
+  - type: bug
+    after: functions-3
+    pre: |
+      fn triple(x: i32) -> i32 {
+          x * 3; // BUG
+      }
+    body: |
+      println!("{}", triple(4));
+    fix: x * 3
+    prompt: "This should print 12. Click the line with the bug."
+    why: The semicolon turns the last line into a statement, so the function would return `()` instead of an `i32`.
+
+  - type: bug
+    after: functions-2
+    pre: |
+      fn percent(part: f64, whole: f64) -> f64 {
+          part / whole * 100.0
+      }
+    body: |
+      let done = 30.0;
+      let total = 120.0;
+      println!("{}", percent(total, done)); // BUG
+    fix: 'println!("{}", percent(done, total));'
+    prompt: "30 of 120 tasks are done, so this should print 25. Click the line with the bug."
+    why: Arguments are matched to parameters by position. Both are `f64`, so swapping them compiles but computes 400 instead of 25.
+
+  - type: bug
+    after: functions-3
+    pre: |
+      fn half(x: i32) { // BUG
+          x / 2
+      }
+    body: |
+      println!("{}", half(10));
+    fix: "fn half(x: i32) -> i32 {"
+    prompt: "This should print 5. Click the line with the bug."
+    why: "Without `-> i32` the function is declared to return `()`, so the final `x / 2` doesn't fit."
+
+  - type: compiles
+    answer: no
+    after: functions-2
+    pre: |
+      fn add(a, b) -> i32 {
+          a + b
+      }
+    body: |
+      println!("{}", add(1, 2));
+    why: "Function parameters always need type annotations, like `a: i32`."
+
+  - type: compiles
+    answer: yes
+    after: functions-3
+    pre: |
+      fn five() -> i32 {
+          5
+      }
+    body: |
+      let n: i32 = five() + five();
+      println!("{n}");
+    why: Each call returns an `i32`, so the calls can be used in arithmetic like any other value.
+
+  - type: compiles
+    answer: no
+    after: functions-6
+    pre: |
+      fn show() {
+          println!("{}", total);
+      }
+    body: |
+      let total = 10;
+      show();
+    why: "`total` belongs to `main`. Other functions can't see it; pass it as an argument instead."
+
+  - type: choice
+    after: functions-4
+    prompt: "What does a function return if its signature has no `->`?"
+    choices:
+      - Nothing at all, not even a value
+      - "The unit value `()`"
+      - Its last expression, whatever its type
+      - The number 0
+    answer: 2
+    why: "No `->` means `-> ()`. If the body ends with a non-`()` expression, that's a type error."
+
+  - type: choice
+    after: functions-3
+    prompt: "Which is the idiomatic way to end `fn add(a: i32, b: i32) -> i32`?"
+    choices:
+      - "`return a + b;`"
+      - "`a + b`"
+      - "`a + b;`"
+      - "`println!(\"{}\", a + b);`"
+    answer: 2
+    why: The final expression without a semicolon is the return value. A final `return` works but clippy flags it; `a + b;` returns `()`; printing returns nothing.
+
+  - type: boss
+    after: functions-6
+    prompt: |
+      A courier charges for parcels by weight. Write two functions:
+
+      - `fn started_kilograms(weight_grams: u32) -> u32`: the number of kilograms, counting any started kilogram as a whole one (1 to 1000 g is 1, 1001 g is 2). Hint: `(weight_grams + 999) / 1000`.
+      - `fn parcel_cost(weight_grams: u32, express: bool) -> u32`: the cost in cents is a base fee of `500` plus `200` per started kilogram, doubled if `express` is true. A weight of 0 is invalid: return `0`.
+
+      `parcel_cost` should call `started_kilograms`.
+    seed: |
+      fn started_kilograms(weight_grams: u32) -> u32 {
+          todo!()
+      }
+
+      fn parcel_cost(weight_grams: u32, express: bool) -> u32 {
+          todo!()
+      }
+    solution: |
+      fn started_kilograms(weight_grams: u32) -> u32 {
+          (weight_grams + 999) / 1000
+      }
+
+      fn parcel_cost(weight_grams: u32, express: bool) -> u32 {
+          if weight_grams == 0 {
+              return 0;
+          }
+          let cost = 500 + 200 * started_kilograms(weight_grams);
+          if express {
+              return cost * 2;
+          }
+          cost
+      }
+    harness: |
+      #[test]
+      fn started_kilograms_rounds_up() {
+          assert_eq!(started_kilograms(1), 1, "started_kilograms(1)");
+          assert_eq!(started_kilograms(1000), 1, "started_kilograms(1000)");
+          assert_eq!(started_kilograms(1001), 2, "started_kilograms(1001)");
+      }
+
+      #[test]
+      fn one_kilogram_standard() {
+          assert_eq!(parcel_cost(1000, false), 700, "parcel_cost(1000, false)");
+      }
+
+      #[test]
+      fn a_started_second_kilogram_costs_more() {
+          assert_eq!(parcel_cost(1001, false), 900, "parcel_cost(1001, false)");
+      }
+
+      #[test]
+      fn express_doubles_the_price() {
+          assert_eq!(parcel_cost(2500, true), 2200, "parcel_cost(2500, true)");
+      }
+
+      #[test]
+      fn zero_weight_is_invalid() {
+          assert_eq!(parcel_cost(0, true), 0, "parcel_cost(0, true)");
+      }
+    require:
+      - pattern: 'started_kilograms\(\s*weight_grams\s*\)'
+        message: "`parcel_cost` should call `started_kilograms(weight_grams)`."
+    hints:
+      - "Start `parcel_cost` with a guard clause for `weight_grams == 0`."
+      - "`let cost = 500 + 200 * started_kilograms(weight_grams);` then return `cost * 2` early if `express`, otherwise `cost`."
+    why: Small helpers, guard clauses for invalid input, and a final expression for the normal case are the everyday shape of Rust functions.

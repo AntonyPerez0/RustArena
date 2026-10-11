@@ -1,0 +1,1341 @@
+id: closures
+title: Closures
+phase: "Idiomatic Rust"
+summary: Small anonymous functions that can use the variables around them. Closure syntax, capturing by borrow, mutable borrow and move, the Fn/FnMut/FnOnce traits, and passing closures into and out of functions.
+roadmap: [Closures, Functions and Method Syntax]
+steps:
+  - title: Your first closure
+    id: closures-1
+    text: |
+      A **closure** is a function without a name that you write right where you need it. You can store it in a variable, pass it to another function, or return it, like any other value. Closures are everywhere in idiomatic Rust: sorting by a key, filtering a list, providing a default value, running code on another thread.
+
+      ```rust run
+      fn main() {
+          let double = |x| x * 2;
+          let greet = |name: &str| format!("Hello, {name}!");
+          let area = |width: u32, height: u32| -> u32 { width * height };
+
+          println!("{}", double(21));
+          println!("{}", greet("Ferris"));
+          println!("{}", area(3, 4));
+      }
+      ```
+
+      ```output
+      42
+      Hello, Ferris!
+      12
+      ```
+
+      Piece by piece:
+
+      - `|x| x * 2`: the parameters go between two **pipes** `| |` instead of parentheses, and the body follows. A body that is a single expression needs no braces.
+      - `let double = ...`: a closure is a value, so you can keep it in a variable. You call it like a function: `double(21)`.
+      - `|name: &str|`: you *may* write parameter types, like in a `fn`. Usually you don't have to: the compiler **infers** them from how the closure is used.
+      - `|width: u32, height: u32| -> u32 { ... }`: the long form, with types, a return type and a block body. If you write a return type, the body must be a block in braces.
+      - A closure with no parameters has empty pipes: `|| println!("ready")`.
+
+      Side by side with a function:
+
+      ```rust
+      fn add_one_fn(x: i32) -> i32 { x + 1 }       // a function: every type is required
+      let add_one_v1 = |x: i32| -> i32 { x + 1 };  // a closure, fully annotated
+      let add_one_v2 = |x: i32| x + 1;             // parameter type only
+      let add_one_v3 = |x| x + 1;                  // everything inferred from the first call
+      ```
+
+      ### Why not just write a fn?
+
+      A `fn` must spell out every type and lives on its own, away from the code that uses it. A closure is short, sits right next to where it's used, and (next step) it can use the variables around it, which a `fn` can't. Rule of thumb: a reusable, named piece of logic is a `fn`; a small piece of behavior you hand to someone else (a sort key, a filter test, a callback) is a closure.
+
+      ### Common mistakes
+
+      - **Calling one closure with two different types.** Inference fixes the types the first time the closure is used. A closure is not generic:
+
+      ```rust compile_fail
+      fn main() {
+          let echo = |x| x;
+          let s = echo(String::from("crab"));
+          let n = echo(5);
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      The first call decided that `x` is a `String`, so `echo(5)` is rejected (`expected String, found integer`). If you need both, write two closures or a generic `fn`.
+
+      - **A return type without braces.** Once you write `-> i32`, the body must be a block:
+
+      ```rust compile_fail
+      fn main() {
+          let add_one = |x| -> i32 x + 1;
+          println!("{}", add_one(1));
+      }
+      ```
+
+      ```error
+      error: expected `{`, found `x`
+      ```
+
+      Write `|x| -> i32 { x + 1 }`, or leave the return type out: `|x| x + 1`.
+
+      **Your turn:** fill in the blanks: the parameter list of `square` (a closure that multiplies its parameter by itself) and the body of `add`, so the program prints `49` and then `5`.
+    fill: |
+      fn main() {
+          let square = [[|n|‖|n: i32|]] n * n;
+          let add = |a: i32, b: i32| [[a + b‖b + a]];
+          println!("{}", square(7));
+          println!("{}", add(2, 3));
+      }
+    hints:
+      - The parameters of a closure go between two pipes, like `|n|`.
+      - The body of `add` is just the expression that adds its two parameters, `a + b`.
+    tests:
+      - expect: "49\n5"
+    more:
+      - task: |
+          Write a closure `to_fahrenheit` that converts a Celsius temperature (`f64`) to Fahrenheit with `c * 9.0 / 5.0 + 32.0`. Use it to print these three lines, with one decimal place:
+
+          ```
+          0.0 C = 32.0 F
+          100.0 C = 212.0 F
+          -40.0 C = -40.0 F
+          ```
+        seed: |
+          fn main() {
+              // let to_fahrenheit = ...
+
+              for c in [0.0, 100.0, -40.0] {
+                  // print one line for c
+              }
+          }
+        solution: |
+          fn main() {
+              let to_fahrenheit = |c: f64| c * 9.0 / 5.0 + 32.0;
+
+              for c in [0.0, 100.0, -40.0] {
+                  println!("{c:.1} C = {:.1} F", to_fahrenheit(c));
+              }
+          }
+        require:
+          - pattern: 'let\s+to_fahrenheit\s*=\s*\|'
+            message: "Store a closure in a variable: `let to_fahrenheit = |c: f64| ...;`"
+        forbid:
+          - pattern: 'fn\s+to_fahrenheit'
+            message: Write `to_fahrenheit` as a closure, not as a `fn`.
+        hints:
+          - "`let to_fahrenheit = |c: f64| c * 9.0 / 5.0 + 32.0;`"
+          - "Inside the loop: `println!(\"{c:.1} C = {:.1} F\", to_fahrenheit(c));`"
+      - task: |
+          A closure can have a block body with several statements, like a function. Write a closure `grade` that takes a score (`u32`) and returns a `char`:
+
+          - `'A'` for 90 and above
+          - `'B'` for 75 to 89
+          - `'C'` for 50 to 74
+          - `'F'` below 50
+
+          Then print the grade of each score in `[95, 82, 50, 49]`, one per line, like `95 -> A`.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let grade = |score: u32| -> char {
+                  if score >= 90 {
+                      'A'
+                  } else if score >= 75 {
+                      'B'
+                  } else if score >= 50 {
+                      'C'
+                  } else {
+                      'F'
+                  }
+              };
+
+              for s in [95, 82, 50, 49] {
+                  println!("{s} -> {}", grade(s));
+              }
+          }
+        require:
+          - pattern: 'let\s+grade\s*=\s*\|'
+            message: "Write `grade` as a closure: `let grade = |score: u32| -> char { ... };`"
+        hints:
+          - "Start with `let grade = |score: u32| -> char { ... };` and put an if / else if chain inside the braces."
+          - "Loop with `for s in [95, 82, 50, 49]` and print `println!(\"{s} -> {}\", grade(s));`"
+        tests:
+          - expect: "95 -> A\n82 -> B\n50 -> C\n49 -> F"
+
+  - title: Capturing variables from the scope
+    id: closures-2
+    text: |
+      Here is what makes closures more than short functions: a closure can use the variables of the scope it's written in. The closure **captures** them.
+
+      ```rust run
+      fn main() {
+          let tax_rate = 0.25;
+          let with_tax = |price: f64| price * (1.0 + tax_rate);
+
+          println!("{:.2}", with_tax(8.0));
+          println!("{:.2}", with_tax(20.0));
+          println!("rate is still {tax_rate}");
+      }
+      ```
+
+      ```output
+      10.00
+      25.00
+      rate is still 0.25
+      ```
+
+      `with_tax` uses `tax_rate` without taking it as a parameter. A `fn` can't do that, even one written inside `main`:
+
+      ```rust compile_fail
+      fn main() {
+          let tax_rate = 0.25;
+          fn with_tax(price: f64) -> f64 {
+              price * (1.0 + tax_rate)
+          }
+          println!("{:.2}", with_tax(8.0));
+      }
+      ```
+
+      ```error
+      error[E0434]: can't capture dynamic environment in a fn item
+      ```
+
+      The compiler even suggests the fix: `help: use the || { ... } closure form instead`.
+
+      ### Three ways to capture
+
+      The compiler looks at what the body does with each variable and captures it in the gentlest way that works:
+
+      | The body... | The closure captures | Like writing |
+      |---|---|---|
+      | only reads `x` | a shared borrow | `&x` |
+      | changes `x` | a mutable borrow | `&mut x` |
+      | takes ownership of `x` (moves it somewhere) | the value itself | a move of `x` |
+
+      All the borrowing rules you know apply, with the closure as the borrower. A closure that changes a captured variable must itself be declared `mut`, because calling it changes something:
+
+      ```rust run
+      fn main() {
+          let mut count = 0;
+          let mut tick = || count += 1;
+
+          tick();
+          tick();
+          tick();
+          println!("ticks: {count}");
+      }
+      ```
+
+      ```output
+      ticks: 3
+      ```
+
+      The mutable borrow of `count` starts where `tick` is created and lasts until the **last call** of `tick`. After that, `count` is free again, so the `println!` is fine.
+
+      ### Common mistakes
+
+      - **Forgetting `mut` on the closure.** Calling a closure that changes what it captured needs mutable access to the closure:
+
+      ```rust compile_fail
+      fn main() {
+          let mut count = 0;
+          let tick = || count += 1;
+          tick();
+          println!("{count}");
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `tick` as mutable, as it is not declared as mutable
+      ```
+
+      - **Using the variable while the closure still borrows it.** Between creating `tick` and its last call, `count` is mutably borrowed, so you can't even read it:
+
+      ```rust compile_fail
+      fn main() {
+          let mut count = 0;
+          let mut tick = || count += 1;
+          tick();
+          println!("{count}");
+          tick();
+      }
+      ```
+
+      ```error
+      error[E0502]: cannot borrow `count` as immutable because it is also borrowed as mutable
+      ```
+
+      Fix it by finishing with the closure first, or by passing the value in as a parameter instead of capturing it.
+
+      **Your turn:** the program has a `bonus` and a `score`. Write a closure `add_points` that takes a number of points (`i32`) and adds `points + bonus` to `score`. Call it with `10` and then with `20`, so the program prints `score: 40`.
+    seed: |
+      fn main() {
+          let bonus = 5;
+          let mut score = 0;
+          // write add_points here, then call it twice
+
+          println!("score: {score}");
+      }
+    solution: |
+      fn main() {
+          let bonus = 5;
+          let mut score = 0;
+          // write add_points here, then call it twice
+          let mut add_points = |points: i32| score += points + bonus;
+          add_points(10);
+          add_points(20);
+          println!("score: {score}");
+      }
+    require:
+      - pattern: 'let\s+mut\s+add_points\s*=\s*(move\s*)?\|'
+        message: "Store a closure in `let mut add_points = |points: i32| ...;`"
+      - pattern: 'add_points\(\s*10\s*\)[\s\S]*add_points\(\s*20\s*\)'
+        message: Call `add_points(10)` and then `add_points(20)`.
+    hints:
+      - The closure changes `score`, so the closure variable itself needs `mut`.
+      - "`let mut add_points = |points: i32| score += points + bonus;` then `add_points(10);` and `add_points(20);`"
+    tests:
+      - expect: "score: 40"
+    more:
+      - task: |
+          A closure can capture a `Vec` mutably too. Write a closure `log` that takes a message (`&str`) and pushes a numbered line onto `lines`: the first message becomes `"1. server started"`, the second `"2. ..."`, and so on (the number is `lines.len() + 1`). Log the three messages `server started`, `user ann logged in` and `disk 91% full`, in that order. The loop at the end prints them:
+
+          ```
+          1. server started
+          2. user ann logged in
+          3. disk 91% full
+          ```
+        seed: |
+          fn main() {
+              let mut lines: Vec<String> = Vec::new();
+              // let mut log = ...
+
+              for line in &lines {
+                  println!("{line}");
+              }
+          }
+        solution: |
+          fn main() {
+              let mut lines: Vec<String> = Vec::new();
+              let mut log = |msg: &str| {
+                  let n = lines.len() + 1;
+                  lines.push(format!("{n}. {msg}"));
+              };
+              log("server started");
+              log("user ann logged in");
+              log("disk 91% full");
+
+              for line in &lines {
+                  println!("{line}");
+              }
+          }
+        require:
+          - pattern: 'let\s+mut\s+log\s*=\s*(move\s*)?\|'
+            message: "Write `log` as a closure: `let mut log = |msg: &str| { ... };`"
+          - pattern: '\blog\([\s\S]*\blog\([\s\S]*\blog\('
+            message: Call `log(...)` once for each of the three messages.
+        forbid:
+          - pattern: '\.push\([\s\S]*\.push\('
+            message: Push only inside the closure (one `.push` in your code).
+        hints:
+          - "The closure changes `lines`, so write `let mut log = |msg: &str| { ... };`"
+          - "Inside: `let n = lines.len() + 1;` then `lines.push(format!(\"{n}. {msg}\"));`"
+      - task: |
+          The starter code doesn't compile: the first `println!` reads `visits` while the closure `visit` still borrows it mutably (it's called again later). Fix it **by reordering lines**, not by adding `.clone()`, so the program prints:
+
+          ```
+          visited: ["hall", "kitchen", "garden"]
+          count: 3
+          ```
+        seed: |
+          fn main() {
+              let mut visits: Vec<String> = Vec::new();
+              let mut visit = |room: &str| visits.push(room.to_string());
+              visit("hall");
+              println!("count: {}", visits.len());
+              visit("kitchen");
+              visit("garden");
+              println!("visited: {:?}", visits);
+          }
+        solution: |
+          fn main() {
+              let mut visits: Vec<String> = Vec::new();
+              let mut visit = |room: &str| visits.push(room.to_string());
+              visit("hall");
+              visit("kitchen");
+              visit("garden");
+              println!("visited: {:?}", visits);
+              println!("count: {}", visits.len());
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: Solve it by moving lines, without `.clone()`.
+        hints:
+          - The closure's mutable borrow of `visits` lasts until the last call of `visit`. Every read of `visits` must come after that.
+          - Move the three `visit(...)` calls above both `println!` lines, and print `visited` before `count`.
+        tests:
+          - expect: "visited: [\"hall\", \"kitchen\", \"garden\"]\ncount: 3"
+
+  - title: move closures
+    id: closures-3
+    text: |
+      Sometimes borrowing isn't enough: the closure has to **own** what it uses, because it will outlive the variables around it. That happens when you return a closure from a function (two steps from now), keep it in a struct for later, or hand it to another thread (in the threads module). The `move` keyword before the pipes makes the closure take ownership of everything it captures.
+
+      ```rust run
+      fn main() {
+          let player = String::from("Ferris");
+          let announce = move |points: u32| println!("{player} scores {points}!");
+          announce(10);
+          announce(25);
+
+          let limit = 100;
+          let within_limit = move |x: i32| x <= limit;
+          println!("{} {}", within_limit(42), within_limit(512));
+          println!("limit is still usable: {limit}");
+      }
+      ```
+
+      ```output
+      Ferris scores 10!
+      Ferris scores 25!
+      true false
+      limit is still usable: 100
+      ```
+
+      - `move |points: u32| ...` moves `player` (a `String`) into the closure. The closure owns it now. The move happens **once**, when the closure is created, so you can call `announce` as often as you like.
+      - `limit` is an `i32`, a **Copy** type, so `move` copies it into the closure. The original stays usable.
+
+      ### After a move, the original is gone
+
+      ```rust compile_fail
+      fn main() {
+          let player = String::from("Ferris");
+          let announce = move || println!("{player} is ready");
+          announce();
+          println!("{player}");
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `player`
+      ```
+
+      When both the closure and the rest of the code need the data, clone it *before* creating the closure and move the clone in:
+
+      ```rust run
+      fn main() {
+          let player = String::from("Ferris");
+          let player_for_closure = player.clone();
+          let announce = move || println!("{player_for_closure} is ready");
+          announce();
+          println!("{player} is still here");
+      }
+      ```
+
+      ```output
+      Ferris is ready
+      Ferris is still here
+      ```
+
+      ### move and Copy values: a surprise
+
+      With `move`, a closure that changes a captured `Copy` value changes **its own copy**:
+
+      ```rust run
+      fn main() {
+          let mut count = 0;
+          let mut next_id = move || {
+              count += 1;
+              count
+          };
+          println!("{} {} {}", next_id(), next_id(), next_id());
+          println!("outer count: {count}");
+      }
+      ```
+
+      ```output
+      1 2 3
+      outer count: 0
+      ```
+
+      That's handy (the closure carries a private counter around with it) but surprising if you expected `count` to change. Without `move`, the closure would borrow `count` mutably, and after the last call the outer `count` would be 3.
+
+      ### When do you need move?
+
+      - The closure must outlive the current function: returning it, storing it, spawning a thread. The compiler tells you (you'll see the error in the step on returning closures).
+      - You want the closure to own its data so nothing else can change it meanwhile.
+
+      Otherwise, leave `move` out and let the compiler borrow.
+
+      **Your turn:** write a `move` closure `label` that takes a message (`&str`) and returns a `String` made of `tag`, a space, and the message. Print `label("disk almost full")` and `label("cpu hot")`, so the program prints:
+
+      ```
+      [warn] disk almost full
+      [warn] cpu hot
+      ```
+    seed: |
+      fn main() {
+          let tag = String::from("[warn]");
+          // let label = move |...| ...;
+      }
+    solution: |
+      fn main() {
+          let tag = String::from("[warn]");
+          let label = move |msg: &str| format!("{tag} {msg}");
+          println!("{}", label("disk almost full"));
+          println!("{}", label("cpu hot"));
+      }
+    require:
+      - pattern: 'let\s+label\s*=\s*move\s*\|'
+        message: "Make `label` a move closure: `let label = move |msg: &str| ...;`"
+    hints:
+      - "`format!(\"{tag} {msg}\")` builds the String."
+      - "`let label = move |msg: &str| format!(\"{tag} {msg}\");` then print `label(\"disk almost full\")` and `label(\"cpu hot\")`."
+    more:
+      - task: |
+          The starter doesn't compile: `city` is moved into the `forecast` closure, so the last line can't use it. Keep the closure a `move` closure, and fix the program by giving the closure **its own clone** of `city`. It should print:
+
+          ```
+          Lisbon: 21 C
+          Lisbon: 24 C
+          city: Lisbon
+          ```
+        seed: |
+          fn main() {
+              let city = String::from("Lisbon");
+              let forecast = move |temp: i32| format!("{city}: {temp} C");
+              println!("{}", forecast(21));
+              println!("{}", forecast(24));
+              println!("city: {city}");
+          }
+        solution: |
+          fn main() {
+              let city = String::from("Lisbon");
+              let city_for_forecast = city.clone();
+              let forecast = move |temp: i32| format!("{city_for_forecast}: {temp} C");
+              println!("{}", forecast(21));
+              println!("{}", forecast(24));
+              println!("city: {city}");
+          }
+        require:
+          - pattern: 'move\s*\|'
+            message: Keep `forecast` a `move` closure.
+          - pattern: '\.clone\(\)'
+            message: Clone `city` before creating the closure, and move the clone in.
+        hints:
+          - "Before the closure: `let city_for_forecast = city.clone();`"
+          - Use `city_for_forecast` inside the closure, so the original `city` is never moved.
+      - task: |
+          A `move` closure can own a whole collection and change it. The starter has a queue of customers. Write a `move` closure `serve` that removes and returns the **first** name in the queue as `Some(name)`, or `None` when the queue is empty. Then use `while let` to print `now serving <name>` for each customer, and finally `queue empty`:
+
+          ```
+          now serving Ann
+          now serving Bo
+          now serving Cy
+          queue empty
+          ```
+        seed: |
+          fn main() {
+              let queue = vec![String::from("Ann"), String::from("Bo"), String::from("Cy")];
+              // let mut serve = move || ...;
+              // while let Some(name) = serve() { ... }
+          }
+        solution: |
+          fn main() {
+              let mut queue = vec![String::from("Ann"), String::from("Bo"), String::from("Cy")];
+              let mut serve = move || {
+                  if queue.is_empty() {
+                      None
+                  } else {
+                      Some(queue.remove(0))
+                  }
+              };
+              while let Some(name) = serve() {
+                  println!("now serving {name}");
+              }
+              println!("queue empty");
+          }
+        require:
+          - pattern: 'move\s*\|\|'
+            message: "Write `serve` as a move closure with no parameters: `move || { ... }`."
+          - pattern: 'while\s+let\s+Some'
+            message: Use `while let Some(name) = serve()` to serve every customer.
+        hints:
+          - "The closure changes the Vec it owns, so both `queue` and `serve` need `mut`."
+          - "Body of the closure: `if queue.is_empty() { None } else { Some(queue.remove(0)) }`"
+        tests:
+          - expect: "now serving Ann\nnow serving Bo\nnow serving Cy\nqueue empty"
+
+  - title: Fn, FnMut and FnOnce
+    id: closures-4
+    text: |
+      Every closure has its own anonymous type, invented by the compiler. You can't write that type down, so how does a function accept a closure as a parameter? Through three traits that closures implement automatically, depending on what their body does with the values it captured:
+
+      | Trait | The closure... | It can be called |
+      |---|---|---|
+      | `Fn` | only reads what it captured (or captures nothing) | any number of times |
+      | `FnMut` | changes what it captured | any number of times, but needs `mut` access |
+      | `FnOnce` | moves a captured value out (gives it away) | once |
+
+      They nest: every `Fn` closure is also `FnMut` and `FnOnce`, and every `FnMut` closure is also `FnOnce`. Plain functions like `fn triple(x: i32) -> i32` implement all three, so you can pass a function's name wherever a closure is expected.
+
+      Don't confuse this with `move`: `move` decides *how the values get into* the closure; these traits describe *what the body does with them*. A `move` closure that only reads is still `Fn`.
+
+      ### Taking a closure as a parameter
+
+      Use a generic type with a trait bound, like in the generics module:
+
+      ```rust run
+      fn apply<F: Fn(i32) -> i32>(f: F, value: i32) -> i32 {
+          f(value)
+      }
+
+      fn repeat<F: FnMut()>(times: usize, mut f: F) {
+          for _ in 0..times {
+              f();
+          }
+      }
+
+      fn finish<F: FnOnce() -> String>(f: F) -> String {
+          f()
+      }
+
+      fn triple(x: i32) -> i32 {
+          x * 3
+      }
+
+      fn main() {
+          let offset = 10;
+          println!("{}", apply(|x| x + offset, 5));
+          println!("{}", apply(triple, 5));
+
+          let mut beeps = 0;
+          repeat(3, || beeps += 1);
+          println!("beeps: {beeps}");
+
+          let report = String::from("all systems go");
+          println!("{}", finish(move || report));
+      }
+      ```
+
+      ```output
+      15
+      15
+      beeps: 3
+      all systems go
+      ```
+
+      - `F: Fn(i32) -> i32` reads "F is something callable that takes an `i32` and returns an `i32`". The bound looks like a function signature.
+      - `repeat` calls `f` several times and `f` changes things, so it asks for `FnMut`, and its parameter is `mut f`.
+      - `finish` calls `f` only once, so `FnOnce` is enough. `move || report` hands `report` back to the caller, giving it away, so that closure is *only* `FnOnce`: it couldn't be passed to `apply` or `repeat`.
+      - `apply(triple, 5)` passes a plain function where a closure is expected.
+
+      **Which bound should your function ask for?** The loosest one that works for *your* code, because that accepts the most closures: `FnOnce` if you call it once, `FnMut` if you call it repeatedly, `Fn` only when you need shared access (for example, calling it from several threads at once). The standard library does exactly this: `Option::unwrap_or_else` takes an `FnOnce`, `Vec::retain` takes an `FnMut`.
+
+      You can also write the parameter as `f: impl Fn(i32) -> i32`. It means the same as the generic version, just shorter.
+
+      ### Common mistakes
+
+      - **Passing an `FnOnce` closure where `Fn` is needed:**
+
+      ```rust compile_fail
+      fn call_twice<F: Fn()>(f: F) {
+          f();
+          f();
+      }
+
+      fn main() {
+          let name = String::from("Ferris");
+          let consume = move || {
+              let owned = name;
+              println!("{owned}");
+          };
+          call_twice(consume);
+      }
+      ```
+
+      ```error
+      error[E0525]: expected a closure that implements the `Fn` trait, but this closure only implements `FnOnce`
+      ```
+
+      `let owned = name;` moves the `String` out of the closure, so a second call would have nothing left to move. Borrow instead (`println!("{name}")`) and the closure becomes `Fn`.
+
+      - **Calling an `FnOnce` closure twice:**
+
+      ```rust compile_fail
+      fn main() {
+          let report = String::from("done");
+          let send = move || report;
+          let first = send();
+          let second = send();
+          println!("{first} {second}");
+      }
+      ```
+
+      ```error
+      error[E0382]: use of moved value: `send`
+      ```
+
+      - **Forgetting `mut` on an `FnMut` parameter**: `fn repeat<F: FnMut()>(times: usize, f: F)` fails with ``cannot borrow `f` as mutable``. Write `mut f: F`.
+
+      **Your turn:** write `fn apply_twice<F: Fn(i32) -> i32>(f: F, x: i32) -> i32`. It calls `f` on `x`, then calls `f` again on that result. For example, `apply_twice(|x| x + 3, 10)` is `16`.
+    seed: |
+      fn apply_twice<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {
+          todo!()
+      }
+    solution: |
+      fn apply_twice<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {
+          f(f(x))
+      }
+    harness: |
+      #[test]
+      fn adds_three_twice() {
+          assert_eq!(apply_twice(|x| x + 3, 10), 16, "apply_twice(|x| x + 3, 10)");
+      }
+
+      #[test]
+      fn squares_twice() {
+          assert_eq!(apply_twice(|x| x * x, 3), 81, "apply_twice(|x| x * x, 3)");
+      }
+
+      #[test]
+      fn works_with_a_named_function() {
+          fn negate(x: i32) -> i32 {
+              -x
+          }
+          assert_eq!(apply_twice(negate, 7), 7, "apply_twice(negate, 7)");
+      }
+
+      #[test]
+      fn works_with_a_capturing_closure() {
+          let step = 5;
+          assert_eq!(apply_twice(|x| x - step, 0), -10, "apply_twice(|x| x - step, 0) with step = 5");
+      }
+    hints:
+      - Call `f(x)` first, then pass that result to `f` again.
+      - "The whole body is `f(f(x))`."
+    more:
+      - task: |
+          Write `fn call_n_times<F: FnMut()>(n: usize, f: F)` that calls `f` exactly `n` times. The tests pass closures that change captured variables, like `|| count += 1`. (Calling an `FnMut` needs mutable access: you'll have to change the parameter a little.)
+        seed: |
+          fn call_n_times<F: FnMut()>(n: usize, f: F) {
+              todo!()
+          }
+        solution: |
+          fn call_n_times<F: FnMut()>(n: usize, mut f: F) {
+              for _ in 0..n {
+                  f();
+              }
+          }
+        harness: |
+          #[test]
+          fn calls_the_closure_five_times() {
+              let mut count = 0;
+              call_n_times(5, || count += 1);
+              assert_eq!(count, 5, "count after call_n_times(5, || count += 1)");
+          }
+
+          #[test]
+          fn zero_means_never() {
+              let mut count = 0;
+              call_n_times(0, || count += 1);
+              assert_eq!(count, 0, "count after call_n_times(0, || count += 1)");
+          }
+
+          #[test]
+          fn the_closure_can_push_to_a_vec() {
+              let mut log = Vec::new();
+              call_n_times(3, || log.push(log.len()));
+              assert_eq!(log, vec![0, 1, 2], "log after call_n_times(3, || log.push(log.len()))");
+          }
+        hints:
+          - "The parameter must be `mut f: F` to call an `FnMut`."
+          - "`for _ in 0..n { f(); }`"
+      - task: |
+          Network calls fail sometimes, so services **retry** them. Write
+
+          ```
+          fn retry<F: FnMut() -> Result<u32, String>>(attempts: u32, op: F) -> Result<u32, String>
+          ```
+
+          It calls `op` up to `attempts` times and returns the first `Ok` it gets, without calling `op` again after that. If every attempt fails, it returns the last `Err`. If `attempts` is `0`, it returns `Err(String::from("no attempts"))` without calling `op` at all.
+        seed: |
+          fn retry<F: FnMut() -> Result<u32, String>>(attempts: u32, op: F) -> Result<u32, String> {
+              todo!()
+          }
+        solution: |
+          fn retry<F: FnMut() -> Result<u32, String>>(attempts: u32, mut op: F) -> Result<u32, String> {
+              let mut last = Err(String::from("no attempts"));
+              for _ in 0..attempts {
+                  last = op();
+                  if last.is_ok() {
+                      return last;
+                  }
+              }
+              last
+          }
+        harness: |
+          #[test]
+          fn returns_the_first_success() {
+              let mut calls = 0;
+              let result = retry(3, || {
+                  calls += 1;
+                  Ok(7)
+              });
+              assert_eq!(result, Ok(7), "retry(3, op that succeeds)");
+              assert_eq!(calls, 1, "number of calls when the first one succeeds");
+          }
+
+          #[test]
+          fn succeeds_on_the_third_try() {
+              let mut calls = 0;
+              let result = retry(5, || {
+                  calls += 1;
+                  if calls < 3 { Err(format!("fail {calls}")) } else { Ok(42) }
+              });
+              assert_eq!(result, Ok(42), "retry(5, op that fails twice then succeeds)");
+              assert_eq!(calls, 3, "number of calls");
+          }
+
+          #[test]
+          fn returns_the_last_error_when_all_fail() {
+              let mut calls = 0;
+              let result = retry(3, || {
+                  calls += 1;
+                  Err(format!("timeout {calls}"))
+              });
+              assert_eq!(result, Err(String::from("timeout 3")), "retry(3, op that always fails)");
+              assert_eq!(calls, 3, "number of calls");
+          }
+
+          #[test]
+          fn zero_attempts_never_calls_op() {
+              let mut calls = 0;
+              let result = retry(0, || {
+                  calls += 1;
+                  Ok(1)
+              });
+              assert_eq!(result, Err(String::from("no attempts")), "retry(0, op)");
+              assert_eq!(calls, 0, "number of calls");
+          }
+        hints:
+          - "`op` is called many times and changes its captured state, so the parameter is `mut op: F`."
+          - "Keep the latest result in a variable that starts as `Err(String::from(\"no attempts\"))`; loop `attempts` times, store `op()` in it, and `return` as soon as it `is_ok()`."
+
+  - title: Returning closures
+    id: closures-5
+    text: |
+      A function can also **build** a closure and return it: a little factory that makes customized behavior. A closure's type has no name, so you describe the return type by its trait, with `impl`:
+
+      ```rust run
+      fn make_adder(n: i32) -> impl Fn(i32) -> i32 {
+          move |x| x + n
+      }
+
+      fn make_greeter(greeting: &str) -> impl Fn(&str) -> String {
+          let greeting = greeting.to_string();
+          move |name| format!("{greeting}, {name}!")
+      }
+
+      fn main() {
+          let add_five = make_adder(5);
+          let add_ten = make_adder(10);
+          println!("{} {}", add_five(1), add_ten(1));
+
+          let hello = make_greeter("Hello");
+          println!("{}", hello("Ferris"));
+      }
+      ```
+
+      ```output
+      6 11
+      Hello, Ferris!
+      ```
+
+      - `impl Fn(i32) -> i32` in the return position means "some type that implements `Fn(i32) -> i32`; callers don't need to know which". It's the `impl Trait` you met in the traits module.
+      - `move` is required: `n` is a parameter of `make_adder`, so it's gone when the function returns. The closure needs its own copy.
+      - Each call of `make_adder` creates a separate closure with its own `n`: `add_five` and `add_ten` don't share anything.
+      - `make_greeter` turns the borrowed `&str` into an owned `String` first, so the returned closure doesn't borrow anything from the caller. (A closure that borrows needs lifetimes; owning the data is simpler.)
+
+      ### Without move
+
+      ```rust compile_fail
+      fn make_adder(n: i32) -> impl Fn(i32) -> i32 {
+          |x| x + n
+      }
+
+      fn main() {
+          println!("{}", make_adder(2)(3));
+      }
+      ```
+
+      ```error
+      error[E0373]: closure may outlive the current function, but it borrows `n`, which is owned by the current function
+      ```
+
+      The closure would hold a reference to `n`, which dies when `make_adder` returns. The compiler suggests the fix itself: `help: to force the closure to take ownership of n, use the move keyword`.
+
+      ### Different closures: Box<dyn Fn>
+
+      `impl Fn` stands for **one** concrete type. Two closures always have two different types, even when they look the same, so you can't return one closure from the `if` branch and another from the `else` branch:
+
+      ```rust compile_fail
+      fn make_greeter(formal: bool, name: String) -> impl Fn() -> String {
+          if formal {
+              move || format!("Good day, {name}.")
+          } else {
+              move || format!("Hey {name}!")
+          }
+      }
+
+      fn main() {
+          println!("{}", make_greeter(true, String::from("Ann"))());
+      }
+      ```
+
+      ```error
+      error[E0308]: `if` and `else` have incompatible types
+      ```
+
+      (The full message adds: `no two closures, even if identical, have the same type`.) The fix is a trait object, from the trait objects module: put each closure in a `Box` and return `Box<dyn Fn() -> String>`. Now every branch has the same type. The same trick lets you keep different closures in one `Vec`:
+
+      ```rust run
+      fn make_rule(name: &str) -> Box<dyn Fn(f64) -> f64> {
+          match name {
+              "double" => Box::new(|x| x * 2.0),
+              "half" => Box::new(|x| x / 2.0),
+              _ => Box::new(|x| x),
+          }
+      }
+
+      fn main() {
+          let shipping = 4.5;
+          let pipeline: Vec<Box<dyn Fn(f64) -> f64>> = vec![
+              make_rule("double"),
+              Box::new(move |x| x + shipping),
+              make_rule("unknown"),
+          ];
+
+          let mut price = 10.0;
+          for step in &pipeline {
+              price = step(price);
+          }
+          println!("final price: {price:.2}");
+      }
+      ```
+
+      ```output
+      final price: 24.50
+      ```
+
+      | Return type | Use it when |
+      |---|---|
+      | `impl Fn(...)` | you always return the same closure (the usual case). No allocation, static dispatch: as fast as a normal function. |
+      | `Box<dyn Fn(...)>` | you choose between different closures at run time, or store different closures together. Costs an allocation and a dynamic call. |
+
+      **Your turn:** write `fn make_multiplier(factor: i32) -> impl Fn(i32) -> i32` that returns a closure multiplying its argument by `factor`. For example, `make_multiplier(3)(7)` is `21`. (The starter returns a closure that ignores `factor`, so it compiles but gives wrong answers.)
+    seed: |
+      fn make_multiplier(factor: i32) -> impl Fn(i32) -> i32 {
+          // return a closure that multiplies x by factor
+          |x| x
+      }
+    solution: |
+      fn make_multiplier(factor: i32) -> impl Fn(i32) -> i32 {
+          // return a closure that multiplies x by factor
+          move |x| x * factor
+      }
+    harness: |
+      #[test]
+      fn triples() {
+          let triple = make_multiplier(3);
+          assert_eq!(triple(7), 21, "make_multiplier(3)(7)");
+      }
+
+      #[test]
+      fn two_multipliers_are_independent() {
+          let double = make_multiplier(2);
+          let ten = make_multiplier(10);
+          assert_eq!(double(5), 10, "make_multiplier(2)(5)");
+          assert_eq!(ten(5), 50, "make_multiplier(10)(5)");
+      }
+
+      #[test]
+      fn zero_factor_gives_zero() {
+          assert_eq!(make_multiplier(0)(99), 0, "make_multiplier(0)(99)");
+      }
+
+      #[test]
+      fn negative_factor_flips_the_sign() {
+          assert_eq!(make_multiplier(-1)(8), -8, "make_multiplier(-1)(8)");
+      }
+    hints:
+      - The closure uses `factor`, which dies when the function returns, so the closure must own it.
+      - "`move |x| x * factor`"
+    more:
+      - task: |
+          Write `fn make_counter() -> impl FnMut() -> u32`. Each call of the returned closure gives the next number: `1`, then `2`, then `3`, and so on. Two counters made by two calls of `make_counter` count separately.
+        seed: |
+          fn make_counter() -> impl FnMut() -> u32 {
+              // the closure needs its own count
+              || 0
+          }
+        solution: |
+          fn make_counter() -> impl FnMut() -> u32 {
+              // the closure needs its own count
+              let mut count = 0;
+              move || {
+                  count += 1;
+                  count
+              }
+          }
+        harness: |
+          #[test]
+          fn counts_up_from_one() {
+              let mut next = make_counter();
+              assert_eq!(next(), 1, "first call");
+              assert_eq!(next(), 2, "second call");
+              assert_eq!(next(), 3, "third call");
+          }
+
+          #[test]
+          fn two_counters_are_independent() {
+              let mut a = make_counter();
+              let mut b = make_counter();
+              a();
+              a();
+              assert_eq!(a(), 3, "third call of counter a");
+              assert_eq!(b(), 1, "first call of counter b");
+          }
+
+          #[test]
+          fn ten_calls_reach_ten() {
+              let mut next = make_counter();
+              let mut last = 0;
+              for _ in 0..10 {
+                  last = next();
+              }
+              assert_eq!(last, 10, "value of the tenth call");
+          }
+        hints:
+          - "Make a `let mut count = 0;` inside `make_counter`, then return a `move` closure that changes it."
+          - "`move || { count += 1; count }`"
+      - task: |
+          A shop applies discount codes. Write `fn make_discount(code: &str) -> Box<dyn Fn(f64) -> f64>` that returns the pricing rule for a code:
+
+          - `"HALF"`: half price
+          - `"TENOFF"`: 10.0 off, but never below `0.0`
+          - any other code: the price unchanged
+
+          Each branch returns a different closure, so you need the `Box<dyn Fn>` return type.
+        seed: |
+          fn make_discount(code: &str) -> Box<dyn Fn(f64) -> f64> {
+              Box::new(|price| price)
+          }
+        solution: |
+          fn make_discount(code: &str) -> Box<dyn Fn(f64) -> f64> {
+              match code {
+                  "HALF" => Box::new(|price| price / 2.0),
+                  "TENOFF" => Box::new(|price| (price - 10.0).max(0.0)),
+                  _ => Box::new(|price| price),
+              }
+          }
+        harness: |
+          #[test]
+          fn half_halves_the_price() {
+              assert_eq!(make_discount("HALF")(30.0), 15.0, "make_discount(\"HALF\")(30.0)");
+          }
+
+          #[test]
+          fn tenoff_takes_ten_off() {
+              assert_eq!(make_discount("TENOFF")(25.0), 15.0, "make_discount(\"TENOFF\")(25.0)");
+          }
+
+          #[test]
+          fn tenoff_never_goes_below_zero() {
+              assert_eq!(make_discount("TENOFF")(4.0), 0.0, "make_discount(\"TENOFF\")(4.0)");
+          }
+
+          #[test]
+          fn unknown_codes_change_nothing() {
+              assert_eq!(make_discount("FREEBIE")(12.5), 12.5, "make_discount(\"FREEBIE\")(12.5)");
+          }
+
+          #[test]
+          fn rules_can_be_chained() {
+              let mut price = 50.0;
+              for code in ["HALF", "TENOFF"] {
+                  price = make_discount(code)(price);
+              }
+              assert_eq!(price, 15.0, "50.0 after HALF then TENOFF");
+          }
+        hints:
+          - "`match code { \"HALF\" => Box::new(|price| price / 2.0), ... }`"
+          - "For TENOFF, `(price - 10.0).max(0.0)` keeps the result at zero or above. The last arm `_ => Box::new(|price| price)`."
+
+  - title: "Closures at work: sorting, filtering, defaults"
+    id: closures-6
+    text: |
+      Most closures you'll write at work are tiny arguments to standard library methods. You've used several of these methods already; now you know what they take.
+
+      ```rust run
+      struct Ticket {
+          id: u32,
+          title: String,
+          priority: u8,
+          open: bool,
+      }
+
+      fn main() {
+          let mut tickets = vec![
+              Ticket { id: 7, title: String::from("Login fails"), priority: 1, open: true },
+              Ticket { id: 3, title: String::from("Typo on homepage"), priority: 3, open: true },
+              Ticket { id: 9, title: String::from("Old bug"), priority: 2, open: false },
+              Ticket { id: 4, title: String::from("Slow search"), priority: 1, open: true },
+          ];
+
+          tickets.retain(|t| t.open);                  // keep only open tickets
+          tickets.sort_by_key(|t| (t.priority, t.id)); // by priority, then by id
+
+          for t in &tickets {
+              println!("#{} [P{}] {}", t.id, t.priority, t.title);
+          }
+
+          let top = tickets.first().map(|t| t.title.to_uppercase());
+          println!("{}", top.unwrap_or_else(|| String::from("nothing to do")));
+      }
+      ```
+
+      ```output
+      #4 [P1] Slow search
+      #7 [P1] Login fails
+      #3 [P3] Typo on homepage
+      SLOW SEARCH
+      ```
+
+      | Method | The closure gets | and returns | Bound |
+      |---|---|---|---|
+      | `v.retain(f)` | `&T` | `bool`: keep this element? | `FnMut` |
+      | `v.sort_by_key(f)` | `&T` | a key to sort by (anything `Ord`: numbers, tuples, `String`s) | `FnMut` |
+      | `v.sort_by(f)` | `&T, &T` | an `Ordering`, usually from `a.cmp(b)` | `FnMut` |
+      | `opt.map(f)` | the value inside `Some` | the new value | `FnOnce` |
+      | `opt.unwrap_or_else(f)` | nothing | the fallback value | `FnOnce` |
+      | `map.entry(k).or_insert_with(f)` | nothing | the value to insert | `FnOnce` |
+
+      Tricks worth knowing:
+
+      - **Several sort keys**: a tuple key `(t.priority, t.id)` sorts by the first field, then breaks ties with the second.
+      - **Descending order**: swap `a` and `b`: `v.sort_by(|a, b| b.score.cmp(&a.score))`.
+      - **Combining comparisons**: `Ordering` has `.then(...)`: `b.score.cmp(&a.score).then(a.name.cmp(&b.name))` means "highest score first, and for equal scores, by name".
+      - **Lazy defaults**: `unwrap_or(expensive())` always runs `expensive()`; `unwrap_or_else(|| expensive())` only runs it when the value is missing. Clippy's `or_fun_call` lint points this out.
+      - **Function names instead of closures**: when a closure only calls a function, pass the function itself: `map.entry(key).or_insert_with(Vec::new)` instead of `|| Vec::new()`. Clippy's `redundant_closure` lint suggests this.
+
+      ### Common mistakes
+
+      - **A sort key that borrows from the element.** `sort_by_key` can't return a reference into the elements it's moving around:
+
+      ```rust compile_fail
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn main() {
+          let mut players = vec![
+              Player { name: String::from("Zed"), score: 3 },
+              Player { name: String::from("Amy"), score: 5 },
+          ];
+          players.sort_by_key(|p| &p.name);
+          println!("{} {}", players[0].name, players[0].score);
+      }
+      ```
+
+      ```error
+      error: lifetime may not live long enough
+      ```
+
+      Use `players.sort_by(|a, b| a.name.cmp(&b.name))` instead (no copies), or `sort_by_key(|p| p.name.clone())` (allocates a String per comparison).
+
+      - **Sorting by an `f64` key.** Floats aren't `Ord` (what's the order of `NaN`?), so `sort_by_key(|i| i.price)` fails with ``the trait bound `f64: Ord` is not satisfied``. Use `sort_by(|a, b| a.price.total_cmp(&b.price))`: `total_cmp` gives floats a complete order.
+
+      **Your turn:** write `fn leaderboard(players: &mut Vec<Player>, min_score: u32)`. It removes every player whose score is below `min_score`, then sorts the rest by score, **highest first**; players with the same score are sorted by name, A to Z. Use `retain` and a sort method with closures, no loops.
+    seed: |
+      #[derive(Debug, Clone, PartialEq)]
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn leaderboard(players: &mut Vec<Player>, min_score: u32) {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, Clone, PartialEq)]
+      struct Player {
+          name: String,
+          score: u32,
+      }
+
+      fn leaderboard(players: &mut Vec<Player>, min_score: u32) {
+          players.retain(|p| p.score >= min_score);
+          players.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
+      }
+    require:
+      - pattern: '\.retain\('
+        message: Remove the low scores with `players.retain(|p| ...)`.
+      - pattern: '\.sort_by(_key)?\('
+        message: Sort with `sort_by` or `sort_by_key` and a closure.
+    forbid:
+      - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+        message: Use `retain` and `sort_by` with closures instead of a loop.
+    harness: |
+      fn player(name: &str, score: u32) -> Player {
+          Player { name: name.to_string(), score }
+      }
+
+      fn names(players: &[Player]) -> Vec<String> {
+          players.iter().map(|p| p.name.clone()).collect()
+      }
+
+      #[test]
+      fn removes_players_below_the_minimum() {
+          let mut v = vec![player("ann", 40), player("bo", 90), player("cy", 10)];
+          leaderboard(&mut v, 30);
+          assert_eq!(names(&v), vec!["bo", "ann"], "names after leaderboard(.., 30)");
+      }
+
+      #[test]
+      fn sorts_highest_score_first() {
+          let mut v = vec![player("ann", 50), player("bo", 70), player("cy", 60)];
+          leaderboard(&mut v, 0);
+          assert_eq!(names(&v), vec!["bo", "cy", "ann"], "names after leaderboard(.., 0)");
+      }
+
+      #[test]
+      fn breaks_ties_by_name() {
+          let mut v = vec![player("zed", 80), player("amy", 80), player("kim", 95)];
+          leaderboard(&mut v, 0);
+          assert_eq!(names(&v), vec!["kim", "amy", "zed"], "names after leaderboard(.., 0)");
+      }
+
+      #[test]
+      fn keeps_players_exactly_at_the_minimum() {
+          let mut v = vec![player("ann", 30), player("bo", 29)];
+          leaderboard(&mut v, 30);
+          assert_eq!(v, vec![player("ann", 30)], "players after leaderboard(.., 30)");
+      }
+
+      #[test]
+      fn empty_list_stays_empty() {
+          let mut v: Vec<Player> = Vec::new();
+          leaderboard(&mut v, 10);
+          assert_eq!(v, Vec::new(), "leaderboard of an empty list");
+      }
+    hints:
+      - "`players.retain(|p| p.score >= min_score);` keeps the good ones."
+      - "Sort with `players.sort_by(|a, b| ...)`: compare `b.score` with `a.score` (reversed for highest first), then `.then(a.name.cmp(&b.name))`."
+    more:
+      - task: |
+          Write `fn tidy_tags(tags: &mut Vec<String>)` that cleans up a list of tags: remove empty tags, sort the rest by length (shortest first) with equal lengths in alphabetical order, then remove duplicates. For example `["rust", "", "go", "c", "rust", "zig"]` becomes `["c", "go", "zig", "rust"]`. No loops.
+        seed: |
+          fn tidy_tags(tags: &mut Vec<String>) {
+              todo!()
+          }
+        solution: |
+          fn tidy_tags(tags: &mut Vec<String>) {
+              tags.retain(|t| !t.is_empty());
+              tags.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
+              tags.dedup();
+          }
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use `retain`, a sort with a closure, and `dedup` instead of a loop.
+        harness: |
+          fn tags(list: &[&str]) -> Vec<String> {
+              list.iter().map(|s| s.to_string()).collect()
+          }
+
+          #[test]
+          fn removes_empty_tags_and_duplicates() {
+              let mut t = tags(&["rust", "", "go", "c", "rust", "zig"]);
+              tidy_tags(&mut t);
+              assert_eq!(t, tags(&["c", "go", "zig", "rust"]), "tidy_tags of [rust, \"\", go, c, rust, zig]");
+          }
+
+          #[test]
+          fn equal_lengths_are_alphabetical() {
+              let mut t = tags(&["web", "cli", "api"]);
+              tidy_tags(&mut t);
+              assert_eq!(t, tags(&["api", "cli", "web"]), "tidy_tags of [web, cli, api]");
+          }
+
+          #[test]
+          fn only_empty_tags_leaves_nothing() {
+              let mut t = tags(&["", ""]);
+              tidy_tags(&mut t);
+              assert_eq!(t, Vec::<String>::new(), "tidy_tags of two empty tags");
+          }
+        hints:
+          - "`retain(|t| !t.is_empty())`, then `sort_by`, then `dedup()` (which removes duplicates that sit next to each other, as they do after sorting)."
+          - "`tags.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));`"
+      - task: |
+          Write a program that reads shopping items from input, one per line, as `name price` (for example `lamp 19.99`), until the input ends. Keep only the items that cost **at most 20.00**, sort them by price (cheapest first), and print each one as `name: price` with two decimals. If nothing is left, print `nothing affordable`.
+
+          Prices are `f64`, so sort with `sort_by` and `total_cmp`, and filter with `retain`.
+        seed: |
+          use std::io::Read;
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              let mut items: Vec<(String, f64)> = Vec::new();
+              for line in input.lines() {
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  if parts.len() == 2 {
+                      items.push((parts[0].to_string(), parts[1].parse().unwrap()));
+                  }
+              }
+              // keep, sort and print
+          }
+        solution: |
+          use std::io::Read;
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              let mut items: Vec<(String, f64)> = Vec::new();
+              for line in input.lines() {
+                  let parts: Vec<&str> = line.split_whitespace().collect();
+                  if parts.len() == 2 {
+                      items.push((parts[0].to_string(), parts[1].parse().unwrap()));
+                  }
+              }
+              // keep, sort and print
+              items.retain(|(_, price)| *price <= 20.0);
+              items.sort_by(|a, b| a.1.total_cmp(&b.1));
+              if items.is_empty() {
+                  println!("nothing affordable");
+              }
+              for (name, price) in &items {
+                  println!("{name}: {price:.2}");
+              }
+          }
+        require:
+          - pattern: '\.retain\('
+            message: Drop the expensive items with `items.retain(|...| ...)`.
+          - pattern: '\.sort_by\('
+            message: Sort with `items.sort_by(|a, b| a.1.total_cmp(&b.1))`.
+        hints:
+          - "Each item is a tuple `(name, price)`. `items.retain(|(_, price)| *price <= 20.0);` keeps the cheap ones."
+          - "`items.sort_by(|a, b| a.1.total_cmp(&b.1));` sorts by the price field."
+        tests:
+          - stdin: "apple 1.5\nbook 25\npen 2.25\nlamp 19.99\n"
+            expect: "apple: 1.50\npen: 2.25\nlamp: 19.99"
+          - stdin: "tv 300\nsofa 999.5\n"
+            hidden: true
+          - stdin: "mug 20\ncard 20.01\nsticker 0.5\n"
+            hidden: true

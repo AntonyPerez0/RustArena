@@ -1,0 +1,548 @@
+id: number-game
+title: Higher or lower
+level: Beginner
+after: input
+summary: The classic number guessing game, built up one feature at a time. Read guesses from input, count attempts, survive bad input, and generate the secret number yourself without any library.
+seed: |
+  use std::io;
+  use std::io::BufRead;
+
+  fn main() {
+      // The first line of input is the secret number.
+      let mut first = String::new();
+      io::stdin().read_line(&mut first).expect("failed to read the secret");
+      let secret: i32 = first.trim().parse().expect("the secret must be a number");
+
+      // Every line after that is one guess.
+      for line in io::stdin().lock().lines() {
+          let line = line.expect("failed to read a line");
+          // Turn the line into a number and compare it with the secret.
+
+      }
+  }
+milestones:
+  - title: Higher or lower
+    text: |
+      Nearly every interactive program is a **loop** with the same three parts: read what the user did, work out what it means, and show the result. A text editor, a shell and a game server all have this loop at their heart. This project builds the smallest real example: a guessing game.
+
+      In this first version the secret number is simply the first line of input (you'll generate it yourself in milestone 4). Every line after that is a guess. For each guess, print one of:
+
+      - `Too low!` when the guess is smaller than the secret,
+      - `Too high!` when it's bigger,
+      - `You got it!` when it matches, and then stop reading: the game is over.
+
+      For this input:
+
+      ```
+      42
+      50
+      25
+      42
+      ```
+
+      the program prints:
+
+      ```
+      Too high!
+      Too low!
+      You got it!
+      ```
+
+      ### How the starter code reads input
+
+      The starter code already reads the secret with `read_line` and `parse`, exactly as in the input module. The `for line in io::stdin().lock().lines()` loop then hands you the remaining lines one at a time, until the input ends. Each `line` is a `Result` (reading can fail), which is why there's an `.expect(...)` before you can use it as a `String`.
+
+      When you play this in a terminal, "input" is what you type. Here the tests feed the lines in, which is also how you'd test a real command-line tool: give it a known input, check the output.
+
+      Why `break` on the right guess instead of reading everything? Because the game is over. Anything after the winning line isn't a guess anymore, and a program shouldn't react to input that no longer means anything.
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      fn main() {
+          // The first line of input is the secret number.
+          let mut first = String::new();
+          io::stdin().read_line(&mut first).expect("failed to read the secret");
+          let secret: i32 = first.trim().parse().expect("the secret must be a number");
+
+          // Every line after that is one guess.
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read a line");
+              // Turn the line into a number and compare it with the secret.
+              let guess: i32 = line.trim().parse().expect("a guess must be a number");
+              if guess < secret {
+                  println!("Too low!");
+              } else if guess > secret {
+                  println!("Too high!");
+              } else {
+                  println!("You got it!");
+                  break;
+              }
+          }
+      }
+    tests:
+      - stdin: "42\n50\n25\n42\n"
+      - stdin: "7\n7\n"
+      - stdin: "99\n1\n98\n100\n99\n5\n"
+        hidden: true
+      - stdin: "64\n80\n32\n"
+        hidden: true
+    hints:
+      - "Inside the loop, parse the line just like the secret: `let guess: i32 = line.trim().parse().expect(\"...\");`"
+      - "An `if guess < secret { ... } else if guess > secret { ... } else { ... }` chain covers the three cases."
+      - "In the `else` branch (the right guess), print `You got it!` and then `break;` to leave the loop."
+
+  - title: Count the guesses
+    text: |
+      A game without a score isn't much fun. Count every guess, and when the player wins, say how many it took:
+
+      ```
+      You got it in 3 guesses!
+      ```
+
+      With exactly one guess, it's `You got it in 1 guess!` (singular). Small details like this are what make a program feel finished.
+
+      There's a second case to handle: the input can run out before the player finds the number. Then print, after the loop:
+
+      ```
+      Out of guesses! The number was 42.
+      ```
+
+      ### Remembering what happened
+
+      After the loop ends you need to know *why* it ended: did the player win (and you hit `break`), or did the guesses run out? The loop itself doesn't tell you, so keep a variable for it. A `let mut won = false;` before the loop, set to `true` on the winning guess, is the simplest way. Variables like this, which record what has happened so far, are the program's **state**. Here the state is two values: how many guesses so far, and whether the game was won.
+
+      For the plural, remember that `if` is an expression in Rust, so it can produce a value:
+
+      ```rust run
+      fn main() {
+          let attempts = 1;
+          let word = if attempts == 1 { "guess" } else { "guesses" };
+          println!("{attempts} {word}");
+      }
+      ```
+
+      ```output
+      1 guess
+      ```
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      fn main() {
+          // The first line of input is the secret number.
+          let mut first = String::new();
+          io::stdin().read_line(&mut first).expect("failed to read the secret");
+          let secret: i32 = first.trim().parse().expect("the secret must be a number");
+
+          let mut attempts = 0;
+          let mut won = false;
+
+          // Every line after that is one guess.
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read a line");
+              // Turn the line into a number and compare it with the secret.
+              let guess: i32 = line.trim().parse().expect("a guess must be a number");
+              attempts += 1;
+              if guess < secret {
+                  println!("Too low!");
+              } else if guess > secret {
+                  println!("Too high!");
+              } else {
+                  let word = if attempts == 1 { "guess" } else { "guesses" };
+                  println!("You got it in {attempts} {word}!");
+                  won = true;
+                  break;
+              }
+          }
+
+          if !won {
+              println!("Out of guesses! The number was {secret}.");
+          }
+      }
+    tests:
+      - stdin: "42\n50\n25\n42\n"
+      - stdin: "7\n7\n"
+      - stdin: "10\n1\n2\n"
+      - stdin: "60\n50\n70\n65\n60\n9\n"
+        hidden: true
+      - stdin: "33\n"
+        hidden: true
+    hints:
+      - "Add `let mut attempts = 0;` and `let mut won = false;` before the loop, and `attempts += 1;` for every guess."
+      - "`let word = if attempts == 1 { \"guess\" } else { \"guesses\" };` picks the right word."
+      - "After the loop, `if !won { println!(\"Out of guesses! The number was {secret}.\"); }`"
+
+  - title: Survive bad input
+    text: |
+      Real users mistype. Right now, typing `fifty` crashes the whole game, because `.expect()` panics when `parse` fails. A crash is fine for a quick experiment, but a program people use should explain the problem and carry on.
+
+      Handle three kinds of line, and **don't count any of them as a guess**:
+
+      - A blank line (or only spaces): skip it silently.
+      - Something that isn't a whole number, like `fifty` or `12.5`: print `"fifty" is not a number` (the trimmed text, in double quotes).
+      - A number outside 1 to 100: print `Guesses go from 1 to 100`.
+
+      For this input:
+
+      ```
+      42
+      50
+      fifty
+
+      420
+      42
+      ```
+
+      the program prints:
+
+      ```
+      Too high!
+      "fifty" is not a number
+      Guesses go from 1 to 100
+      You got it in 2 guesses!
+      ```
+
+      ### match instead of expect
+
+      `parse` returns a `Result`: `Ok(number)` when it worked, `Err(...)` when it didn't. Instead of `.expect()`, which turns an `Err` into a crash, `match` on it and decide what to do in each case:
+
+      ```rust run
+      fn main() {
+          for text in ["17", "seventeen"] {
+              let n: i32 = match text.parse() {
+                  Ok(n) => n,
+                  Err(_) => {
+                      println!("skipping {text}");
+                      continue;
+                  }
+              };
+              println!("got {n}");
+          }
+      }
+      ```
+
+      ```output
+      got 17
+      skipping seventeen
+      ```
+
+      The `Ok` arm gives the number to `n`. The `Err` arm prints a message and `continue`s to the next line, so it never needs to produce a number. (`continue` has the type `!`, "never returns", which fits anywhere.)
+
+      The order of checks matters: skip blank lines first, then parse, then check the range, and only then count the attempt. That way nothing invalid ever reaches the game logic. Validating input at the edge of a program, before it touches the real work, is a habit worth keeping in every program you write.
+
+      To print a double quote inside a string, escape it: `println!("\"{text}\" is not a number");`.
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      fn main() {
+          // The first line of input is the secret number.
+          let mut first = String::new();
+          io::stdin().read_line(&mut first).expect("failed to read the secret");
+          let secret: i32 = first.trim().parse().expect("the secret must be a number");
+
+          let mut attempts = 0;
+          let mut won = false;
+
+          // Every line after that is one guess.
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read a line");
+              let text = line.trim();
+              if text.is_empty() {
+                  continue;
+              }
+              // Turn the line into a number and compare it with the secret.
+              let guess: i32 = match text.parse() {
+                  Ok(n) => n,
+                  Err(_) => {
+                      println!("\"{text}\" is not a number");
+                      continue;
+                  }
+              };
+              if guess < 1 || guess > 100 {
+                  println!("Guesses go from 1 to 100");
+                  continue;
+              }
+              attempts += 1;
+              if guess < secret {
+                  println!("Too low!");
+              } else if guess > secret {
+                  println!("Too high!");
+              } else {
+                  let word = if attempts == 1 { "guess" } else { "guesses" };
+                  println!("You got it in {attempts} {word}!");
+                  won = true;
+                  break;
+              }
+          }
+
+          if !won {
+              println!("Out of guesses! The number was {secret}.");
+          }
+      }
+    tests:
+      - stdin: "42\n50\nfifty\n\n420\n42\n"
+      - stdin: "1\n0\n-5\n1\n"
+      - stdin: "100\n101\n   100   \n"
+        hidden: true
+      - stdin: "64\nabc\n12.5\n  \n"
+        hidden: true
+    hints:
+      - "Trim the line once (`let text = line.trim();`) and `continue` if `text.is_empty()`."
+      - "Replace `.expect()` with `match text.parse() { Ok(n) => n, Err(_) => { println!(...); continue; } }`."
+      - "Check `guess < 1 || guess > 100` right after parsing, and `continue` before `attempts += 1`."
+
+  - title: A secret of its own
+    text: |
+      A guessing game where the player types the secret isn't much of a game. Real games pick it at random. But "random" output can't be tested (every run would differ), so games and simulations use a **pseudo-random number generator**: a formula that turns a starting number, the **seed**, into numbers that look random. The same seed always gives the same numbers, which is exactly what makes them testable. (Minecraft world seeds work this way.)
+
+      You'll write the oldest and simplest kind, a **linear congruential generator** (LCG). One step is: multiply by a big constant, add another constant, and let the result wrap around at 2^32:
+
+      ```rust run
+      fn main() {
+          let seed: u32 = 1;
+          let state = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+          let secret = state / 65_536 % 100 + 1;
+          println!("state {state}, secret {secret}");
+      }
+      ```
+
+      ```output
+      state 1103527590, secret 39
+      ```
+
+      Piece by piece:
+
+      - `u32` is an unsigned 32-bit integer (0 to 4,294,967,295). Multiplying it by 1,103,515,245 goes way past that limit.
+      - In a debug build, plain `*` would **panic** with `attempt to multiply with overflow`: Rust treats overflow as a bug unless you say otherwise. `wrapping_mul` and `wrapping_add` say "wrapping around is what I want". The LCG depends on it.
+      - `state / 65_536` throws away the low 16 bits, which are the least random part of an LCG. `% 100` gives 0 to 99, and `+ 1` makes it 1 to 100.
+
+      **Now change the game:**
+
+      - The first line of input is a **seed** (a `u32`), not the secret. Compute the secret from it with one LCG step, as above. Convert it with `as i32` so you can compare it with the guesses.
+      - The player gets at most **7 guesses**. After the 7th wrong guess, stop reading and print `Out of guesses! The number was N.` (the same message as when the input runs out). Invalid lines still don't count.
+
+      Put the limit in a constant, `const MAX_ATTEMPTS: i32 = 7;`, rather than writing `7` in the middle of the loop. A named constant says what the number means, and when a designer asks for 10 guesses you change one line.
+
+      With seed `1` the secret is 39, so this game takes 6 guesses:
+
+      ```
+      1
+      50
+      25
+      37
+      43
+      40
+      39
+      ```
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      const MAX_ATTEMPTS: i32 = 7;
+
+      fn main() {
+          // The first line of input is the seed for the secret number.
+          let mut first = String::new();
+          io::stdin().read_line(&mut first).expect("failed to read the seed");
+          let seed: u32 = first.trim().parse().expect("the seed must be a number");
+          let state = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+          let secret = (state / 65_536 % 100) as i32 + 1;
+
+          let mut attempts = 0;
+          let mut won = false;
+
+          // Every line after that is one guess.
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read a line");
+              let text = line.trim();
+              if text.is_empty() {
+                  continue;
+              }
+              // Turn the line into a number and compare it with the secret.
+              let guess: i32 = match text.parse() {
+                  Ok(n) => n,
+                  Err(_) => {
+                      println!("\"{text}\" is not a number");
+                      continue;
+                  }
+              };
+              if guess < 1 || guess > 100 {
+                  println!("Guesses go from 1 to 100");
+                  continue;
+              }
+              attempts += 1;
+              if guess < secret {
+                  println!("Too low!");
+              } else if guess > secret {
+                  println!("Too high!");
+              } else {
+                  let word = if attempts == 1 { "guess" } else { "guesses" };
+                  println!("You got it in {attempts} {word}!");
+                  won = true;
+                  break;
+              }
+              if attempts == MAX_ATTEMPTS {
+                  break;
+              }
+          }
+
+          if !won {
+              println!("Out of guesses! The number was {secret}.");
+          }
+      }
+    tests:
+      - stdin: "1\n50\n25\n37\n43\n40\n39\n"
+      - stdin: "2024\n1\n2\n3\n4\n5\n6\n7\n8\n"
+      - stdin: "42\n50\n"
+      - stdin: "123\n50\n75\nxyz\n88\n94\n97\n96\n"
+        hidden: true
+      - stdin: "7\n10\n"
+        hidden: true
+    hints:
+      - "Parse the first line as `let seed: u32`, then `let state = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);`"
+      - "`let secret = (state / 65_536 % 100) as i32 + 1;` turns the state into 1 to 100."
+      - "After printing `Too low!` or `Too high!`, check `if attempts == MAX_ATTEMPTS { break; }`. The `if !won` after the loop then prints the message."
+
+  - title: "Polish: functions and close calls"
+    text: |
+      Your `main` now does everything: it makes the secret, validates input, compares, and formats messages. It works, but it's getting long, and long functions are where bugs hide. Professional code splits a program into small functions that each do one job and have a name that says what that job is. Then `main` reads like a summary of the game.
+
+      Split out these three functions (exact names are up to you, but these are good ones):
+
+      - `fn make_secret(seed: u32) -> i32`: the LCG step from the last milestone.
+      - `fn hint(guess: i32, secret: i32) -> String`: the message for a wrong guess.
+      - `fn guesses(n: i32) -> String`: `"1 guess"` or `"3 guesses"`.
+
+      And while you're in there, make the hints friendlier. When a wrong guess is **within 5** of the secret, say so:
+
+      ```
+      Too low, but close!
+      Too high, but close!
+      ```
+
+      Farther away, keep `Too low!` and `Too high!`. With seed `1` (secret 39), the game from the last milestone now prints:
+
+      ```
+      Too high!
+      Too low!
+      Too low, but close!
+      Too high, but close!
+      Too high, but close!
+      You got it in 6 guesses!
+      ```
+
+      ### Building the message in a function
+
+      `hint` returns a `String`, built with `format!`. The distance between two numbers is the difference without its sign, which `.abs()` gives you:
+
+      ```rust run
+      fn hint(guess: i32, secret: i32) -> String {
+          let direction = if guess < secret { "low" } else { "high" };
+          if (guess - secret).abs() <= 5 {
+              format!("Too {direction}, but close!")
+          } else {
+              format!("Too {direction}!")
+          }
+      }
+
+      fn main() {
+          println!("{}", hint(36, 39));
+          println!("{}", hint(80, 39));
+      }
+      ```
+
+      ```output
+      Too low, but close!
+      Too high!
+      ```
+
+      Notice what the function *doesn't* do: it doesn't print. It returns the text and lets the caller decide what to do with it. Functions that compute values without printing are easier to reuse and to test (in the testing module you'll write `assert_eq!(hint(36, 39), "Too low, but close!")` for exactly this kind of function).
+
+      Once it all works, read your `main` from top to bottom. It should tell the story of the game without you having to decode any arithmetic.
+    solution: |
+      use std::io;
+      use std::io::BufRead;
+
+      const MAX_ATTEMPTS: i32 = 7;
+
+      /// One step of a linear congruential generator, scaled to 1..=100.
+      fn make_secret(seed: u32) -> i32 {
+          let state = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+          (state / 65_536 % 100) as i32 + 1
+      }
+
+      /// The message for a wrong guess.
+      fn hint(guess: i32, secret: i32) -> String {
+          let direction = if guess < secret { "low" } else { "high" };
+          if (guess - secret).abs() <= 5 {
+              format!("Too {direction}, but close!")
+          } else {
+              format!("Too {direction}!")
+          }
+      }
+
+      /// "1 guess", "2 guesses", ...
+      fn guesses(n: i32) -> String {
+          if n == 1 {
+              String::from("1 guess")
+          } else {
+              format!("{n} guesses")
+          }
+      }
+
+      fn main() {
+          let mut first = String::new();
+          io::stdin().read_line(&mut first).expect("failed to read the seed");
+          let seed: u32 = first.trim().parse().expect("the seed must be a number");
+          let secret = make_secret(seed);
+
+          let mut attempts = 0;
+          let mut won = false;
+
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read a line");
+              let text = line.trim();
+              if text.is_empty() {
+                  continue;
+              }
+              let guess: i32 = match text.parse() {
+                  Ok(n) => n,
+                  Err(_) => {
+                      println!("\"{text}\" is not a number");
+                      continue;
+                  }
+              };
+              if guess < 1 || guess > 100 {
+                  println!("Guesses go from 1 to 100");
+                  continue;
+              }
+
+              attempts += 1;
+              if guess == secret {
+                  println!("You got it in {}!", guesses(attempts));
+                  won = true;
+                  break;
+              }
+              println!("{}", hint(guess, secret));
+              if attempts == MAX_ATTEMPTS {
+                  break;
+              }
+          }
+
+          if !won {
+              println!("Out of guesses! The number was {secret}.");
+          }
+      }
+    tests:
+      - stdin: "1\n50\n25\n37\n43\n40\n39\n"
+      - stdin: "2024\n1\n10\n20\n15\n12\n14\n13\n"
+      - stdin: "123\n50\n75\n88\n94\n97\n96\n"
+        hidden: true
+      - stdin: "99\n100\n90\n1\n2\n3\n4\n5\n"
+        hidden: true
+    hints:
+      - "Move the LCG lines into `fn make_secret(seed: u32) -> i32` and call it from `main`."
+      - "In `hint`, compute `direction` as `\"low\"` or `\"high\"`, then pick between two `format!` calls with `if (guess - secret).abs() <= 5`."
+      - "In `main`, handle `guess == secret` first; for every other guess print `hint(guess, secret)`."

@@ -5,11 +5,9 @@ import { grade, runOnly, type GradeResult } from "../grader/grade";
 import { fillTemplate, parseTemplate } from "../grader/assemble.js";
 import CodeEditor from "./CodeEditor";
 import FillCode from "./FillCode";
-import Results, { DiagnosticList } from "./Results";
+import Results, { DiagnosticList, RunnerProblem } from "./Results";
 import Markdown from "./Markdown";
 import { CodeView } from "./highlight";
-import { useCompilerStatus } from "./CompilerBadge";
-import MobileDataCard, { useCompilerAutoload } from "./MobileDataCard";
 import SymbolBar from "./SymbolBar";
 import ReportLink from "./ReportLink";
 import type { ReportInfo } from "../lib/site";
@@ -32,7 +30,7 @@ type Props = {
 function announce(r: GradeResult): string {
   if (r.status === "pass") return "All tests passed.";
   if (r.status === "compile-error") return "It didn't compile. The errors are listed below the editor.";
-  if (r.status === "internal-error") return "The compiler couldn't run. Try again.";
+  if (r.status === "internal-error") return "Your code couldn't be run. Check your connection and try again.";
   const failed = r.tests.filter((t) => !t.pass).length;
   const rules = r.ruleProblems.length ? ` ${r.ruleProblems.length} rule${r.ruleProblems.length > 1 ? "s" : ""} not met.` : "";
   return `${failed} of ${r.tests.length} tests failed.${rules} Details are below the editor.`;
@@ -51,12 +49,8 @@ export default function Workbench({ ex, initialCode, initialBlanks, hintsUsed, o
   const [stdin, setStdin] = useState(ex.tests[0]?.stdin ?? "");
   const [freeRun, setFreeRun] = useState<Awaited<ReturnType<typeof runOnly>> | null>(null);
   const [showConsole, setShowConsole] = useState(false);
-  const compiler = useCompilerStatus();
   const busyRef = useRef(false);
   const boxRef = useRef<HTMLDivElement>(null);
-
-  // Start the compiler download right away, unless that would cost mobile data: then ask first.
-  const askData = useCompilerAutoload(ex.lang);
 
   const source = isFill ? fillTemplate(ex.seed, blanks) : code;
 
@@ -85,7 +79,7 @@ export default function Workbench({ ex, initialCode, initialBlanks, hintsUsed, o
     busyRef.current = true;
     setBusy(true);
     try {
-      setFreeRun(await runOnly(ex.lang, source, stdin, { files: ex.tests[0]?.files, args: ex.tests[0]?.args }));
+      setFreeRun(await runOnly(source, { stdin, files: ex.tests[0]?.files, args: ex.tests[0]?.args }));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -106,11 +100,9 @@ export default function Workbench({ ex, initialCode, initialBlanks, hintsUsed, o
       : [];
 
   const canRevealSolution = hintsUsed >= ex.hints.length || attempts >= 3;
-  const waiting = compiler.state !== "ready";
 
   return (
     <div className="workbench" ref={boxRef}>
-      {askData && <MobileDataCard lang={ex.lang} what="Checking your code" later="Or read the lesson now and check your code on Wi-Fi. Pressing Check also starts the download." />}
       {isFill ? (
         <FillCode
           template={ex.seed}
@@ -140,7 +132,7 @@ export default function Workbench({ ex, initialCode, initialBlanks, hintsUsed, o
       <div className="actions">
         <button className="btn btn-primary" onClick={check} disabled={busy} aria-keyshortcuts="Control+Enter Meta+Enter">
           {busy ? (
-            waiting ? "Waiting for compiler…" : "Compiling…"
+            "Compiling and running…"
           ) : (
             <>
               {checkLabel} <kbd aria-hidden="true">⌃↵</kbd>
@@ -175,7 +167,7 @@ export default function Workbench({ ex, initialCode, initialBlanks, hintsUsed, o
           {freeRun && (
             <div className="results">
               {freeRun.internalError ? (
-                <div className="banner banner-fail">The in-browser compiler couldn't run: {freeRun.internalError}. Try again, or reload the page.</div>
+                <RunnerProblem message={freeRun.internalError} />
               ) : !freeRun.compiled ? (
                 <DiagnosticList diagnostics={freeRun.diagnostics} raw={freeRun.rawDiagnostics} />
               ) : (

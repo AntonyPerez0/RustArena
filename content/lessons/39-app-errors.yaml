@@ -1,0 +1,1743 @@
+id: app-errors
+title: Error Handling at Work with thiserror and anyhow
+phase: "Rust at work"
+summary: The two crates nearly every Rust team uses for errors. thiserror for precise library errors, anyhow for applications, context that explains what went wrong, and a main that reports failures properly.
+roadmap: [Error Handling, Custom Error Types and Traits, "Propagating Errors and `?` Operator"]
+steps:
+  - title: Library errors with thiserror
+    id: app-errors-1
+    text: |
+      In the custom errors module you built error enums by hand: the enum, an `impl Display` with a `match` giving each variant a message, and an empty `impl std::error::Error`. That design is exactly right. It's also a lot of typing, and the boilerplate grows with every variant. **thiserror** is a derive macro that writes those impls for you:
+
+      ```rust run
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum WithdrawError {
+          #[error("amount must be positive")]
+          ZeroAmount,
+          #[error("insufficient funds: need {needed}, have {available}")]
+          InsufficientFunds { needed: u64, available: u64 },
+          #[error("account {0} is frozen")]
+          Frozen(String),
+      }
+
+      fn withdraw(balance: u64, amount: u64) -> Result<u64, WithdrawError> {
+          if amount == 0 {
+              return Err(WithdrawError::ZeroAmount);
+          }
+          if amount > balance {
+              return Err(WithdrawError::InsufficientFunds { needed: amount, available: balance });
+          }
+          Ok(balance - amount)
+      }
+
+      fn main() {
+          println!("{:?}", withdraw(100, 30));
+          for amount in [0, 500] {
+              match withdraw(100, amount) {
+                  Ok(left) => println!("left: {left}"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+          println!("{}", WithdrawError::Frozen(String::from("ACC-7")));
+      }
+      ```
+
+      ```output
+      Ok(70)
+      error: amount must be positive
+      error: insufficient funds: need 500, have 100
+      account ACC-7 is frozen
+      ```
+
+      Piece by piece:
+
+      - `#[derive(Debug, Error)]`: `Error` (from `thiserror`) generates `impl std::error::Error` and `impl Display`. The `Error` trait requires `Debug` too, so derive both.
+      - Each `#[error("...")]` is that variant's `Display` message. Inside it, `{0}` is the first tuple field and `{needed}` a named field. Format specs work as in `format!`: `{0:?}` uses Debug (quotes around strings), `{amount:.2}` rounds.
+      - The result is the same code you'd write by hand: no runtime cost, and thiserror doesn't appear in your public API (callers just see an enum implementing `Error`), so you could remove it later without breaking anyone.
+      - Callers can `match` on the variants and react differently to each one. That's the point of a **typed error**, and why libraries use them.
+
+      A struct works too, for an operation that can fail in only one way:
+
+      ```rust run
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      #[error("invalid color {input:?}: expected #rrggbb")]
+      struct ParseColorError {
+          input: String,
+      }
+
+      fn main() {
+          let e = ParseColorError { input: String::from("teal") };
+          println!("{e}");
+      }
+      ```
+
+      ```output
+      invalid color "teal": expected #rrggbb
+      ```
+
+      ### Writing good messages
+
+      The Rust API guidelines say error messages are **lowercase, without a trailing period**, and short. The reason: messages get chained into sentences like `loading config: line 3: invalid number`, and capitals and periods in the middle look wrong. Say what went wrong and include the values that help (the amount, the account, the input).
+
+      ### Common mistakes
+
+      Every variant needs a message. Forget one and thiserror tells you at compile time:
+
+      ```rust compile_fail
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum LoadError {
+          #[error("file is empty")]
+          Empty,
+          TooBig(usize),
+      }
+
+      fn main() {
+          println!("{}", LoadError::Empty);
+      }
+      ```
+
+      ```error
+      error: missing #[error("...")] display attribute
+      ```
+
+      - **Forgetting `Debug`** in the derive gives ``error[E0277]: `LoadError` doesn't implement `Debug` ``: `std::error::Error` requires it.
+      - **Naming a field that doesn't exist** in the message, like `{amount}` when the field is `needed`, is a compile error too. Typos can't sneak into production messages.
+
+      **Your turn:** complete `TransferError` (derive `Error`, add a message to each variant) and write `check_transfer`, which returns the balance left after the transfer. Check in this order, with these exact messages:
+      - `from == to`: `SameAccount`, message `cannot transfer to the same account`
+      - `amount > 1000`: `OverLimit { limit: 1000 }`, message `amount exceeds the daily limit of 1000` (use `{limit}`)
+      - `amount > balance`: `InsufficientFunds { needed, available }`, message `insufficient funds: need 250, have 100`
+    seed: |
+      use thiserror::Error;
+
+      #[derive(Debug, PartialEq)]
+      enum TransferError {
+          SameAccount,
+          OverLimit { limit: u64 },
+          InsufficientFunds { needed: u64, available: u64 },
+      }
+
+      fn check_transfer(from: &str, to: &str, balance: u64, amount: u64) -> Result<u64, TransferError> {
+          todo!()
+      }
+    solution: |
+      use thiserror::Error;
+
+      #[derive(Debug, PartialEq, Error)]
+      enum TransferError {
+          #[error("cannot transfer to the same account")]
+          SameAccount,
+          #[error("amount exceeds the daily limit of {limit}")]
+          OverLimit { limit: u64 },
+          #[error("insufficient funds: need {needed}, have {available}")]
+          InsufficientFunds { needed: u64, available: u64 },
+      }
+
+      fn check_transfer(from: &str, to: &str, balance: u64, amount: u64) -> Result<u64, TransferError> {
+          if from == to {
+              return Err(TransferError::SameAccount);
+          }
+          if amount > 1000 {
+              return Err(TransferError::OverLimit { limit: 1000 });
+          }
+          if amount > balance {
+              return Err(TransferError::InsufficientFunds { needed: amount, available: balance });
+          }
+          Ok(balance - amount)
+      }
+    harness: |
+      #[test]
+      fn a_valid_transfer_returns_the_new_balance() {
+          assert_eq!(check_transfer("A", "B", 500, 120), Ok(380), "check_transfer(A, B, 500, 120)");
+      }
+
+      #[test]
+      fn same_account_is_rejected_with_its_message() {
+          let e = check_transfer("A", "A", 500, 10).unwrap_err();
+          assert_eq!(e, TransferError::SameAccount, "check_transfer(A, A, ..)");
+          assert_eq!(e.to_string(), "cannot transfer to the same account", "message");
+      }
+
+      #[test]
+      fn over_the_limit_is_rejected() {
+          let e = check_transfer("A", "B", 5000, 1001).unwrap_err();
+          assert_eq!(e, TransferError::OverLimit { limit: 1000 }, "check_transfer(.., 1001)");
+          assert_eq!(e.to_string(), "amount exceeds the daily limit of 1000", "message");
+      }
+
+      #[test]
+      fn insufficient_funds_reports_both_amounts() {
+          let e = check_transfer("A", "B", 100, 250).unwrap_err();
+          assert_eq!(e.to_string(), "insufficient funds: need 250, have 100", "message");
+      }
+
+      #[test]
+      fn checks_happen_in_order() {
+          assert_eq!(check_transfer("A", "A", 0, 5000), Err(TransferError::SameAccount), "same account is checked first");
+          assert_eq!(check_transfer("A", "B", 0, 5000), Err(TransferError::OverLimit { limit: 1000 }), "the limit is checked before the balance");
+      }
+
+      #[test]
+      fn it_is_a_real_std_error() {
+          let e: Box<dyn std::error::Error> = Box::new(TransferError::SameAccount);
+          assert_eq!(e.to_string(), "cannot transfer to the same account", "as Box<dyn Error>");
+      }
+    hints:
+      - "Add `Error` to the derive list, then put `#[error(\"...\")]` above each variant."
+      - "Named fields go straight into the message: `#[error(\"insufficient funds: need {needed}, have {available}\")]`."
+      - "In `check_transfer`, three `if` checks with `return Err(...)`, then `Ok(balance - amount)`."
+    more:
+      - task: |
+          Fill in the blanks: derive thiserror's trait on the struct, and write the message so the program prints `invalid size "XXL": expected S, M or L` (use Debug formatting of the `input` field to get the quotes).
+        fill: |
+          use thiserror::Error;
+
+          #[derive(Debug, [[Error]])]
+          #[error("invalid size [[{input:?}]]: expected S, M or L")]
+          struct SizeError {
+              input: String,
+          }
+
+          fn parse_size(s: &str) -> Result<char, SizeError> {
+              match s {
+                  "S" | "M" | "L" => Ok(s.chars().next().unwrap()),
+                  _ => Err(SizeError { input: s.to_string() }),
+              }
+          }
+
+          fn main() {
+              match parse_size("XXL") {
+                  Ok(c) => println!("size {c}"),
+                  Err(e) => println!("{e}"),
+              }
+          }
+        hints:
+          - "The derive is named after the trait: `Error`."
+          - "A named field in Debug format is written `{input:?}` inside the message."
+        tests:
+          - expect: 'invalid size "XXL": expected S, M or L'
+      - task: |
+          Write an error enum from scratch. `TemperatureError` has two variants: `NotANumber(String)` with message `"abc" is not a number` (Debug-format the text) and `BelowAbsoluteZero(f64)` with message `-300.0 C is below absolute zero` (one decimal). Then write `fn parse_celsius(s: &str) -> Result<f64, TemperatureError>`: trim `s`, parse it as `f64`, and reject anything below `-273.15`.
+        seed: |
+          use thiserror::Error;
+
+          // define TemperatureError here
+
+          fn parse_celsius(s: &str) -> Result<f64, TemperatureError> {
+              todo!()
+          }
+        solution: |
+          use thiserror::Error;
+
+          #[derive(Debug, Error, PartialEq)]
+          enum TemperatureError {
+              #[error("{0:?} is not a number")]
+              NotANumber(String),
+              #[error("{0:.1} C is below absolute zero")]
+              BelowAbsoluteZero(f64),
+          }
+
+          fn parse_celsius(s: &str) -> Result<f64, TemperatureError> {
+              let t = s.trim();
+              let c: f64 = t.parse().map_err(|_| TemperatureError::NotANumber(t.to_string()))?;
+              if c < -273.15 {
+                  return Err(TemperatureError::BelowAbsoluteZero(c));
+              }
+              Ok(c)
+          }
+        harness: |
+          #[test]
+          fn parses_a_normal_temperature() {
+              assert_eq!(parse_celsius(" 21.5 ").unwrap(), 21.5, "parse_celsius(\" 21.5 \")");
+          }
+
+          #[test]
+          fn text_is_not_a_number() {
+              assert_eq!(parse_celsius("abc").unwrap_err().to_string(), "\"abc\" is not a number", "message for \"abc\"");
+          }
+
+          #[test]
+          fn below_absolute_zero_is_rejected() {
+              assert_eq!(parse_celsius("-300").unwrap_err().to_string(), "-300.0 C is below absolute zero", "message for -300");
+          }
+
+          #[test]
+          fn absolute_zero_itself_is_fine() {
+              assert_eq!(parse_celsius("-273.15").unwrap(), -273.15, "parse_celsius(\"-273.15\")");
+          }
+        hints:
+          - "`#[error(\"{0:?} is not a number\")]` and `#[error(\"{0:.1} C is below absolute zero\")]`."
+          - "`t.parse::<f64>().map_err(|_| TemperatureError::NotANumber(t.to_string()))?` turns the parse error into your variant."
+
+  - title: "Wrapping causes: #[from], #[source], transparent"
+    id: app-errors-2
+    text: |
+      Real errors have causes. Your config loader fails *because* a number didn't parse; your importer fails *because* the file wasn't there. Throwing the cause away makes debugging miserable, so `std::error::Error` has a method for it: `source()` returns the error that caused this one (or `None`). Following `source()` again and again walks the **error chain**.
+
+      thiserror sets up `source()` from attributes on fields:
+
+      - `#[source]` marks a field as the cause.
+      - A field **named** `source` is the cause automatically.
+      - `#[from]` marks the cause **and** generates `impl From<ThatError> for YourError`, so `?` converts it for you.
+
+      ### `#[source]`, with extra information
+
+      ```rust run
+      use std::error::Error;
+      use std::num::ParseIntError;
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum ConfigError {
+          #[error("line {line}: expected key=value")]
+          Syntax { line: usize },
+          #[error("line {line}: invalid number for {key}")]
+          BadNumber {
+              line: usize,
+              key: String,
+              #[source]
+              source: ParseIntError,
+          },
+      }
+
+      fn parse_config(text: &str) -> Result<Vec<(String, u32)>, ConfigError> {
+          let mut out = Vec::new();
+          for (i, raw) in text.lines().enumerate() {
+              let line = i + 1;
+              let Some((key, value)) = raw.split_once('=') else {
+                  return Err(ConfigError::Syntax { line });
+              };
+              let key = key.trim().to_string();
+              let n = value
+                  .trim()
+                  .parse()
+                  .map_err(|source| ConfigError::BadNumber { line, key: key.clone(), source })?;
+              out.push((key, n));
+          }
+          Ok(out)
+      }
+
+      fn print_chain(e: &dyn Error) {
+          println!("error: {e}");
+          let mut cause = e.source();
+          while let Some(c) = cause {
+              println!("  caused by: {c}");
+              cause = c.source();
+          }
+      }
+
+      fn main() {
+          println!("{:?}", parse_config("workers = 4\nport = 8080"));
+          if let Err(e) = parse_config("workers = 4\nport = eighty") {
+              print_chain(&e);
+          }
+          if let Err(e) = parse_config("workers") {
+              print_chain(&e);
+          }
+      }
+      ```
+
+      ```output
+      Ok([("workers", 4), ("port", 8080)])
+      error: line 2: invalid number for port
+        caused by: invalid digit found in string
+      error: line 1: expected key=value
+      ```
+
+      The variant carries extra facts (the line and key), so there's no automatic conversion: `map_err` builds the variant and `?` returns it. `print_chain` takes `&dyn Error`, so it works for any error type.
+
+      ### `#[from]`: automatic conversion with `?`
+
+      When a variant only wraps another error, `#[from]` saves the `map_err`:
+
+      ```rust run
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum ImportError {
+          #[error("could not read the export file")]
+          Io(#[from] std::io::Error),
+          #[error("export file is not valid JSON")]
+          Json(#[from] serde_json::Error),
+      }
+
+      fn import(path: &str) -> Result<Vec<u32>, ImportError> {
+          let text = std::fs::read_to_string(path)?; // io::Error becomes ImportError::Io
+          let ids = serde_json::from_str(&text)?; // serde_json::Error becomes ImportError::Json
+          Ok(ids)
+      }
+
+      fn main() {
+          match import("export.json") {
+              Ok(ids) => println!("{} ids", ids.len()),
+              Err(e) => {
+                  println!("{e}");
+                  if let Some(cause) = std::error::Error::source(&e) {
+                      println!("because: {cause}");
+                  }
+              }
+          }
+      }
+      ```
+
+      ```output
+      could not read the export file
+      because: No such file or directory (os error 2)
+      ```
+
+      ### Don't say it twice
+
+      Notice the messages above describe only **their own layer** ("could not read the export file"), not the cause. If you write `#[error("bad number: {0}")]` *and* mark the field as the source, every tool that prints the chain shows the cause twice: `bad number: invalid digit found in string: invalid digit found in string`. Pick one: either the message includes the cause and the field isn't a source, or (the common choice) the cause is the source and the message leaves it out.
+
+      ### `#[error(transparent)]`
+
+      Sometimes a variant adds nothing: it just passes another error through. `#[error(transparent)]` forwards both `Display` and `source()` to the inner error:
+
+      ```rust
+      #[derive(Debug, Error)]
+      enum StoreError {
+          #[error("item {0} not found")]
+          NotFound(u32),
+          #[error(transparent)]
+          Io(#[from] std::io::Error),
+      }
+      ```
+
+      ### Common mistakes
+
+      Two variants can't both have `#[from]` for the same type: `?` wouldn't know which one to build.
+
+      ```rust compile_fail
+      use std::num::ParseIntError;
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum ScoreError {
+          #[error("bad score")]
+          BadScore(#[from] ParseIntError),
+          #[error("bad round")]
+          BadRound(#[from] ParseIntError),
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0119]: conflicting implementations of trait `From<ParseIntError>` for type `ScoreError`
+      ```
+
+      Use `#[source]` plus `map_err` for at least one of them. Also, `#[from]` only works on a variant whose other fields are empty; adding `line: usize` next to it gives `deriving From requires no fields other than source and backtrace`. Again, switch to `#[source]`.
+
+      **Your turn:** `parse_quantity` is already written and uses `?` on a `ParseIntError`. Define `QuantityError` so it compiles and passes: a variant `NotANumber` that wraps the `ParseIntError` with `#[from]` (message `not a whole number`), and `TooLarge(u32)` with message `quantity 250 is over the maximum of 100`.
+    seed: |
+      use std::num::ParseIntError;
+      use thiserror::Error;
+
+      // define QuantityError here
+
+      fn parse_quantity(s: &str) -> Result<u32, QuantityError> {
+          let n: u32 = s.trim().parse()?;
+          if n > 100 {
+              return Err(QuantityError::TooLarge(n));
+          }
+          Ok(n)
+      }
+    solution: |
+      use std::num::ParseIntError;
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum QuantityError {
+          #[error("not a whole number")]
+          NotANumber(#[from] ParseIntError),
+          #[error("quantity {0} is over the maximum of 100")]
+          TooLarge(u32),
+      }
+
+      fn parse_quantity(s: &str) -> Result<u32, QuantityError> {
+          let n: u32 = s.trim().parse()?;
+          if n > 100 {
+              return Err(QuantityError::TooLarge(n));
+          }
+          Ok(n)
+      }
+    harness: |
+      use std::error::Error;
+
+      #[test]
+      fn parses_a_valid_quantity() {
+          assert_eq!(parse_quantity(" 42 ").unwrap(), 42, "parse_quantity(\" 42 \")");
+      }
+
+      #[test]
+      fn text_becomes_not_a_number() {
+          let e = parse_quantity("lots").unwrap_err();
+          assert!(matches!(e, QuantityError::NotANumber(_)), "variant was {e:?}");
+          assert_eq!(e.to_string(), "not a whole number", "message");
+      }
+
+      #[test]
+      fn the_parse_error_is_kept_as_the_source() {
+          let e = parse_quantity("1.5").unwrap_err();
+          assert_eq!(e.source().map(|s| s.to_string()), Some(String::from("invalid digit found in string")), "source()");
+      }
+
+      #[test]
+      fn too_large_has_no_source() {
+          let e = parse_quantity("250").unwrap_err();
+          assert_eq!(e.to_string(), "quantity 250 is over the maximum of 100", "message");
+          assert!(e.source().is_none(), "TooLarge should have no source");
+      }
+    hints:
+      - "`#[derive(Debug, Error)] enum QuantityError { ... }` with two variants."
+      - "`#[error(\"not a whole number\")] NotANumber(#[from] ParseIntError),`"
+      - "`#[error(\"quantity {0} is over the maximum of 100\")] TooLarge(u32),`"
+    more:
+      - task: |
+          Add the line number. Write `fn parse_scores(text: &str) -> Result<Vec<u32>, ScoreError>` that parses one score per line. A bad line gives `ScoreError::BadLine { line, source }` (line counts from 1), with message `line 3 is not a score` and the `ParseIntError` as its source. Since the variant has an extra field, use `map_err`, not `#[from]`.
+        seed: |
+          use std::num::ParseIntError;
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          enum ScoreError {
+              BadLine { line: usize, source: ParseIntError },
+          }
+
+          fn parse_scores(text: &str) -> Result<Vec<u32>, ScoreError> {
+              todo!()
+          }
+        solution: |
+          use std::num::ParseIntError;
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          enum ScoreError {
+              #[error("line {line} is not a score")]
+              BadLine {
+                  line: usize,
+                  #[source]
+                  source: ParseIntError,
+              },
+          }
+
+          fn parse_scores(text: &str) -> Result<Vec<u32>, ScoreError> {
+              let mut scores = Vec::new();
+              for (i, line) in text.lines().enumerate() {
+                  let n = line.trim().parse().map_err(|source| ScoreError::BadLine { line: i + 1, source })?;
+                  scores.push(n);
+              }
+              Ok(scores)
+          }
+        harness: |
+          use std::error::Error;
+
+          #[test]
+          fn parses_every_line() {
+              assert_eq!(parse_scores("10\n20\n 30 ").unwrap(), vec![10, 20, 30], "parse_scores(three lines)");
+          }
+
+          #[test]
+          fn reports_the_bad_line_number() {
+              assert_eq!(parse_scores("1\n2\nthree").unwrap_err().to_string(), "line 3 is not a score", "message");
+          }
+
+          #[test]
+          fn keeps_the_parse_error_as_source() {
+              let e = parse_scores("-4").unwrap_err();
+              assert_eq!(e.source().map(|s| s.to_string()), Some(String::from("invalid digit found in string")), "source()");
+          }
+
+          #[test]
+          fn empty_text_gives_no_scores() {
+              assert_eq!(parse_scores("").unwrap(), Vec::<u32>::new(), "parse_scores(\"\")");
+          }
+        hints:
+          - "Give the variant `#[error(\"line {line} is not a score\")]`. A field named `source` is the source automatically (writing `#[source]` too makes it explicit)."
+          - "`line.trim().parse().map_err(|source| ScoreError::BadLine { line: i + 1, source })?`"
+      - task: |
+          Write `fn error_chain(e: &dyn Error) -> Vec<String>` that returns the message of `e` followed by the message of each cause, outermost first. The error types in the starter code are ready to use; the tests build nested errors with them.
+        seed: |
+          use std::error::Error;
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          #[error("could not start the server")]
+          struct StartError(#[source] ConfigError);
+
+          #[derive(Debug, Error)]
+          enum ConfigError {
+              #[error("invalid port")]
+              Port(#[from] std::num::ParseIntError),
+              #[error("no port given")]
+              Missing,
+          }
+
+          fn error_chain(e: &dyn Error) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          use std::error::Error;
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          #[error("could not start the server")]
+          struct StartError(#[source] ConfigError);
+
+          #[derive(Debug, Error)]
+          enum ConfigError {
+              #[error("invalid port")]
+              Port(#[from] std::num::ParseIntError),
+              #[error("no port given")]
+              Missing,
+          }
+
+          fn error_chain(e: &dyn Error) -> Vec<String> {
+              let mut out = vec![e.to_string()];
+              let mut cause = e.source();
+              while let Some(c) = cause {
+                  out.push(c.to_string());
+                  cause = c.source();
+              }
+              out
+          }
+        harness: |
+          #[test]
+          fn walks_three_levels() {
+              let inner: ConfigError = "80a".parse::<u16>().unwrap_err().into();
+              let e = StartError(inner);
+              assert_eq!(error_chain(&e), vec!["could not start the server", "invalid port", "invalid digit found in string"], "error_chain(StartError(Port(..)))");
+          }
+
+          #[test]
+          fn stops_when_there_is_no_source() {
+              let e = StartError(ConfigError::Missing);
+              assert_eq!(error_chain(&e), vec!["could not start the server", "no port given"], "error_chain(StartError(Missing))");
+          }
+
+          #[test]
+          fn a_single_error_is_one_line() {
+              assert_eq!(error_chain(&ConfigError::Missing), vec!["no port given"], "error_chain(Missing)");
+          }
+        hints:
+          - "Start with `vec![e.to_string()]`, then follow `e.source()`."
+          - "`let mut cause = e.source(); while let Some(c) = cause { out.push(c.to_string()); cause = c.source(); }`"
+
+  - title: "anyhow: one error type for applications"
+    id: app-errors-3
+    text: |
+      Typed errors are for code whose **callers** need to tell failures apart. But in an application, most errors travel up to `main` and get reported to a human or a log. Writing an enum for every function there is busywork that buys nothing. **anyhow** gives you one error type, `anyhow::Error`, that can hold any error:
+
+      ```rust run
+      use anyhow::{anyhow, bail, ensure, Result};
+
+      fn parse_reading(line: &str) -> Result<(String, f64)> {
+          let Some((name, value)) = line.split_once('=') else {
+              bail!("expected sensor=value, got {line:?}");
+          };
+          ensure!(!name.trim().is_empty(), "sensor name is empty");
+          let celsius: f64 = value.trim().parse()?;
+          if !(-50.0..=60.0).contains(&celsius) {
+              return Err(anyhow!("{celsius} C is out of range"));
+          }
+          Ok((name.trim().to_string(), celsius))
+      }
+
+      fn main() {
+          for line in ["porch=12.5", "porch", "=3", "attic=hot", "oven=220"] {
+              match parse_reading(line) {
+                  Ok((name, c)) => println!("{name}: {c}"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      porch: 12.5
+      error: expected sensor=value, got "porch"
+      error: sensor name is empty
+      error: invalid float literal
+      error: 220 C is out of range
+      ```
+
+      Piece by piece:
+
+      - `anyhow::Result<T>` is short for `Result<T, anyhow::Error>`. Importing it as `Result` is the convention in application code.
+      - `?` works on **any** error type that implements `std::error::Error` (plus `Send + Sync + 'static`, which almost all do): here a `ParseFloatError` is converted into `anyhow::Error` automatically. No enum, no `From` impls.
+      - `anyhow!("...")` creates an error from a message, with `format!` syntax.
+      - `bail!("...")` is short for `return Err(anyhow!("..."))`.
+      - `ensure!(condition, "...")` is short for `if !condition { bail!("...") }`.
+      - The original error is kept inside, not just its text. The next steps use that: adding context and finding out what the cause was.
+
+      ### anyhow vs `Box<dyn Error>`
+
+      You've used `Box<dyn std::error::Error>` for the same purpose. anyhow is the production version of that idea: it requires `Send + Sync` so errors can cross threads and async tasks, it's a single pointer wide, it records a backtrace when `RUST_BACKTRACE=1` is set, and it adds context (next step).
+
+      ### Common mistakes
+
+      `?` on an `Option` doesn't produce an error by itself, because `None` carries no message:
+
+      ```rust compile_fail
+      use std::collections::HashMap;
+
+      fn port(settings: &HashMap<String, u16>) -> anyhow::Result<u16> {
+          let p = settings.get("port")?;
+          Ok(*p)
+      }
+
+      fn main() {
+          println!("{:?}", port(&HashMap::new()).is_err());
+      }
+      ```
+
+      ```error
+      error[E0277]: the `?` operator can only be used on `Result`s, not `Option`s, in a function that returns `Result`
+      ```
+
+      Give it a message: `settings.get("port").ok_or_else(|| anyhow!("no port setting"))?`, or with `.context(...)` from the next step.
+
+      - **anyhow in a library's public API.** Callers get one opaque type and can't `match` on what went wrong. Libraries return thiserror enums; applications use anyhow.
+      - **Replacing the cause:** `.map_err(|_| anyhow!("bad config"))` throws away the original error and its message. Add context instead (next step).
+
+      **Your turn:** write `fn parse_duration(s: &str) -> Result<u64>` (anyhow's `Result`) that turns `"90s"`, `"5m"` or `"2h"` into seconds. Use these exact errors:
+      - empty input: `bail!` with `empty duration`
+      - last character not `s`, `m` or `h`: `unknown unit 'x' in "10x"` (Debug-format the char and the input)
+      - the number doesn't parse: just use `?` (the message is the `ParseIntError`'s)
+      - a zero amount: `ensure!` with `duration must be positive`
+    seed: |
+      use anyhow::{bail, ensure, Result};
+
+      fn parse_duration(s: &str) -> Result<u64> {
+          todo!()
+      }
+    solution: |
+      use anyhow::{bail, ensure, Result};
+
+      fn parse_duration(s: &str) -> Result<u64> {
+          let Some(unit) = s.chars().last() else {
+              bail!("empty duration");
+          };
+          let factor = match unit {
+              's' => 1,
+              'm' => 60,
+              'h' => 3600,
+              _ => bail!("unknown unit {unit:?} in {s:?}"),
+          };
+          let amount: u64 = s[..s.len() - unit.len_utf8()].parse()?;
+          ensure!(amount > 0, "duration must be positive");
+          Ok(amount * factor)
+      }
+    harness: |
+      #[test]
+      fn converts_each_unit_to_seconds() {
+          assert_eq!(parse_duration("90s").unwrap(), 90, "parse_duration(\"90s\")");
+          assert_eq!(parse_duration("5m").unwrap(), 300, "parse_duration(\"5m\")");
+          assert_eq!(parse_duration("2h").unwrap(), 7200, "parse_duration(\"2h\")");
+      }
+
+      #[test]
+      fn empty_input_is_an_error() {
+          assert_eq!(parse_duration("").unwrap_err().to_string(), "empty duration", "parse_duration(\"\")");
+      }
+
+      #[test]
+      fn unknown_units_are_named_in_the_error() {
+          assert_eq!(parse_duration("10x").unwrap_err().to_string(), "unknown unit 'x' in \"10x\"", "parse_duration(\"10x\")");
+          assert_eq!(parse_duration("3é").unwrap_err().to_string(), "unknown unit 'é' in \"3é\"", "parse_duration(\"3é\")");
+      }
+
+      #[test]
+      fn a_bad_number_keeps_the_parse_error() {
+          assert_eq!(parse_duration("abcs").unwrap_err().to_string(), "invalid digit found in string", "parse_duration(\"abcs\")");
+          assert_eq!(parse_duration("m").unwrap_err().to_string(), "cannot parse integer from empty string", "parse_duration(\"m\")");
+      }
+
+      #[test]
+      fn zero_is_rejected() {
+          assert_eq!(parse_duration("0m").unwrap_err().to_string(), "duration must be positive", "parse_duration(\"0m\")");
+      }
+    hints:
+      - "`let Some(unit) = s.chars().last() else { bail!(\"empty duration\"); };`"
+      - "`match unit { 's' => 1, 'm' => 60, 'h' => 3600, _ => bail!(\"unknown unit {unit:?} in {s:?}\") }` gives the factor."
+      - "The number is everything before the unit: `s[..s.len() - unit.len_utf8()].parse::<u64>()?`, then `ensure!(amount > 0, ...)`."
+    more:
+      - task: |
+          Write `fn average(values: &[&str]) -> anyhow::Result<f64>` that parses every value as `f64` (trimmed) and returns their average. An empty slice is an error with the message `no values to average` (use `ensure!`); a value that doesn't parse returns the parse error with `?`.
+        seed: |
+          use anyhow::ensure;
+
+          fn average(values: &[&str]) -> anyhow::Result<f64> {
+              todo!()
+          }
+        solution: |
+          use anyhow::ensure;
+
+          fn average(values: &[&str]) -> anyhow::Result<f64> {
+              ensure!(!values.is_empty(), "no values to average");
+              let mut sum = 0.0;
+              for v in values {
+                  sum += v.trim().parse::<f64>()?;
+              }
+              Ok(sum / values.len() as f64)
+          }
+        harness: |
+          #[test]
+          fn averages_the_values() {
+              assert_eq!(average(&["1", " 2 ", "4.5"]).unwrap(), 2.5, "average([1, 2, 4.5])");
+          }
+
+          #[test]
+          fn no_values_is_an_error() {
+              assert_eq!(average(&[]).unwrap_err().to_string(), "no values to average", "average([])");
+          }
+
+          #[test]
+          fn a_bad_value_is_an_error() {
+              assert_eq!(average(&["1", "two"]).unwrap_err().to_string(), "invalid float literal", "average([1, two])");
+          }
+        hints:
+          - "`ensure!(!values.is_empty(), \"no values to average\");` first."
+          - "Inside a loop: `sum += v.trim().parse::<f64>()?;` then `Ok(sum / values.len() as f64)`."
+      - task: |
+          Write a tiny calculator. Each line of standard input is `<a> <op> <b>` with whole numbers (`i64`) and `op` one of `+ - * /`. Put the logic in `fn eval(line: &str) -> anyhow::Result<i64>` and print `= <result>` or `error: <message>` for each line. Errors: wrong number of parts gives `expected: <a> <op> <b>`; an unknown operator gives `unknown operator "%"`; dividing by zero gives `division by zero`; numbers that don't parse use `?`; results that overflow give `overflow` (use the `checked_` methods).
+        seed: |
+          use anyhow::{anyhow, bail, Result};
+          use std::io::BufRead;
+
+          fn eval(line: &str) -> Result<i64> {
+              todo!()
+          }
+
+          fn main() {
+              for line in std::io::stdin().lock().lines() {
+                  let line = line.unwrap();
+                  match eval(&line) {
+                      Ok(n) => println!("= {n}"),
+                      Err(e) => println!("error: {e}"),
+                  }
+              }
+          }
+        solution: |
+          use anyhow::{anyhow, bail, Result};
+          use std::io::BufRead;
+
+          fn eval(line: &str) -> Result<i64> {
+              let parts: Vec<&str> = line.split_whitespace().collect();
+              let [a, op, b] = parts[..] else {
+                  bail!("expected: <a> <op> <b>");
+              };
+              let a: i64 = a.parse()?;
+              let b: i64 = b.parse()?;
+              let result = match op {
+                  "+" => a.checked_add(b),
+                  "-" => a.checked_sub(b),
+                  "*" => a.checked_mul(b),
+                  "/" => {
+                      if b == 0 {
+                          bail!("division by zero");
+                      }
+                      a.checked_div(b)
+                  }
+                  _ => bail!("unknown operator {op:?}"),
+              };
+              result.ok_or_else(|| anyhow!("overflow"))
+          }
+
+          fn main() {
+              for line in std::io::stdin().lock().lines() {
+                  let line = line.unwrap();
+                  match eval(&line) {
+                      Ok(n) => println!("= {n}"),
+                      Err(e) => println!("error: {e}"),
+                  }
+              }
+          }
+        tests:
+          - stdin: "2 + 3\n10 / 0\n7 % 2\n4 * x\n"
+          - stdin: "100 - 250\n1 2\n9223372036854775807 + 1\n-12 / 5\n"
+            hidden: true
+          - stdin: "3 * 4 * 5\n6 / 3\n"
+            hidden: true
+        hints:
+          - "Collect `line.split_whitespace()` into a `Vec<&str>`; the slice pattern `let [a, op, b] = parts[..] else { bail!(...) };` checks there are exactly three."
+          - "`a.checked_add(b)` returns `None` on overflow; `.ok_or_else(|| anyhow!(\"overflow\"))` turns that into an error."
+          - "Check `b == 0` before `checked_div`, so the message is `division by zero` rather than `overflow`."
+
+  - title: "Context: errors that explain themselves"
+    id: app-errors-4
+    text: |
+      The most infamous error message in programming is `No such file or directory (os error 2)`. Which file? What was the program trying to do? The OS error can't know; only your code does. **Context** is a sentence each layer adds on the way up:
+
+      ```rust run
+      use anyhow::{Context, Result};
+
+      fn read_config(path: &str) -> Result<String> {
+          std::fs::read_to_string(path).with_context(|| format!("could not read {path}"))
+      }
+
+      fn start_server() -> Result<()> {
+          let text = read_config("server.toml").context("loading the server config")?;
+          println!("config has {} bytes", text.len());
+          Ok(())
+      }
+
+      fn main() {
+          if let Err(e) = start_server() {
+              println!("{e}");
+              println!("---");
+              println!("{e:#}");
+              println!("---");
+              println!("{e:?}");
+          }
+      }
+      ```
+
+      ```output
+      loading the server config
+      ---
+      loading the server config: could not read server.toml: No such file or directory (os error 2)
+      ---
+      loading the server config
+
+      Caused by:
+          0: could not read server.toml
+          1: No such file or directory (os error 2)
+      ```
+
+      Piece by piece:
+
+      - `use anyhow::Context;` imports an **extension trait**: it adds the methods `context` and `with_context` to every `Result` (whose error is a std error or an `anyhow::Error`) and to every `Option`.
+      - `.context("...")` wraps the error in a new layer with your message. The original error stays inside as the cause.
+      - `.with_context(|| format!(...))` takes a closure that builds the message **only if there is an error**. Use it whenever the message needs `format!`, so the happy path doesn't allocate a string for nothing.
+      - Three ways to print an `anyhow::Error`: `{}` shows only the outermost message; `{:#}` shows the whole chain on one line joined by `: ` (great for logs); `{:?}` shows the multi-line report with `Caused by:`, which is what a `main` returning an error prints.
+      - `e.chain()` iterates over every layer as `&dyn Error`, outermost first, and `e.root_cause()` is the innermost one.
+
+      ### Context on `Option`
+
+      `.context` also turns `None` into an error with your message, which solves last step's `?` on `Option` problem:
+
+      ```rust run
+      use anyhow::{Context, Result};
+      use std::collections::BTreeMap;
+
+      fn port_of(services: &BTreeMap<&str, &str>, name: &str) -> Result<u16> {
+          let raw = services.get(name).with_context(|| format!("no service named {name}"))?;
+          let port = raw.parse().with_context(|| format!("bad port {raw:?} for {name}"))?;
+          Ok(port)
+      }
+
+      fn main() {
+          let services = BTreeMap::from([("api", "8080"), ("db", "five")]);
+          for name in ["api", "db", "cache"] {
+              match port_of(&services, name) {
+                  Ok(p) => println!("{name} -> {p}"),
+                  Err(e) => println!("{e:#}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      api -> 8080
+      bad port "five" for db: invalid digit found in string
+      no service named cache
+      ```
+
+      ### Writing good context
+
+      - Say what you were **doing**: "loading the server config", "parsing order 1042". The inner error already says what failed.
+      - Include the identifiers someone needs to find the problem: file paths, line numbers, ids.
+      - Don't repeat the cause. `with_context(|| format!("failed: {e}"))` duplicates what the chain already shows.
+
+      ### Common mistakes
+
+      Forgetting the import. The methods come from the trait, so without `use anyhow::Context;`:
+
+      ```rust compile_fail
+      fn main() {
+          let r: Result<u32, std::num::ParseIntError> = "x".parse();
+          let _ = r.context("reading the count");
+      }
+      ```
+
+      ```error
+      error[E0599]: no method named `context` found for enum `Result<T, E>` in the current scope
+      ```
+
+      The compiler's help even suggests `use anyhow::Context;`. And remember `.context(format!(...))` works but builds the string even on success: prefer `with_context`.
+
+      **Your turn:** write `fn load_prices(text: &str) -> Result<Vec<(String, u32)>>`. Each non-empty line is `item,price` (trim both parts). Line numbers count from 1, including empty lines. Errors, as printed with `{:#}`:
+      - no comma: `line 2: expected item,price` (use `bail!`)
+      - a bad price: `line 3: bad price for tea: invalid digit found in string` (add context to the parse error)
+    seed: |
+      use anyhow::{bail, Context, Result};
+
+      fn load_prices(text: &str) -> Result<Vec<(String, u32)>> {
+          todo!()
+      }
+    solution: |
+      use anyhow::{bail, Context, Result};
+
+      fn load_prices(text: &str) -> Result<Vec<(String, u32)>> {
+          let mut prices = Vec::new();
+          for (i, line) in text.lines().enumerate() {
+              let n = i + 1;
+              if line.trim().is_empty() {
+                  continue;
+              }
+              let Some((item, price)) = line.split_once(',') else {
+                  bail!("line {n}: expected item,price");
+              };
+              let item = item.trim();
+              let price: u32 = price.trim().parse().with_context(|| format!("line {n}: bad price for {item}"))?;
+              prices.push((item.to_string(), price));
+          }
+          Ok(prices)
+      }
+    require:
+      - pattern: '\.(with_)?context\('
+        message: Add context to the parse error with `.with_context(...)`.
+    harness: |
+      #[test]
+      fn reads_items_and_prices() {
+          let p = load_prices("mug, 450\n\ntea,120\n").unwrap();
+          assert_eq!(p, vec![(String::from("mug"), 450), (String::from("tea"), 120)], "load_prices(two lines)");
+      }
+
+      #[test]
+      fn a_missing_comma_names_the_line() {
+          let e = load_prices("mug,450\nteapot 900").unwrap_err();
+          assert_eq!(format!("{e:#}"), "line 2: expected item,price", "error for line 2");
+      }
+
+      #[test]
+      fn a_bad_price_keeps_the_cause() {
+          let e = load_prices("mug,450\n\ntea,cheap").unwrap_err();
+          assert_eq!(format!("{e:#}"), "line 3: bad price for tea: invalid digit found in string", "error with {{:#}}");
+          assert_eq!(e.to_string(), "line 3: bad price for tea", "error with {{}}");
+      }
+
+      #[test]
+      fn empty_text_gives_no_prices() {
+          assert_eq!(load_prices("").unwrap(), vec![], "load_prices(\"\")");
+      }
+    hints:
+      - "`for (i, line) in text.lines().enumerate()` with `let n = i + 1;`; `continue` on empty lines."
+      - "`let Some((item, price)) = line.split_once(',') else { bail!(\"line {n}: expected item,price\"); };`"
+      - "`price.trim().parse().with_context(|| format!(\"line {n}: bad price for {item}\"))?`"
+    more:
+      - task: |
+          Write `fn user_email(users: &BTreeMap<u32, User>, id: u32) -> Result<String>`. Use `.with_context` on the `Option`s: a missing user gives `user 7 not found`, a user whose `email` is `None` gives `user 7 has no email`.
+        seed: |
+          use anyhow::{Context, Result};
+          use std::collections::BTreeMap;
+
+          struct User {
+              email: Option<String>,
+          }
+
+          fn user_email(users: &BTreeMap<u32, User>, id: u32) -> Result<String> {
+              todo!()
+          }
+        solution: |
+          use anyhow::{Context, Result};
+          use std::collections::BTreeMap;
+
+          struct User {
+              email: Option<String>,
+          }
+
+          fn user_email(users: &BTreeMap<u32, User>, id: u32) -> Result<String> {
+              let user = users.get(&id).with_context(|| format!("user {id} not found"))?;
+              let email = user.email.as_ref().with_context(|| format!("user {id} has no email"))?;
+              Ok(email.clone())
+          }
+        forbid:
+          - pattern: '\bmatch\b|if let'
+            message: Use `.with_context(...)?` on each Option instead of matching.
+        harness: |
+          fn users() -> BTreeMap<u32, User> {
+              BTreeMap::from([(1, User { email: Some(String::from("ana@arena.dev")) }), (2, User { email: None })])
+          }
+
+          #[test]
+          fn finds_the_email() {
+              assert_eq!(user_email(&users(), 1).unwrap(), "ana@arena.dev", "user_email(1)");
+          }
+
+          #[test]
+          fn a_missing_user_is_an_error() {
+              assert_eq!(user_email(&users(), 7).unwrap_err().to_string(), "user 7 not found", "user_email(7)");
+          }
+
+          #[test]
+          fn a_user_without_email_is_an_error() {
+              assert_eq!(user_email(&users(), 2).unwrap_err().to_string(), "user 2 has no email", "user_email(2)");
+          }
+        hints:
+          - "`users.get(&id).with_context(|| format!(\"user {id} not found\"))?` gives `&User`."
+          - "`user.email.as_ref()` is an `Option<&String>`; add context to it the same way, then clone the String."
+      - task: |
+          Write `fn report(e: &anyhow::Error) -> String` that formats an error for a log like this, one line per layer, using `e.chain()`:
+
+          ```
+          error: loading the server config
+            caused by: could not read server.toml
+            caused by: No such file or directory (os error 2)
+          ```
+
+          (No newline after the last line.)
+        seed: |
+          fn report(e: &anyhow::Error) -> String {
+              todo!()
+          }
+        solution: |
+          fn report(e: &anyhow::Error) -> String {
+              let mut out = format!("error: {e}");
+              for cause in e.chain().skip(1) {
+                  out.push_str(&format!("\n  caused by: {cause}"));
+              }
+              out
+          }
+        require:
+          - pattern: '\.chain\(\)'
+            message: Walk the layers with `e.chain()`.
+        harness: |
+          use anyhow::{anyhow, Context};
+
+          #[test]
+          fn one_layer_has_no_causes() {
+              assert_eq!(report(&anyhow!("disk full")), "error: disk full", "report(single error)");
+          }
+
+          #[test]
+          fn every_cause_gets_its_own_line() {
+              let e = std::fs::read_to_string("server.toml")
+                  .context("could not read server.toml")
+                  .context("loading the server config")
+                  .unwrap_err();
+              assert_eq!(report(&e), "error: loading the server config\n  caused by: could not read server.toml\n  caused by: No such file or directory (os error 2)", "report(three layers)");
+          }
+
+          #[test]
+          fn works_with_parse_errors() {
+              let e = "x".parse::<u8>().context("reading the level").unwrap_err();
+              assert_eq!(report(&e), "error: reading the level\n  caused by: invalid digit found in string", "report(two layers)");
+          }
+        hints:
+          - "`e.chain()` yields the outermost error first; `.skip(1)` gives just the causes."
+          - "Start with `format!(\"error: {e}\")` and push `\\n  caused by: ...` for each cause."
+
+  - title: main returns anyhow::Result
+    id: app-errors-5
+    text: |
+      Errors bubble up with `?` until they reach `main`. Then what? Rust lets `main` itself return a `Result`. If it returns `Err(e)`, Rust prints `Error: ` followed by the error's **Debug** format to **stderr** and exits with **exit code 1** instead of 0. With anyhow, the Debug format is the readable multi-line report from the last step, so you get a professional error report for free:
+
+      ```rust run
+      use anyhow::{Context, Result};
+
+      fn main() -> Result<()> {
+          let text = "3\n4\n5";
+          let mut total = 0;
+          for (i, line) in text.lines().enumerate() {
+              let n: u32 = line.parse().with_context(|| format!("line {}: not a number", i + 1))?;
+              total += n;
+          }
+          println!("total: {total}");
+          Ok(())
+      }
+      ```
+
+      ```output
+      total: 12
+      ```
+
+      `main` now ends with `Ok(())`: success. If `text` were `"3\nfour\n5"`, nothing would go to stdout; the terminal would show this on stderr, and the shell would see exit code 1:
+
+      ```text
+      $ cargo run
+      Error: line 2: not a number
+
+      Caused by:
+          invalid digit found in string
+      $ echo $?
+      1
+      ```
+
+      Why this matters at work:
+
+      - **Exit codes** are how scripts, CI pipelines and other programs know whether your tool worked. A panic exits with 101 and a scary message; `Err` from `main` exits with 1 and your report.
+      - **stderr** keeps errors out of the real output, so `mytool > report.txt` still shows errors on screen and doesn't put them in the file.
+      - Inside `main`, `?` works like anywhere else. No `unwrap` needed for input you don't control.
+
+      ### Reading files
+
+      The classic use: `std::fs::read_to_string(path)` returns `io::Result<String>`, and context names the file:
+
+      ```rust
+      use anyhow::{Context, Result};
+
+      fn main() -> Result<()> {
+          let path = "scores.txt";
+          let text = std::fs::read_to_string(path).with_context(|| format!("could not read {path}"))?;
+          println!("{} lines", text.lines().count());
+          Ok(())
+      }
+      ```
+
+      On this site, exercises can come with files: a test puts `scores.txt` next to your program before it runs, and another test leaves it out to check that you fail properly (exit code 1).
+
+      ### When you want your own format
+
+      If you need a different message format or exit codes other than 1, keep `main` tiny and do the work in a `run` function:
+
+      ```rust
+      fn run() -> anyhow::Result<()> {
+          // everything that can fail, with ? and context
+          Ok(())
+      }
+
+      fn main() -> std::process::ExitCode {
+          match run() {
+              Ok(()) => std::process::ExitCode::SUCCESS,
+              Err(e) => {
+                  eprintln!("error: {e:#}");
+                  std::process::ExitCode::FAILURE
+              }
+          }
+      }
+      ```
+
+      `eprintln!` is `println!` for stderr. The CLI module goes deeper into exit codes.
+
+      ### Common mistakes
+
+      - **`unwrap` in `main`** because "it's just main": a missing file then becomes a panic with exit code 101 and a message about `called Result::unwrap() on an Err value`, not the clear report above.
+      - **Printing the error and returning `Ok(())`**: the program reports a failure but exits with 0, so scripts think it worked.
+      - **Forgetting `Ok(())`** at the end of `main`: `error[E0308]: mismatched types`, expected `Result<(), Error>`, found `()`.
+
+      **Your turn:** read `scores.txt` (one whole number per line; skip blank lines) and print `total: <sum>` and then `best: <highest>`. `main` must return `anyhow::Result<()>`, and every failure must exit with code 1 through `?`, not a panic: a missing file (context `could not read scores.txt`), a line that isn't a number (context `line N: bad score`), and a file without any scores (`no scores in scores.txt`).
+    seed: |
+      use anyhow::{Context, Result};
+
+      fn main() -> Result<()> {
+          let text = std::fs::read_to_string("scores.txt").unwrap();
+          println!("{text}");
+          Ok(())
+      }
+    solution: |
+      use anyhow::{Context, Result};
+
+      fn main() -> Result<()> {
+          let text = std::fs::read_to_string("scores.txt").context("could not read scores.txt")?;
+          let mut scores = Vec::new();
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  continue;
+              }
+              let n: u32 = line.trim().parse().with_context(|| format!("line {}: bad score", i + 1))?;
+              scores.push(n);
+          }
+          let best = scores.iter().max().context("no scores in scores.txt")?;
+          println!("total: {}", scores.iter().sum::<u32>());
+          println!("best: {best}");
+          Ok(())
+      }
+    forbid:
+      - pattern: '\.unwrap\(\)|\.expect\(|panic!'
+        message: Let errors leave `main` with `?` (no unwrap, expect or panic).
+    tests:
+      - files: { "scores.txt": "12\n40\n\n7\n" }
+        expect: "total: 59\nbest: 40"
+      - files: {}
+        exit: 1
+        allowEmpty: true
+      - files: { "scores.txt": "5\nfive\n" }
+        exit: 1
+        allowEmpty: true
+        hidden: true
+      - files: { "scores.txt": "\n\n" }
+        exit: 1
+        allowEmpty: true
+        hidden: true
+      - files: { "scores.txt": "100" }
+        hidden: true
+    hints:
+      - "`std::fs::read_to_string(\"scores.txt\").context(\"could not read scores.txt\")?` gives the text or leaves main with exit code 1."
+      - "Parse each non-blank line with `.with_context(|| format!(\"line {}: bad score\", i + 1))?` and collect the numbers in a Vec."
+      - "`scores.iter().max()` is an `Option`; `.context(\"no scores in scores.txt\")?` turns `None` into the error."
+    more:
+      - task: |
+          `orders.csv` starts with the header line `id,qty,price_cents`, then one order per line. Print `orders: <count>` and `revenue: <dollars with 2 decimals>` (the sum of `qty * price_cents`, divided by 100). `main` returns `anyhow::Result<()>`; a missing file, a line without exactly three fields, or a field that isn't a number must exit with code 1 (use `?` with context like `line 3: bad qty`).
+        seed: |
+          use anyhow::{bail, Context, Result};
+
+          fn main() -> Result<()> {
+              Ok(())
+          }
+        solution: |
+          use anyhow::{bail, Context, Result};
+
+          fn main() -> Result<()> {
+              let text = std::fs::read_to_string("orders.csv").context("could not read orders.csv")?;
+              let mut count = 0;
+              let mut cents: u64 = 0;
+              for (i, line) in text.lines().enumerate().skip(1) {
+                  let n = i + 1;
+                  let fields: Vec<&str> = line.split(',').collect();
+                  let [_, qty, price] = fields[..] else {
+                      bail!("line {n}: expected 3 fields, got {}", fields.len());
+                  };
+                  let qty: u64 = qty.trim().parse().with_context(|| format!("line {n}: bad qty"))?;
+                  let price: u64 = price.trim().parse().with_context(|| format!("line {n}: bad price"))?;
+                  count += 1;
+                  cents += qty * price;
+              }
+              println!("orders: {count}");
+              println!("revenue: {:.2}", cents as f64 / 100.0);
+              Ok(())
+          }
+        forbid:
+          - pattern: '\.unwrap\(\)|\.expect\(|panic!'
+            message: Let errors leave `main` with `?` (no unwrap, expect or panic).
+        tests:
+          - files: { "orders.csv": "id,qty,price_cents\n1,2,1250\n2,1,99\n" }
+          - files: { "orders.csv": "id,qty,price_cents\n1,2,1250\n2,one,99\n" }
+            exit: 1
+            allowEmpty: true
+          - files: {}
+            exit: 1
+            allowEmpty: true
+            hidden: true
+          - files: { "orders.csv": "id,qty,price_cents\n1,2\n" }
+            exit: 1
+            allowEmpty: true
+            hidden: true
+          - files: { "orders.csv": "id,qty,price_cents\n" }
+            hidden: true
+        hints:
+          - "`text.lines().enumerate().skip(1)` skips the header but keeps the real line numbers."
+          - "`let [_, qty, price] = fields[..] else { bail!(...) };` checks there are exactly three fields."
+      - task: |
+          Keep `main` testable: write `fn count_words(path: &str) -> anyhow::Result<usize>` that reads the file and returns how many whitespace-separated words it has. If the file can't be read, the error must read (with `{:#}`) `could not read missing.txt: No such file or directory (os error 2)`. The tests run with a file `notes.txt` present.
+        seed: |
+          use anyhow::Context;
+
+          fn count_words(path: &str) -> anyhow::Result<usize> {
+              todo!()
+          }
+        solution: |
+          use anyhow::Context;
+
+          fn count_words(path: &str) -> anyhow::Result<usize> {
+              let text = std::fs::read_to_string(path).with_context(|| format!("could not read {path}"))?;
+              Ok(text.split_whitespace().count())
+          }
+        harness: |
+          #[test]
+          fn counts_words_in_the_file() {
+              assert_eq!(count_words("notes.txt").unwrap(), 7, "count_words(\"notes.txt\")");
+          }
+
+          #[test]
+          fn a_missing_file_names_the_path() {
+              let e = count_words("missing.txt").unwrap_err();
+              assert_eq!(format!("{e:#}"), "could not read missing.txt: No such file or directory (os error 2)", "count_words(\"missing.txt\")");
+          }
+        tests:
+          - files: { "notes.txt": "buy milk\n  feed the crab\n\ncall mom\n" }
+        hints:
+          - "`std::fs::read_to_string(path).with_context(|| format!(\"could not read {path}\"))?`"
+          - "`text.split_whitespace().count()` counts the words."
+
+  - title: thiserror or anyhow? Both.
+    id: app-errors-6
+    text: |
+      Now the decision you'll make on every project:
+
+      | | thiserror | anyhow |
+      |---|---|---|
+      | Use it in | libraries, and modules other code calls | applications: `main`, CLIs, services, scripts, tests |
+      | Error type | your enum, one variant per failure | one `anyhow::Error` for everything |
+      | Callers can | `match` on variants and react | report it (and rarely, downcast) |
+      | You get | `Display`, `Error`, `From` impls | `?` on anything, context, a good `main` |
+
+      The rule of thumb: **will the caller handle different failures differently?** Then they need variants to match on: thiserror. **Will the error just be reported?** anyhow.
+
+      Most real projects use **both**: the library part (a `lib.rs`, or modules like `inventory` or `db`) defines thiserror enums, and the application part uses anyhow on top. They fit together: a thiserror enum implements `std::error::Error`, so `?` converts it into `anyhow::Error`, and context adds the application's story.
+
+      ```rust run
+      mod inventory {
+          use std::collections::BTreeMap;
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          pub enum InventoryError {
+              #[error("unknown item {0:?}")]
+              UnknownItem(String),
+              #[error("only {available} {item} left, asked for {wanted}")]
+              OutOfStock { item: String, available: u32, wanted: u32 },
+          }
+
+          #[derive(Default)]
+          pub struct Inventory {
+              stock: BTreeMap<String, u32>,
+          }
+
+          impl Inventory {
+              pub fn add(&mut self, item: &str, qty: u32) {
+                  *self.stock.entry(item.to_string()).or_insert(0) += qty;
+              }
+
+              pub fn take(&mut self, item: &str, wanted: u32) -> Result<u32, InventoryError> {
+                  let available = self
+                      .stock
+                      .get_mut(item)
+                      .ok_or_else(|| InventoryError::UnknownItem(item.to_string()))?;
+                  if *available < wanted {
+                      return Err(InventoryError::OutOfStock { item: item.to_string(), available: *available, wanted });
+                  }
+                  *available -= wanted;
+                  Ok(*available)
+              }
+          }
+      }
+
+      use anyhow::{Context, Result};
+      use inventory::{Inventory, InventoryError};
+
+      fn ship(inv: &mut Inventory, order: &str) -> Result<u32> {
+          let (item, qty) = order.split_once(' ').context("expected <item> <qty>")?;
+          let qty: u32 = qty.parse().with_context(|| format!("bad quantity {qty:?}"))?;
+          let left = inv.take(item, qty).with_context(|| format!("shipping {order:?}"))?;
+          Ok(left)
+      }
+
+      fn main() {
+          let mut inv = Inventory::default();
+          inv.add("mug", 3);
+          for order in ["mug 2", "mug 5", "lamp 1", "mug two"] {
+              match ship(&mut inv, order) {
+                  Ok(left) => println!("shipped {order}, {left} left"),
+                  Err(e) => match e.downcast_ref::<InventoryError>() {
+                      Some(InventoryError::OutOfStock { .. }) => println!("backorder: {e:#}"),
+                      _ => println!("error: {e:#}"),
+                  },
+              }
+          }
+      }
+      ```
+
+      ```output
+      shipped mug 2, 1 left
+      backorder: shipping "mug 5": only 1 mug left, asked for 5
+      error: shipping "lamp 1": unknown item "lamp"
+      error: bad quantity "two": invalid digit found in string
+      ```
+
+      Piece by piece:
+
+      - The `inventory` module knows nothing about anyhow. Its callers get a precise `InventoryError` and could match on it directly.
+      - `ship` is application code: one `anyhow::Result`, `?` on three different error types (`Option` via `context`, `ParseIntError`, `InventoryError`), and context on each.
+      - `e.downcast_ref::<InventoryError>()` asks "is the error inside this `anyhow::Error` an `InventoryError`?" and returns `Option<&InventoryError>`. It sees through the context layers. Here an out-of-stock item is a backorder, not a failure.
+      - Downcasting is the escape hatch, not the plan: if you find yourself downcasting a lot, that layer should return a typed error instead.
+
+      ### Panics, once more
+
+      Errors are for things that can go wrong in a correct program: bad input, missing files, network failures. **Panics** are for bugs: an invariant your own code broke. At work: libraries never panic on bad input, `expect("reason")` documents why something can't fail, and many teams turn on clippy's `unwrap_used` lint in library code so reviewers see every place that could crash.
+
+      ### Common mistakes
+
+      - **Returning `anyhow::Error` from a library** (callers can't match) or **writing a 12-variant enum for a CLI's `main`** (nobody matches on it). Match the tool to the caller.
+      - **Downcasting to the wrong type.** `downcast_ref::<std::num::ParseIntError>()` on an error whose outermost real error is your enum (with the parse error as its *source*) returns `None`. Downcast to the type that `?` converted, or walk `e.chain()`.
+
+      **Your turn:** finish this inventory tool. First give `InventoryError` the thiserror derive and messages: `UnknownItem` prints `unknown item "lamp"` (Debug-format the name) and `OutOfStock` prints `only 1 mug left, asked for 5`. Then write `apply`, which runs one command line and returns a message:
+      - `add <item> <qty>` adds stock and returns `added 3 mug`
+      - `take <item> <qty>` returns `took 2 mug, 1 left`
+      - anything else: `bail!("unknown command {cmd:?}")`; a missing part: `bail!("expected: <command> <item> <qty>")`; a bad quantity: `?` with context `bad quantity "x"`
+
+      `main` is written: it prints `backorder: ...` when the error is an `OutOfStock` and `error: ...` otherwise.
+    seed: |
+      mod inventory {
+          use std::collections::BTreeMap;
+          use thiserror::Error;
+
+          #[derive(Debug)]
+          pub enum InventoryError {
+              UnknownItem(String),
+              OutOfStock { item: String, available: u32, wanted: u32 },
+          }
+
+          #[derive(Default)]
+          pub struct Inventory {
+              stock: BTreeMap<String, u32>,
+          }
+
+          impl Inventory {
+              pub fn add(&mut self, item: &str, qty: u32) {
+                  *self.stock.entry(item.to_string()).or_insert(0) += qty;
+              }
+
+              pub fn take(&mut self, item: &str, wanted: u32) -> Result<u32, InventoryError> {
+                  let available = self
+                      .stock
+                      .get_mut(item)
+                      .ok_or_else(|| InventoryError::UnknownItem(item.to_string()))?;
+                  if *available < wanted {
+                      return Err(InventoryError::OutOfStock { item: item.to_string(), available: *available, wanted });
+                  }
+                  *available -= wanted;
+                  Ok(*available)
+              }
+          }
+      }
+
+      use anyhow::{bail, Context, Result};
+      use inventory::{Inventory, InventoryError};
+      use std::io::BufRead;
+
+      fn apply(inv: &mut Inventory, line: &str) -> Result<String> {
+          todo!()
+      }
+
+      fn main() {
+          let mut inv = Inventory::default();
+          for line in std::io::stdin().lock().lines() {
+              let line = line.unwrap();
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match apply(&mut inv, &line) {
+                  Ok(msg) => println!("{msg}"),
+                  Err(e) => match e.downcast_ref::<InventoryError>() {
+                      Some(InventoryError::OutOfStock { .. }) => println!("backorder: {e:#}"),
+                      _ => println!("error: {e:#}"),
+                  },
+              }
+          }
+      }
+    solution: |
+      mod inventory {
+          use std::collections::BTreeMap;
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          pub enum InventoryError {
+              #[error("unknown item {0:?}")]
+              UnknownItem(String),
+              #[error("only {available} {item} left, asked for {wanted}")]
+              OutOfStock { item: String, available: u32, wanted: u32 },
+          }
+
+          #[derive(Default)]
+          pub struct Inventory {
+              stock: BTreeMap<String, u32>,
+          }
+
+          impl Inventory {
+              pub fn add(&mut self, item: &str, qty: u32) {
+                  *self.stock.entry(item.to_string()).or_insert(0) += qty;
+              }
+
+              pub fn take(&mut self, item: &str, wanted: u32) -> Result<u32, InventoryError> {
+                  let available = self
+                      .stock
+                      .get_mut(item)
+                      .ok_or_else(|| InventoryError::UnknownItem(item.to_string()))?;
+                  if *available < wanted {
+                      return Err(InventoryError::OutOfStock { item: item.to_string(), available: *available, wanted });
+                  }
+                  *available -= wanted;
+                  Ok(*available)
+              }
+          }
+      }
+
+      use anyhow::{bail, Context, Result};
+      use inventory::{Inventory, InventoryError};
+      use std::io::BufRead;
+
+      fn apply(inv: &mut Inventory, line: &str) -> Result<String> {
+          let parts: Vec<&str> = line.split_whitespace().collect();
+          let [cmd, item, qty] = parts[..] else {
+              bail!("expected: <command> <item> <qty>");
+          };
+          let qty: u32 = qty.parse().with_context(|| format!("bad quantity {qty:?}"))?;
+          match cmd {
+              "add" => {
+                  inv.add(item, qty);
+                  Ok(format!("added {qty} {item}"))
+              }
+              "take" => {
+                  let left = inv.take(item, qty)?;
+                  Ok(format!("took {qty} {item}, {left} left"))
+              }
+              _ => bail!("unknown command {cmd:?}"),
+          }
+      }
+
+      fn main() {
+          let mut inv = Inventory::default();
+          for line in std::io::stdin().lock().lines() {
+              let line = line.unwrap();
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match apply(&mut inv, &line) {
+                  Ok(msg) => println!("{msg}"),
+                  Err(e) => match e.downcast_ref::<InventoryError>() {
+                      Some(InventoryError::OutOfStock { .. }) => println!("backorder: {e:#}"),
+                      _ => println!("error: {e:#}"),
+                  },
+              }
+          }
+      }
+    tests:
+      - stdin: "add mug 3\ntake mug 2\ntake mug 5\ntake lamp 1\nsell mug 1\nadd mug x\n"
+        expect: "added 3 mug\ntook 2 mug, 1 left\nbackorder: only 1 mug left, asked for 5\nerror: unknown item \"lamp\"\nerror: unknown command \"sell\"\nerror: bad quantity \"x\": invalid digit found in string"
+      - stdin: "add tea 10\nadd tea 5\ntake tea 15\ntake tea 1\ntake tea\n\nadd cup 2\ntake cup 2\n"
+        hidden: true
+    hints:
+      - "Derive `Error` on `InventoryError` and give each variant a message: `#[error(\"unknown item {0:?}\")]` and `#[error(\"only {available} {item} left, asked for {wanted}\")]`."
+      - "In `apply`, split the line into a `Vec<&str>` and use `let [cmd, item, qty] = parts[..] else { bail!(...) };`. Parse `qty` with `.with_context(|| format!(\"bad quantity {qty:?}\"))?`."
+      - "`match cmd { \"add\" => ..., \"take\" => { let left = inv.take(item, qty)?; ... }, _ => bail!(\"unknown command {cmd:?}\") }`. `?` turns the InventoryError into anyhow::Error, and main can still downcast it."
+    more:
+      - task: |
+          Map errors to exit codes (the BSD `sysexits` convention many tools follow). Write `fn exit_code(e: &anyhow::Error) -> u8` that downcasts, checking in this order: a `ConfigError` gives `78`, a `std::io::Error` gives `74`, a `std::num::ParseIntError` gives `65`, anything else `1`. The errors may have context layers around them.
+        seed: |
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          enum ConfigError {
+              #[error("missing setting {0}")]
+              Missing(String),
+          }
+
+          fn exit_code(e: &anyhow::Error) -> u8 {
+              todo!()
+          }
+        solution: |
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          enum ConfigError {
+              #[error("missing setting {0}")]
+              Missing(String),
+          }
+
+          fn exit_code(e: &anyhow::Error) -> u8 {
+              if e.downcast_ref::<ConfigError>().is_some() {
+                  78
+              } else if e.downcast_ref::<std::io::Error>().is_some() {
+                  74
+              } else if e.downcast_ref::<std::num::ParseIntError>().is_some() {
+                  65
+              } else {
+                  1
+              }
+          }
+        harness: |
+          use anyhow::{anyhow, Context};
+
+          #[test]
+          fn config_errors_are_78() {
+              let e = anyhow::Error::from(ConfigError::Missing(String::from("port")));
+              assert_eq!(exit_code(&e), 78, "exit_code(ConfigError)");
+          }
+
+          #[test]
+          fn io_errors_are_74_even_with_context() {
+              let e = std::fs::read_to_string("nope.txt").context("reading nope.txt").unwrap_err();
+              assert_eq!(exit_code(&e), 74, "exit_code(io error with context)");
+          }
+
+          #[test]
+          fn parse_errors_are_65() {
+              let e = "x".parse::<u32>().context("reading the count").context("loading").unwrap_err();
+              assert_eq!(exit_code(&e), 65, "exit_code(ParseIntError with two contexts)");
+          }
+
+          #[test]
+          fn anything_else_is_1() {
+              assert_eq!(exit_code(&anyhow!("something odd")), 1, "exit_code(anyhow!(...))");
+          }
+        hints:
+          - "`e.downcast_ref::<ConfigError>()` returns `Some(&ConfigError)` if that's the error inside, even under context layers."
+          - "Chain `if e.downcast_ref::<T>().is_some() { code } else if ...` in the order given."
+      - task: |
+          Code review: this library function **panics** on bad input, which a library must never do. Make it return `Result<Rgb, ColorError>` instead. Define `ColorError` with thiserror: `MissingHash` (`color must start with #`), `WrongLength(usize)` (`expected 6 hex digits, got 4`), and `BadDigit` wrapping a `std::num::ParseIntError` with `#[from]` (`invalid hex digit`). No `unwrap`, `expect` or `panic!` left.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Rgb(u8, u8, u8);
+
+          fn parse_hex(s: &str) -> Rgb {
+              let hex = s.strip_prefix('#').unwrap();
+              if hex.len() != 6 {
+                  panic!("bad length");
+              }
+              let r = u8::from_str_radix(&hex[0..2], 16).unwrap();
+              let g = u8::from_str_radix(&hex[2..4], 16).unwrap();
+              let b = u8::from_str_radix(&hex[4..6], 16).unwrap();
+              Rgb(r, g, b)
+          }
+        solution: |
+          use thiserror::Error;
+
+          #[derive(Debug, PartialEq)]
+          struct Rgb(u8, u8, u8);
+
+          #[derive(Debug, Error)]
+          enum ColorError {
+              #[error("color must start with #")]
+              MissingHash,
+              #[error("expected 6 hex digits, got {0}")]
+              WrongLength(usize),
+              #[error("invalid hex digit")]
+              BadDigit(#[from] std::num::ParseIntError),
+          }
+
+          fn parse_hex(s: &str) -> Result<Rgb, ColorError> {
+              let hex = s.strip_prefix('#').ok_or(ColorError::MissingHash)?;
+              if hex.len() != 6 {
+                  return Err(ColorError::WrongLength(hex.len()));
+              }
+              let r = u8::from_str_radix(&hex[0..2], 16)?;
+              let g = u8::from_str_radix(&hex[2..4], 16)?;
+              let b = u8::from_str_radix(&hex[4..6], 16)?;
+              Ok(Rgb(r, g, b))
+          }
+        forbid:
+          - pattern: '\.unwrap\(\)|\.expect\(|panic!'
+            message: A library function must return errors, not panic.
+        harness: |
+          #[test]
+          fn parses_a_valid_color() {
+              assert_eq!(parse_hex("#ff8000").unwrap(), Rgb(255, 128, 0), "parse_hex(\"#ff8000\")");
+          }
+
+          #[test]
+          fn requires_the_hash() {
+              assert_eq!(parse_hex("ff8000").unwrap_err().to_string(), "color must start with #", "parse_hex(\"ff8000\")");
+          }
+
+          #[test]
+          fn reports_the_wrong_length() {
+              assert_eq!(parse_hex("#fff0").unwrap_err().to_string(), "expected 6 hex digits, got 4", "parse_hex(\"#fff0\")");
+          }
+
+          #[test]
+          fn bad_digits_wrap_the_parse_error() {
+              let e = parse_hex("#gg0000").unwrap_err();
+              assert!(matches!(e, ColorError::BadDigit(_)), "variant was {e:?}");
+              assert_eq!(e.to_string(), "invalid hex digit", "message");
+          }
+        hints:
+          - "`s.strip_prefix('#').ok_or(ColorError::MissingHash)?` replaces the first unwrap."
+          - "With `BadDigit(#[from] std::num::ParseIntError)`, `u8::from_str_radix(&hex[0..2], 16)?` converts automatically."

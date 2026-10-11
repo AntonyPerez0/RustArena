@@ -1,0 +1,1587 @@
+id: sync
+title: Sharing data between threads
+phase: "Concurrency and async"
+summary: The tools threads use to work together. Channels to pass messages, Arc to share data, Mutex and RwLock to change it safely, atomics for counters and flags, OnceLock and LazyLock for global state, and how to avoid deadlocks.
+roadmap: ["Threads, Channels, and Message Passing", "Atomic Operations & Memory Barriers"]
+steps:
+  - title: "Channels: sending messages between threads"
+    id: sync-1
+    text: |
+      In the last module, threads only talked to `main` once, at the very end, through the value `join` returned. Often a thread needs to hand over results **while it's running**: a reader thread passing log lines to a parser, workers reporting finished jobs. The Rust book borrows a slogan from Go: *"Do not communicate by sharing memory; instead, share memory by communicating."*
+
+      A **channel** is a one-way pipe between threads: one end sends values, the other receives them. The standard library's channels live in `std::sync::mpsc`, which stands for **multiple producer, single consumer**: many threads may send, one receives.
+
+      ```rust run
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn main() {
+          let (tx, rx) = mpsc::channel();
+
+          let producer = thread::spawn(move || {
+              for line in ["boot ok", "disk 81% full", "backup done"] {
+                  tx.send(String::from(line)).unwrap();
+              }
+          });
+
+          for msg in rx {
+              println!("got: {msg}");
+          }
+          producer.join().unwrap();
+          println!("channel closed");
+      }
+      ```
+
+      ```output
+      got: boot ok
+      got: disk 81% full
+      got: backup done
+      channel closed
+      ```
+
+      Piece by piece:
+
+      - `mpsc::channel()` returns a pair: the **`Sender`** (by tradition `tx`, short for transmitter) and the **`Receiver`** (`rx`). The message type is inferred from what you send: here `Sender<String>`.
+      - `tx.send(value)` **moves** the value into the channel. It returns a `Result`: `Err` means the receiver is gone and nobody will ever read the message.
+      - `rx.recv()` waits until a message arrives and returns `Ok(msg)`. It returns `Err` once the channel is empty **and** every sender has been dropped.
+      - `for msg in rx` (or `for msg in rx.iter()`) calls `recv` over and over and stops at that point. Here `tx` was moved into the producer, so when the producer finishes, `tx` is dropped and the loop ends.
+      - Messages from one sender arrive in the order they were sent (first in, first out).
+
+      Other ways to receive: `rx.try_recv()` returns immediately (an `Err` if nothing is waiting), and `rx.recv_timeout(duration)` waits at most that long.
+
+      ### Sending gives the value away
+
+      `send` takes ownership, so once a value is sent, the sending thread can't touch it. That's what makes channels safe: two threads never use the same value at the same time.
+
+      ```rust compile_fail
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn main() {
+          let (tx, rx) = mpsc::channel();
+          thread::spawn(move || {
+              let msg = String::from("ready");
+              tx.send(msg).unwrap();
+              println!("sent {}", msg);
+          });
+          println!("{}", rx.recv().unwrap());
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `msg`
+      ```
+
+      ### Common mistakes
+
+      - **Using a value after sending it** (`E0382` above). Print or copy what you need *before* `send`.
+      - **`send(...).unwrap()` in a long-running worker.** If the receiver has gone away, that panics. `if tx.send(x).is_err() { break; }` stops the worker politely instead.
+      - **A loop over `rx` that never ends.** It ends only when *every* sender is dropped. The next step shows the classic way to get this wrong.
+
+      **Your turn:** fill in the blanks: create the channel, and send each temperature from the producer thread. The program should print `readings total: 88`.
+    fill: |
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn main() {
+          let (tx, rx) = mpsc::[[channel]]();
+          let producer = thread::spawn(move || {
+              for temp in [21, 23, 19, 25] {
+                  tx.[[send]](temp).unwrap();
+              }
+          });
+          let mut total = 0;
+          for temp in rx {
+              total += temp;
+          }
+          producer.join().unwrap();
+          println!("readings total: {total}");
+      }
+    hints:
+      - "`mpsc::channel()` creates the pair `(tx, rx)`."
+      - "The sender's method is `.send(value)`."
+    tests:
+      - expect: "readings total: 88"
+    more:
+      - task: |
+          Receive exactly **one** message: fill in the method that waits for the next message. The program should print `12 orders packed`.
+        fill: |
+          use std::sync::mpsc;
+          use std::thread;
+
+          fn main() {
+              let (tx, rx) = mpsc::channel();
+              thread::spawn(move || {
+                  let report = format!("{} orders packed", 3 * 4);
+                  tx.send(report).unwrap();
+              });
+              let report = rx.[[recv]]().unwrap();
+              println!("{report}");
+          }
+        hints:
+          - "The receiving method that waits for one message is `recv` (short for receive)."
+        tests:
+          - expect: "12 orders packed"
+      - task: |
+          Build a small pipeline. A worker thread goes through the raw `lines`, parses each one as a `u32`, and **sends only the ones that parse** over a channel. The main thread collects everything it receives into a `Vec` (`rx.iter().collect()` works) and prints:
+
+          ```
+          valid: [12, 7, 30]
+          sum: 49
+          ```
+        seed: |
+          use std::sync::mpsc;
+          use std::thread;
+
+          fn main() {
+              let lines = vec!["12", "x", "7", "", "30"];
+          }
+        solution: |
+          use std::sync::mpsc;
+          use std::thread;
+
+          fn main() {
+              let lines = vec!["12", "x", "7", "", "30"];
+              let (tx, rx) = mpsc::channel();
+              let parser = thread::spawn(move || {
+                  for line in lines {
+                      if let Ok(n) = line.parse::<u32>() {
+                          tx.send(n).unwrap();
+                      }
+                  }
+              });
+              let valid: Vec<u32> = rx.iter().collect();
+              parser.join().unwrap();
+              println!("valid: {valid:?}");
+              println!("sum: {}", valid.iter().sum::<u32>());
+          }
+        require:
+          - pattern: 'mpsc::channel'
+            message: Pass the numbers through a channel made with `mpsc::channel()`.
+          - pattern: '\.send\('
+            message: The worker should `send` each valid number.
+        hints:
+          - "Create `let (tx, rx) = mpsc::channel();`, then spawn a `move` closure that loops over `lines`."
+          - "In the worker: `if let Ok(n) = line.parse::<u32>() { tx.send(n).unwrap(); }`."
+          - "In main: `let valid: Vec<u32> = rx.iter().collect();` waits until the worker is done and its `tx` is dropped."
+        tests:
+          - expect: "valid: [12, 7, 30]\nsum: 49"
+
+  - title: "Multiple producers: cloning the Sender"
+    id: sync-2
+    text: |
+      The *mp* in `mpsc`: any number of threads can send into one channel. Each thread gets its own `Sender` by **cloning** it:
+
+      ```rust run
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn main() {
+          let (tx, rx) = mpsc::channel();
+          for worker in 1..=3 {
+              let tx = tx.clone();
+              thread::spawn(move || {
+                  let checked = worker * 100;
+                  tx.send((worker, checked)).unwrap();
+              });
+          }
+          drop(tx);
+
+          let mut results: Vec<(u32, u32)> = rx.iter().collect();
+          results.sort();
+          for (worker, checked) in results {
+              println!("worker {worker} checked {checked} files");
+          }
+      }
+      ```
+
+      ```output
+      worker 1 checked 100 files
+      worker 2 checked 200 files
+      worker 3 checked 300 files
+      ```
+
+      - `let tx = tx.clone();` makes a new `Sender` for the same channel and shadows the name inside the loop, so the *clone* is what moves into each closure.
+      - Messages from different threads arrive in whatever order the threads happen to run. So each message carries who sent it, and `main` **sorts** before printing. Never rely on arrival order between producers.
+      - `drop(tx)` throws away `main`'s own `Sender`. That line matters more than it looks.
+
+      ### The forgotten sender
+
+      The receiving loop ends only when **every** `Sender` is gone. The workers' clones are dropped when the workers finish, but the original `tx` belongs to `main`. Without `drop(tx)`, `main` waits for a message from itself that never comes, and the program hangs forever:
+
+      ```rust
+      let (tx, rx) = mpsc::channel();
+      for worker in 1..=3 {
+          let tx = tx.clone();
+          thread::spawn(move || tx.send(worker).unwrap());
+      }
+      // no drop(tx) here...
+      for n in rx {
+          println!("{n}"); // prints 3 numbers, then waits forever
+      }
+      ```
+
+      This is the most common channel bug. On this site it shows up as the time limit running out.
+
+      ### Bounded channels and backpressure
+
+      `mpsc::channel()` is **unbounded**: `send` never waits, so a fast producer can pile up millions of unread messages in memory. `mpsc::sync_channel(n)` holds at most `n` messages; when it's full, `send` waits until the receiver catches up. That's **backpressure**: the slow side automatically slows the fast side down. Production pipelines usually use bounded channels.
+
+      At work you'll also meet the `crossbeam-channel` crate (channels with several receivers, and waiting on several channels at once) and Tokio's async channels (module 33).
+
+      ### Common mistakes
+
+      - **Forgetting `drop(tx)`**: the program hangs.
+      - **Moving `tx` instead of cloning it** in a loop: ``error[E0382]: use of moved value: `tx` `` with the note "value moved into closure here, in previous iteration of loop".
+      - **Printing in arrival order** from several producers: the output changes between runs. Collect, then sort (or use a `BTreeMap`).
+
+      **Your turn:** three store threads report their sales over one channel. Spawn one thread per store; each sends every sale as a `(store, amount)` message. Don't forget the original sender. The main thread adds the sales up per store in the `BTreeMap` and prints the totals (a `BTreeMap` iterates in key order):
+
+      ```
+      east: 190
+      north: 245
+      south: 320
+      ```
+    seed: |
+      use std::collections::BTreeMap;
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn main() {
+          let stores = vec![
+              ("north", vec![120, 80, 45]),
+              ("south", vec![300, 20]),
+              ("east", vec![60, 60, 60, 10]),
+          ];
+          let (tx, rx) = mpsc::channel::<(&str, u32)>();
+          // one thread per store: send each sale as (store, amount)
+
+          let mut totals: BTreeMap<&str, u32> = BTreeMap::new();
+          // receive every sale, add it to its store's total, then print the totals
+      }
+    solution: |
+      use std::collections::BTreeMap;
+      use std::sync::mpsc;
+      use std::thread;
+
+      fn main() {
+          let stores = vec![
+              ("north", vec![120, 80, 45]),
+              ("south", vec![300, 20]),
+              ("east", vec![60, 60, 60, 10]),
+          ];
+          let (tx, rx) = mpsc::channel::<(&str, u32)>();
+          // one thread per store: send each sale as (store, amount)
+          for (store, sales) in stores {
+              let tx = tx.clone();
+              thread::spawn(move || {
+                  for amount in sales {
+                      tx.send((store, amount)).unwrap();
+                  }
+              });
+          }
+          drop(tx);
+
+          let mut totals: BTreeMap<&str, u32> = BTreeMap::new();
+          // receive every sale, add it to its store's total, then print the totals
+          for (store, amount) in rx {
+              *totals.entry(store).or_insert(0) += amount;
+          }
+          for (store, total) in &totals {
+              println!("{store}: {total}");
+          }
+      }
+    require:
+      - pattern: 'tx\.clone\(\)|Sender::clone'
+        message: Give each store thread its own clone of the `Sender`.
+    hints:
+      - "In a loop over `stores`, write `let tx = tx.clone();` and spawn a `move` closure that sends `(store, amount)` for each sale."
+      - "After the loop, `drop(tx);`, or the receiving loop never ends."
+      - "`for (store, amount) in rx { *totals.entry(store).or_insert(0) += amount; }`, then print with `for (store, total) in &totals`."
+    tests:
+      - expect: "east: 190\nnorth: 245\nsouth: 320"
+    more:
+      - task: |
+          This program prints nothing and then hits the time limit: it waits forever. Find out why and fix it by adding **one line**, so it prints `sum of squares: 55`.
+        seed: |
+          use std::sync::mpsc;
+          use std::thread;
+
+          fn main() {
+              let (tx, rx) = mpsc::channel();
+              for n in 1..=5 {
+                  let tx = tx.clone();
+                  thread::spawn(move || {
+                      tx.send(n * n).unwrap();
+                  });
+              }
+              let total: u32 = rx.iter().sum();
+              println!("sum of squares: {total}");
+          }
+        solution: |
+          use std::sync::mpsc;
+          use std::thread;
+
+          fn main() {
+              let (tx, rx) = mpsc::channel();
+              for n in 1..=5 {
+                  let tx = tx.clone();
+                  thread::spawn(move || {
+                      tx.send(n * n).unwrap();
+                  });
+              }
+              drop(tx);
+              let total: u32 = rx.iter().sum();
+              println!("sum of squares: {total}");
+          }
+        hints:
+          - "`rx.iter()` only ends when every `Sender` is dropped. Which `Sender` is never dropped?"
+          - "`main` still owns the original `tx`. Add `drop(tx);` before receiving."
+        tests:
+          - expect: "sum of squares: 55"
+      - task: |
+          Write `fn search_parallel(docs: Vec<String>, needle: &str) -> Vec<usize>`. Spawn one thread per document (with `thread::spawn`); each thread sends its document's **index** over a channel if the document contains `needle`. Return the indices sorted ascending. A spawned thread can't borrow `needle`, so give each thread its own `String` copy of it.
+        seed: |
+          use std::sync::mpsc;
+          use std::thread;
+
+          fn search_parallel(docs: Vec<String>, needle: &str) -> Vec<usize> {
+              todo!()
+          }
+        solution: |
+          use std::sync::mpsc;
+          use std::thread;
+
+          fn search_parallel(docs: Vec<String>, needle: &str) -> Vec<usize> {
+              let (tx, rx) = mpsc::channel();
+              for (i, doc) in docs.into_iter().enumerate() {
+                  let tx = tx.clone();
+                  let needle = needle.to_string();
+                  thread::spawn(move || {
+                      if doc.contains(&needle) {
+                          tx.send(i).unwrap();
+                      }
+                  });
+              }
+              drop(tx);
+              let mut found: Vec<usize> = rx.iter().collect();
+              found.sort();
+              found
+          }
+        require:
+          - pattern: 'thread::spawn'
+            message: Spawn one thread per document with `thread::spawn`.
+          - pattern: '\.send\('
+            message: Send the matching indices over the channel.
+        hints:
+          - "In the loop over `docs.into_iter().enumerate()`: clone `tx`, make `let needle = needle.to_string();`, then spawn a `move` closure."
+          - "Drop the original `tx` after the loop, collect `rx.iter()` into a `Vec`, sort it and return it."
+        harness: |
+          fn docs(list: &[&str]) -> Vec<String> {
+              list.iter().map(|s| s.to_string()).collect()
+          }
+
+          #[test]
+          fn finds_the_matching_documents() {
+              let d = docs(&["error: disk full", "all good", "error: timeout", "ok"]);
+              assert_eq!(search_parallel(d, "error"), vec![0, 2], "search_parallel(4 logs, \"error\")");
+          }
+
+          #[test]
+          fn no_match_gives_empty() {
+              assert_eq!(search_parallel(docs(&["a", "b"]), "z"), Vec::<usize>::new(), "search_parallel([\"a\", \"b\"], \"z\")");
+          }
+
+          #[test]
+          fn no_documents_gives_empty() {
+              assert_eq!(search_parallel(vec![], "x"), Vec::<usize>::new(), "search_parallel([], \"x\")");
+          }
+
+          #[test]
+          fn results_are_sorted_even_with_many_documents() {
+              let d: Vec<String> = (0..50).map(|n| if n % 5 == 0 { format!("crab {n}") } else { format!("fish {n}") }).collect();
+              assert_eq!(search_parallel(d, "crab"), vec![0, 5, 10, 15, 20, 25, 30, 35, 40, 45], "search_parallel(50 docs, \"crab\")");
+          }
+
+  - title: "Arc: shared ownership across threads"
+    id: sync-3
+    text: |
+      A channel moves data from one thread to another. Sometimes many threads need to **read the same data**: a price list, a config, a dictionary. Cloning it for every thread wastes memory, and scoped threads only work when all threads finish inside one function. For threads started with `thread::spawn`, you share data with **`Arc<T>`**.
+
+      You met `Arc` briefly in the last module. It's the thread-safe version of `Rc` (module 29): `Arc::new(value)` puts the value on the heap next to a **reference count**. `Arc::clone(&a)` makes another pointer to the *same* value and adds one to the count; no data is copied. When the last `Arc` is dropped, the value is dropped. The count is updated with atomic CPU instructions, so `Arc<T>` can be sent to and shared between threads (as long as `T` itself is `Send` and `Sync`).
+
+      ```rust run
+      use std::collections::HashMap;
+      use std::sync::Arc;
+      use std::thread;
+
+      fn main() {
+          let prices: HashMap<&str, u32> = HashMap::from([("kelp", 3), ("shell", 12), ("pearl", 250)]);
+          let prices = Arc::new(prices);
+          let orders = vec![vec!["kelp", "kelp", "shell"], vec!["pearl"], vec!["shell", "kelp"]];
+
+          let mut handles = Vec::new();
+          for order in orders {
+              let prices = Arc::clone(&prices);
+              handles.push(thread::spawn(move || order.iter().map(|item| prices[item]).sum::<u32>()));
+          }
+          for (i, handle) in handles.into_iter().enumerate() {
+              println!("order {i}: {}", handle.join().unwrap());
+          }
+          println!("owners of the price table now: {}", Arc::strong_count(&prices));
+      }
+      ```
+
+      ```output
+      order 0: 18
+      order 1: 250
+      order 2: 15
+      owners of the price table now: 1
+      ```
+
+      - Each thread gets its own `Arc` (a pointer), moved into its closure. All of them point at one `HashMap`.
+      - `Arc::strong_count` shows how many `Arc`s point at the value. After the joins, the threads' clones have been dropped, so only `main`'s is left.
+      - `Arc::clone(&prices)` and `prices.clone()` do the same thing. Many teams prefer `Arc::clone(&x)` because it makes clear that only a pointer is copied, not the whole table.
+
+      ### Arc is read-only
+
+      `Arc<T>` hands out shared references (`&T`) only. Several threads hold it at once, so letting one of them change the value would be a data race:
+
+      ```rust compile_fail
+      use std::sync::Arc;
+      use std::thread;
+
+      fn main() {
+          let stock = Arc::new(vec![1, 2, 3]);
+          let for_worker = Arc::clone(&stock);
+          let handle = thread::spawn(move || {
+              for_worker.push(4);
+          });
+          handle.join().unwrap();
+          println!("{:?}", stock);
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow data in an `Arc` as mutable
+      ```
+
+      To change shared data, put a lock inside the `Arc`: `Arc<Mutex<T>>`, the next step.
+
+      ### Common mistakes
+
+      - **Cloning the data instead of the pointer**: `Arc::new(prices.clone())` in the loop gives every thread its own copy. Clone the `Arc`.
+      - **Cloning outside the loop**: one clone moved into the first thread leaves nothing for the second: `E0382`. Clone once per thread, inside the loop.
+      - **Using `Arc` when borrowing would do**: if all threads end inside one function, `thread::scope` lets them borrow, no `Arc` needed.
+
+      **Your turn:** three warehouse requests are checked against one shared stock table, each in its own spawned thread. Wrap `stock` in an `Arc`, give each thread its own clone, and have each thread return its line. Join in order and print:
+
+      ```
+      2 x helmet: ok
+      5 x shield: short by 2
+      1 x sword: unknown item
+      ```
+
+      A request is `ok` when the stock has at least the asked quantity, `short by N` when it has less, and `unknown item` when the item isn't in the table at all.
+    seed: |
+      use std::collections::BTreeMap;
+      use std::sync::Arc;
+      use std::thread;
+
+      fn main() {
+          let stock: BTreeMap<&str, u32> = BTreeMap::from([("helmet", 7), ("shield", 3), ("boots", 12)]);
+          let requests = vec![("helmet", 2), ("shield", 5), ("sword", 1)];
+          // share `stock` with an Arc, one thread per request, then join in order and print
+      }
+    solution: |
+      use std::collections::BTreeMap;
+      use std::sync::Arc;
+      use std::thread;
+
+      fn main() {
+          let stock: BTreeMap<&str, u32> = BTreeMap::from([("helmet", 7), ("shield", 3), ("boots", 12)]);
+          let requests = vec![("helmet", 2), ("shield", 5), ("sword", 1)];
+          // share `stock` with an Arc, one thread per request, then join in order and print
+          let stock = Arc::new(stock);
+          let mut handles = Vec::new();
+          for (item, wanted) in requests {
+              let stock = Arc::clone(&stock);
+              handles.push(thread::spawn(move || match stock.get(item) {
+                  Some(&have) if have >= wanted => format!("{wanted} x {item}: ok"),
+                  Some(&have) => format!("{wanted} x {item}: short by {}", wanted - have),
+                  None => format!("{wanted} x {item}: unknown item"),
+              }));
+          }
+          for handle in handles {
+              println!("{}", handle.join().unwrap());
+          }
+      }
+    require:
+      - pattern: 'Arc::new'
+        message: Wrap the stock table in an `Arc` with `Arc::new`.
+      - pattern: 'thread::spawn'
+        message: Check each request in a thread started with `thread::spawn`.
+    hints:
+      - "`let stock = Arc::new(stock);`, then in the loop over `requests`: `let stock = Arc::clone(&stock);` before spawning."
+      - "In the thread, `match stock.get(item)`: `Some(&have) if have >= wanted`, `Some(&have)`, and `None`. Each arm returns a `format!`."
+    tests:
+      - expect: "2 x helmet: ok\n5 x shield: short by 2\n1 x sword: unknown item"
+    more:
+      - task: |
+          Fill in the two blanks: put the menu behind an `Arc`, and give the worker its own pointer to it. The program should print `the worker counted 3 dishes` and then `main still has 3 dishes`.
+        fill: |
+          use std::sync::Arc;
+          use std::thread;
+
+          fn main() {
+              let menu = Arc::[[new]](vec!["kelp soup", "crab cakes", "sea salad"]);
+              let for_worker = Arc::[[clone]](&menu);
+              let handle = thread::spawn(move || for_worker.len());
+              println!("the worker counted {} dishes", handle.join().unwrap());
+              println!("main still has {} dishes", menu.len());
+          }
+        hints:
+          - "`Arc::new(value)` creates the shared value; `Arc::clone(&menu)` makes another pointer to it."
+        tests:
+          - expect: "the worker counted 3 dishes\nmain still has 3 dishes"
+      - task: |
+          Write `fn count_matches(lines: Arc<Vec<String>>, patterns: Vec<String>) -> Vec<usize>`. Spawn **one thread per pattern** with `thread::spawn` (not a scope); each counts how many lines contain its pattern. Share the lines through the `Arc` (no copying of the lines) and return the counts in the same order as `patterns`.
+        seed: |
+          use std::sync::Arc;
+          use std::thread;
+
+          fn count_matches(lines: Arc<Vec<String>>, patterns: Vec<String>) -> Vec<usize> {
+              todo!()
+          }
+        solution: |
+          use std::sync::Arc;
+          use std::thread;
+
+          fn count_matches(lines: Arc<Vec<String>>, patterns: Vec<String>) -> Vec<usize> {
+              let mut handles = Vec::new();
+              for pattern in patterns {
+                  let lines = Arc::clone(&lines);
+                  handles.push(thread::spawn(move || lines.iter().filter(|line| line.contains(&pattern)).count()));
+              }
+              handles.into_iter().map(|h| h.join().unwrap()).collect()
+          }
+        require:
+          - pattern: 'thread::spawn'
+            message: Use `thread::spawn`, one thread per pattern.
+        forbid:
+          - pattern: 'thread::scope'
+            message: Practice sharing with `Arc` here, so use `thread::spawn` rather than a scope.
+          - pattern: 'lines\.to_vec\(\)|\(\*lines\)\.clone\(\)|lines\.as_ref\(\)\.clone\(\)'
+            message: Share the lines through the `Arc` instead of copying them.
+        hints:
+          - "For each pattern: `let lines = Arc::clone(&lines);`, then spawn a `move` closure that uses `lines` and `pattern`."
+          - "Counting: `lines.iter().filter(|line| line.contains(&pattern)).count()`."
+        harness: |
+          fn shared(list: &[&str]) -> Arc<Vec<String>> {
+              Arc::new(list.iter().map(|s| s.to_string()).collect())
+          }
+
+          fn pats(list: &[&str]) -> Vec<String> {
+              list.iter().map(|s| s.to_string()).collect()
+          }
+
+          #[test]
+          fn counts_each_pattern_in_order() {
+              let lines = shared(&["GET /shop", "POST /login", "GET /", "GET /shop/cart"]);
+              assert_eq!(count_matches(lines, pats(&["GET", "shop", "DELETE"])), vec![3, 2, 0], "count_matches(4 log lines, [GET, shop, DELETE])");
+          }
+
+          #[test]
+          fn no_patterns_gives_empty() {
+              assert_eq!(count_matches(shared(&["a"]), vec![]), Vec::<usize>::new(), "count_matches([\"a\"], [])");
+          }
+
+          #[test]
+          fn no_lines_counts_zero() {
+              assert_eq!(count_matches(shared(&[]), pats(&["x", "y"])), vec![0, 0], "count_matches([], [x, y])");
+          }
+
+          #[test]
+          fn the_caller_keeps_the_lines() {
+              let lines = shared(&["crab", "crab cake"]);
+              let counts = count_matches(Arc::clone(&lines), pats(&["crab", "cake"]));
+              assert_eq!((counts, lines.len()), (vec![2, 1], 2), "counts, then the caller's lines.len()");
+          }
+
+  - title: "Mutex: one writer at a time"
+    id: sync-4
+    text: |
+      `Arc` shares data read-only. To **change** shared data, threads must take turns. A **`Mutex<T>`** (short for *mutual exclusion*) wraps a value so only one thread at a time can get at it:
+
+      - `mutex.lock()` waits until no other thread holds the mutex, then returns a **`MutexGuard`**: a smart pointer that derefs to the value, so `*guard += 1` works.
+      - When the guard is dropped (normally at the end of its scope), the mutex **unlocks** automatically. That's RAII, the same idea as `Drop` in module 23: you can't forget to unlock.
+
+      With scoped threads, a plain `Mutex` is enough:
+
+      ```rust run
+      use std::sync::Mutex;
+      use std::thread;
+
+      fn main() {
+          let visits = Mutex::new(0);
+          thread::scope(|s| {
+              for _ in 0..8 {
+                  s.spawn(|| {
+                      for _ in 0..1000 {
+                          let mut count = visits.lock().unwrap();
+                          *count += 1;
+                      }
+                  });
+              }
+          });
+          println!("visits: {}", visits.into_inner().unwrap());
+      }
+      ```
+
+      ```output
+      visits: 8000
+      ```
+
+      8 threads × 1000 increments, and the answer is 8000 on every run, because each `+= 1` happens while holding the lock. `into_inner()` consumes the `Mutex` once no thread needs it anymore and gives back the value.
+
+      ### Why lock() returns a Result: poisoning
+
+      If a thread panics while holding a guard, the value might be half-updated. The mutex is then marked **poisoned**, and later `lock()` calls return `Err` to warn you. `.lock().unwrap()` (turn that into a panic too) is what almost all code does.
+
+      ### Arc<Mutex<T>>: shared and changeable
+
+      Threads from `thread::spawn` can't borrow, so they share the `Mutex` through an `Arc`. Each layer has one job: `Arc` gives **shared ownership**, `Mutex` gives **one-at-a-time access** for changes. It's the threaded version of `Rc<RefCell<T>>` from module 29.
+
+      ```rust run
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      fn main() {
+          let log = Arc::new(Mutex::new(Vec::new()));
+          let mut handles = Vec::new();
+          for id in 1..=3 {
+              let log = Arc::clone(&log);
+              handles.push(thread::spawn(move || {
+                  let mut entries = log.lock().unwrap();
+                  entries.push(format!("worker {id} finished"));
+              }));
+          }
+          for handle in handles {
+              handle.join().unwrap();
+          }
+          let mut entries = log.lock().unwrap();
+          entries.sort();
+          for entry in entries.iter() {
+              println!("{entry}");
+          }
+      }
+      ```
+
+      ```output
+      worker 1 finished
+      worker 2 finished
+      worker 3 finished
+      ```
+
+      The workers push in whatever order they run, so `main` sorts before printing.
+
+      ### Keep the lock short
+
+      Other threads wait for as long as you hold the guard. Do the slow work (parsing, computing, I/O) *before* locking, then lock, update, and let the guard go. To unlock early, put the guard in a `{ }` block or call `drop(guard)`.
+
+      ### Common mistakes
+
+      - **Read and write in two separate locks**: `let n = *c.lock().unwrap();` then `*c.lock().unwrap() = n + 1;`. Between the two, another thread can update the value, and one update is lost. Do the whole read-change-write under **one** guard.
+      - **Forgetting the `Arc`** with spawned threads: the `Mutex` moves into the first thread, then ``error[E0382]: use of moved value: `counter` ``.
+      - **Holding a guard while doing slow work**: every other thread stalls.
+      - **Locking the same mutex twice in one thread**: the program freezes. Next step.
+
+      **Your turn:** four threads each make 25 deposits of 10 coins into one shared `Account`. Share the account with `Arc<Mutex<Account>>` and spawned threads; each deposit adds 10 to `balance` and 1 to `transactions` **under one lock**. After joining, print:
+
+      ```
+      balance: 1000
+      transactions: 100
+      ```
+    seed: |
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      struct Account {
+          balance: u64,
+          transactions: u32,
+      }
+
+      fn main() {
+          let account = Arc::new(Mutex::new(Account { balance: 0, transactions: 0 }));
+          // spawn 4 threads; each makes 25 deposits of 10 coins
+          // join them, then print the balance and the number of transactions
+      }
+    solution: |
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      struct Account {
+          balance: u64,
+          transactions: u32,
+      }
+
+      fn main() {
+          let account = Arc::new(Mutex::new(Account { balance: 0, transactions: 0 }));
+          // spawn 4 threads; each makes 25 deposits of 10 coins
+          let mut handles = Vec::new();
+          for _ in 0..4 {
+              let account = Arc::clone(&account);
+              handles.push(thread::spawn(move || {
+                  for _ in 0..25 {
+                      let mut acc = account.lock().unwrap();
+                      acc.balance += 10;
+                      acc.transactions += 1;
+                  }
+              }));
+          }
+          // join them, then print the balance and the number of transactions
+          for handle in handles {
+              handle.join().unwrap();
+          }
+          let acc = account.lock().unwrap();
+          println!("balance: {}", acc.balance);
+          println!("transactions: {}", acc.transactions);
+      }
+    require:
+      - pattern: 'thread::spawn'
+        message: Use spawned threads (`thread::spawn`) sharing the account through the `Arc`.
+      - pattern: '\.lock\(\)'
+        message: Lock the mutex to change the account.
+    hints:
+      - "In a loop of 4: `let account = Arc::clone(&account);`, then `thread::spawn(move || { ... })` and keep the handle."
+      - "Each deposit: `let mut acc = account.lock().unwrap(); acc.balance += 10; acc.transactions += 1;`"
+      - "Join all handles, then lock once more in `main` to read the final values."
+    tests:
+      - expect: "balance: 1000\ntransactions: 100"
+    more:
+      - task: |
+          Five checkout threads each sell one item from the shared stock. Fill in the blank that takes the lock. The program should print `left in stock: 15`.
+        fill: |
+          use std::sync::Mutex;
+          use std::thread;
+
+          fn main() {
+              let stock = Mutex::new(20);
+              thread::scope(|s| {
+                  for _ in 0..5 {
+                      s.spawn(|| {
+                          let mut left = stock.[[lock]]().unwrap();
+                          *left -= 1;
+                      });
+                  }
+              });
+              println!("left in stock: {}", stock.into_inner().unwrap());
+          }
+        hints:
+          - "The method that waits for the mutex and returns a guard is `lock`."
+        tests:
+          - expect: "left in stock: 15"
+      - task: |
+          Write `fn tally_votes(stations: &[Vec<&str>]) -> BTreeMap<String, u32>`. Each inner `Vec` holds the ballots from one polling station. Count each station in its own **scoped** thread, all of them updating one shared `Mutex<BTreeMap<String, u32>>`, and return the final map.
+        seed: |
+          use std::collections::BTreeMap;
+          use std::sync::Mutex;
+          use std::thread;
+
+          fn tally_votes(stations: &[Vec<&str>]) -> BTreeMap<String, u32> {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeMap;
+          use std::sync::Mutex;
+          use std::thread;
+
+          fn tally_votes(stations: &[Vec<&str>]) -> BTreeMap<String, u32> {
+              let totals = Mutex::new(BTreeMap::new());
+              thread::scope(|s| {
+                  for ballots in stations {
+                      s.spawn(|| {
+                          for name in ballots.iter() {
+                              let mut map = totals.lock().unwrap();
+                              *map.entry(name.to_string()).or_insert(0) += 1;
+                          }
+                      });
+                  }
+              });
+              totals.into_inner().unwrap()
+          }
+        require:
+          - pattern: 'Mutex::new'
+            message: Share one `Mutex<BTreeMap<...>>` between the threads.
+          - pattern: 'thread::scope'
+            message: Use scoped threads, one per station.
+        hints:
+          - "Create `let totals = Mutex::new(BTreeMap::new());`, then `thread::scope(|s| { for ballots in stations { s.spawn(|| { ... }); } });`."
+          - "In each thread: `for name in ballots.iter() { *totals.lock().unwrap().entry(name.to_string()).or_insert(0) += 1; }`. After the scope, `totals.into_inner().unwrap()`."
+        harness: |
+          #[test]
+          fn counts_votes_from_three_stations() {
+              let stations = vec![vec!["ana", "bo"], vec!["bo", "bo"], vec!["cy", "ana"]];
+              let result = tally_votes(&stations);
+              let expected = BTreeMap::from([("ana".to_string(), 2), ("bo".to_string(), 3), ("cy".to_string(), 1)]);
+              assert_eq!(result, expected, "tally_votes([[ana, bo], [bo, bo], [cy, ana]])");
+          }
+
+          #[test]
+          fn no_stations_gives_empty_map() {
+              assert_eq!(tally_votes(&[]), BTreeMap::new(), "tally_votes([])");
+          }
+
+          #[test]
+          fn empty_station_adds_nothing() {
+              let result = tally_votes(&[vec![], vec!["dee"]]);
+              assert_eq!(result, BTreeMap::from([("dee".to_string(), 1)]), "tally_votes([[], [dee]])");
+          }
+
+          #[test]
+          fn many_ballots_are_all_counted() {
+              let stations: Vec<Vec<&str>> = (0..8).map(|_| vec!["yes"; 500]).collect();
+              assert_eq!(tally_votes(&stations).get("yes"), Some(&4000), "8 stations x 500 yes votes");
+          }
+
+  - title: "RwLock, and how deadlocks happen"
+    id: sync-5
+    text: |
+      A `Mutex` lets one thread in at a time, even if all of them only want to read. **`RwLock<T>`** (reader-writer lock) has two kinds of lock:
+
+      - `read()` returns a read guard (`&T` access). **Many** threads can hold read guards at the same time.
+      - `write()` returns a write guard (`&mut T` access). It's **exclusive**: it waits until all readers and writers are gone.
+
+      It's the runtime version of the borrowing rule you know: many readers or one writer. It fits data that's read constantly and changed rarely, like a config or a routing table.
+
+      ```rust run
+      use std::sync::RwLock;
+      use std::thread;
+
+      struct Config {
+          max_players: u32,
+          motd: String,
+      }
+
+      fn main() {
+          let config = RwLock::new(Config { max_players: 8, motd: String::from("Welcome!") });
+
+          let (players, motd) = thread::scope(|s| {
+              let a = s.spawn(|| config.read().unwrap().max_players);
+              let b = s.spawn(|| config.read().unwrap().motd.clone());
+              (a.join().unwrap(), b.join().unwrap())
+          });
+          println!("readers saw: {players} players, {motd:?}");
+
+          {
+              let mut cfg = config.write().unwrap();
+              cfg.max_players = 16;
+              cfg.motd = String::from("Season 2 is live");
+          }
+
+          let cfg = config.read().unwrap();
+          println!("after update: {} players, {:?}", cfg.max_players, cfg.motd);
+      }
+      ```
+
+      ```output
+      readers saw: 8 players, "Welcome!"
+      after update: 16 players, "Season 2 is live"
+      ```
+
+      The block around the write guard drops it before the final `read()`. An `RwLock` does more bookkeeping than a `Mutex`, so for data that's written often, or locked only very briefly, a `Mutex` is usually just as fast. Measure before switching.
+
+      ### Deadlocks
+
+      A **deadlock** is when threads wait for each other forever. The program doesn't crash and doesn't print an error: it just freezes. Rust prevents data races at compile time, but **not deadlocks**: they're a logic bug, like an infinite loop. The two classic causes:
+
+      **1. Locking the same mutex twice in one thread.** `std`'s `Mutex` isn't **reentrant**: a second `lock()` in the same thread waits for the first guard to be dropped, which never happens. It usually hides behind a helper function:
+
+      ```rust
+      fn total(stock: &Mutex<Vec<u32>>) -> u32 {
+          stock.lock().unwrap().iter().sum()
+      }
+
+      let mut items = stock.lock().unwrap();
+      items.push(5);
+      println!("{}", total(&stock)); // freezes: `items` still holds the lock
+      ```
+
+      The same goes for an `RwLock`: holding a read guard and asking for `write()` in the same thread never returns.
+
+      **2. Two locks taken in opposite orders.** Thread A locks `alice`, then wants `bob`. Thread B locks `bob`, then wants `alice`. Each holds what the other is waiting for. The fix is **lock ordering**: whenever code needs several locks, it takes them in one agreed order (for example, by account id), everywhere.
+
+      ### Habits that prevent deadlocks
+
+      - Keep guards short-lived; drop them (end the block, or `drop(guard)`) before calling other functions.
+      - Don't call code you don't control (callbacks, trait methods) while holding a lock.
+      - Need several locks? Always take them in the same order. Better still, use one lock, or channels.
+
+      **Your turn:** this program freezes (on this site, the time limit runs out) because `report` locks the inventory while `main` still holds a guard on it. Make `main` release its guard before calling `report`, so the program prints `items: 4, total units: 26`.
+    seed: |
+      use std::sync::Mutex;
+
+      fn report(inventory: &Mutex<Vec<u32>>) -> String {
+          let items = inventory.lock().unwrap();
+          format!("items: {}, total units: {}", items.len(), items.iter().sum::<u32>())
+      }
+
+      fn main() {
+          let inventory = Mutex::new(vec![5, 12, 3]);
+          let mut stock = inventory.lock().unwrap();
+          stock.push(6);
+          println!("{}", report(&inventory));
+      }
+    solution: |
+      use std::sync::Mutex;
+
+      fn report(inventory: &Mutex<Vec<u32>>) -> String {
+          let items = inventory.lock().unwrap();
+          format!("items: {}, total units: {}", items.len(), items.iter().sum::<u32>())
+      }
+
+      fn main() {
+          let inventory = Mutex::new(vec![5, 12, 3]);
+          {
+              let mut stock = inventory.lock().unwrap();
+              stock.push(6);
+          }
+          println!("{}", report(&inventory));
+      }
+    hints:
+      - "The guard `stock` lives until the end of `main`, so the lock is still held when `report` runs."
+      - "Wrap the two lines that use `stock` in their own `{ }` block, or call `drop(stock);` before the `println!`."
+    tests:
+      - expect: "items: 4, total units: 26"
+    more:
+      - task: |
+          Write `fn transfer(from: &Account, to: &Account, amount: i64)` that moves `amount` from one balance to the other while holding **both** locks. To avoid deadlocks, always lock the account with the **smaller id first**, whichever direction the money goes. A transfer from an account to itself must do nothing (locking the same mutex twice would freeze). One hidden test runs thousands of transfers in opposite directions at the same time.
+        seed: |
+          use std::sync::Mutex;
+
+          #[derive(Debug)]
+          struct Account {
+              id: u32,
+              balance: Mutex<i64>,
+          }
+
+          fn transfer(from: &Account, to: &Account, amount: i64) {
+              todo!()
+          }
+        solution: |
+          use std::sync::Mutex;
+
+          #[derive(Debug)]
+          struct Account {
+              id: u32,
+              balance: Mutex<i64>,
+          }
+
+          fn transfer(from: &Account, to: &Account, amount: i64) {
+              if from.id == to.id {
+                  return;
+              }
+              let (mut from_balance, mut to_balance) = if from.id < to.id {
+                  let f = from.balance.lock().unwrap();
+                  let t = to.balance.lock().unwrap();
+                  (f, t)
+              } else {
+                  let t = to.balance.lock().unwrap();
+                  let f = from.balance.lock().unwrap();
+                  (f, t)
+              };
+              *from_balance -= amount;
+              *to_balance += amount;
+          }
+        hints:
+          - "Return early when `from.id == to.id`."
+          - "In an `if from.id < to.id` / `else`, lock the two balances in id order, and return both guards as a tuple: `let (mut from_balance, mut to_balance) = if ... { ... } else { ... };`."
+          - "Then `*from_balance -= amount; *to_balance += amount;`. Both guards unlock when the function ends."
+        harness: |
+          fn account(id: u32, balance: i64) -> Account {
+              Account { id, balance: Mutex::new(balance) }
+          }
+
+          fn balance(a: &Account) -> i64 {
+              *a.balance.lock().unwrap()
+          }
+
+          #[test]
+          fn moves_money_from_lower_to_higher_id() {
+              let (a, b) = (account(1, 100), account(2, 50));
+              transfer(&a, &b, 30);
+              assert_eq!((balance(&a), balance(&b)), (70, 80), "transfer(a=100, b=50, 30)");
+          }
+
+          #[test]
+          fn moves_money_from_higher_to_lower_id() {
+              let (a, b) = (account(1, 100), account(2, 50));
+              transfer(&b, &a, 50);
+              assert_eq!((balance(&a), balance(&b)), (150, 0), "transfer(b=50, a=100, 50)");
+          }
+
+          #[test]
+          fn transfer_to_itself_changes_nothing() {
+              let a = account(7, 40);
+              transfer(&a, &a, 10);
+              assert_eq!(balance(&a), 40, "transfer(a, a, 10)");
+          }
+
+          #[test]
+          fn opposite_transfers_at_the_same_time_finish() {
+              let (a, b) = (account(1, 1000), account(2, 1000));
+              std::thread::scope(|s| {
+                  s.spawn(|| {
+                      for _ in 0..20_000 {
+                          transfer(&a, &b, 1);
+                      }
+                  });
+                  s.spawn(|| {
+                      for _ in 0..20_000 {
+                          transfer(&b, &a, 1);
+                      }
+                  });
+              });
+              assert_eq!((balance(&a), balance(&b)), (1000, 1000), "20,000 transfers each way");
+          }
+      - task: |
+          A price table is read by many threads and updated now and then. Write two functions for a `RwLock<BTreeMap<String, u32>>`:
+
+          - `fn lookup(table: &RwLock<BTreeMap<String, u32>>, item: &str) -> Option<u32>` takes a **read** lock and returns the item's price.
+          - `fn set_price(table: &RwLock<BTreeMap<String, u32>>, item: &str, price: u32)` takes a **write** lock and inserts or replaces the price.
+        seed: |
+          use std::collections::BTreeMap;
+          use std::sync::RwLock;
+
+          fn lookup(table: &RwLock<BTreeMap<String, u32>>, item: &str) -> Option<u32> {
+              todo!()
+          }
+
+          fn set_price(table: &RwLock<BTreeMap<String, u32>>, item: &str, price: u32) {
+              todo!()
+          }
+        solution: |
+          use std::collections::BTreeMap;
+          use std::sync::RwLock;
+
+          fn lookup(table: &RwLock<BTreeMap<String, u32>>, item: &str) -> Option<u32> {
+              table.read().unwrap().get(item).copied()
+          }
+
+          fn set_price(table: &RwLock<BTreeMap<String, u32>>, item: &str, price: u32) {
+              table.write().unwrap().insert(item.to_string(), price);
+          }
+        require:
+          - pattern: '\.read\(\)'
+            message: "`lookup` should take a read lock with `.read()`."
+          - pattern: '\.write\(\)'
+            message: "`set_price` should take a write lock with `.write()`."
+        hints:
+          - "`table.read().unwrap()` gives a guard you can call `.get(item)` on; `.copied()` turns `Option<&u32>` into `Option<u32>`."
+          - "`table.write().unwrap().insert(item.to_string(), price);`"
+        harness: |
+          fn table() -> RwLock<BTreeMap<String, u32>> {
+              RwLock::new(BTreeMap::from([("kelp".to_string(), 3), ("pearl".to_string(), 250)]))
+          }
+
+          #[test]
+          fn looks_up_a_known_item() {
+              assert_eq!(lookup(&table(), "pearl"), Some(250), "lookup(\"pearl\")");
+          }
+
+          #[test]
+          fn unknown_item_is_none() {
+              assert_eq!(lookup(&table(), "gold"), None, "lookup(\"gold\")");
+          }
+
+          #[test]
+          fn set_price_adds_and_replaces() {
+              let t = table();
+              set_price(&t, "gold", 900);
+              set_price(&t, "kelp", 4);
+              assert_eq!((lookup(&t, "gold"), lookup(&t, "kelp")), (Some(900), Some(4)), "after set_price(gold, 900) and set_price(kelp, 4)");
+          }
+
+          #[test]
+          fn many_readers_at_once() {
+              let t = table();
+              let found: Vec<Option<u32>> = std::thread::scope(|s| {
+                  let handles: Vec<_> = (0..8).map(|_| s.spawn(|| lookup(&t, "kelp"))).collect();
+                  handles.into_iter().map(|h| h.join().unwrap()).collect()
+              });
+              assert_eq!(found, vec![Some(3); 8], "8 threads looking up kelp");
+          }
+
+  - title: "Atomics: lock-free counters and flags"
+    id: sync-6
+    text: |
+      For a single number or flag, a `Mutex` is heavier than it needs to be. **Atomic types** from `std::sync::atomic` (`AtomicUsize`, `AtomicU64`, `AtomicI32`, `AtomicBool`, ...) are plain integers and booleans whose operations are single, indivisible CPU instructions: no thread ever sees a half-done update, and there's no lock to wait for. Their methods take `&self`, so a shared reference (or an `Arc`) is all a thread needs.
+
+      ```rust run
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::thread;
+
+      fn main() {
+          let requests = vec!["GET /", "POST /login", "GET /shop", "GET /", "DELETE /cart", "GET /about"];
+          let gets = AtomicUsize::new(0);
+          thread::scope(|s| {
+              for chunk in requests.chunks(2) {
+                  s.spawn(|| {
+                      for line in chunk.iter() {
+                          if line.starts_with("GET") {
+                              gets.fetch_add(1, Ordering::Relaxed);
+                          }
+                      }
+                  });
+              }
+          });
+          println!("GET requests: {}", gets.load(Ordering::Relaxed));
+      }
+      ```
+
+      ```output
+      GET requests: 4
+      ```
+
+      Every thread borrows the one `gets` counter; `fetch_add` adds 1 in a single step that no other thread can interrupt. Notice `chunk.iter()` rather than `for line in chunk`: a closure that uses the loop variable `chunk` directly borrows that *variable*, which disappears at the end of each turn of the loop (`E0373`). Calling a method on it borrows only the data it points to, which lives as long as `requests`.
+
+      The operations you'll use most:
+
+      | Method | What it does |
+      |---|---|
+      | `load(ord)` / `store(v, ord)` | read / write the value |
+      | `fetch_add(n, ord)`, `fetch_sub(n, ord)` | add / subtract in one step, returning the **previous** value |
+      | `fetch_max(v, ord)`, `fetch_min(v, ord)` | keep the larger / smaller value |
+      | `swap(v, ord)` | write a new value and return the old one |
+      | `compare_exchange(expected, new, ...)` | write `new` only if the value is still `expected` |
+
+      ### Ordering, briefly
+
+      Every operation takes an **`Ordering`**. It tells the compiler and the CPU how much they may reorder *other* memory accesses around this one (both reorder freely to go faster):
+
+      - **`Relaxed`**: only this one variable is atomic; no promises about other data. Right for counters and statistics that you read after `join` (joining already synchronizes).
+      - **`Release`** (on a store) with **`Acquire`** (on a load): for publishing. Write your data, then `store(true, Release)` a flag; a thread that sees the flag with `load(Acquire)` is guaranteed to see the data too.
+      - **`SeqCst`**: the strictest; all threads agree on one order of all `SeqCst` operations. The safe choice when you're unsure, and the cost is small on most hardware.
+
+      Memory ordering is a deep topic; Mara Bos's free book *Rust Atomics and Locks* covers it properly. For everyday code: counters use `Relaxed`, flags that hand over data use `Release`/`Acquire`.
+
+      ### A stop flag
+
+      `AtomicBool` is the standard way to tell a background thread to stop:
+
+      ```rust run
+      use std::sync::Arc;
+      use std::sync::atomic::{AtomicBool, Ordering};
+      use std::thread;
+      use std::time::Duration;
+
+      fn main() {
+          let stop = Arc::new(AtomicBool::new(false));
+          let flag = Arc::clone(&stop);
+          let worker = thread::spawn(move || {
+              while !flag.load(Ordering::Acquire) {
+                  thread::sleep(Duration::from_millis(1));
+              }
+              "worker stopped cleanly"
+          });
+          thread::sleep(Duration::from_millis(5));
+          stop.store(true, Ordering::Release);
+          println!("{}", worker.join().unwrap());
+      }
+      ```
+
+      ```output
+      worker stopped cleanly
+      ```
+
+      ### Common mistakes
+
+      - **Load, then store**: `let n = c.load(Relaxed); c.store(n + 1, Relaxed);` is two operations, and another thread can sneak in between them: lost updates. Use `fetch_add` (or `compare_exchange`) for read-modify-write.
+      - **Several related values in separate atomics** (a balance *and* a transaction count). Each is atomic on its own, but they can't change *together*. Use a `Mutex` around a struct.
+      - **Agonizing over `Ordering` for a counter.** `Relaxed` is correct there.
+      - **`move` on a scoped thread that uses the counter**: `move` would move the counter itself into the first thread. If you need `move` (for a loop variable), make a reference first, `let hits = &hits;`, and move that.
+
+      **Your turn:** write `fn count_matching(lines: &[&str], needle: &str, workers: usize) -> usize`. Split `lines` into chunks of `lines.len().div_ceil(workers).max(1)`, scan each chunk in its own scoped thread, and count the lines containing `needle` with **one shared `AtomicUsize`** (`fetch_add`). Return the final count.
+    seed: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::thread;
+
+      fn count_matching(lines: &[&str], needle: &str, workers: usize) -> usize {
+          todo!()
+      }
+    solution: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::thread;
+
+      fn count_matching(lines: &[&str], needle: &str, workers: usize) -> usize {
+          let hits = AtomicUsize::new(0);
+          let size = lines.len().div_ceil(workers).max(1);
+          thread::scope(|s| {
+              for chunk in lines.chunks(size) {
+                  s.spawn(|| {
+                      for line in chunk.iter() {
+                          if line.contains(needle) {
+                              hits.fetch_add(1, Ordering::Relaxed);
+                          }
+                      }
+                  });
+              }
+          });
+          hits.load(Ordering::Relaxed)
+      }
+    require:
+      - pattern: 'AtomicUsize::new'
+        message: Count with one shared `AtomicUsize`.
+      - pattern: 'fetch_add'
+        message: Increment the counter with `fetch_add`.
+      - pattern: 'thread::scope'
+        message: Use scoped threads so they can borrow `lines`.
+    hints:
+      - "Create `let hits = AtomicUsize::new(0);` before the scope; the scoped threads can borrow it."
+      - "In each thread: `for line in chunk.iter()`, and `if line.contains(needle) { hits.fetch_add(1, Ordering::Relaxed); }`."
+      - "After the scope, return `hits.load(Ordering::Relaxed)` (or `hits.into_inner()`)."
+    harness: |
+      #[test]
+      fn counts_error_lines_with_two_workers() {
+          let lines = ["ok", "error: disk", "ok", "error: net", "warn"];
+          assert_eq!(count_matching(&lines, "error", 2), 2, "count_matching(5 lines, \"error\", 2)");
+      }
+
+      #[test]
+      fn no_lines_counts_zero() {
+          assert_eq!(count_matching(&[], "x", 3), 0, "count_matching([], \"x\", 3)");
+      }
+
+      #[test]
+      fn more_workers_than_lines() {
+          assert_eq!(count_matching(&["crab", "crab"], "crab", 10), 2, "count_matching([crab, crab], \"crab\", 10)");
+      }
+
+      #[test]
+      fn many_lines() {
+          let owned: Vec<String> = (0..10_000).map(|n| if n % 4 == 0 { format!("GET /{n}") } else { format!("POST /{n}") }).collect();
+          let lines: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+          assert_eq!(count_matching(&lines, "GET", 4), 2_500, "count_matching(10,000 lines, \"GET\", 4)");
+      }
+    more:
+      - task: |
+          Fill in the atomic operation that adds 1 and can't lose updates. The program should print `dropped packets: 300`.
+        fill: |
+          use std::sync::atomic::{AtomicU64, Ordering};
+          use std::thread;
+
+          fn main() {
+              let dropped = AtomicU64::new(0);
+              thread::scope(|s| {
+                  for _ in 0..3 {
+                      s.spawn(|| {
+                          for _ in 0..100 {
+                              dropped.[[fetch_add]](1, Ordering::Relaxed);
+                          }
+                      });
+                  }
+              });
+              println!("dropped packets: {}", dropped.load(Ordering::Relaxed));
+          }
+        hints:
+          - "The method that adds and returns the previous value is `fetch_add`."
+        tests:
+          - expect: "dropped packets: 300"
+      - task: |
+          Three arena servers report their match scores. In one `thread::scope`, give each server's list its own thread. Track the **highest** score with a shared `AtomicU32` and `fetch_max`, and the number of games with a shared `AtomicUsize`. Print:
+
+          ```
+          best score: 97
+          games: 9
+          ```
+        seed: |
+          use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+          use std::thread;
+
+          fn main() {
+              let servers = vec![vec![40, 97, 12], vec![55, 81], vec![3, 60, 77, 90]];
+          }
+        solution: |
+          use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+          use std::thread;
+
+          fn main() {
+              let servers = vec![vec![40, 97, 12], vec![55, 81], vec![3, 60, 77, 90]];
+              let best = AtomicU32::new(0);
+              let games = AtomicUsize::new(0);
+              thread::scope(|s| {
+                  for scores in &servers {
+                      s.spawn(|| {
+                          for &score in scores.iter() {
+                              best.fetch_max(score, Ordering::Relaxed);
+                              games.fetch_add(1, Ordering::Relaxed);
+                          }
+                      });
+                  }
+              });
+              println!("best score: {}", best.load(Ordering::Relaxed));
+              println!("games: {}", games.load(Ordering::Relaxed));
+          }
+        require:
+          - pattern: 'fetch_max'
+            message: Keep the highest score with `fetch_max`.
+          - pattern: 'thread::scope'
+            message: Use one scoped thread per server.
+        hints:
+          - "Create `let best = AtomicU32::new(0);` and `let games = AtomicUsize::new(0);` before the scope."
+          - "In each thread: `for &score in scores.iter() { best.fetch_max(score, Ordering::Relaxed); games.fetch_add(1, Ordering::Relaxed); }`."
+        tests:
+          - expect: "best score: 97\ngames: 9"
+
+  - title: "Global state: OnceLock and LazyLock"
+    id: sync-7
+    text: |
+      Some data really is global: a lookup table used everywhere, a counter for ids, a config loaded at startup. A **`static`** item lives for the whole program and every thread can see it, so its type must be `Sync`. A static's starting value must be computable at compile time, and statics are immutable: `COUNTER += 1` on a `static COUNTER: u32` fails with ``error[E0594]: cannot assign to immutable static item `COUNTER` ``.
+
+      Three tools cover nearly every need:
+
+      - **Atomics** can be created at compile time, so `static NEXT_ID: AtomicU64 = AtomicU64::new(1);` is a global counter, no `unsafe` needed. (`Mutex::new` works in a static too.)
+      - **`LazyLock<T>`** (`std::sync`) holds a value that's built at run time, by a closure that runs on **first use**, exactly once, even if several threads get there at the same moment. After that it derefs to `T`. Use it for tables and other values that can't be built at compile time: `static PRICES: HashMap<..> = HashMap::new();` fails with `error[E0015]: cannot call non-const associated function`.
+      - **`OnceLock<T>`** is a slot you fill once at run time: `get_or_init(|| ...)` returns the value, initializing it on the first call; `set(value)` fills it (and returns `Err` if it was already full); `get()` returns `Option<&T>`. Use it when the value depends on something only known while running, like a command-line argument.
+
+      ```rust run
+      use std::collections::HashMap;
+      use std::sync::LazyLock;
+      use std::sync::atomic::{AtomicU64, Ordering};
+      use std::thread;
+
+      static NEXT_TICKET: AtomicU64 = AtomicU64::new(1);
+
+      static PRICES: LazyLock<HashMap<&'static str, u32>> =
+          LazyLock::new(|| HashMap::from([("standard", 40), ("vip", 120), ("child", 15)]));
+
+      fn next_ticket() -> u64 {
+          NEXT_TICKET.fetch_add(1, Ordering::Relaxed)
+      }
+
+      fn main() {
+          let mut tickets: Vec<u64> = thread::scope(|s| {
+              let handles: Vec<_> = (0..3).map(|_| s.spawn(next_ticket)).collect();
+              handles.into_iter().map(|h| h.join().unwrap()).collect()
+          });
+          tickets.sort();
+          println!("tickets issued: {tickets:?}");
+          println!("vip costs {}", PRICES["vip"]);
+          println!("student price: {:?}", PRICES.get("student"));
+      }
+      ```
+
+      ```output
+      tickets issued: [1, 2, 3]
+      vip costs 120
+      student price: None
+      ```
+
+      `s.spawn(next_ticket)` passes the function itself as the thread's closure. Which thread got which ticket varies, so the tickets are sorted before printing; `fetch_add` guarantees no two threads get the same number.
+
+      `OnceLock` with `get_or_init` is the classic "load once" helper:
+
+      ```rust run
+      use std::sync::OnceLock;
+
+      struct Config {
+          region: String,
+          retries: u32,
+      }
+
+      static CONFIG: OnceLock<Config> = OnceLock::new();
+
+      fn config() -> &'static Config {
+          CONFIG.get_or_init(|| {
+              println!("loading config (only once)");
+              Config { region: String::from("eu-west"), retries: 3 }
+          })
+      }
+
+      fn main() {
+          println!("{} with {} retries", config().region, config().retries);
+          println!("still {}", config().region);
+      }
+      ```
+
+      ```output
+      loading config (only once)
+      eu-west with 3 retries
+      still eu-west
+      ```
+
+      ### At work
+
+      - Globals make code harder to test, since every test shares them. Prefer passing state explicitly (an `Arc<AppState>` given to each request handler is the norm in web services, module 41). Keep globals for true constants: lookup tables, compiled regexes (`static RE: LazyLock<Regex>`).
+      - Older code uses the `lazy_static!` macro or the `once_cell` crate. `LazyLock` and `OnceLock` replaced both in the standard library.
+      - `static mut` exists, but every access is `unsafe` (module 36). Use an atomic, a `Mutex` or a `OnceLock` instead.
+
+      ### Which tool when
+
+      | You need | Use |
+      |---|---|
+      | Hand values from one thread to another | a channel (`mpsc`) |
+      | Many threads read the same data | `Arc<T>` (or borrow it with `thread::scope`) |
+      | Many threads change the same data | `Arc<Mutex<T>>` (`RwLock` if reads dominate) |
+      | A shared counter or flag | an atomic |
+      | A global built once | `LazyLock` / `OnceLock` |
+
+      **Your turn:** shipping fees (in cents) are a global table: `"local"` 300, `"national"` 700, `"eu"` 1500, `"world"` 3500. Declare `static SHIPPING: LazyLock<HashMap<&'static str, u64>>` built on first use, and write `fn total_with_shipping(zone: &str, subtotal: u64) -> Option<u64>` that adds the zone's fee to `subtotal`, or returns `None` for an unknown zone.
+    seed: |
+      use std::collections::HashMap;
+      use std::sync::LazyLock;
+
+      // static SHIPPING: LazyLock<HashMap<&'static str, u64>> = ...
+
+      fn total_with_shipping(zone: &str, subtotal: u64) -> Option<u64> {
+          todo!()
+      }
+    solution: |
+      use std::collections::HashMap;
+      use std::sync::LazyLock;
+
+      static SHIPPING: LazyLock<HashMap<&'static str, u64>> =
+          LazyLock::new(|| HashMap::from([("local", 300), ("national", 700), ("eu", 1500), ("world", 3500)]));
+
+      fn total_with_shipping(zone: &str, subtotal: u64) -> Option<u64> {
+          SHIPPING.get(zone).map(|fee| subtotal + fee)
+      }
+    require:
+      - pattern: 'static\s+SHIPPING\s*:\s*LazyLock'
+        message: "Declare the table as `static SHIPPING: LazyLock<...>`."
+    hints:
+      - "`static SHIPPING: LazyLock<HashMap<&'static str, u64>> = LazyLock::new(|| HashMap::from([(\"local\", 300), ...]));`"
+      - "`SHIPPING.get(zone)` gives an `Option<&u64>`; `.map(|fee| subtotal + fee)` adds the fee."
+    harness: |
+      #[test]
+      fn local_shipping_is_added() {
+          assert_eq!(total_with_shipping("local", 2000), Some(2300), "total_with_shipping(\"local\", 2000)");
+      }
+
+      #[test]
+      fn world_shipping_is_added() {
+          assert_eq!(total_with_shipping("world", 10_000), Some(13_500), "total_with_shipping(\"world\", 10000)");
+      }
+
+      #[test]
+      fn unknown_zone_is_none() {
+          assert_eq!(total_with_shipping("moon", 500), None, "total_with_shipping(\"moon\", 500)");
+      }
+
+      #[test]
+      fn zones_are_case_sensitive() {
+          assert_eq!(total_with_shipping("EU", 100), None, "total_with_shipping(\"EU\", 100)");
+      }
+
+      #[test]
+      fn works_from_several_threads() {
+          let totals: Vec<Option<u64>> = std::thread::scope(|s| {
+              let a = s.spawn(|| total_with_shipping("eu", 0));
+              let b = s.spawn(|| total_with_shipping("national", 1));
+              vec![a.join().unwrap(), b.join().unwrap()]
+          });
+          assert_eq!(totals, vec![Some(1500), Some(701)], "eu and national from two threads");
+      }
+    more:
+      - task: |
+          A greeting is set once at startup from the server's name, then read everywhere. With `static GREETING: OnceLock<String>`, write:
+
+          - `fn init_greeting(name: &str) -> bool`: stores `"Welcome to {name}"` and returns `true`, or returns `false` (changing nothing) if a greeting was already set.
+          - `fn greeting() -> &'static str`: the stored greeting, or `"Welcome"` if none was set yet.
+        seed: |
+          use std::sync::OnceLock;
+
+          static GREETING: OnceLock<String> = OnceLock::new();
+
+          fn init_greeting(name: &str) -> bool {
+              todo!()
+          }
+
+          fn greeting() -> &'static str {
+              todo!()
+          }
+        solution: |
+          use std::sync::OnceLock;
+
+          static GREETING: OnceLock<String> = OnceLock::new();
+
+          fn init_greeting(name: &str) -> bool {
+              GREETING.set(format!("Welcome to {name}")).is_ok()
+          }
+
+          fn greeting() -> &'static str {
+              GREETING.get().map(|s| s.as_str()).unwrap_or("Welcome")
+          }
+        hints:
+          - "`GREETING.set(value)` returns `Ok(())` the first time and `Err(value)` after that; `.is_ok()` turns it into the `bool`."
+          - "`GREETING.get()` is an `Option<&String>`: `.map(|s| s.as_str()).unwrap_or(\"Welcome\")`."
+        harness: |
+          #[test]
+          fn default_greeting_before_init() {
+              assert_eq!(greeting(), "Welcome", "greeting() before init_greeting");
+          }
+
+          #[test]
+          fn init_sets_the_greeting() {
+              assert_eq!(init_greeting("Crab Arena"), true, "init_greeting(\"Crab Arena\")");
+              assert_eq!(greeting(), "Welcome to Crab Arena", "greeting() after init");
+          }
+
+          #[test]
+          fn second_init_is_ignored() {
+              init_greeting("First");
+              assert_eq!(init_greeting("Second"), false, "init_greeting(\"Second\") after \"First\"");
+              assert_eq!(greeting(), "Welcome to First", "greeting() after two inits");
+          }
+
+          #[test]
+          fn all_threads_see_the_same_greeting() {
+              init_greeting("Shell Cove");
+              let seen: Vec<&str> = std::thread::scope(|s| {
+                  let handles: Vec<_> = (0..4).map(|_| s.spawn(greeting)).collect();
+                  handles.into_iter().map(|h| h.join().unwrap()).collect()
+              });
+              assert_eq!(seen, vec!["Welcome to Shell Cove"; 4], "greeting() from 4 threads");
+          }
+      - task: |
+          Write a global id generator and use it from several threads. Declare `static NEXT_ID: AtomicU64` starting at 1 and `fn next_id() -> u64` that hands out the next id. In a `thread::scope`, run 4 threads that each take 3 ids and return them in a `Vec`. Collect all 12 ids, sort them, and print:
+
+          ```
+          ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+          count: 12
+          ```
+        seed: |
+          use std::sync::atomic::{AtomicU64, Ordering};
+          use std::thread;
+
+          fn main() {
+          }
+        solution: |
+          use std::sync::atomic::{AtomicU64, Ordering};
+          use std::thread;
+
+          static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+          fn next_id() -> u64 {
+              NEXT_ID.fetch_add(1, Ordering::Relaxed)
+          }
+
+          fn main() {
+              let mut ids: Vec<u64> = thread::scope(|s| {
+                  let handles: Vec<_> = (0..4).map(|_| s.spawn(|| (0..3).map(|_| next_id()).collect::<Vec<u64>>())).collect();
+                  handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+              });
+              ids.sort();
+              println!("ids: {ids:?}");
+              println!("count: {}", ids.len());
+          }
+        require:
+          - pattern: 'static\s+NEXT_ID\s*:\s*AtomicU64'
+            message: "Declare the counter as `static NEXT_ID: AtomicU64`."
+          - pattern: 'thread::scope'
+            message: Take the ids from 4 scoped threads.
+        hints:
+          - "`static NEXT_ID: AtomicU64 = AtomicU64::new(1);` and `fn next_id() -> u64 { NEXT_ID.fetch_add(1, Ordering::Relaxed) }`."
+          - "Each thread returns `(0..3).map(|_| next_id()).collect::<Vec<u64>>()`. Join them all, `flat_map` the vectors into one, then sort it."
+        tests:
+          - expect: "ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]\ncount: 12"

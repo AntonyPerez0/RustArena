@@ -1,0 +1,1594 @@
+id: threads
+title: Threads
+phase: "Concurrency and async"
+summary: Do several things at once with std::thread. Spawn and join threads, move data into them, borrow local data with scoped threads, see how Send and Sync rule out data races at compile time, handle panicking workers, and let rayon spread work over every core.
+roadmap: ["Concurrency & Parallelism", "Threads, Channels, and Message Passing"]
+steps:
+  - title: Spawning a thread and joining it
+    id: threads-1
+    text: |
+      Every program so far has done one thing at a time, top to bottom. A **thread** is an independent line of execution inside your program: it has its own place in the code and its own local variables, and it runs alongside the others. Every program starts with one, the **main thread**. `std::thread::spawn` starts another.
+
+      Two words you'll hear a lot:
+
+      - **Concurrency**: several tasks are in progress at the same time (they take turns, or overlap).
+      - **Parallelism**: several tasks literally run at the same instant, on different CPU cores.
+
+      Threads give you both: the operating system runs them on as many cores as it has. Teams use threads to put every core to work on heavy jobs (resizing images, crunching log files, compressing backups), or to keep one part of a program responsive while another part waits.
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let handle = thread::spawn(|| {
+              let mut total: u64 = 0;
+              for n in 1..=1_000 {
+                  total += n;
+              }
+              total
+          });
+
+          println!("main thread keeps going");
+          let total = handle.join().unwrap();
+          println!("the worker computed {total}");
+      }
+      ```
+
+      ```output
+      main thread keeps going
+      the worker computed 500500
+      ```
+
+      Piece by piece:
+
+      - `use std::thread;` brings the `thread` module into scope so you can write `thread::spawn`.
+      - `thread::spawn` takes a **closure** (module 26): the code the new thread runs. `|| { ... }` is a closure with no parameters. Its last expression, `total`, is what the thread returns.
+      - `spawn` returns **immediately**, without waiting, and gives you a **`JoinHandle<T>`**, where `T` is the closure's return type (`u64` here). The worker starts running on its own, while `main` carries on and prints its line.
+      - `handle.join()` **waits** until that thread has finished, then gives back its return value wrapped in a `Result`: `Ok(value)` normally, `Err(...)` if the thread panicked (step 6). `.unwrap()` is the usual choice: if a worker crashed, `main` should crash too.
+
+      ### Threads run in an unpredictable order
+
+      If two threads both print, you can't know which line comes first. The operating system's **scheduler** decides which thread runs on which core, and when, and the answer changes from run to run:
+
+      ```rust
+      let handle = thread::spawn(|| println!("hello from the worker"));
+      println!("hello from main");
+      handle.join().unwrap();
+      // Sometimes "main" prints first, sometimes "worker". Both are correct.
+      ```
+
+      That's why the examples and exercises in this module never print from inside a worker. Workers **return** their results, and the main thread prints them after `join`, in a fixed order. Tests at work are written the same way: output that changes between runs makes a flaky test.
+
+      ### When main ends, the program ends
+
+      When `main` returns, the whole process exits, and every thread still running is stopped mid-work. A worker you forgot to join may never finish (or never even start). `join` is how you wait for it.
+
+      ### Common mistakes
+
+      - **Forgetting to join.** The program ends before the worker's work is done, and its result is silently lost.
+      - **Joining right after spawning.** `thread::spawn(a).join(); thread::spawn(b).join();` runs `a`, waits, then runs `b`: no parallelism at all. Spawn every thread first, then join them.
+      - **Treating `join()` as the value.** It returns a `Result`, so `let total: u64 = handle.join();` fails with `error[E0308]: mismatched types`. Add `.unwrap()`.
+
+      **Your turn:** fill in the blanks: start a thread with `thread::spawn`, then wait for it and take its result with `join`. The program should print `word count: 10`.
+    fill: |
+      use std::thread;
+
+      fn main() {
+          let handle = thread::[[spawn]](|| {
+              let review = "the crab arena is the best place to learn rust";
+              review.split_whitespace().count()
+          });
+          let count = handle.[[join]]().unwrap();
+          println!("word count: {count}");
+      }
+    hints:
+      - "The function that starts a new thread is `thread::spawn`."
+      - "The method that waits for a thread and gives back its result is `.join()`."
+    tests:
+      - expect: "word count: 10"
+    more:
+      - task: |
+          A `JoinHandle` remembers the type its thread returns. Fill in that type in the annotation so the program compiles and prints `max temperature: 31`.
+        fill: |
+          use std::thread;
+
+          fn main() {
+              let handle: thread::JoinHandle<[[u32]]> = thread::spawn(|| {
+                  let temps: [u32; 5] = [22, 27, 31, 19, 25];
+                  let mut max = 0;
+                  for t in temps {
+                      if t > max {
+                          max = t;
+                      }
+                  }
+                  max
+              });
+              println!("max temperature: {}", handle.join().unwrap());
+          }
+        hints:
+          - "The closure returns `max`, which holds values from a `[u32; 5]` array."
+        tests:
+          - expect: "max temperature: 31"
+      - task: |
+          Spawn **two** threads before joining either of them, so they can run at the same time:
+
+          - the first adds up the even numbers from 1 to 100,
+          - the second counts how many numbers from 1 to 100 are multiples of 7.
+
+          Then join both and print:
+
+          ```
+          even sum: 2550
+          multiples of 7: 14
+          ```
+        seed: |
+          use std::thread;
+
+          fn main() {
+          }
+        solution: |
+          use std::thread;
+
+          fn main() {
+              let evens = thread::spawn(|| (1..=100).filter(|n| n % 2 == 0).sum::<u32>());
+              let sevens = thread::spawn(|| (1..=100).filter(|n| n % 7 == 0).count());
+              println!("even sum: {}", evens.join().unwrap());
+              println!("multiples of 7: {}", sevens.join().unwrap());
+          }
+        require:
+          - pattern: 'spawn[\s\S]*spawn[\s\S]*join[\s\S]*join'
+            message: Spawn both threads first, and only then join them.
+        hints:
+          - "Keep both handles in variables: `let evens = thread::spawn(|| ...);` and `let sevens = thread::spawn(|| ...);`."
+          - "An iterator does the counting: `(1..=100).filter(|n| n % 2 == 0).sum::<u32>()`, and `.count()` for the multiples of 7."
+        tests:
+          - expect: "even sum: 2550\nmultiples of 7: 14"
+
+  - title: "move closures: giving data to a thread"
+    id: threads-2
+    text: |
+      The closures in step 1 only used data they created themselves. Usually a thread needs data from outside. Here's the obvious attempt:
+
+      ```rust compile_fail
+      use std::thread;
+
+      fn main() {
+          let scores = vec![10, 20, 30];
+          let handle = thread::spawn(|| scores.iter().sum::<i32>());
+          println!("{}", handle.join().unwrap());
+      }
+      ```
+
+      ```error
+      error[E0373]: closure may outlive the current function, but it borrows `scores`, which is owned by the current function
+      help: to force the closure to take ownership of `scores` (and any other referenced variables), use the `move` keyword
+      ```
+
+      Why does Rust refuse? A closure that only reads `scores` **borrows** it. But the compiler has no idea how long the new thread will run: you might never join it, and the function that owns `scores` could return and drop the vector while the thread is still reading it. That would be a dangling reference, exactly what the borrow checker exists to prevent. So `thread::spawn` demands a closure that borrows nothing from the function that spawned it. In Rust's terms the closure must be **`'static`**: everything it holds is owned, or lives for the whole program (like string literals).
+
+      The fix is in the help line. Writing `move` before the closure **moves** every variable the closure uses into it, so the thread owns its data:
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let scores = vec![10, 20, 30];
+          let handle = thread::spawn(move || scores.iter().sum::<i32>());
+          println!("total: {}", handle.join().unwrap());
+      }
+      ```
+
+      ```output
+      total: 60
+      ```
+
+      The vector now lives inside the closure. When the thread finishes, the closure is dropped, and the vector with it.
+
+      ### After a move, main can't use it
+
+      `move` is a real move, just like passing a `String` to a function (module 9):
+
+      ```rust compile_fail
+      use std::thread;
+
+      fn main() {
+          let scores = vec![10, 20, 30];
+          let handle = thread::spawn(move || scores.len());
+          println!("{} scores: {:?}", handle.join().unwrap(), scores);
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `scores`
+      ```
+
+      Three ways out, depending on what you need:
+
+      1. **Clone before spawning** and move the clone: `let for_worker = scores.clone();` then `move || for_worker.len()`. Both threads have their own copy. Fine for small data.
+      2. **Get it back**: the thread returns the data as (part of) its result, and `join` hands it back to you.
+      3. **Borrow with scoped threads**, which step 4 shows. No copy at all.
+
+      Option 2 looks like this:
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let orders = vec![120, 45, 300];
+          let handle = thread::spawn(move || {
+              let mut sorted = orders;
+              sorted.sort();
+              sorted
+          });
+          let sorted = handle.join().unwrap();
+          println!("{sorted:?}");
+      }
+      ```
+
+      ```output
+      [45, 120, 300]
+      ```
+
+      ### Copy types are copied
+
+      For `Copy` types (integers, `f64`, `bool`, `char`), `move` copies the value into the closure. The original stays usable, and changes made inside the thread don't affect it: the thread changed its own copy.
+
+      ### Common mistakes
+
+      - **Cloning inside the closure**: `thread::spawn(move || scores.clone().len())` still moves `scores` into the closure first. Clone *before* `spawn`, into a new variable.
+      - **Expecting `move` to share**: after `move`, the data belongs to the thread. To share one piece of data between threads you need `Arc` (step 5) or scoped threads (step 4).
+      - **Ignoring the help line**: rustc's `help:` lines often contain the exact fix. Read them.
+
+      **Your turn:** this program doesn't compile (`E0373`). Make the closure take ownership of `stock`, so the thread can add it up. It should print `total stock: 57`.
+    seed: |
+      use std::thread;
+
+      fn main() {
+          let stock = vec![12, 30, 15];
+          let handle = thread::spawn(|| {
+              let mut total = 0;
+              for n in &stock {
+                  total += n;
+              }
+              total
+          });
+          println!("total stock: {}", handle.join().unwrap());
+      }
+    solution: |
+      use std::thread;
+
+      fn main() {
+          let stock = vec![12, 30, 15];
+          let handle = thread::spawn(move || {
+              let mut total = 0;
+              for n in &stock {
+                  total += n;
+              }
+              total
+          });
+          println!("total stock: {}", handle.join().unwrap());
+      }
+    require:
+      - pattern: 'move\s*\|\|'
+        message: Fix it with the `move` keyword in front of the closure.
+    hints:
+      - The compiler's `help:` line names the keyword that makes the closure take ownership.
+      - "Write `move` right before the `||`: `thread::spawn(move || { ... })`."
+    tests:
+      - expect: "total stock: 57"
+    more:
+      - task: |
+          The main thread still needs `names` after spawning the worker (to print how many players there are), so moving it into the thread breaks the last line (`E0382`). Give the thread its own copy: clone the vector into a new variable **before** spawning, and move the copy. The program should print:
+
+          ```
+          longest name: Hermione
+          players: 3
+          ```
+        seed: |
+          use std::thread;
+
+          fn main() {
+              let names = vec![String::from("Ana"), String::from("Hermione"), String::from("Bo")];
+              let handle = thread::spawn(move || {
+                  let mut longest = String::new();
+                  for name in names {
+                      if name.len() > longest.len() {
+                          longest = name;
+                      }
+                  }
+                  longest
+              });
+              println!("longest name: {}", handle.join().unwrap());
+              println!("players: {}", names.len());
+          }
+        solution: |
+          use std::thread;
+
+          fn main() {
+              let names = vec![String::from("Ana"), String::from("Hermione"), String::from("Bo")];
+              let for_thread = names.clone();
+              let handle = thread::spawn(move || {
+                  let mut longest = String::new();
+                  for name in for_thread {
+                      if name.len() > longest.len() {
+                          longest = name;
+                      }
+                  }
+                  longest
+              });
+              println!("longest name: {}", handle.join().unwrap());
+              println!("players: {}", names.len());
+          }
+        require:
+          - pattern: '\.clone\(\)'
+            message: Clone the vector before spawning the thread.
+        hints:
+          - "Before `thread::spawn`, write `let for_thread = names.clone();`."
+          - "Inside the closure, loop over `for_thread` instead of `names`. Then `names` is never moved."
+        tests:
+          - expect: "longest name: Hermione\nplayers: 3"
+      - task: |
+          A function can start a thread and hand the `JoinHandle` back to its caller, who decides when to wait. Write `fn spawn_word_count(text: String) -> thread::JoinHandle<usize>`: it starts a thread that counts the words in `text` (split on whitespace) and returns the handle **without joining it**.
+        seed: |
+          use std::thread;
+
+          fn spawn_word_count(text: String) -> thread::JoinHandle<usize> {
+              todo!()
+          }
+        solution: |
+          use std::thread;
+
+          fn spawn_word_count(text: String) -> thread::JoinHandle<usize> {
+              thread::spawn(move || text.split_whitespace().count())
+          }
+        harness: |
+          #[test]
+          fn counts_the_words_of_a_sentence() {
+              let handle = spawn_word_count(String::from("ferris likes rust"));
+              assert_eq!(handle.join().unwrap(), 3, "spawn_word_count(\"ferris likes rust\")");
+          }
+
+          #[test]
+          fn empty_text_has_zero_words() {
+              assert_eq!(spawn_word_count(String::new()).join().unwrap(), 0, "spawn_word_count(\"\")");
+          }
+
+          #[test]
+          fn extra_spaces_and_newlines_are_ignored() {
+              let handle = spawn_word_count(String::from("  one\n two    three  "));
+              assert_eq!(handle.join().unwrap(), 3, "spawn_word_count(\"  one\\n two    three  \")");
+          }
+
+          #[test]
+          fn two_counters_can_run_at_the_same_time() {
+              let a = spawn_word_count(String::from("a b"));
+              let b = spawn_word_count(String::from("c d e"));
+              assert_eq!(a.join().unwrap() + b.join().unwrap(), 5, "two counters joined after both started");
+          }
+        hints:
+          - "The body is one `thread::spawn(...)` expression; its value is the `JoinHandle` you return."
+          - "The closure must own `text`: `thread::spawn(move || text.split_whitespace().count())`."
+
+  - title: Many threads, results in order
+    id: threads-3
+    text: |
+      Real work gets split over several threads. The pattern every team uses:
+
+      1. Spawn the threads in a loop and keep every `JoinHandle` in a `Vec`.
+      2. When all of them are running, join them **in the order you spawned them**.
+
+      Each thread finishes whenever it finishes, but because you collect results in spawn order, the output is the same on every run. This example makes it visible with **`thread::sleep`**, which pauses the current thread for a `Duration` (from `std::time`). The workers that sleep longer finish later:
+
+      ```rust run
+      use std::thread;
+      use std::time::Duration;
+
+      fn main() {
+          let jobs = vec![("resize", 30), ("compress", 10), ("upload", 20)];
+          let mut handles = Vec::new();
+          for (name, ms) in jobs {
+              handles.push(thread::spawn(move || {
+                  thread::sleep(Duration::from_millis(ms));
+                  format!("{name} done after {ms} ms")
+              }));
+          }
+          for handle in handles {
+              println!("{}", handle.join().unwrap());
+          }
+      }
+      ```
+
+      ```output
+      resize done after 30 ms
+      compress done after 10 ms
+      upload done after 20 ms
+      ```
+
+      `compress` finished first, but `main` waited for `resize` first, so the results come out in spawn order. Joining a thread that already finished returns at once. The whole program takes about 30 ms, not 60, because the three sleeps overlap.
+
+      `move` is needed here: each closure uses `name` and `ms`, which are local to one turn of the loop.
+
+      ### Splitting data into chunks
+
+      To process a big list, give each thread one piece. `chunks(n)` (module 27) cuts a slice into pieces of `n` items (the last one may be shorter). A spawned thread must own its data, so each borrowed chunk is copied into its own `Vec` with `to_vec()`:
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let readings: Vec<u32> = (1..=12).collect();
+          let mut handles = Vec::new();
+          for chunk in readings.chunks(4) {
+              let part = chunk.to_vec();
+              handles.push(thread::spawn(move || part.iter().sum::<u32>()));
+          }
+          let sums: Vec<u32> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+          println!("partial sums: {sums:?}");
+          println!("total: {}", sums.iter().sum::<u32>());
+      }
+      ```
+
+      ```output
+      partial sums: [10, 26, 42]
+      total: 78
+      ```
+
+      Copying every chunk costs time and memory. The next step removes the copy.
+
+      ### How many threads?
+
+      Threads aren't free: each one gets its own stack (2 MiB by default for spawned threads) and takes some microseconds to start. For CPU-heavy work, about one thread per core is right; `thread::available_parallelism()` tells you how many cores the machine offers. Spawning a thread per item for a million items would spend more time managing threads than working.
+
+      ### Common mistakes
+
+      - **Joining inside the spawn loop**: `handles.push(thread::spawn(f).join().unwrap())` waits for each thread before starting the next, so they run one at a time.
+      - **Looping over `&handles`**: `join` takes the handle by value (it consumes it), so `for h in &handles { h.join(); }` fails with ``error[E0507]: cannot move out of `*h` which is behind a shared reference``. Loop over `handles` itself.
+      - **Expecting the fastest worker's result first**: results come in the order you join, which is the point.
+
+      **Your turn:** spawn 4 threads. Thread `i` (for `i` from 0 to 3) adds up the **squares** of the numbers from `i * 25 + 1` to `(i + 1) * 25`, inclusive. After all 4 are running, join them in order, print each result, then the total:
+
+      ```
+      worker 0: 5525
+      worker 1: 37400
+      worker 2: 100525
+      worker 3: 194900
+      total: 338350
+      ```
+    seed: |
+      use std::thread;
+
+      fn main() {
+          let mut handles: Vec<thread::JoinHandle<u64>> = Vec::new();
+          for i in 0..4u64 {
+              // spawn a thread that sums the squares from i * 25 + 1 to (i + 1) * 25
+          }
+          // join the handles in order, print each result, then the total
+      }
+    solution: |
+      use std::thread;
+
+      fn main() {
+          let mut handles: Vec<thread::JoinHandle<u64>> = Vec::new();
+          for i in 0..4u64 {
+              // spawn a thread that sums the squares from i * 25 + 1 to (i + 1) * 25
+              handles.push(thread::spawn(move || {
+                  let mut sum = 0;
+                  for n in i * 25 + 1..=(i + 1) * 25 {
+                      sum += n * n;
+                  }
+                  sum
+              }));
+          }
+          // join the handles in order, print each result, then the total
+          let mut total = 0;
+          for (i, handle) in handles.into_iter().enumerate() {
+              let part = handle.join().unwrap();
+              println!("worker {i}: {part}");
+              total += part;
+          }
+          println!("total: {total}");
+      }
+    require:
+      - pattern: 'thread::spawn'
+        message: Start the workers with `thread::spawn`.
+    forbid:
+      - pattern: '\)\s*\.join\('
+        message: Spawn all four threads first and join them afterwards; joining right after spawning runs them one at a time.
+    hints:
+      - "Inside the loop: `handles.push(thread::spawn(move || { ... }));`. The closure needs `move` to take its own copy of `i`."
+      - "In the closure, loop `for n in i * 25 + 1..=(i + 1) * 25` and add `n * n` to a sum, then return the sum."
+      - "After the loop: `for (i, handle) in handles.into_iter().enumerate()`, then `handle.join().unwrap()` gives each part."
+    tests:
+      - expect: "worker 0: 5525\nworker 1: 37400\nworker 2: 100525\nworker 3: 194900\ntotal: 338350"
+    more:
+      - task: |
+          Count the prime numbers below 1000 with 4 threads. Thread `i` (0 to 3) checks the numbers from `i * 250` up to, but not including, `(i + 1) * 250`, using the `is_prime` function you're given. Join in order and print:
+
+          ```
+          worker 0: 53 primes
+          worker 1: 42 primes
+          worker 2: 37 primes
+          worker 3: 36 primes
+          total: 168 primes
+          ```
+        seed: |
+          use std::thread;
+
+          fn is_prime(n: u32) -> bool {
+              if n < 2 {
+                  return false;
+              }
+              let mut d = 2;
+              while d * d <= n {
+                  if n % d == 0 {
+                      return false;
+                  }
+                  d += 1;
+              }
+              true
+          }
+
+          fn main() {
+              // spawn 4 workers, then join them in order
+          }
+        solution: |
+          use std::thread;
+
+          fn is_prime(n: u32) -> bool {
+              if n < 2 {
+                  return false;
+              }
+              let mut d = 2;
+              while d * d <= n {
+                  if n % d == 0 {
+                      return false;
+                  }
+                  d += 1;
+              }
+              true
+          }
+
+          fn main() {
+              // spawn 4 workers, then join them in order
+              let mut handles = Vec::new();
+              for i in 0..4u32 {
+                  handles.push(thread::spawn(move || (i * 250..(i + 1) * 250).filter(|&n| is_prime(n)).count()));
+              }
+              let mut total = 0;
+              for (i, handle) in handles.into_iter().enumerate() {
+                  let count = handle.join().unwrap();
+                  println!("worker {i}: {count} primes");
+                  total += count;
+              }
+              println!("total: {total} primes");
+          }
+        require:
+          - pattern: 'thread::spawn'
+            message: Start the workers with `thread::spawn`.
+        forbid:
+          - pattern: '\)\s*\.join\('
+            message: Spawn all four threads first and join them afterwards.
+        hints:
+          - "A thread can call a normal function: `thread::spawn(move || (i * 250..(i + 1) * 250).filter(|&n| is_prime(n)).count())`."
+          - "Keep the handles in a `Vec`, then join them with `for (i, handle) in handles.into_iter().enumerate()`."
+        tests:
+          - expect: "worker 0: 53 primes\nworker 1: 42 primes\nworker 2: 37 primes\nworker 3: 36 primes\ntotal: 168 primes"
+      - task: |
+          Write `fn totals_in_threads(orders: Vec<Vec<u32>>) -> Vec<u32>`. Each inner `Vec` holds the line prices of one order. Spawn **one thread per order** to add up its prices, and return the totals in the same order as the input.
+        seed: |
+          use std::thread;
+
+          fn totals_in_threads(orders: Vec<Vec<u32>>) -> Vec<u32> {
+              todo!()
+          }
+        solution: |
+          use std::thread;
+
+          fn totals_in_threads(orders: Vec<Vec<u32>>) -> Vec<u32> {
+              let mut handles = Vec::new();
+              for order in orders {
+                  handles.push(thread::spawn(move || order.iter().sum::<u32>()));
+              }
+              handles.into_iter().map(|h| h.join().unwrap()).collect()
+          }
+        harness: |
+          #[test]
+          fn sums_each_order_in_input_order() {
+              let orders = vec![vec![10, 20], vec![5], vec![1, 2, 3, 4]];
+              assert_eq!(totals_in_threads(orders), vec![30, 5, 10], "totals_in_threads([[10, 20], [5], [1, 2, 3, 4]])");
+          }
+
+          #[test]
+          fn no_orders_gives_no_totals() {
+              assert_eq!(totals_in_threads(vec![]), Vec::<u32>::new(), "totals_in_threads([])");
+          }
+
+          #[test]
+          fn an_empty_order_totals_zero() {
+              assert_eq!(totals_in_threads(vec![vec![], vec![7]]), vec![0, 7], "totals_in_threads([[], [7]])");
+          }
+
+          #[test]
+          fn many_orders_keep_their_order() {
+              let orders: Vec<Vec<u32>> = (1..=20).map(|n| vec![n; n as usize]).collect();
+              let expected: Vec<u32> = (1..=20).map(|n| n * n).collect();
+              assert_eq!(totals_in_threads(orders), expected, "20 orders where order n has n lines of price n");
+          }
+        require:
+          - pattern: 'thread::spawn'
+            message: Spawn one thread per order with `thread::spawn`.
+        hints:
+          - "`for order in orders` gives you each owned `Vec<u32>`, ready to move into a thread."
+          - "Collect the handles first, then `handles.into_iter().map(|h| h.join().unwrap()).collect()`."
+
+  - title: "Scoped threads: borrowing local data"
+    id: threads-4
+    text: |
+      Copying chunks with `to_vec()` just to satisfy `'static` is wasteful. Borrowing would be safe if you could **promise** that every thread ends before the borrowed data is dropped. `thread::scope` turns that promise into something the compiler can check:
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let readings: Vec<u32> = (1..=12).collect();
+          let total = thread::scope(|s| {
+              let mut handles = Vec::new();
+              for chunk in readings.chunks(4) {
+                  handles.push(s.spawn(|| chunk.iter().sum::<u32>()));
+              }
+              handles.into_iter().map(|h| h.join().unwrap()).sum::<u32>()
+          });
+          println!("total: {total}");
+          println!("main still owns all {} readings", readings.len());
+      }
+      ```
+
+      ```output
+      total: 78
+      main still owns all 12 readings
+      ```
+
+      How it works:
+
+      - `thread::scope(|s| { ... })` calls your closure with a **scope** `s`. Threads started with `s.spawn(...)` are **scoped threads**.
+      - Before `thread::scope` returns, it joins every thread spawned in the scope that you didn't join yourself. So no scoped thread can outlive the scope, and the compiler lets them borrow anything that lives longer than the scope, like `readings`.
+      - `s.spawn` returns a `ScopedJoinHandle`, which you `join` exactly like a normal handle.
+      - Whatever the closure returns, `thread::scope` returns: here the total.
+
+      No `to_vec()`, no `move`, no copies: each thread reads its chunk straight out of `readings`.
+
+      ### Mutable borrows work too
+
+      The borrowing rules still apply across threads: one `&mut` at a time per piece of data. `chunks_mut` cuts a slice into pieces that don't overlap, so each thread can get its own `&mut` piece:
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let mut prices = vec![100, 250, 80, 40, 60, 500];
+          thread::scope(|s| {
+              for chunk in prices.chunks_mut(2) {
+                  s.spawn(|| {
+                      for p in chunk {
+                          *p = *p * 90 / 100;
+                      }
+                  });
+              }
+          });
+          println!("{prices:?}");
+      }
+      ```
+
+      ```output
+      [90, 225, 72, 36, 54, 450]
+      ```
+
+      This time we don't keep the handles: the scope joins all the threads for us before `println!` runs.
+
+      ### Lazy iterators and joining
+
+      A tempting one-liner is `data.chunks(n).map(|c| s.spawn(...)).map(|h| h.join().unwrap()).sum()`. Iterators are lazy (module 27): each item goes through *both* `map`s before the next chunk is touched, so every thread is joined right after it starts, and they run one at a time. **Collect the handles into a `Vec` first**, then join.
+
+      ### scope or spawn?
+
+      - **`thread::scope`**: the threads do a piece of work inside one function and are done before it returns. Most "split this job over the cores" code looks like this.
+      - **`thread::spawn` with `move`**: the thread must outlive the function that started it, like a background worker that runs for the whole program.
+
+      ### Common mistakes
+
+      - **`chunks(0)` panics.** A chunk size from `data.len() / workers` is 0 when there are fewer items than workers. `div_ceil` divides and rounds **up** (`10.div_ceil(4)` is `3`), and `.max(1)` keeps the size at least 1.
+      - **Loop variables still need `move`.** `for i in 0..4 { s.spawn(|| i * 2); }` borrows `i`, which dies at the end of each turn of the loop: `E0373`. Write `s.spawn(move || i * 2)`. If the closure also uses a `Vec`, `move` would move the whole `Vec` into the first thread; make a reference first (`let data = &data;`) and move that: copying a reference is free.
+      - **Two threads writing the same variable**: `E0499`, explained in the next step.
+
+      **Your turn:** write `fn parallel_sum(data: &[u64], workers: usize) -> u64`. Split `data` into chunks of `data.len().div_ceil(workers).max(1)` items, sum each chunk in its own **scoped** thread, and return the total. Borrow the data; don't copy it. You can assume `workers` is at least 1.
+    seed: |
+      use std::thread;
+
+      fn parallel_sum(data: &[u64], workers: usize) -> u64 {
+          todo!()
+      }
+    solution: |
+      use std::thread;
+
+      fn parallel_sum(data: &[u64], workers: usize) -> u64 {
+          let size = data.len().div_ceil(workers).max(1);
+          thread::scope(|s| {
+              let handles: Vec<_> = data.chunks(size).map(|chunk| s.spawn(|| chunk.iter().sum::<u64>())).collect();
+              handles.into_iter().map(|h| h.join().unwrap()).sum()
+          })
+      }
+    require:
+      - pattern: 'thread::scope'
+        message: Use `thread::scope` so the threads can borrow `data`.
+    forbid:
+      - pattern: '\.to_vec\(\)|\.clone\(\)|to_owned'
+        message: Scoped threads can borrow the chunks; no need to copy them.
+    hints:
+      - "Start with `let size = data.len().div_ceil(workers).max(1);`, then `thread::scope(|s| { ... })` as the function's last expression."
+      - "Inside the scope, spawn one thread per chunk and collect the handles: `let handles: Vec<_> = data.chunks(size).map(|chunk| s.spawn(|| chunk.iter().sum::<u64>())).collect();`"
+      - "Then join them all and add up: `handles.into_iter().map(|h| h.join().unwrap()).sum()`."
+    harness: |
+      #[test]
+      fn sums_one_to_ten_with_three_workers() {
+          let data: Vec<u64> = (1..=10).collect();
+          assert_eq!(parallel_sum(&data, 3), 55, "parallel_sum(1..=10, 3)");
+      }
+
+      #[test]
+      fn one_worker_sums_everything() {
+          assert_eq!(parallel_sum(&[4, 8, 15, 16, 23, 42], 1), 108, "parallel_sum([4, 8, 15, 16, 23, 42], 1)");
+      }
+
+      #[test]
+      fn more_workers_than_items() {
+          assert_eq!(parallel_sum(&[5, 6], 8), 11, "parallel_sum([5, 6], 8)");
+      }
+
+      #[test]
+      fn empty_slice_sums_to_zero() {
+          assert_eq!(parallel_sum(&[], 4), 0, "parallel_sum([], 4)");
+      }
+
+      #[test]
+      fn large_input_with_four_workers() {
+          let data: Vec<u64> = (1..=100_000).collect();
+          assert_eq!(parallel_sum(&data, 4), 5_000_050_000, "parallel_sum(1..=100_000, 4)");
+      }
+    more:
+      - task: |
+          Write `fn apply_discount(prices: &mut [u32], percent: u32, workers: usize)`. It lowers every price by `percent` percent, rounding down (`price * (100 - percent) / 100`), working on the slice in place with one scoped thread per chunk. Use `chunks_mut` with a chunk size of `prices.len().div_ceil(workers).max(1)`.
+        seed: |
+          use std::thread;
+
+          fn apply_discount(prices: &mut [u32], percent: u32, workers: usize) {
+              todo!()
+          }
+        solution: |
+          use std::thread;
+
+          fn apply_discount(prices: &mut [u32], percent: u32, workers: usize) {
+              let size = prices.len().div_ceil(workers).max(1);
+              thread::scope(|s| {
+                  for chunk in prices.chunks_mut(size) {
+                      s.spawn(move || {
+                          for p in chunk {
+                              *p = *p * (100 - percent) / 100;
+                          }
+                      });
+                  }
+              });
+          }
+        require:
+          - pattern: 'thread::scope'
+            message: Use `thread::scope` so the threads can borrow the slice.
+          - pattern: 'chunks_mut'
+            message: Use `chunks_mut` to give each thread its own part of the slice.
+        hints:
+          - "Inside `thread::scope(|s| { ... })`, loop `for chunk in prices.chunks_mut(size)` and spawn one thread per chunk."
+          - "Each thread runs `for p in chunk { *p = *p * (100 - percent) / 100; }`. Add `move` so the closure takes its own copy of `percent` and the chunk."
+        harness: |
+          #[test]
+          fn ten_percent_off_with_two_workers() {
+              let mut prices = vec![100, 250, 80, 40, 60];
+              apply_discount(&mut prices, 10, 2);
+              assert_eq!(prices, vec![90, 225, 72, 36, 54], "10% off [100, 250, 80, 40, 60] with 2 workers");
+          }
+
+          #[test]
+          fn rounds_down() {
+              let mut prices = vec![99, 1];
+              apply_discount(&mut prices, 50, 2);
+              assert_eq!(prices, vec![49, 0], "50% off [99, 1]");
+          }
+
+          #[test]
+          fn zero_percent_changes_nothing() {
+              let mut prices = vec![5, 6, 7];
+              apply_discount(&mut prices, 0, 3);
+              assert_eq!(prices, vec![5, 6, 7], "0% off [5, 6, 7]");
+          }
+
+          #[test]
+          fn empty_slice_is_fine() {
+              let mut prices: Vec<u32> = vec![];
+              apply_discount(&mut prices, 20, 4);
+              assert_eq!(prices, Vec::<u32>::new(), "20% off []");
+          }
+
+          #[test]
+          fn more_workers_than_prices() {
+              let mut prices = vec![200, 300];
+              apply_discount(&mut prices, 25, 8);
+              assert_eq!(prices, vec![150, 225], "25% off [200, 300] with 8 workers");
+          }
+      - task: |
+          In one `thread::scope`, run **two** threads over the same borrowed `temps` vector at the same time: one finds the lowest reading, the other the highest. Then print them, and show that `main` still owns the vector:
+
+          ```
+          min: -4
+          max: 31
+          readings: 7
+          ```
+        seed: |
+          use std::thread;
+
+          fn main() {
+              let temps = vec![12, -4, 31, 7, 0, 25, 18];
+          }
+        solution: |
+          use std::thread;
+
+          fn main() {
+              let temps = vec![12, -4, 31, 7, 0, 25, 18];
+              let (min, max) = thread::scope(|s| {
+                  let low = s.spawn(|| *temps.iter().min().unwrap());
+                  let high = s.spawn(|| *temps.iter().max().unwrap());
+                  (low.join().unwrap(), high.join().unwrap())
+              });
+              println!("min: {min}");
+              println!("max: {max}");
+              println!("readings: {}", temps.len());
+          }
+        require:
+          - pattern: 'thread::scope'
+            message: Use `thread::scope` so both threads can borrow `temps`.
+          - pattern: 'spawn[\s\S]*spawn'
+            message: Spawn two threads, one for the minimum and one for the maximum.
+        hints:
+          - "Return both results from the scope as a tuple: `let (min, max) = thread::scope(|s| { ... (low.join().unwrap(), high.join().unwrap()) });`"
+          - "`temps.iter().min()` gives an `Option<&i32>`; `*temps.iter().min().unwrap()` is the number."
+        tests:
+          - expect: "min: -4\nmax: 31\nreadings: 7"
+
+  - title: "Send and Sync: what may cross threads"
+    id: threads-5
+    text: |
+      How does Rust decide what a thread may touch? With two **marker traits**: traits with no methods that only describe a type.
+
+      - **`Send`**: a value of this type can be **moved** to another thread.
+      - **`Sync`**: a value of this type can be **shared** between threads, read through `&T` from several threads at once. (Precisely: `T` is `Sync` when `&T` is `Send`.)
+
+      You almost never write these yourself. They're **auto traits**: the compiler implements them for your struct or enum automatically when all of its fields have them. Numbers, `String`, `Vec<T>`, `Box<T>`, `HashMap`, and your own structs built from them are all `Send` and `Sync`.
+
+      `thread::spawn` asks for them in its signature (simplified):
+
+      ```rust
+      pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+      where
+          F: FnOnce() -> T + Send + 'static,
+          T: Send + 'static,
+      ```
+
+      Read it as: the closure runs once (`FnOnce`), the closure and its result must be `Send` (they change threads), and both must be `'static` (no borrowed locals, step 2).
+
+      ### Rc is not Send
+
+      `Rc<T>` (module 29) keeps its reference count in a plain integer. If two threads cloned the same `Rc` at the same moment, both could read the count `1` and both write `2`: one increment is lost, the data is freed while someone still uses it, and you have a use-after-free. So `Rc` is neither `Send` nor `Sync`, and the compiler refuses:
+
+      ```rust compile_fail
+      use std::rc::Rc;
+      use std::thread;
+
+      fn main() {
+          let names = Rc::new(vec![String::from("ana")]);
+          let copy = Rc::clone(&names);
+          let handle = thread::spawn(move || copy.len());
+          println!("{}", handle.join().unwrap());
+      }
+      ```
+
+      ```error
+      error[E0277]: `Rc<Vec<String>>` cannot be sent between threads safely
+      ```
+
+      The fix is **`Arc<T>`** (`std::sync::Arc`, "atomically reference counted"), `Rc`'s thread-safe twin. Same API (`Arc::new`, `Arc::clone`), but the count is updated with **atomic** CPU instructions that can't lose updates, which costs a little more. The next module covers `Arc` in depth; for now, the swap is all you need:
+
+      ```rust run
+      use std::sync::Arc;
+      use std::thread;
+
+      fn main() {
+          let menu = Arc::new(vec![String::from("kelp soup"), String::from("crab cakes")]);
+          let for_worker = Arc::clone(&menu);
+          let handle = thread::spawn(move || for_worker.len());
+          println!("worker sees {} dishes", handle.join().unwrap());
+          println!("main still has {:?}", menu);
+      }
+      ```
+
+      ```output
+      worker sees 2 dishes
+      main still has ["kelp soup", "crab cakes"]
+      ```
+
+      Likewise, `Cell` and `RefCell` are `Send` but not `Sync`: their borrow tracking isn't thread-safe, so sharing a `&RefCell` between threads fails with ``error[E0277]: `RefCell<i32>` cannot be shared between threads safely``. Their thread-safe counterparts are `Mutex` and `RwLock`, in the next module.
+
+      ### Data races are compile errors
+
+      A **data race** happens when two threads access the same memory at the same time, at least one of them writes, and nothing coordinates them. In C and C++ that's undefined behavior: corrupted totals that show up once a week in production. In Rust, the borrowing rules you already know rule it out, because `&mut` means exclusive across threads too:
+
+      ```rust compile_fail
+      use std::thread;
+
+      fn main() {
+          let mut total = 0;
+          thread::scope(|s| {
+              s.spawn(|| total += 1);
+              s.spawn(|| total += 2);
+          });
+          println!("{total}");
+      }
+      ```
+
+      ```error
+      error[E0499]: cannot borrow `total` as mutable more than once at a time
+      ```
+
+      This is what Rust calls **fearless concurrency**: if your code compiles (without `unsafe`), it has no data races. It can still have other bugs, like deadlocks or wrong logic, but not that one. The fixes are to give each thread its own data and combine the results afterwards (as in every exercise so far), or to use a synchronization type like `Mutex` or an atomic (next module).
+
+      ### Common mistakes
+
+      - **Using `Rc` in threaded code.** Use `Arc`.
+      - **Expecting `Arc` to allow changes.** `Arc` only gives shared access (`&T`). Changing shared data needs a `Mutex` or `RwLock` inside it, next module.
+      - **Silencing the error with `unsafe impl Send for MyType {}`.** That's for experts writing low-level building blocks, and it's almost always wrong in application code.
+
+      **Your turn:** this program shares a list of banned words with a checker thread using `Rc`, and doesn't compile. Switch it to `Arc` so it prints:
+
+      ```
+      flagged: 2
+      banned words: 3
+      ```
+    seed: |
+      use std::rc::Rc;
+      use std::thread;
+
+      fn main() {
+          let banned = Rc::new(vec!["spoiler", "cheat", "scam"]);
+          let messages = vec!["nice play", "free cheat codes", "gg", "this is a scam"];
+
+          let for_checker = Rc::clone(&banned);
+          let checker = thread::spawn(move || {
+              let mut flagged = 0;
+              for msg in messages {
+                  if for_checker.iter().any(|word| msg.contains(word)) {
+                      flagged += 1;
+                  }
+              }
+              flagged
+          });
+
+          println!("flagged: {}", checker.join().unwrap());
+          println!("banned words: {}", banned.len());
+      }
+    solution: |
+      use std::sync::Arc;
+      use std::thread;
+
+      fn main() {
+          let banned = Arc::new(vec!["spoiler", "cheat", "scam"]);
+          let messages = vec!["nice play", "free cheat codes", "gg", "this is a scam"];
+
+          let for_checker = Arc::clone(&banned);
+          let checker = thread::spawn(move || {
+              let mut flagged = 0;
+              for msg in messages {
+                  if for_checker.iter().any(|word| msg.contains(word)) {
+                      flagged += 1;
+                  }
+              }
+              flagged
+          });
+
+          println!("flagged: {}", checker.join().unwrap());
+          println!("banned words: {}", banned.len());
+      }
+    require:
+      - pattern: 'Arc::'
+        message: Use `Arc` (from `std::sync`) instead of `Rc`.
+    forbid:
+      - pattern: '\bRc\b'
+        message: "`Rc` can't cross threads; replace every use of it with `Arc`."
+    hints:
+      - "`Arc` lives in `std::sync`: change the `use` line to `use std::sync::Arc;`."
+      - "Then replace `Rc::new` with `Arc::new` and `Rc::clone` with `Arc::clone`."
+    tests:
+      - expect: "flagged: 2\nbanned words: 3"
+    more:
+      - task: |
+          Two scoped threads both push into `report`, so the program doesn't compile (`E0499`). Make each thread **return** its line instead, join them in order (big first), and build `report` from the results in the main thread. Don't use any locks. Output:
+
+          ```
+          big: 3
+          small: 3
+          ```
+        seed: |
+          use std::thread;
+
+          fn main() {
+              let orders = vec![120, 45, 300, 80, 15, 220];
+              let mut report = Vec::new();
+              thread::scope(|s| {
+                  s.spawn(|| {
+                      let big = orders.iter().filter(|&&o| o >= 100).count();
+                      report.push(format!("big: {big}"));
+                  });
+                  s.spawn(|| {
+                      let small = orders.iter().filter(|&&o| o < 100).count();
+                      report.push(format!("small: {small}"));
+                  });
+              });
+              for line in report {
+                  println!("{line}");
+              }
+          }
+        solution: |
+          use std::thread;
+
+          fn main() {
+              let orders = vec![120, 45, 300, 80, 15, 220];
+              let report = thread::scope(|s| {
+                  let big = s.spawn(|| {
+                      let big = orders.iter().filter(|&&o| o >= 100).count();
+                      format!("big: {big}")
+                  });
+                  let small = s.spawn(|| {
+                      let small = orders.iter().filter(|&&o| o < 100).count();
+                      format!("small: {small}")
+                  });
+                  vec![big.join().unwrap(), small.join().unwrap()]
+              });
+              for line in report {
+                  println!("{line}");
+              }
+          }
+        forbid:
+          - pattern: 'Mutex|RwLock|Atomic'
+            message: "Solve it without locks: each thread returns its line."
+        hints:
+          - "Keep each `s.spawn(...)` handle in a variable, and end each closure with the `format!(...)` instead of pushing it."
+          - "Make the scope return the lines: `let report = thread::scope(|s| { ... vec![big.join().unwrap(), small.join().unwrap()] });`"
+        tests:
+          - expect: "big: 3\nsmall: 3"
+      - task: |
+          Write a generic `fn run_in_thread<T, R, F>(input: T, f: F) -> R` that runs `f(input)` on a **new thread** (with `thread::spawn`), waits for it, and returns the result. The starter only says that `f` is a function taking a `T` and returning an `R`; the compiler will tell you which extra bounds `T`, `R` and `F` need. They're the same ones `thread::spawn` asks for.
+        seed: |
+          use std::thread;
+
+          fn run_in_thread<T, R, F>(input: T, f: F) -> R
+          where
+              F: FnOnce(T) -> R,
+          {
+              todo!()
+          }
+        solution: |
+          use std::thread;
+
+          fn run_in_thread<T, R, F>(input: T, f: F) -> R
+          where
+              T: Send + 'static,
+              R: Send + 'static,
+              F: FnOnce(T) -> R + Send + 'static,
+          {
+              thread::spawn(move || f(input)).join().unwrap()
+          }
+        harness: |
+          #[test]
+          fn doubles_a_number() {
+              assert_eq!(run_in_thread(21, |x| x * 2), 42, "run_in_thread(21, |x| x * 2)");
+          }
+
+          #[test]
+          fn measures_a_string() {
+              assert_eq!(run_in_thread(String::from("ferris"), |s| s.len()), 6, "run_in_thread(\"ferris\", |s| s.len())");
+          }
+
+          #[test]
+          fn sums_a_vector() {
+              assert_eq!(run_in_thread(vec![1, 2, 3], |v: Vec<i32>| v.iter().sum::<i32>()), 6, "run_in_thread([1, 2, 3], sum)");
+          }
+
+          #[test]
+          fn gives_back_owned_data() {
+              let sorted = run_in_thread(vec!["b", "c", "a"], |mut v| {
+                  v.sort();
+                  v
+              });
+              assert_eq!(sorted, vec!["a", "b", "c"], "run_in_thread([\"b\", \"c\", \"a\"], sort)");
+          }
+        require:
+          - pattern: 'thread::spawn'
+            message: Run `f` on a new thread with `thread::spawn`.
+        hints:
+          - "The body is one line: `thread::spawn(move || f(input)).join().unwrap()`. Then read what the compiler asks for."
+          - "`T` and `R` both need `Send + 'static`, and `F` needs `FnOnce(T) -> R + Send + 'static`."
+
+  - title: When a thread panics
+    id: threads-6
+    text: |
+      A panic in a spawned thread **unwinds that thread only**. The rest of the program keeps running, and the panic shows up when you join: `join()` returns `Err` instead of `Ok`. The usual `thread '<unnamed>' panicked at ...` message is printed to stderr as always.
+
+      ```rust run
+      use std::thread;
+
+      fn average(scores: Vec<u32>) -> u32 {
+          scores.iter().sum::<u32>() / scores.len() as u32
+      }
+
+      fn main() {
+          let teams = vec![vec![80, 90], vec![], vec![70, 75, 80]];
+          let mut handles = Vec::new();
+          for scores in teams {
+              handles.push(thread::spawn(move || average(scores)));
+          }
+          for (i, handle) in handles.into_iter().enumerate() {
+              match handle.join() {
+                  Ok(avg) => println!("team {i}: average {avg}"),
+                  Err(_) => println!("team {i}: worker panicked"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      team 0: average 85
+      team 1: worker panicked
+      team 2: average 75
+      ```
+
+      Team 1 has no scores, so `average` divides by zero and its thread panics. The other two workers and `main` carry on.
+
+      ### What's inside the Err
+
+      `join()` returns `Result<T, Box<dyn Any + Send>>`. The error is the **panic payload**: whatever was passed to `panic!`, boxed as a `dyn Any` (module 25). You can look inside with `downcast_ref`: a `panic!("literal")` carries a `&str`, a `panic!("{}", x)` with formatting carries a `String`.
+
+      ```rust run
+      use std::thread;
+
+      fn main() {
+          let handle = thread::spawn(|| -> u32 {
+              panic!("sensor 7 sent garbage");
+          });
+          let err = handle.join().unwrap_err();
+          if let Some(msg) = err.downcast_ref::<&str>() {
+              println!("worker failed: {msg}");
+          }
+      }
+      ```
+
+      ```output
+      worker failed: sensor 7 sent garbage
+      ```
+
+      ### Scoped threads
+
+      If a scoped thread panics and you don't join it yourself, `thread::scope` still waits for every other thread to finish, and then panics with `a scoped thread panicked`:
+
+      ```rust panics
+      use std::thread;
+
+      fn main() {
+          let names = vec!["ana", "bo"];
+          thread::scope(|s| {
+              s.spawn(|| names[5].len());
+          });
+          println!("never printed");
+      }
+      ```
+
+      ### Panics are for bugs
+
+      Remember module 19: `panic!` means a bug, `Result` means an expected failure. Bad input from a user or a file is *expected*, so a worker should return a `Result` (a `JoinHandle<Result<i32, String>>`) and `main` handles `Err` like any other value. Catching panics through `join` is for code you don't control, and for keeping a long-running program alive when one worker hits a bug (a web server doesn't stop because one request handler crashed).
+
+      ### Common mistakes
+
+      - **`.join().unwrap()` everywhere, by reflex.** Fine when a crashed worker should crash the program (usually true). Decide on purpose.
+      - **Panicking for expected errors** like a line that doesn't parse. Return a `Result` from the thread instead.
+      - **Assuming the program stops on the first panic.** Only the panicking thread stops. If you ignore the `Err` from `join`, the failure goes unnoticed.
+
+      **Your turn:** each worker parses one line of a sensor log with `.parse::<i32>().unwrap()`, so a bad line makes that worker panic. The threads are already spawned. Join them in order and print `line N: VALUE` for a good line or `line N: bad input` for a worker that panicked (N counts from 1). Finally print how many lines were good:
+
+      ```
+      line 1: 21
+      line 2: 19
+      line 3: bad input
+      line 4: 23
+      line 5: bad input
+      good lines: 3
+      ```
+    seed: |
+      use std::thread;
+
+      fn main() {
+          let lines = vec!["21", "19", "oops", "23", "-4x"];
+          let mut handles = Vec::new();
+          for line in lines {
+              handles.push(thread::spawn(move || line.parse::<i32>().unwrap()));
+          }
+          // join in order: Ok(value) for a good line, Err(_) for a worker that panicked
+      }
+    solution: |
+      use std::thread;
+
+      fn main() {
+          let lines = vec!["21", "19", "oops", "23", "-4x"];
+          let mut handles = Vec::new();
+          for line in lines {
+              handles.push(thread::spawn(move || line.parse::<i32>().unwrap()));
+          }
+          // join in order: Ok(value) for a good line, Err(_) for a worker that panicked
+          let mut good = 0;
+          for (i, handle) in handles.into_iter().enumerate() {
+              match handle.join() {
+                  Ok(value) => {
+                      println!("line {}: {value}", i + 1);
+                      good += 1;
+                  }
+                  Err(_) => println!("line {}: bad input", i + 1),
+              }
+          }
+          println!("good lines: {good}");
+      }
+    require:
+      - pattern: '\.join\(\)'
+        message: Join every handle and look at the `Result` it returns.
+    hints:
+      - "Loop with `for (i, handle) in handles.into_iter().enumerate()` and `match handle.join()`."
+      - "`Ok(value) => ...` is a good line, `Err(_) => ...` a worker that panicked. Count the good ones in a `mut` variable and print it after the loop."
+    tests:
+      - expect: "line 1: 21\nline 2: 19\nline 3: bad input\nline 4: 23\nline 5: bad input\ngood lines: 3"
+    more:
+      - task: |
+          Now do it the better way: the workers must **not panic**. Each one returns a `Result<i32, String>`, turning the parse error into its message with `.map_err(|e| e.to_string())`. Join in order and print:
+
+          ```
+          line 1: 21
+          line 2: 19
+          line 3: error: invalid digit found in string
+          line 4: 23
+          line 5: error: invalid digit found in string
+          ```
+        seed: |
+          use std::thread;
+
+          fn main() {
+              let lines = vec!["21", "19", "oops", "23", "-4x"];
+              let mut handles: Vec<thread::JoinHandle<Result<i32, String>>> = Vec::new();
+              for line in lines {
+                  // spawn a thread that parses `line` and returns Result<i32, String>
+              }
+              // join in order and print `line N: VALUE` or `line N: error: MESSAGE`
+          }
+        solution: |
+          use std::thread;
+
+          fn main() {
+              let lines = vec!["21", "19", "oops", "23", "-4x"];
+              let mut handles: Vec<thread::JoinHandle<Result<i32, String>>> = Vec::new();
+              for line in lines {
+                  // spawn a thread that parses `line` and returns Result<i32, String>
+                  handles.push(thread::spawn(move || line.parse::<i32>().map_err(|e| e.to_string())));
+              }
+              // join in order and print `line N: VALUE` or `line N: error: MESSAGE`
+              for (i, handle) in handles.into_iter().enumerate() {
+                  match handle.join().unwrap() {
+                      Ok(value) => println!("line {}: {value}", i + 1),
+                      Err(e) => println!("line {}: error: {e}", i + 1),
+                  }
+              }
+          }
+        forbid:
+          - pattern: 'parse::<i32>\(\)\s*\.unwrap\(\)'
+            message: The workers shouldn't panic; return the `Result` from the thread.
+        hints:
+          - "The thread's closure: `move || line.parse::<i32>().map_err(|e| e.to_string())`."
+          - "`handle.join().unwrap()` now gives a `Result<i32, String>` (the thread itself never panics); `match` on it."
+        tests:
+          - expect: "line 1: 21\nline 2: 19\nline 3: error: invalid digit found in string\nline 4: 23\nline 5: error: invalid digit found in string"
+      - task: |
+          `risky_parse` comes from another team's crate: it panics on bad input, and you can't change it. Write `fn parse_all(inputs: Vec<String>) -> Vec<Option<u8>>` that calls `risky_parse` in **one thread per input** and returns `Some(value)` for each worker that succeeded and `None` for each one that panicked, in input order.
+        seed: |
+          use std::thread;
+
+          // From another team's crate. It panics on bad input, and you can't change it.
+          fn risky_parse(s: &str) -> u8 {
+              s.trim().parse().expect("not a valid u8")
+          }
+
+          fn parse_all(inputs: Vec<String>) -> Vec<Option<u8>> {
+              todo!()
+          }
+        solution: |
+          use std::thread;
+
+          // From another team's crate. It panics on bad input, and you can't change it.
+          fn risky_parse(s: &str) -> u8 {
+              s.trim().parse().expect("not a valid u8")
+          }
+
+          fn parse_all(inputs: Vec<String>) -> Vec<Option<u8>> {
+              let handles: Vec<_> = inputs.into_iter().map(|s| thread::spawn(move || risky_parse(&s))).collect();
+              handles.into_iter().map(|h| h.join().ok()).collect()
+          }
+        harness: |
+          #[test]
+          fn all_good_inputs() {
+              let inputs = vec![String::from("1"), String::from(" 20 "), String::from("255")];
+              assert_eq!(parse_all(inputs), vec![Some(1), Some(20), Some(255)], "parse_all([\"1\", \" 20 \", \"255\"])");
+          }
+
+          #[test]
+          fn bad_inputs_become_none() {
+              let inputs = vec![String::from("7"), String::from("seven"), String::from("8")];
+              assert_eq!(parse_all(inputs), vec![Some(7), None, Some(8)], "parse_all([\"7\", \"seven\", \"8\"])");
+          }
+
+          #[test]
+          fn too_big_for_u8_is_none() {
+              assert_eq!(parse_all(vec![String::from("300")]), vec![None], "parse_all([\"300\"])");
+          }
+
+          #[test]
+          fn no_inputs_gives_empty() {
+              assert_eq!(parse_all(vec![]), Vec::<Option<u8>>::new(), "parse_all([])");
+          }
+        require:
+          - pattern: 'thread::spawn'
+            message: Call `risky_parse` in its own thread with `thread::spawn`.
+        hints:
+          - "Spawn all the threads and collect the handles first: `inputs.into_iter().map(|s| thread::spawn(move || risky_parse(&s))).collect()`."
+          - "`Result::ok()` turns `Ok(v)` into `Some(v)` and `Err(_)` into `None`: `handles.into_iter().map(|h| h.join().ok()).collect()`."
+
+  - title: "rayon: data parallelism made easy"
+    id: threads-7
+    text: |
+      Chunking data, spawning threads, joining them: a lot of ceremony for "do this to every item, on every core". Most Rust teams reach for the **rayon** crate instead. It keeps a **thread pool** (about one thread per core, started once and reused) and gives you **parallel iterators**: change `.iter()` to `.par_iter()` and rayon splits the work across the pool.
+
+      ```toml
+      [dependencies]
+      rayon = "1"
+      ```
+
+      ```rust run
+      use rayon::prelude::*;
+
+      fn main() {
+          let orders: Vec<u64> = (1..=1_000).collect();
+          let revenue: u64 = orders.par_iter().map(|price| price * 2).sum();
+          let big: Vec<u64> = orders.par_iter().filter(|&&p| p > 995).copied().collect();
+          println!("revenue: {revenue}");
+          println!("big orders: {big:?}");
+      }
+      ```
+
+      ```output
+      revenue: 1001000
+      big orders: [996, 997, 998, 999, 1000]
+      ```
+
+      - `use rayon::prelude::*;` brings in the traits that add the parallel methods. Forget it and you get ``error[E0599]: no method named `par_iter` found for struct `Vec<u64>` ``.
+      - `par_iter()` borrows the items, `par_iter_mut()` borrows them mutably, `into_par_iter()` takes ownership (it works on ranges too: `(1..=n).into_par_iter()`).
+      - Most iterator methods you know have parallel versions: `map`, `filter`, `sum`, `count`, `min`, `max`, `any`, `all`, `for_each`, `collect`. On slices there are `par_sort()` and `par_sort_unstable()`.
+      - `collect()` keeps the **original order**, even though the items were processed on different threads. `sum` and `count` give the same answer every run.
+
+      ### The closures can't change captured variables
+
+      The same rules as threads apply: closures run on several threads at once, so they may read captured data but not modify it:
+
+      ```rust compile_fail
+      use rayon::prelude::*;
+
+      fn main() {
+          let v: Vec<u64> = (1..=10).collect();
+          let mut count = 0;
+          v.par_iter().for_each(|_| count += 1);
+          println!("{count}");
+      }
+      ```
+
+      ```error
+      error[E0594]: cannot assign to `count`, as it is a captured variable in a `Fn` closure
+      ```
+
+      Use the iterator's own result instead (`.count()`, `.sum()`), or an atomic counter (next module).
+
+      ### Is it worth it?
+
+      Parallelism has overhead: splitting work and waking threads takes time. For a few hundred cheap items, a plain `.iter()` is often faster. Use rayon for real work (thousands of items, or expensive work per item), and measure (module 37).
+
+      ### Choosing your tool
+
+      | The job | Reach for |
+      |---|---|
+      | The same CPU work on many items | rayon (`par_iter`) |
+      | A few threads that borrow local data, then finish | `thread::scope` |
+      | A long-running background worker | `thread::spawn` + channels (next module) |
+      | Thousands of network connections, waiting on I/O | async with Tokio (module 33) |
+
+      **Your turn:** write two functions with rayon's `par_iter()`:
+
+      - `fn total_revenue(orders: &[Order]) -> u64`: the sum of `quantity * unit_price` over all orders.
+      - `fn count_large(orders: &[Order], threshold: u64) -> usize`: how many orders have `quantity * unit_price` of at least `threshold`.
+    seed: |
+      use rayon::prelude::*;
+
+      #[derive(Debug)]
+      struct Order {
+          quantity: u64,
+          unit_price: u64,
+      }
+
+      fn total_revenue(orders: &[Order]) -> u64 {
+          todo!()
+      }
+
+      fn count_large(orders: &[Order], threshold: u64) -> usize {
+          todo!()
+      }
+    solution: |
+      use rayon::prelude::*;
+
+      #[derive(Debug)]
+      struct Order {
+          quantity: u64,
+          unit_price: u64,
+      }
+
+      fn total_revenue(orders: &[Order]) -> u64 {
+          orders.par_iter().map(|o| o.quantity * o.unit_price).sum()
+      }
+
+      fn count_large(orders: &[Order], threshold: u64) -> usize {
+          orders.par_iter().filter(|o| o.quantity * o.unit_price >= threshold).count()
+      }
+    require:
+      - pattern: 'par_iter[\s\S]*par_iter'
+        message: Use rayon's `par_iter()` in both functions.
+    hints:
+      - "`orders.par_iter()` works like `orders.iter()`: chain `.map(...)` and `.sum()` on it."
+      - "`total_revenue`: `orders.par_iter().map(|o| o.quantity * o.unit_price).sum()`. `count_large`: `.filter(...)` then `.count()`."
+    harness: |
+      fn sample() -> Vec<Order> {
+          vec![
+              Order { quantity: 2, unit_price: 50 },
+              Order { quantity: 1, unit_price: 300 },
+              Order { quantity: 10, unit_price: 5 },
+          ]
+      }
+
+      #[test]
+      fn revenue_of_three_orders() {
+          assert_eq!(total_revenue(&sample()), 450, "total_revenue(2x50, 1x300, 10x5)");
+      }
+
+      #[test]
+      fn revenue_of_no_orders_is_zero() {
+          assert_eq!(total_revenue(&[]), 0, "total_revenue([])");
+      }
+
+      #[test]
+      fn revenue_of_many_orders() {
+          let orders: Vec<Order> = (1..=10_000).map(|n| Order { quantity: 1, unit_price: n }).collect();
+          assert_eq!(total_revenue(&orders), 50_005_000, "10,000 orders priced 1 to 10,000");
+      }
+
+      #[test]
+      fn counts_orders_at_or_over_the_threshold() {
+          assert_eq!(count_large(&sample(), 100), 2, "count_large(sample, 100)");
+      }
+
+      #[test]
+      fn high_threshold_counts_nothing() {
+          assert_eq!(count_large(&sample(), 1_000), 0, "count_large(sample, 1000)");
+      }
+    more:
+      - task: |
+          Write `fn clean_tags(tags: &[&str]) -> Vec<String>` with rayon: trim and lowercase every tag **in parallel** (`par_iter`), collect them, sort the result with `par_sort()`, and remove duplicates with `dedup()`.
+        seed: |
+          use rayon::prelude::*;
+
+          fn clean_tags(tags: &[&str]) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          use rayon::prelude::*;
+
+          fn clean_tags(tags: &[&str]) -> Vec<String> {
+              let mut cleaned: Vec<String> = tags.par_iter().map(|t| t.trim().to_lowercase()).collect();
+              cleaned.par_sort();
+              cleaned.dedup();
+              cleaned
+          }
+        require:
+          - pattern: 'par_iter'
+            message: Clean the tags in parallel with `par_iter()`.
+          - pattern: 'par_sort'
+            message: Sort with rayon's `par_sort()`.
+        hints:
+          - "`tags.par_iter().map(|t| t.trim().to_lowercase()).collect()` gives a `Vec<String>`; store it in a `let mut`."
+          - "Then `cleaned.par_sort();` and `cleaned.dedup();` and return it."
+        harness: |
+          #[test]
+          fn trims_lowercases_and_sorts() {
+              assert_eq!(clean_tags(&[" Rust", "async ", "CLI"]), vec!["async", "cli", "rust"], "clean_tags([\" Rust\", \"async \", \"CLI\"])");
+          }
+
+          #[test]
+          fn removes_duplicates_after_cleaning() {
+              assert_eq!(clean_tags(&["Web", "web", " WEB "]), vec!["web"], "clean_tags([\"Web\", \"web\", \" WEB \"])");
+          }
+
+          #[test]
+          fn no_tags_gives_empty() {
+              assert_eq!(clean_tags(&[]), Vec::<String>::new(), "clean_tags([])");
+          }
+
+          #[test]
+          fn many_tags() {
+              let tags: Vec<String> = (0..1000).map(|n| format!(" Tag{} ", n % 10)).collect();
+              let refs: Vec<&str> = tags.iter().map(|s| s.as_str()).collect();
+              let expected: Vec<String> = (0..10).map(|n| format!("tag{n}")).collect();
+              assert_eq!(clean_tags(&refs), expected, "1000 tags with 10 distinct names");
+          }
+      - task: |
+          Count the primes below 50,000 in parallel. Write `fn is_prime(n: u32) -> bool` yourself (trial division up to the square root is fine), then use `(2..50_000u32).into_par_iter()` to count them and to find the largest one. Print:
+
+          ```
+          primes below 50000: 5133
+          largest: 49999
+          ```
+        seed: |
+          use rayon::prelude::*;
+
+          fn main() {
+          }
+        solution: |
+          use rayon::prelude::*;
+
+          fn is_prime(n: u32) -> bool {
+              if n < 2 {
+                  return false;
+              }
+              let mut d = 2;
+              while d * d <= n {
+                  if n % d == 0 {
+                      return false;
+                  }
+                  d += 1;
+              }
+              true
+          }
+
+          fn main() {
+              let count = (2..50_000u32).into_par_iter().filter(|&n| is_prime(n)).count();
+              let largest = (2..50_000u32).into_par_iter().filter(|&n| is_prime(n)).max().unwrap();
+              println!("primes below 50000: {count}");
+              println!("largest: {largest}");
+          }
+        require:
+          - pattern: 'into_par_iter'
+            message: Use `into_par_iter()` on the range.
+        hints:
+          - "`is_prime`: return `false` below 2, then try every divisor `d` while `d * d <= n`."
+          - "`(2..50_000u32).into_par_iter().filter(|&n| is_prime(n)).count()`, and the same with `.max()` (an `Option`) for the largest."
+        tests:
+          - expect: "primes below 50000: 5133\nlargest: 49999"

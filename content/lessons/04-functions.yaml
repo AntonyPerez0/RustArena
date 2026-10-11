@@ -1,0 +1,1121 @@
+id: functions
+title: Functions
+phase: "Foundations"
+summary: Split programs into named, reusable pieces. Parameters, return values, why the last expression is the result, how statements and blocks work, and returning early.
+roadmap: [Functions and Method Syntax]
+steps:
+  - title: Defining and calling functions
+    id: functions-1
+    text: |
+      You've been writing one function all along: `main`. A program can have as many functions as you like. A **function** is a named block of code that you can run, or **call**, whenever you need it, by writing its name followed by `()`.
+
+      ```rust run
+      fn main() {
+          println!("Match starting");
+          print_divider();
+          println!("Round 1");
+          print_divider();
+      }
+
+      fn print_divider() {
+          println!("----------");
+      }
+      ```
+
+      ```output
+      Match starting
+      ----------
+      Round 1
+      ----------
+      ```
+
+      - `fn print_divider() { ... }` **defines** the function: its name and what it does. Defining a function doesn't run it.
+      - `print_divider();` **calls** it: the program jumps into the function, runs its body, then comes back and continues with the line after the call.
+      - `print_divider` is defined *below* `main`, and that's fine: in Rust, the order of functions in a file doesn't matter.
+      - Function names use `snake_case`, like variables. A good name says what the function does, usually with a verb: `print_divider`, `save_game`, `reset_score`.
+
+      ### Why write functions?
+
+      - **No repetition**: write the code once and call it many times. A fix then happens in one place.
+      - **Names explain code**: `print_receipt();` tells the reader what happens without reading the body.
+      - **Small pieces**: each function can be understood, and tested, on its own. "This function is too long" is one of the most common code-review comments.
+
+      ### Functions can call functions
+
+      Any function can call any other. When a call finishes, the program returns to exactly where it was:
+
+      ```rust run
+      fn main() {
+          start_round();
+          start_round();
+      }
+
+      fn start_round() {
+          println!("Fight!");
+          cheer();
+      }
+
+      fn cheer() {
+          println!("The crowd cheers");
+      }
+      ```
+
+      ```output
+      Fight!
+      The crowd cheers
+      Fight!
+      The crowd cheers
+      ```
+
+      ### Common mistakes
+
+      - **Forgetting the `()`**: `print_divider;` names the function but doesn't call it. Nothing happens, and the compiler warns `path statement with no effect`.
+      - **A typo in the name**: `print_dividr();` gives `` error[E0425]: cannot find function `print_dividr` in this scope ``.
+      - **Defining a function inside `main`'s braces by accident**: it works, but it can only be used inside `main`. Put functions side by side at the top level of the file.
+
+      **Your turn:** fill in the blanks: define a function called `cheer` and call it twice from `main`, so the program prints `Go, Ferris!` two times.
+    fill: |
+      fn main() {
+          [[cheer]]();
+          [[cheer]]();
+      }
+
+      [[fn]] cheer() {
+          println!("Go, Ferris!");
+      }
+    hints:
+      - A call is the function's name followed by `()`.
+      - "Functions are defined with the keyword `fn`."
+    tests:
+      - expect: "Go, Ferris!\nGo, Ferris!"
+    more:
+      - task: |
+          Fill in the blanks so `main` calls `intro`, and `intro` calls `rules`. The program should print:
+
+          ```
+          Welcome to the arena
+          Rule 1: no sandals
+          ```
+        fill: |
+          fn main() {
+              [[intro]]();
+          }
+
+          fn intro() {
+              println!("Welcome to the arena");
+              [[rules()]];
+          }
+
+          fn rules() {
+              println!("Rule 1: no sandals");
+          }
+        hints:
+          - "`main` calls `intro()`; inside `intro`, after the first line, call `rules()`."
+        tests:
+          - expect: "Welcome to the arena\nRule 1: no sandals"
+      - task: |
+          Write a function `print_banner` that prints these three lines, and call it twice from `main` (six lines in total):
+
+          ```
+          +--------+
+          | ARENA  |
+          +--------+
+          ```
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              print_banner();
+              print_banner();
+          }
+
+          fn print_banner() {
+              println!("+--------+");
+              println!("| ARENA  |");
+              println!("+--------+");
+          }
+        require:
+          - pattern: 'fn\s+print_banner\s*\(\s*\)'
+            message: "Define `fn print_banner()`."
+          - pattern: 'print_banner\(\);[\s\S]*print_banner\(\);'
+            message: Call `print_banner();` twice from `main`.
+        forbid:
+          - pattern: 'println![\s\S]*println![\s\S]*println![\s\S]*println!'
+            message: Write the three lines once, inside `print_banner`, and call it twice instead of repeating them.
+        hints:
+          - "Define `fn print_banner() { ... }` with three `println!` lines, outside `main`."
+          - "`main` then contains just `print_banner();` twice."
+        tests:
+          - expect: "+--------+\n| ARENA  |\n+--------+\n+--------+\n| ARENA  |\n+--------+"
+
+  - title: Parameters
+    id: functions-2
+    text: |
+      A function becomes much more useful when you can hand it values to work with. These inputs are **parameters**, declared inside the parentheses, each with a name and a type:
+
+      ```rust run
+      fn main() {
+          greet("Ferris");
+          greet("Corro");
+          show_score("Ferris", 120);
+      }
+
+      fn greet(name: &str) {
+          println!("Hello, {name}!");
+      }
+
+      fn show_score(player: &str, points: i32) {
+          println!("{player}: {points} points");
+      }
+      ```
+
+      ```output
+      Hello, Ferris!
+      Hello, Corro!
+      Ferris: 120 points
+      ```
+
+      - `name: &str` declares a parameter called `name` of type `&str` (text, like a string literal).
+      - The values you pass in a call, like `"Ferris"`, are the **arguments**. Each argument becomes the value of its parameter for that one call: `name` is `"Ferris"` in the first call and `"Corro"` in the second.
+      - Several parameters are separated by commas, and the arguments are matched to them in order.
+      - Parameters are variables that belong to the function: immutable by default, and gone when the function ends.
+
+      ### Parameter types are required
+
+      Inside a function, Rust infers the types of variables. A function's parameters, though, always need written types. The first line of a function, its **signature**, is a contract: callers can see exactly what to pass without reading the body, and the compiler checks every call against it. When a call is wrong, the error points at that call, not somewhere deep inside the function.
+
+      ```rust compile_fail
+      fn greet(name) {
+          println!("Hello, {name}!");
+      }
+
+      fn main() {
+          greet("Ferris");
+      }
+      ```
+
+      ```error
+      error: expected one of `:`, `@`, or `|`, found `)`
+       --> src/main.rs:1:14
+        |
+      1 | fn greet(name) {
+        |              ^ expected one of `:`, `@`, or `|`
+        |
+      help: if this is a parameter name, give it a type
+        |
+      1 | fn greet(name: TypeName) {
+        |              ++++++++++
+      ```
+
+      ### Common mistakes
+
+      The number of arguments must match the number of parameters:
+
+      ```rust compile_fail
+      fn show_score(player: &str, points: i32) {
+          println!("{player}: {points} points");
+      }
+
+      fn main() {
+          show_score("Ferris");
+      }
+      ```
+
+      ```error
+      error[E0061]: this function takes 2 arguments but 1 argument was supplied
+       --> src/main.rs:6:5
+        |
+      6 |     show_score("Ferris");
+        |     ^^^^^^^^^^---------- argument #2 of type `i32` is missing
+      ```
+
+      - **Wrong type**: `show_score("Ferris", "120")` is `error[E0308]: mismatched types` (expected `i32`, found `&str`). Quotes make `"120"` text, not a number.
+      - **Swapped arguments**: `show_score(120, "Ferris")` doesn't compile either, because the types don't line up. But when two parameters have the same type, like `fn rectangle(width: u32, height: u32)`, swapping them compiles and quietly gives wrong results. Clear parameter names are your defense.
+
+      **Your turn:** write a function `print_receipt(item: &str, price: u32, quantity: u32)` that prints one line in the form `3 x apple = 150`: the quantity, the item, and the total price. `main` already calls it twice; the program should print:
+
+      ```
+      3 x apple = 150
+      2 x melon = 640
+      ```
+    seed: |
+      fn main() {
+          print_receipt("apple", 50, 3);
+          print_receipt("melon", 320, 2);
+      }
+
+      // Write print_receipt here
+    solution: |
+      fn main() {
+          print_receipt("apple", 50, 3);
+          print_receipt("melon", 320, 2);
+      }
+
+      // Write print_receipt here
+      fn print_receipt(item: &str, price: u32, quantity: u32) {
+          let total = price * quantity;
+          println!("{quantity} x {item} = {total}");
+      }
+    require:
+      - pattern: 'fn\s+print_receipt\s*\(\s*item\s*:\s*&str\s*,\s*price\s*:\s*u32\s*,\s*quantity\s*:\s*u32\s*\)'
+        message: "The signature is `fn print_receipt(item: &str, price: u32, quantity: u32)`."
+    hints:
+      - "Start with `fn print_receipt(item: &str, price: u32, quantity: u32) {`."
+      - 'Inside, print `println!("{quantity} x {item} = {}", price * quantity);`'
+    tests:
+      - expect: "3 x apple = 150\n2 x melon = 640"
+    more:
+      - task: |
+          Fill in the parameter types so the function compiles and the program prints `Level 3: Lava Cave`.
+        fill: |
+          fn main() {
+              show_level(3, "Lava Cave");
+          }
+
+          fn show_level(number: [[i32‖u32‖u8‖u16‖i64‖u64‖usize]], name: [[&str]]) {
+              println!("Level {number}: {name}");
+          }
+        hints:
+          - "`3` is a whole number: `i32` works."
+          - "A string literal like `\"Lava Cave\"` has the type `&str`."
+        tests:
+          - expect: "Level 3: Lava Cave"
+      - task: |
+          Write a function `print_area(width: u32, height: u32)` that prints a line like `3 x 4 = 12 square meters`. Call it from `main` for a 3 by 4 room and then a 5 by 2 balcony:
+
+          ```
+          3 x 4 = 12 square meters
+          5 x 2 = 10 square meters
+          ```
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              print_area(3, 4);
+              print_area(5, 2);
+          }
+
+          fn print_area(width: u32, height: u32) {
+              println!("{width} x {height} = {} square meters", width * height);
+          }
+        require:
+          - pattern: 'fn\s+print_area\s*\(\s*width\s*:\s*u32\s*,\s*height\s*:\s*u32\s*\)'
+            message: "The signature is `fn print_area(width: u32, height: u32)`."
+          - pattern: 'print_area\(\s*3\s*,\s*4\s*\)[\s\S]*print_area\(\s*5\s*,\s*2\s*\)'
+            message: "Call `print_area(3, 4);` and then `print_area(5, 2);` from `main`."
+        hints:
+          - "`fn print_area(width: u32, height: u32) { ... }` goes outside `main`."
+          - "Its body is one `println!` that uses `width`, `height` and `width * height`."
+        tests:
+          - expect: "3 x 4 = 12 square meters\n5 x 2 = 10 square meters"
+
+  - title: Returning a value
+    id: functions-3
+    text: |
+      Functions can also hand a value back to their caller: a **return value**. Declare its type after an arrow `->`:
+
+      ```rust run
+      fn main() {
+          let total = add(2, 3);
+          println!("2 + 3 = {total}");
+          println!("double 21 = {}", double(21));
+      }
+
+      fn add(a: i32, b: i32) -> i32 {
+          a + b
+      }
+
+      fn double(x: i32) -> i32 {
+          x * 2
+      }
+      ```
+
+      ```output
+      2 + 3 = 5
+      double 21 = 42
+      ```
+
+      Look at the body of `add`: just `a + b`, with **no semicolon**. In Rust, when the last line of a function body has no semicolon, its value is what the function returns. The call `add(2, 3)` is then replaced by that value, so you can store it, print it, or use it in another calculation, like `add(add(1, 2), 3)`.
+
+      There is also a `return` keyword: `return a + b;` works too. At the very end of a function it isn't idiomatic, though: Rust code lets the last expression be the result, and clippy flags a final `return` (`needless_return`). You'll see where `return` *is* the right tool two steps from now.
+
+      ### The semicolon trap
+
+      Add a `;` after the last line and it becomes a statement that produces nothing, so the function returns nothing:
+
+      ```rust compile_fail
+      fn add(a: i32, b: i32) -> i32 {
+          a + b;
+      }
+
+      fn main() {
+          println!("{}", add(2, 3));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:1:27
+        |
+      1 | fn add(a: i32, b: i32) -> i32 {
+        |    ---                    ^^^ expected `i32`, found `()`
+        |    |
+        |    implicitly returns `()` as its body has no tail or `return` expression
+      2 |     a + b;
+        |          - help: remove this semicolon to return this value
+      ```
+
+      The `help:` line tells you exactly what to do. The next step explains what `()` is.
+
+      ### Common mistakes
+
+      - **Forgetting `-> type`**: then the function is declared to return nothing, and a final `a + b` is an error (expected `()`, found `i32`). The help line suggests `try adding a return type: -> i32`.
+      - **Returning the wrong type**: `fn half(x: i32) -> i32 { x as f64 / 2.0 }` doesn't compile. The declared type is a promise.
+      - **Printing instead of returning**: a function that only `println!`s its result can't be used in further calculations. Functions that compute something should return it, and let the caller decide what to do with it. Tests (at work and on this site) check return values.
+
+      ### How exercises work from here
+
+      From now on, many exercises ask you to write a function rather than a whole program. Hidden tests call your function with different arguments and check what it returns, like `assert_eq!(area(3, 4), 12)`. You don't need a `main` (if you keep one, it's ignored). If a test fails, you'll see the call, the expected value and what your function returned.
+
+      Starter code often contains `todo!()`: a placeholder that compiles but stops the program with "not yet implemented" if it runs. Replace it with your code.
+
+      **Your turn:** write `fn area(width: u32, height: u32) -> u32` that returns the area of a rectangle. Return it as the last expression (no `return` keyword).
+    seed: |
+      fn area(width: u32, height: u32) -> u32 {
+          todo!()
+      }
+    solution: |
+      fn area(width: u32, height: u32) -> u32 {
+          width * height
+      }
+    harness: |
+      #[test]
+      fn multiplies_width_by_height() {
+          assert_eq!(area(3, 4), 12, "area(3, 4)");
+      }
+
+      #[test]
+      fn works_for_a_square() {
+          assert_eq!(area(5, 5), 25, "area(5, 5)");
+      }
+
+      #[test]
+      fn zero_width_gives_zero() {
+          assert_eq!(area(0, 9), 0, "area(0, 9)");
+      }
+
+      #[test]
+      fn handles_large_sizes() {
+          assert_eq!(area(1000, 2000), 2_000_000, "area(1000, 2000)");
+      }
+    forbid:
+      - pattern: '\breturn\b'
+        message: Make `width * height` the last expression (no semicolon) instead of using `return`.
+    hints:
+      - Replace `todo!()` with the calculation.
+      - "The body is just `width * height`, with no semicolon."
+    more:
+      - task: |
+          Write `fn perimeter(width: u32, height: u32) -> u32` that returns the distance around a rectangle: twice the width plus twice the height.
+        seed: |
+          fn perimeter(width: u32, height: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn perimeter(width: u32, height: u32) -> u32 {
+              2 * (width + height)
+          }
+        harness: |
+          #[test]
+          fn adds_all_four_sides() {
+              assert_eq!(perimeter(3, 4), 14, "perimeter(3, 4)");
+          }
+
+          #[test]
+          fn works_for_a_square() {
+              assert_eq!(perimeter(5, 5), 20, "perimeter(5, 5)");
+          }
+
+          #[test]
+          fn a_flat_rectangle() {
+              assert_eq!(perimeter(10, 0), 20, "perimeter(10, 0)");
+          }
+        hints:
+          - "There are two sides of each length."
+          - "`2 * (width + height)`, with no semicolon."
+      - task: |
+          Write a function `average` from scratch. It takes three `f64` parameters, `a`, `b` and `c`, and returns their average as an `f64`.
+        seed: |
+          // Write fn average here
+        solution: |
+          // Write fn average here
+          fn average(a: f64, b: f64, c: f64) -> f64 {
+              (a + b + c) / 3.0
+          }
+        harness: |
+          #[test]
+          fn averages_three_whole_numbers() {
+              assert_eq!(average(1.0, 2.0, 3.0), 2.0, "average(1.0, 2.0, 3.0)");
+          }
+
+          #[test]
+          fn averages_fractions() {
+              assert_eq!(average(1.5, 2.5, 3.5), 2.5, "average(1.5, 2.5, 3.5)");
+          }
+
+          #[test]
+          fn handles_negative_numbers() {
+              assert_eq!(average(-3.0, 0.0, 6.0), 1.0, "average(-3.0, 0.0, 6.0)");
+          }
+
+          #[test]
+          fn all_equal() {
+              assert_eq!(average(7.0, 7.0, 7.0), 7.0, "average(7.0, 7.0, 7.0)");
+          }
+        hints:
+          - "The signature is `fn average(a: f64, b: f64, c: f64) -> f64`."
+          - "Add the three in parentheses, then divide by `3.0`: `(a + b + c) / 3.0`."
+
+  - title: Statements, expressions and blocks
+    id: functions-4
+    text: |
+      Why does one semicolon change what a function returns? Rust code is made of two kinds of pieces:
+
+      - An **expression** computes a value: `5`, `a + b`, `add(2, 3)`, `x > 10`.
+      - A **statement** performs an action and produces no value. `let x = 5;` is a statement, and so is any expression followed by `;`: the semicolon throws the value away.
+
+      A function body is a list of statements, optionally followed by one final expression without a semicolon. If that final expression is there, its value is the function's result.
+
+      ### Blocks are expressions
+
+      Any block `{ ... }` works the same way, not only a function body: its value is its final expression. So you can compute a value in several steps inside a block:
+
+      ```rust run
+      fn main() {
+          let price = 1200;
+          let total = {
+              let shipping = 500;
+              let discount = price / 10;
+              price + shipping - discount
+          };
+          println!("total: {total}");
+      }
+      ```
+
+      ```output
+      total: 1580
+      ```
+
+      `shipping` and `discount` exist only inside the block, so they can't be misused later in `main`. Note the `;` after the closing `}`: the whole `let total = { ... };` is one statement.
+
+      ### The unit type ()
+
+      What does a function without `->` return, then? A special value written `()` and called **unit**, meaning "nothing interesting". Its type is also written `()`. `fn greet(name: &str)` is short for `fn greet(name: &str) -> ()`. That's what the error in the last step meant by "found `()`": the body's last line was a statement, which gives `()`.
+
+      ```rust run
+      fn log(message: &str) {
+          println!("[log] {message}");
+      }
+
+      fn main() {
+          let result = log("saving");
+          println!("{result:?}");
+      }
+      ```
+
+      ```output
+      [log] saving
+      ()
+      ```
+
+      You'd never store `()` in real code; this just shows that it's a real value. It has a Debug format (`{:?}`) but no `{}` format.
+
+      ### let is a statement
+
+      Because `let` produces no value, you can't use it where a value is expected (unlike C, where `x = y = 6` works):
+
+      ```rust compile_fail
+      fn main() {
+          let x = (let y = 6);
+      }
+      ```
+
+      ```error
+      error: expected expression, found `let` statement
+      ```
+
+      ### Common mistakes
+
+      A semicolon after a block's final expression makes the block's value `()`:
+
+      ```rust compile_fail
+      fn main() {
+          let total = {
+              let shipping = 500;
+              1200 + shipping;
+          };
+          println!("total: {total}");
+      }
+      ```
+
+      ```error
+      error[E0277]: `()` doesn't implement `std::fmt::Display`
+       --> src/main.rs:6:22
+        |
+      6 |     println!("total: {total}");
+        |                      ^^^^^^^ `()` cannot be formatted with the default formatter
+      ```
+
+      - **Forgetting the `;` after `let x = { ... };`**: rustc stops at the start of the next line with an error like ``expected one of `.`, `;`, `?`, `else`, or an operator``, because the statement never ended.
+      - **Reading `()` errors**: whenever you see "expected `i32`, found `()`", look for a semicolon at the end of a block or function that shouldn't be there.
+
+      **Your turn:** `final_price` should return the cost of `quantity` items plus a shipping charge of 499, but it doesn't compile. Read the error and fix it.
+    seed: |
+      fn final_price(price: u32, quantity: u32) -> u32 {
+          let subtotal = price * quantity;
+          let shipping = 499;
+          subtotal + shipping;
+      }
+    solution: |
+      fn final_price(price: u32, quantity: u32) -> u32 {
+          let subtotal = price * quantity;
+          let shipping = 499;
+          subtotal + shipping
+      }
+    harness: |
+      #[test]
+      fn adds_shipping_to_the_subtotal() {
+          assert_eq!(final_price(1000, 2), 2499, "final_price(1000, 2)");
+      }
+
+      #[test]
+      fn one_item() {
+          assert_eq!(final_price(250, 1), 749, "final_price(250, 1)");
+      }
+
+      #[test]
+      fn free_items_still_pay_shipping() {
+          assert_eq!(final_price(0, 5), 499, "final_price(0, 5)");
+      }
+    forbid:
+      - pattern: '\breturn\b'
+        message: Fix the last line so it's an expression again; no `return` needed.
+    hints:
+      - The error says the function returns `()`. Which line should be the result?
+      - "Remove the semicolon after `subtotal + shipping`."
+    more:
+      - task: |
+          Compute the number of seconds in a week with a **block expression**: `let seconds_per_week = { ... };`, where the block declares `seconds_per_day` (60 * 60 * 24) and ends with an expression that multiplies it by 7. Then print `604800 seconds in a week`.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let seconds_per_week = {
+                  let seconds_per_day = 60 * 60 * 24;
+                  seconds_per_day * 7
+              };
+              println!("{seconds_per_week} seconds in a week");
+          }
+        require:
+          - pattern: 'let\s+seconds_per_week\s*=\s*\{'
+            message: "Compute it with a block: `let seconds_per_week = { ... };`"
+          - pattern: 'let\s+seconds_per_day'
+            message: Declare `seconds_per_day` inside the block.
+        forbid:
+          - pattern: '604800|86400'
+            message: Let Rust do the multiplication.
+        hints:
+          - "Inside the block: `let seconds_per_day = 60 * 60 * 24;` then the final expression `seconds_per_day * 7` (no semicolon)."
+          - "Close the block with `};` and print `seconds_per_week`."
+        tests:
+          - expect: "604800 seconds in a week"
+      - task: |
+          Write `fn order_total(price_cents: u32, quantity: u32, discount_percent: u32) -> u32`. Compute the subtotal (price times quantity), then the discount as `subtotal * discount_percent / 100` (integer division, so it rounds down), and return the subtotal minus the discount. Use `let` statements for the steps and a final expression for the result.
+        seed: |
+          fn order_total(price_cents: u32, quantity: u32, discount_percent: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn order_total(price_cents: u32, quantity: u32, discount_percent: u32) -> u32 {
+              let subtotal = price_cents * quantity;
+              let discount = subtotal * discount_percent / 100;
+              subtotal - discount
+          }
+        harness: |
+          #[test]
+          fn ten_percent_off() {
+              assert_eq!(order_total(1000, 3, 10), 2700, "order_total(1000, 3, 10)");
+          }
+
+          #[test]
+          fn no_discount() {
+              assert_eq!(order_total(999, 1, 0), 999, "order_total(999, 1, 0)");
+          }
+
+          #[test]
+          fn full_discount_is_free() {
+              assert_eq!(order_total(500, 4, 100), 0, "order_total(500, 4, 100)");
+          }
+
+          #[test]
+          fn discount_rounds_down() {
+              assert_eq!(order_total(1999, 2, 15), 3399, "order_total(1999, 2, 15)");
+          }
+        hints:
+          - "`let subtotal = price_cents * quantity;`"
+          - "`let discount = subtotal * discount_percent / 100;` and then the last line `subtotal - discount`."
+
+  - title: Returning early
+    id: functions-5
+    text: |
+      `return value;` ends the function immediately, wherever it is, and hands back that value. At the end of a function you don't need it, but it's exactly right when a function should stop early, usually for a special case.
+
+      To decide *whether* to return early, you need a condition. The next module covers `if` in depth; here's the short version: `if condition { ... }` runs the code in the braces only when the condition (a `bool`) is true.
+
+      ```rust run
+      fn ticket_price(age: u32) -> u32 {
+          if age < 3 {
+              return 0;
+          }
+          if age < 12 {
+              return 700;
+          }
+          1200
+      }
+
+      fn main() {
+          println!("age 2: {}", ticket_price(2));
+          println!("age 8: {}", ticket_price(8));
+          println!("age 30: {}", ticket_price(30));
+      }
+      ```
+
+      ```output
+      age 2: 0
+      age 8: 700
+      age 30: 1200
+      ```
+
+      For a 2-year-old, the first check returns 0 and nothing after it runs. For an 8-year-old, the first condition is false, so the program moves on and the second check returns 700. Everyone else reaches the final expression, `1200`.
+
+      Checks at the top of a function that handle special cases and return are called **guard clauses**. They keep the main logic at the bottom flat and easy to read, and they're very common in Rust at work, especially for rejecting invalid input.
+
+      ### Protecting against crashes
+
+      Integer division by zero panics, so a guard clause can handle that case first:
+
+      ```rust run
+      fn per_person(total: u32, people: u32) -> u32 {
+          if people == 0 {
+              return 0;
+          }
+          total / people
+      }
+
+      fn main() {
+          println!("{}", per_person(90, 4));
+          println!("{}", per_person(90, 0));
+      }
+      ```
+
+      ```output
+      22
+      0
+      ```
+
+      Returning 0 quietly hides the problem from the caller. Later you'll meet `Option` and `Result`, which let a function say "there is no answer" properly.
+
+      ### Common mistakes
+
+      Every path through the function must produce a value. If only the special case returns, the compiler notices the missing value for every other case:
+
+      ```rust compile_fail
+      fn sign(n: i32) -> i32 {
+          if n < 0 {
+              return -1;
+          }
+      }
+
+      fn main() {
+          println!("{}", sign(5));
+      }
+      ```
+
+      ```error
+      error[E0317]: `if` may be missing an `else` clause
+       --> src/main.rs:2:5
+        |
+      1 |   fn sign(n: i32) -> i32 {
+        |                      --- expected `i32` because of this return type
+      2 | /     if n < 0 {
+      3 | |         return -1;
+      4 | |     }
+        | |_____^ expected `i32`, found `()`
+      ```
+
+      The fix here is a final expression after the `if` (for example `1`).
+
+      - **A final `return` out of habit**: `return x * 2;` as the last line works, but idiomatic Rust ends with `x * 2`, and clippy says so (`needless_return`).
+      - **Unreachable code**: anything right after a `return` in the same block never runs, and the compiler warns `unreachable statement`.
+
+      **Your turn:** write `fn safe_divide(a: i32, b: i32) -> i32` that returns `a / b`, except that it returns `0` when `b` is `0` (instead of crashing). Use an early `return`.
+    seed: |
+      fn safe_divide(a: i32, b: i32) -> i32 {
+          todo!()
+      }
+    solution: |
+      fn safe_divide(a: i32, b: i32) -> i32 {
+          if b == 0 {
+              return 0;
+          }
+          a / b
+      }
+    harness: |
+      #[test]
+      fn divides_evenly() {
+          assert_eq!(safe_divide(10, 2), 5, "safe_divide(10, 2)");
+      }
+
+      #[test]
+      fn drops_the_fraction() {
+          assert_eq!(safe_divide(-7, 2), -3, "safe_divide(-7, 2)");
+      }
+
+      #[test]
+      fn dividing_by_zero_returns_zero() {
+          assert_eq!(safe_divide(42, 0), 0, "safe_divide(42, 0)");
+      }
+
+      #[test]
+      fn zero_divided_by_something() {
+          assert_eq!(safe_divide(0, 5), 0, "safe_divide(0, 5)");
+      }
+    require:
+      - pattern: '\breturn\b'
+        message: Handle the zero case first with an early `return`.
+    hints:
+      - "Start with a guard clause: `if b == 0 { return 0; }`"
+      - "After the guard, the last line is `a / b`."
+    more:
+      - task: |
+          Write `fn average_score(total_points: u32, games: u32) -> u32` that returns the average points per game (integer division), or `0` when no games have been played.
+        seed: |
+          fn average_score(total_points: u32, games: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn average_score(total_points: u32, games: u32) -> u32 {
+              if games == 0 {
+                  return 0;
+              }
+              total_points / games
+          }
+        harness: |
+          #[test]
+          fn divides_points_by_games() {
+              assert_eq!(average_score(90, 3), 30, "average_score(90, 3)");
+          }
+
+          #[test]
+          fn rounds_down() {
+              assert_eq!(average_score(10, 4), 2, "average_score(10, 4)");
+          }
+
+          #[test]
+          fn no_games_gives_zero() {
+              assert_eq!(average_score(0, 0), 0, "average_score(0, 0)");
+          }
+
+          #[test]
+          fn points_but_no_games_gives_zero() {
+              assert_eq!(average_score(50, 0), 0, "average_score(50, 0)");
+          }
+        hints:
+          - "Guard against `games == 0` first."
+          - "`if games == 0 { return 0; }` then `total_points / games`."
+      - task: |
+          Write `fn ticket_price(age: u32, is_student: bool) -> u32` for a museum, in cents. Apply the rules in this order, each with a guard clause:
+
+          1. Children under 6 are free (`0`).
+          2. Visitors aged 65 or older pay `600`.
+          3. Students pay `800`.
+          4. Everyone else pays `1200`.
+        seed: |
+          fn ticket_price(age: u32, is_student: bool) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn ticket_price(age: u32, is_student: bool) -> u32 {
+              if age < 6 {
+                  return 0;
+              }
+              if age >= 65 {
+                  return 600;
+              }
+              if is_student {
+                  return 800;
+              }
+              1200
+          }
+        harness: |
+          #[test]
+          fn young_children_are_free() {
+              assert_eq!(ticket_price(4, false), 0, "ticket_price(4, false)");
+              assert_eq!(ticket_price(5, true), 0, "ticket_price(5, true)");
+          }
+
+          #[test]
+          fn six_year_olds_pay_full_price() {
+              assert_eq!(ticket_price(6, false), 1200, "ticket_price(6, false)");
+          }
+
+          #[test]
+          fn seniors_pay_600() {
+              assert_eq!(ticket_price(65, false), 600, "ticket_price(65, false)");
+              assert_eq!(ticket_price(70, true), 600, "ticket_price(70, true)");
+          }
+
+          #[test]
+          fn students_pay_800() {
+              assert_eq!(ticket_price(20, true), 800, "ticket_price(20, true)");
+          }
+
+          #[test]
+          fn adults_pay_1200() {
+              assert_eq!(ticket_price(30, false), 1200, "ticket_price(30, false)");
+          }
+        hints:
+          - "`is_student` is already a `bool`, so `if is_student { ... }` works directly."
+          - "Order matters: check the age rules before the student rule, so a 70-year-old student pays 600."
+
+  - title: Building functions from functions
+    id: functions-6
+    text: |
+      Real programs are built from small functions that call each other. Each one does one job and has a clear name; bigger functions combine them.
+
+      ```rust run
+      fn square(x: i32) -> i32 {
+          x * x
+      }
+
+      fn sum_of_squares(a: i32, b: i32) -> i32 {
+          square(a) + square(b)
+      }
+
+      fn is_right_triangle(a: i32, b: i32, c: i32) -> bool {
+          sum_of_squares(a, b) == square(c)
+      }
+
+      fn main() {
+          println!("{}", sum_of_squares(3, 4));
+          println!("{}", is_right_triangle(3, 4, 5));
+          println!("{}", is_right_triangle(2, 3, 4));
+      }
+      ```
+
+      ```output
+      25
+      true
+      false
+      ```
+
+      Each call runs to completion and its value takes the place of the call. `is_right_triangle(3, 4, 5)` calls `sum_of_squares(3, 4)`, which calls `square(3)` and `square(4)` and adds 9 and 16; then `square(5)` gives 25, and `25 == 25` is `true`.
+
+      Behind the scenes, Rust keeps a **call stack**: the list of functions currently running, each with its own parameters and variables. A call adds an entry; a return removes it, and that function's variables are gone. When a program panics, the backtrace you can ask for is a printout of this stack.
+
+      `is_right_triangle` returns a `bool`: a comparison is an expression, so it can be the final expression. Functions that answer a yes/no question are usually named `is_...`, `has_...` or `can_...`.
+
+      ### Each function has its own variables
+
+      A variable in one function isn't visible in another. Pass the value as an argument instead:
+
+      ```rust compile_fail
+      fn show_bonus() {
+          println!("bonus: {}", score * 2);
+      }
+
+      fn main() {
+          let score = 10;
+          show_bonus();
+          println!("{score}");
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find value `score` in this scope
+       --> src/main.rs:2:27
+        |
+      2 |     println!("bonus: {}", score * 2);
+        |                           ^^^^^ not found in this scope
+      ```
+
+      The fix is `fn show_bonus(score: i32)` and calling `show_bonus(score)`. Constants are the exception: a `const` at the top of the file is visible in every function.
+
+      ### At work
+
+      - Write the small helper first, check that it works, then build on it.
+      - A function's name, parameter names and types are its first documentation: `fn net_price(gross_cents: u32, tax_percent: u32) -> u32` says far more than `fn calc(a: u32, b: u32) -> u32`.
+      - Comments starting with `///` above a function are **doc comments**: `cargo doc` turns them into documentation pages, and editors show them when you hover over a call.
+
+      ```rust
+      /// Returns the area of a rectangle, in square meters.
+      fn area(width: u32, height: u32) -> u32 {
+          width * height
+      }
+      ```
+
+      **Your turn:** a game scores each round from two parts. Write three functions:
+
+      - `fn kill_points(kills: u32) -> u32`: 100 points per kill.
+      - `fn time_bonus(seconds_left: u32) -> u32`: 2 points per second left.
+      - `fn total_score(kills: u32, seconds_left: u32) -> u32`: the sum of the two, computed by **calling** the other two functions.
+    seed: |
+      fn kill_points(kills: u32) -> u32 {
+          todo!()
+      }
+
+      fn time_bonus(seconds_left: u32) -> u32 {
+          todo!()
+      }
+
+      fn total_score(kills: u32, seconds_left: u32) -> u32 {
+          todo!()
+      }
+    solution: |
+      fn kill_points(kills: u32) -> u32 {
+          kills * 100
+      }
+
+      fn time_bonus(seconds_left: u32) -> u32 {
+          seconds_left * 2
+      }
+
+      fn total_score(kills: u32, seconds_left: u32) -> u32 {
+          kill_points(kills) + time_bonus(seconds_left)
+      }
+    harness: |
+      #[test]
+      fn kill_points_gives_100_per_kill() {
+          assert_eq!(kill_points(3), 300, "kill_points(3)");
+          assert_eq!(kill_points(0), 0, "kill_points(0)");
+      }
+
+      #[test]
+      fn time_bonus_gives_2_per_second() {
+          assert_eq!(time_bonus(45), 90, "time_bonus(45)");
+      }
+
+      #[test]
+      fn total_score_adds_both_parts() {
+          assert_eq!(total_score(3, 45), 390, "total_score(3, 45)");
+      }
+
+      #[test]
+      fn total_score_with_no_kills() {
+          assert_eq!(total_score(0, 10), 20, "total_score(0, 10)");
+      }
+    require:
+      - pattern: 'fn\s+total_score[^{]*\{[^}]*kill_points\([^}]*time_bonus\(|fn\s+total_score[^{]*\{[^}]*time_bonus\([^}]*kill_points\('
+        message: "`total_score` should call `kill_points` and `time_bonus` instead of repeating their math."
+    hints:
+      - "`kill_points` is `kills * 100` and `time_bonus` is `seconds_left * 2`."
+      - "`total_score` is `kill_points(kills) + time_bonus(seconds_left)`."
+    more:
+      - task: |
+          Write `fn is_even(n: i32) -> bool`, then `fn is_odd(n: i32) -> bool` that answers by calling `is_even` and flipping the result with `!`.
+        seed: |
+          fn is_even(n: i32) -> bool {
+              todo!()
+          }
+
+          fn is_odd(n: i32) -> bool {
+              todo!()
+          }
+        solution: |
+          fn is_even(n: i32) -> bool {
+              n % 2 == 0
+          }
+
+          fn is_odd(n: i32) -> bool {
+              !is_even(n)
+          }
+        harness: |
+          #[test]
+          fn even_numbers_are_even() {
+              assert_eq!(is_even(4), true, "is_even(4)");
+              assert_eq!(is_even(0), true, "is_even(0)");
+          }
+
+          #[test]
+          fn odd_numbers_are_not_even() {
+              assert_eq!(is_even(7), false, "is_even(7)");
+          }
+
+          #[test]
+          fn is_odd_is_the_opposite() {
+              assert_eq!(is_odd(7), true, "is_odd(7)");
+              assert_eq!(is_odd(10), false, "is_odd(10)");
+          }
+
+          #[test]
+          fn negative_numbers_work() {
+              assert_eq!(is_even(-6), true, "is_even(-6)");
+              assert_eq!(is_odd(-3), true, "is_odd(-3)");
+          }
+        require:
+          - pattern: '!\s*is_even\('
+            message: "`is_odd` should return `!is_even(n)`."
+        hints:
+          - "A number is even when `n % 2 == 0`. That comparison is already a `bool`."
+          - "`is_odd` is just `!is_even(n)`. (Checking `n % 2 == 1` would fail for negative numbers, where the remainder is -1.)"
+      - task: |
+          Write `fn max_of_two(a: i32, b: i32) -> i32` that returns the larger number (use an early `return`), and then `fn max_of_three(a: i32, b: i32, c: i32) -> i32` that finds the largest of three by calling `max_of_two` twice.
+        seed: |
+          // Write max_of_two and max_of_three here
+        solution: |
+          // Write max_of_two and max_of_three here
+          fn max_of_two(a: i32, b: i32) -> i32 {
+              if a > b {
+                  return a;
+              }
+              b
+          }
+
+          fn max_of_three(a: i32, b: i32, c: i32) -> i32 {
+              max_of_two(max_of_two(a, b), c)
+          }
+        harness: |
+          #[test]
+          fn max_of_two_picks_the_larger() {
+              assert_eq!(max_of_two(3, 9), 9, "max_of_two(3, 9)");
+              assert_eq!(max_of_two(9, 3), 9, "max_of_two(9, 3)");
+          }
+
+          #[test]
+          fn max_of_two_with_equal_numbers() {
+              assert_eq!(max_of_two(4, 4), 4, "max_of_two(4, 4)");
+          }
+
+          #[test]
+          fn max_of_three_finds_the_largest_anywhere() {
+              assert_eq!(max_of_three(7, 2, 5), 7, "max_of_three(7, 2, 5)");
+              assert_eq!(max_of_three(2, 7, 5), 7, "max_of_three(2, 7, 5)");
+              assert_eq!(max_of_three(2, 5, 7), 7, "max_of_three(2, 5, 7)");
+          }
+
+          #[test]
+          fn max_of_three_with_negatives() {
+              assert_eq!(max_of_three(-8, -3, -5), -3, "max_of_three(-8, -3, -5)");
+          }
+        require:
+          - pattern: 'fn\s+max_of_three[^{]*\{[^}]*max_of_two\([^}]*max_of_two\('
+            message: "`max_of_three` should call `max_of_two` twice."
+        forbid:
+          - pattern: '\.max\('
+            message: Write the comparison yourself instead of using the built-in `.max()`.
+        hints:
+          - "`max_of_two`: `if a > b { return a; }` then `b`."
+          - "The largest of three is the larger of `max_of_two(a, b)` and `c`: `max_of_two(max_of_two(a, b), c)`."

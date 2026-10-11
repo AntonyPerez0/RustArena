@@ -1,0 +1,1366 @@
+id: control
+title: Control Flow
+phase: "Foundations"
+summary: Make decisions with if and else, and repeat work with loop, while and for. Includes if as an expression, ranges, break and continue, nested loops and loop labels.
+roadmap: [Control Flow and Constructs]
+steps:
+  - title: if, else if and else
+    id: control-1
+    text: |
+      Programs make decisions. `if` runs a block of code only when a condition is true, and `else` gives the alternative:
+
+      ```rust run
+      fn main() {
+          let temperature = 31;
+          if temperature > 30 {
+              println!("Hot: stay in the shade");
+          } else if temperature > 15 {
+              println!("Pleasant");
+          } else {
+              println!("Bring a jacket");
+          }
+          println!("Forecast done");
+      }
+      ```
+
+      ```output
+      Hot: stay in the shade
+      Forecast done
+      ```
+
+      - The **condition** (`temperature > 30`) comes right after `if`, without parentheses. The braces are required, even around a single line.
+      - Rust checks the conditions **from top to bottom** and runs only the first block whose condition is true. Here 31 > 30, so "Hot" runs and the `else if` is never checked, even though 31 > 15 is also true.
+      - `else if` adds another condition; you can have as many as you need.
+      - `else` (optional) runs when none of the conditions were true.
+
+      ### Comparison operators
+
+      You met these in the Types module; now they drive decisions:
+
+      | Operator | Meaning |
+      |---|---|
+      | `==` | equal |
+      | `!=` | not equal |
+      | `<` and `>` | less than, greater than |
+      | `<=` and `>=` | less or equal, greater or equal |
+
+      Combine conditions with `&&` (and), `||` (or) and `!` (not): `if age >= 13 && age <= 19 { ... }`.
+
+      ### Conditions must be bools
+
+      ```rust compile_fail
+      fn main() {
+          let lives = 3;
+          if lives {
+              println!("still alive");
+          }
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:3:8
+        |
+      3 |     if lives {
+        |        ^^^^^ expected `bool`, found integer
+      ```
+
+      Unlike C, JavaScript or Python, Rust doesn't treat numbers as true or false. Write the comparison you mean: `if lives > 0`.
+
+      ### Order matters
+
+      Because the first true condition wins, put the most specific check first. This version is wrong: a score of 95 prints "pass", because `score >= 50` is checked first and the second branch is never reached:
+
+      ```rust
+      if score >= 50 {
+          println!("pass");
+      } else if score >= 90 {
+          println!("excellent");
+      }
+      ```
+
+      Swap the two conditions and it works.
+
+      ### Common mistakes
+
+      - **`=` instead of `==`**: `if score = 100` is an assignment, not a comparison, so it's `error[E0308]: mismatched types` (expected `bool`, found `()`).
+      - **Parentheses out of habit**: `if (x > 5)` works, but rustc warns `` unnecessary parentheses around `if` condition ``. Leave them out.
+      - **Comparing different types**: `if count > 2.5` with an integer `count` doesn't compile; Rust never converts number types for you.
+
+      **Your turn:** fill in the keywords so the program prints the right message for an `hp` of 12: above 50 is `Healthy`, above 10 is `Low health!`, anything else is `Critical!`. The program should print `Low health!`.
+    fill: |
+      fn main() {
+          let hp = 12;
+          [[if]] hp > 50 {
+              println!("Healthy");
+          } [[else if]] hp > 10 {
+              println!("Low health!");
+          } [[else]] {
+              println!("Critical!");
+          }
+      }
+    hints:
+      - The chain is `if`, then `else if`, then `else`.
+    tests:
+      - expect: "Low health!"
+    more:
+      - task: |
+          Write the body of `describe_temperature` so it prints `<celsius> is hot` above 30, `is warm` above 20, `is cool` above 0, and `is freezing` otherwise. `main` already calls it four times; the program should print:
+
+          ```
+          35 is hot
+          25 is warm
+          15 is cool
+          0 is freezing
+          ```
+        seed: |
+          fn main() {
+              describe_temperature(35);
+              describe_temperature(25);
+              describe_temperature(15);
+              describe_temperature(0);
+          }
+
+          fn describe_temperature(celsius: i32) {
+              // if / else if / else here
+          }
+        solution: |
+          fn main() {
+              describe_temperature(35);
+              describe_temperature(25);
+              describe_temperature(15);
+              describe_temperature(0);
+          }
+
+          fn describe_temperature(celsius: i32) {
+              // if / else if / else here
+              if celsius > 30 {
+                  println!("{celsius} is hot");
+              } else if celsius > 20 {
+                  println!("{celsius} is warm");
+              } else if celsius > 0 {
+                  println!("{celsius} is cool");
+              } else {
+                  println!("{celsius} is freezing");
+              }
+          }
+        require:
+          - pattern: '\belse\s+if\b'
+            message: Use an `if` / `else if` / `else` chain.
+        hints:
+          - "Start with the hottest case: `if celsius > 30 { ... }`."
+          - "Then `else if celsius > 20`, `else if celsius > 0`, and a final `else`."
+        tests:
+          - expect: "35 is hot\n25 is warm\n15 is cool\n0 is freezing"
+      - task: |
+          FizzBuzz, one number at a time. Write `fizzbuzz(n)` so it prints `FizzBuzz` if `n` is divisible by both 3 and 5, `Fizz` if it's divisible by 3, `Buzz` if it's divisible by 5, and the number itself otherwise. Watch the order of your checks. Expected output for the calls in `main`:
+
+          ```
+          Fizz
+          Buzz
+          FizzBuzz
+          7
+          ```
+        seed: |
+          fn main() {
+              fizzbuzz(3);
+              fizzbuzz(5);
+              fizzbuzz(15);
+              fizzbuzz(7);
+          }
+
+          fn fizzbuzz(n: u32) {
+              todo!()
+          }
+        solution: |
+          fn main() {
+              fizzbuzz(3);
+              fizzbuzz(5);
+              fizzbuzz(15);
+              fizzbuzz(7);
+          }
+
+          fn fizzbuzz(n: u32) {
+              if n % 15 == 0 {
+                  println!("FizzBuzz");
+              } else if n % 3 == 0 {
+                  println!("Fizz");
+              } else if n % 5 == 0 {
+                  println!("Buzz");
+              } else {
+                  println!("{n}");
+              }
+          }
+        hints:
+          - "\"Divisible by 3\" is `n % 3 == 0`."
+          - "Check the FizzBuzz case first (`n % 15 == 0`, or `n % 3 == 0 && n % 5 == 0`); otherwise 15 would stop at Fizz."
+        tests:
+          - expect: "Fizz\nBuzz\nFizzBuzz\n7"
+
+  - title: if is an expression
+    id: control-2
+    text: |
+      In Rust, `if` is an expression: it produces a value, the value of whichever block runs. So it can sit on the right side of `let`:
+
+      ```rust run
+      fn main() {
+          let hp = 0;
+          let status = if hp > 0 { "alive" } else { "defeated" };
+          println!("status: {status}");
+
+          let coins = 7;
+          let bonus = if coins >= 10 { 50 } else if coins >= 5 { 20 } else { 0 };
+          println!("bonus: {bonus}");
+      }
+      ```
+
+      ```output
+      status: defeated
+      bonus: 20
+      ```
+
+      This is Rust's version of the **ternary operator** (`cond ? a : b`) from C, Java and JavaScript. Rust doesn't have one, because `if` already does the job.
+
+      There are no semicolons inside the blocks (`{ "alive" }`): each block's final expression is its value, exactly like a function body. The `;` goes at the end of the whole `let` statement.
+
+      ### As a function's result
+
+      A function returns its final expression, so a final `if`/`else` *is* the function's result. No `return` needed:
+
+      ```rust run
+      fn shipping_fee(order_total: u32) -> u32 {
+          if order_total >= 5000 {
+              0
+          } else {
+              499
+          }
+      }
+
+      fn main() {
+          println!("{}", shipping_fee(7500));
+          println!("{}", shipping_fee(1200));
+      }
+      ```
+
+      ```output
+      0
+      499
+      ```
+
+      Compare this with the guard clauses from the Functions module. Both are idiomatic: use an `if`/`else` expression when there are a few equal alternatives, and early `return` for special cases that should get out of the way of the main logic.
+
+      ### All branches must have the same type
+
+      The result goes into one variable with one type, so every branch must produce that type:
+
+      ```rust compile_fail
+      fn main() {
+          let lives = 3;
+          let label = if lives > 0 { lives } else { "game over" };
+          println!("{label}");
+      }
+      ```
+
+      ```error
+      error[E0308]: `if` and `else` have incompatible types
+       --> src/main.rs:3:47
+        |
+      3 |     let label = if lives > 0 { lives } else { "game over" };
+        |                                -----          ^^^^^^^^^^^ expected integer, found `&str`
+        |                                |
+        |                                expected because of this
+      ```
+
+      And when `if` is used as a value, the `else` is required. Without it, what would the value be when the condition is false?
+
+      ```rust compile_fail
+      fn main() {
+          let score = 40;
+          let medal = if score > 90 { "gold" };
+          println!("{medal}");
+      }
+      ```
+
+      ```error
+      error[E0317]: `if` may be missing an `else` clause
+       --> src/main.rs:3:17
+        |
+      3 |     let medal = if score > 90 { "gold" };
+        |                 ^^^^^^^^^^^^^^^^------^^
+        |                 |               |
+        |                 |               found here
+        |                 expected `&str`, found `()`
+        |
+        = note: `if` expressions without `else` evaluate to `()`
+      ```
+
+      ### Common mistakes
+
+      - **Semicolons inside the blocks**: `if hp > 0 { "alive"; } else { "defeated"; }` makes both blocks produce `()`, and you get a confusing error wherever the value is used.
+      - **A missing `;` after the whole `let x = if ... { ... } else { ... };`**.
+      - **Very long `if`/`else if` chains that compare one value against many options**: the Enums module introduces a cleaner tool for that, the match expression.
+
+      **Your turn:** write `fn clamp_volume(volume: i32) -> i32` that returns `0` for anything below 0, `100` for anything above 100, and the volume itself otherwise. Make one `if` / `else if` / `else` expression the function's result (no `return`).
+    seed: |
+      fn clamp_volume(volume: i32) -> i32 {
+          todo!()
+      }
+    solution: |
+      fn clamp_volume(volume: i32) -> i32 {
+          if volume < 0 {
+              0
+          } else if volume > 100 {
+              100
+          } else {
+              volume
+          }
+      }
+    harness: |
+      #[test]
+      fn negative_becomes_zero() {
+          assert_eq!(clamp_volume(-5), 0, "clamp_volume(-5)");
+      }
+
+      #[test]
+      fn too_loud_becomes_100() {
+          assert_eq!(clamp_volume(150), 100, "clamp_volume(150)");
+      }
+
+      #[test]
+      fn values_in_range_are_kept() {
+          assert_eq!(clamp_volume(42), 42, "clamp_volume(42)");
+      }
+
+      #[test]
+      fn the_limits_themselves_are_kept() {
+          assert_eq!(clamp_volume(0), 0, "clamp_volume(0)");
+          assert_eq!(clamp_volume(100), 100, "clamp_volume(100)");
+      }
+    forbid:
+      - pattern: '\breturn\b'
+        message: Make the `if` expression the function's final expression instead of using `return`.
+      - pattern: '\.(clamp|min|max)\('
+        message: Write the comparisons yourself instead of using `.clamp()`, `.min()` or `.max()`.
+    hints:
+      - "Three branches: `if volume < 0 { 0 } else if volume > 100 { 100 } else { volume }`."
+      - No semicolons inside the branches, and none after the final `}`.
+    more:
+      - task: |
+          Fill in the blanks so an `if` expression chooses the label, and the program prints `even`.
+        fill: |
+          fn main() {
+              let n = 42;
+              let kind = [[if]] n % 2 == 0 { "even" } [[else]] { "odd" };
+              println!("{kind}");
+          }
+        hints:
+          - "`let x = if condition { a } else { b };`"
+        tests:
+          - expect: "even"
+      - task: |
+          Write `fn grade(score: u32) -> char` that turns a test score (0 to 100) into a letter: 90 and above is `'A'`, 80 and above `'B'`, 70 and above `'C'`, 60 and above `'D'`, and below 60 `'F'`. Use a single `if` / `else if` / `else` expression, without `return`.
+        seed: |
+          fn grade(score: u32) -> char {
+              todo!()
+          }
+        solution: |
+          fn grade(score: u32) -> char {
+              if score >= 90 {
+                  'A'
+              } else if score >= 80 {
+                  'B'
+              } else if score >= 70 {
+                  'C'
+              } else if score >= 60 {
+                  'D'
+              } else {
+                  'F'
+              }
+          }
+        harness: |
+          #[test]
+          fn ninety_and_above_is_a() {
+              assert_eq!(grade(95), 'A', "grade(95)");
+              assert_eq!(grade(90), 'A', "grade(90)");
+              assert_eq!(grade(100), 'A', "grade(100)");
+          }
+
+          #[test]
+          fn just_below_ninety_is_b() {
+              assert_eq!(grade(89), 'B', "grade(89)");
+          }
+
+          #[test]
+          fn middle_grades() {
+              assert_eq!(grade(75), 'C', "grade(75)");
+              assert_eq!(grade(60), 'D', "grade(60)");
+          }
+
+          #[test]
+          fn below_sixty_fails() {
+              assert_eq!(grade(59), 'F', "grade(59)");
+              assert_eq!(grade(0), 'F', "grade(0)");
+          }
+        forbid:
+          - pattern: '\breturn\b'
+            message: Use the `if` chain as the final expression instead of `return`.
+        hints:
+          - "Check from the top grade down: `if score >= 90 { 'A' } else if score >= 80 { 'B' } ...`"
+          - "Letters are `char`s, so use single quotes, and end with `else { 'F' }`."
+
+  - title: loop and break
+    id: control-3
+    text: |
+      Programs often repeat work. The simplest way is `loop`, which repeats its block forever, until you stop it with `break`:
+
+      ```rust run
+      fn main() {
+          let mut countdown = 3;
+          loop {
+              println!("{countdown}");
+              countdown -= 1;
+              if countdown == 0 {
+                  break;
+              }
+          }
+          println!("Go!");
+      }
+      ```
+
+      ```output
+      3
+      2
+      1
+      Go!
+      ```
+
+      Each run through the block is an **iteration**. `break` exits the loop immediately, and the program continues after the loop's closing brace.
+
+      ### Getting a value out of a loop
+
+      `loop` is an expression too: `break value` ends the loop *and* makes `value` the result of the whole loop. That's perfect for "keep trying until something happens, then tell me the answer":
+
+      ```rust run
+      fn main() {
+          let mut n = 1;
+          let first_big_square = loop {
+              if n * n > 500 {
+                  break n * n;
+              }
+              n += 1;
+          };
+          println!("first square above 500: {first_big_square} ({n} x {n})");
+      }
+      ```
+
+      ```output
+      first square above 500: 529 (23 x 23)
+      ```
+
+      When a `loop` is the final expression of a function, `break value` gives the function its return value. Inside a function, `return` also leaves a loop (and the whole function) immediately.
+
+      ### Infinite loops
+
+      If no `break` is ever reached, the loop runs forever and the program hangs. On this site, a run is stopped after 2 seconds ("time limit exceeded"); on your computer, press Ctrl+C. Some programs loop forever on purpose: a game's main loop or a server waiting for requests runs until it's told to quit.
+
+      ### Common mistakes
+
+      - **Never changing what the exit condition depends on**: if `countdown -= 1` is missing, `countdown == 0` never becomes true and the loop never ends.
+      - **`break value` in other loops**: only `loop` can return a value. The `while` and `for` loops coming next might run zero times, so they'd have no value to give (`` error[E0571]: `break` with value from a `while` loop ``).
+      - **Forgetting the `;` after `let x = loop { ... };`**.
+
+      **Your turn:** write `fn smallest_power_of_two(n: u32) -> u32` that returns the smallest power of two (1, 2, 4, 8, 16, ...) that is greater than or equal to `n`. Start at 1 and keep doubling inside a `loop`; `break` with the answer.
+    seed: |
+      fn smallest_power_of_two(n: u32) -> u32 {
+          todo!()
+      }
+    solution: |
+      fn smallest_power_of_two(n: u32) -> u32 {
+          let mut power = 1;
+          loop {
+              if power >= n {
+                  break power;
+              }
+              power *= 2;
+          }
+      }
+    harness: |
+      #[test]
+      fn rounds_up_to_the_next_power() {
+          assert_eq!(smallest_power_of_two(5), 8, "smallest_power_of_two(5)");
+          assert_eq!(smallest_power_of_two(1000), 1024, "smallest_power_of_two(1000)");
+      }
+
+      #[test]
+      fn a_power_of_two_is_its_own_answer() {
+          assert_eq!(smallest_power_of_two(8), 8, "smallest_power_of_two(8)");
+          assert_eq!(smallest_power_of_two(1), 1, "smallest_power_of_two(1)");
+      }
+
+      #[test]
+      fn zero_gives_one() {
+          assert_eq!(smallest_power_of_two(0), 1, "smallest_power_of_two(0)");
+      }
+    require:
+      - pattern: '\bloop\b'
+        message: Use a `loop`.
+      - pattern: '\bbreak\s+\w'
+        message: "Leave the loop with the answer: `break power;`"
+    forbid:
+      - pattern: 'next_power_of_two'
+        message: Write the loop yourself instead of using the built-in method.
+    hints:
+      - "Keep a `let mut power = 1;` and double it with `power *= 2;` each iteration."
+      - "Inside the loop: `if power >= n { break power; }`. Make the `loop` the last expression of the function."
+    more:
+      - task: |
+          Fill in the blanks so the countdown loops until it reaches zero and then stops. It should print `3`, `2`, `1` and `liftoff` on separate lines.
+        fill: |
+          fn main() {
+              let mut n = 3;
+              [[loop]] {
+                  println!("{n}");
+                  n -= 1;
+                  if n == 0 {
+                      [[break]];
+                  }
+              }
+              println!("liftoff");
+          }
+        hints:
+          - The keyword for an endless loop is `loop`, and the keyword that leaves it is `break`.
+        tests:
+          - expect: "3\n2\n1\nliftoff"
+      - task: |
+          Write `fn years_to_double(start: u32, rate_percent: u32) -> u32`. A savings balance begins at `start`, and each year it grows by `balance * rate_percent / 100` (integer division). Return how many years it takes until the balance is at least twice `start`. Use `loop` and `break` with the number of years. (You can assume `start` is at least 100 and the rate at least 1.)
+        seed: |
+          fn years_to_double(start: u32, rate_percent: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn years_to_double(start: u32, rate_percent: u32) -> u32 {
+              let mut balance = start;
+              let mut years = 0;
+              loop {
+                  if balance >= start * 2 {
+                      break years;
+                  }
+                  balance += balance * rate_percent / 100;
+                  years += 1;
+              }
+          }
+        harness: |
+          #[test]
+          fn seven_percent_takes_eleven_years() {
+              assert_eq!(years_to_double(1000, 7), 11, "years_to_double(1000, 7)");
+          }
+
+          #[test]
+          fn one_hundred_percent_takes_one_year() {
+              assert_eq!(years_to_double(1000, 100), 1, "years_to_double(1000, 100)");
+          }
+
+          #[test]
+          fn fifty_percent_takes_two_years() {
+              assert_eq!(years_to_double(1000, 50), 2, "years_to_double(1000, 50)");
+          }
+
+          #[test]
+          fn ten_percent_on_a_smaller_balance() {
+              assert_eq!(years_to_double(500, 10), 8, "years_to_double(500, 10)");
+          }
+        require:
+          - pattern: '\bloop\b'
+            message: Use a `loop`.
+        hints:
+          - "You need two mutable variables: the `balance` and the number of `years`."
+          - "In the loop: if `balance >= start * 2`, `break years;`. Otherwise add `balance * rate_percent / 100` to the balance and add 1 to `years`."
+
+  - title: while loops
+    id: control-4
+    text: |
+      A `while` loop checks its condition **before** each iteration and stops as soon as the condition is false. It's the tidy way to write "keep going while this is true", instead of `loop` with an `if` and `break` inside:
+
+      ```rust run
+      fn main() {
+          let mut n = 1234;
+          let mut digits = 0;
+          while n > 0 {
+              n /= 10;
+              digits += 1;
+          }
+          println!("{digits} digits");
+      }
+      ```
+
+      ```output
+      4 digits
+      ```
+
+      Trace it: `n` goes 1234, 123, 12, 1, 0 while `digits` counts 1, 2, 3, 4. Then `n > 0` is false and the loop ends. If the condition is false from the start, the body never runs at all: for `n = 0` this program would print `0 digits` (keep that in mind for the exercise).
+
+      ### Mutable parameters
+
+      Loops often change their inputs. A parameter is a variable like any other, so it's immutable unless you mark it `mut`:
+
+      ```rust run
+      fn digit_sum(mut n: u32) -> u32 {
+          let mut sum = 0;
+          while n > 0 {
+              sum += n % 10;
+              n /= 10;
+          }
+          sum
+      }
+
+      fn main() {
+          let number = 1234;
+          println!("{}", digit_sum(number));
+          println!("{number}");
+      }
+      ```
+
+      ```output
+      10
+      1234
+      ```
+
+      `mut n: u32` only affects the function's own copy: `number` in `main` is unchanged. Shadowing does the same job: keep the parameter immutable and write `let mut n = n;` as the first line of the body.
+
+      ### while or loop?
+
+      - `while condition { ... }` when you can say up front what keeps the loop going.
+      - `loop { ... }` with `break` when the exit is decided in the middle of the body, or when you need `break value`.
+
+      ### Common mistakes
+
+      - **Off-by-one**: `while i < 10` and `while i <= 10` differ by one iteration. Check the last iteration by hand.
+      - **Forgetting the update**: `while n > 0 { sum += n % 10; }` never changes `n`, so it never ends.
+      - **A non-bool condition**: `while n { ... }` is `error[E0308]: mismatched types`, just like `if`.
+
+      **Your turn:** write `fn count_digits(n: u32) -> u32` that returns how many digits `n` has, using a `while` loop. Careful: `0` has one digit.
+    seed: |
+      fn count_digits(n: u32) -> u32 {
+          todo!()
+      }
+    solution: |
+      fn count_digits(mut n: u32) -> u32 {
+          if n == 0 {
+              return 1;
+          }
+          let mut digits = 0;
+          while n > 0 {
+              n /= 10;
+              digits += 1;
+          }
+          digits
+      }
+    harness: |
+      #[test]
+      fn counts_four_digits() {
+          assert_eq!(count_digits(1234), 4, "count_digits(1234)");
+      }
+
+      #[test]
+      fn single_digit() {
+          assert_eq!(count_digits(7), 1, "count_digits(7)");
+      }
+
+      #[test]
+      fn round_numbers() {
+          assert_eq!(count_digits(10), 2, "count_digits(10)");
+          assert_eq!(count_digits(1000), 4, "count_digits(1000)");
+      }
+
+      #[test]
+      fn zero_has_one_digit() {
+          assert_eq!(count_digits(0), 1, "count_digits(0)");
+      }
+
+      #[test]
+      fn the_largest_u32() {
+          assert_eq!(count_digits(u32::MAX), 10, "count_digits(u32::MAX)");
+      }
+    require:
+      - pattern: '\bwhile\b'
+        message: Use a `while` loop.
+    hints:
+      - "Make the parameter mutable (`mut n: u32`) and divide it by 10 until it reaches 0, counting the steps."
+      - "Handle 0 first with a guard clause: `if n == 0 { return 1; }`."
+    more:
+      - task: |
+          Write `fn reverse_digits(n: u32) -> u32` that returns the number with its digits in reverse order: `1234` becomes `4321`, and `120` becomes `21` (leading zeros disappear). Use a `while` loop: take the last digit with `% 10`, and append it to the result with `result * 10 + digit`.
+        seed: |
+          fn reverse_digits(n: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn reverse_digits(mut n: u32) -> u32 {
+              let mut result = 0;
+              while n > 0 {
+                  result = result * 10 + n % 10;
+                  n /= 10;
+              }
+              result
+          }
+        harness: |
+          #[test]
+          fn reverses_four_digits() {
+              assert_eq!(reverse_digits(1234), 4321, "reverse_digits(1234)");
+          }
+
+          #[test]
+          fn trailing_zeros_disappear() {
+              assert_eq!(reverse_digits(120), 21, "reverse_digits(120)");
+          }
+
+          #[test]
+          fn single_digits_and_zero() {
+              assert_eq!(reverse_digits(7), 7, "reverse_digits(7)");
+              assert_eq!(reverse_digits(0), 0, "reverse_digits(0)");
+          }
+
+          #[test]
+          fn palindromes_stay_the_same() {
+              assert_eq!(reverse_digits(12321), 12321, "reverse_digits(12321)");
+          }
+        require:
+          - pattern: '\bwhile\b'
+            message: Use a `while` loop.
+        hints:
+          - "Start with `let mut result = 0;` and loop `while n > 0`."
+          - "Each iteration: `result = result * 10 + n % 10;` then `n /= 10;`."
+      - task: |
+          The **Collatz** rule: if `n` is even, halve it; if it's odd, triple it and add 1. Starting from any positive number, you always seem to end up at 1 (nobody has proved it). Write `fn collatz_steps(n: u64) -> u32` that returns how many steps it takes to reach 1 (for `1` itself, that's 0). Use a `while` loop.
+        seed: |
+          // Write fn collatz_steps here
+        solution: |
+          // Write fn collatz_steps here
+          fn collatz_steps(mut n: u64) -> u32 {
+              let mut steps = 0;
+              while n != 1 {
+                  if n % 2 == 0 {
+                      n /= 2;
+                  } else {
+                      n = 3 * n + 1;
+                  }
+                  steps += 1;
+              }
+              steps
+          }
+        harness: |
+          #[test]
+          fn one_needs_no_steps() {
+              assert_eq!(collatz_steps(1), 0, "collatz_steps(1)");
+          }
+
+          #[test]
+          fn two_needs_one_step() {
+              assert_eq!(collatz_steps(2), 1, "collatz_steps(2)");
+          }
+
+          #[test]
+          fn small_numbers() {
+              assert_eq!(collatz_steps(6), 8, "collatz_steps(6)");
+              assert_eq!(collatz_steps(7), 16, "collatz_steps(7)");
+          }
+
+          #[test]
+          fn twenty_seven_takes_a_long_trip() {
+              assert_eq!(collatz_steps(27), 111, "collatz_steps(27)");
+          }
+        require:
+          - pattern: '\bwhile\b'
+            message: Use a `while` loop.
+        hints:
+          - "The signature is `fn collatz_steps(mut n: u64) -> u32`; loop `while n != 1`."
+          - "Inside: `if n % 2 == 0 { n /= 2; } else { n = 3 * n + 1; }` and count the step."
+
+  - title: for loops and ranges
+    id: control-5
+    text: |
+      To repeat something a known number of times, or once for each value in a sequence, use `for`. The simplest sequence is a **range** of numbers:
+
+      ```rust run
+      fn main() {
+          for round in 1..4 {
+              println!("round {round}");
+          }
+          let mut total = 0;
+          for n in 1..=100 {
+              total += n;
+          }
+          println!("sum of 1 to 100 = {total}");
+      }
+      ```
+
+      ```output
+      round 1
+      round 2
+      round 3
+      sum of 1 to 100 = 5050
+      ```
+
+      - `for round in 1..4` runs the body once for each value in the range, with `round` set to that value. The loop variable is a fresh variable each time, and it only exists inside the loop.
+      - `a..b` is a **half-open range**: from `a` up to but **not including** `b`. So `0..n` runs exactly `n` times, with the values 0 to n - 1.
+      - `a..=b` is an **inclusive range**: it includes `b`.
+      - If you don't need the value, call it `_`: `for _ in 0..3 { println!("hip hip hooray"); }`.
+
+      ### Backwards, and in steps
+
+      ```rust run
+      fn main() {
+          for i in (1..=3).rev() {
+              print!("{i} ");
+          }
+          println!("liftoff");
+          for even in (0..=10).step_by(2) {
+              print!("{even} ");
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      3 2 1 liftoff
+      0 2 4 6 8 10
+      ```
+
+      - `.rev()` runs a range backwards. The parentheses around the range are needed: `1..=3.rev()` would try to call `.rev()` on the number `3`.
+      - `.step_by(2)` takes every second value.
+      - `println!()` with nothing inside just ends the line.
+
+      ### Why for is usually the best choice
+
+      You could count with `while`:
+
+      ```rust
+      let mut i = 0;
+      while i < 5 {
+          println!("{i}");
+          i += 1;
+      }
+      ```
+
+      But `for i in 0..5` can't forget the `i += 1`, can't get stuck, and shows the whole range at a glance. In Rust, `for` is the everyday loop; `while` and `loop` are for when you don't know in advance how many iterations you need. Later you'll use `for` with lists and text too: it works with anything that produces a sequence of values (an **iterator**).
+
+      ### Common mistakes
+
+      - **Off-by-one with `..`**: `for i in 1..10` stops at 9. Use `1..=10` to include 10.
+      - **Counting down with a "backwards" range**: `for i in 5..1` runs zero times. Write `(1..5).rev()`.
+      - **Changing the loop variable to skip ahead**: the next value comes from the range anyway (and the loop variable is immutable). Use `.step_by()` or `continue` (next step).
+
+      **Your turn:** print the 7 times table, from `7 x 1 = 7` to `7 x 10 = 70`, one line each, using a `for` loop with a single `println!` inside.
+    seed: |
+      fn main() {
+      }
+    solution: |
+      fn main() {
+          for i in 1..=10 {
+              println!("7 x {i} = {}", 7 * i);
+          }
+      }
+    require:
+      - pattern: '\bfor\b'
+        message: Use a `for` loop over a range.
+    forbid:
+      - pattern: 'println![\s\S]*println!'
+        message: Use a single `println!` inside the loop.
+    hints:
+      - "Loop over `1..=10` so that 10 is included."
+      - "`for i in 1..=10 { println!(\"7 x {i} = {}\", 7 * i); }`"
+    tests:
+      - expect: "7 x 1 = 7\n7 x 2 = 14\n7 x 3 = 21\n7 x 4 = 28\n7 x 5 = 35\n7 x 6 = 42\n7 x 7 = 49\n7 x 8 = 56\n7 x 9 = 63\n7 x 10 = 70"
+    more:
+      - task: |
+          Print the even numbers from 20 down to 0 on one line (separated by spaces), then `Go!` on the next line:
+
+          ```
+          20 18 16 14 12 10 8 6 4 2 0
+          Go!
+          ```
+
+          Use one `for` loop over a range with `.rev()` and `.step_by(2)`.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              for n in (0..=20).rev().step_by(2) {
+                  print!("{n} ");
+              }
+              println!();
+              println!("Go!");
+          }
+        require:
+          - pattern: '\.rev\(\)'
+            message: "Count down with `.rev()`."
+          - pattern: '\.step_by\(\s*2\s*\)'
+            message: "Take every second number with `.step_by(2)`."
+        hints:
+          - "`(0..=20).rev()` counts 20, 19, ..., 0; add `.step_by(2)` to keep every second one."
+          - "Print each number with `print!(\"{n} \")`, then end the line with `println!()`."
+        tests:
+          - expect: "20 18 16 14 12 10 8 6 4 2 0\nGo!"
+      - task: |
+          Write `fn sum_of_multiples(limit: u32) -> u32` that adds up every number **below** `limit` that is a multiple of 3 or of 5. For example, below 10 these are 3, 5, 6 and 9, which sum to 23. Use a `for` loop.
+        seed: |
+          fn sum_of_multiples(limit: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn sum_of_multiples(limit: u32) -> u32 {
+              let mut sum = 0;
+              for n in 1..limit {
+                  if n % 3 == 0 || n % 5 == 0 {
+                      sum += n;
+                  }
+              }
+              sum
+          }
+        harness: |
+          #[test]
+          fn below_ten() {
+              assert_eq!(sum_of_multiples(10), 23, "sum_of_multiples(10)");
+          }
+
+          #[test]
+          fn the_limit_itself_is_not_included() {
+              assert_eq!(sum_of_multiples(15), 45, "sum_of_multiples(15)");
+              assert_eq!(sum_of_multiples(16), 60, "sum_of_multiples(16)");
+          }
+
+          #[test]
+          fn nothing_below_three() {
+              assert_eq!(sum_of_multiples(1), 0, "sum_of_multiples(1)");
+              assert_eq!(sum_of_multiples(0), 0, "sum_of_multiples(0)");
+          }
+
+          #[test]
+          fn below_one_thousand() {
+              assert_eq!(sum_of_multiples(1000), 233168, "sum_of_multiples(1000)");
+          }
+        require:
+          - pattern: '\bfor\b'
+            message: Use a `for` loop.
+        hints:
+          - "\"Below `limit`\" means the half-open range `1..limit`."
+          - "Inside the loop: `if n % 3 == 0 || n % 5 == 0 { sum += n; }`."
+
+  - title: break and continue
+    id: control-6
+    text: |
+      Inside any loop (`loop`, `while` or `for`):
+
+      - `break` ends the loop right away.
+      - `continue` skips the rest of the current iteration and moves on to the next one.
+
+      ```rust run
+      fn main() {
+          for n in 1..=10 {
+              if n % 3 == 0 {
+                  continue;
+              }
+              if n > 7 {
+                  break;
+              }
+              print!("{n} ");
+          }
+          println!();
+      }
+      ```
+
+      ```output
+      1 2 4 5 7
+      ```
+
+      Trace it: 3 and 6 are skipped by `continue`. At 8, `break` ends the loop, so 8, 9 and 10 never print.
+
+      `continue` is handy for skipping values you don't care about without wrapping the rest of the body in an `if`. Many teams prefer this "skip early" shape for the same reason they like guard clauses.
+
+      ### Stopping a search
+
+      `break` is the natural way to stop a search as soon as you've found the answer, instead of checking every remaining value:
+
+      ```rust run
+      fn main() {
+          let target = 91;
+          let mut smallest_divisor = target;
+          for d in 2..target {
+              if target % d == 0 {
+                  smallest_divisor = d;
+                  break;
+              }
+          }
+          println!("smallest divisor of {target}: {smallest_divisor}");
+      }
+      ```
+
+      ```output
+      smallest divisor of 91: 7
+      ```
+
+      Inside a function, `return` also ends the loop (and the function) immediately. A search often reads best as its own function: return the answer as soon as you find it, and put the "not found" result after the loop.
+
+      ### Common mistakes
+
+      - **`continue` before the update in a `while` loop**:
+
+      ```rust
+      let mut i = 0;
+      while i < 10 {
+          if i % 2 == 0 {
+              continue; // i never changes again: an infinite loop
+          }
+          i += 1;
+      }
+      ```
+
+      In a `for` loop this can't happen, because the range moves on by itself.
+
+      - **Expecting `break` to leave every loop**: it only leaves the innermost one. The next step shows how to break out of an outer loop.
+
+      **Your turn:** write `fn is_prime(n: u32) -> bool`. A prime number has exactly two divisors, 1 and itself, so 0 and 1 are not prime. Check the possible divisors from 2 upward, and stop as soon as you find one.
+    seed: |
+      fn is_prime(n: u32) -> bool {
+          todo!()
+      }
+    solution: |
+      fn is_prime(n: u32) -> bool {
+          if n < 2 {
+              return false;
+          }
+          for d in 2..n {
+              if d * d > n {
+                  break;
+              }
+              if n % d == 0 {
+                  return false;
+              }
+          }
+          true
+      }
+    harness: |
+      #[test]
+      fn zero_and_one_are_not_prime() {
+          assert_eq!(is_prime(0), false, "is_prime(0)");
+          assert_eq!(is_prime(1), false, "is_prime(1)");
+      }
+
+      #[test]
+      fn two_and_three_are_prime() {
+          assert_eq!(is_prime(2), true, "is_prime(2)");
+          assert_eq!(is_prime(3), true, "is_prime(3)");
+      }
+
+      #[test]
+      fn even_numbers_above_two_are_not_prime() {
+          assert_eq!(is_prime(4), false, "is_prime(4)");
+          assert_eq!(is_prime(1_000_000), false, "is_prime(1_000_000)");
+      }
+
+      #[test]
+      fn products_of_two_primes_are_not_prime() {
+          assert_eq!(is_prime(91), false, "is_prime(91)");
+          assert_eq!(is_prime(49), false, "is_prime(49)");
+      }
+
+      #[test]
+      fn larger_primes() {
+          assert_eq!(is_prime(97), true, "is_prime(97)");
+          assert_eq!(is_prime(7919), true, "is_prime(7919)");
+      }
+    hints:
+      - "Handle `n < 2` first with a guard clause: those aren't prime."
+      - "Loop `for d in 2..n`; if `n % d == 0`, return `false` right away. If the loop finishes, return `true`."
+      - "Optional speed-up: once `d * d > n`, there's no divisor left to find, so you can `break`."
+    more:
+      - task: |
+          Print the numbers from 1 to 20 on one line, but skip multiples of 4 with `continue`, and stop the loop completely with `break` as soon as the number is greater than 15:
+
+          ```
+          1 2 3 5 6 7 9 10 11 13 14 15
+          ```
+        seed: |
+          fn main() {
+              for n in 1..=20 {
+                  print!("{n} ");
+              }
+              println!();
+          }
+        solution: |
+          fn main() {
+              for n in 1..=20 {
+                  if n % 4 == 0 {
+                      continue;
+                  }
+                  if n > 15 {
+                      break;
+                  }
+                  print!("{n} ");
+              }
+              println!();
+          }
+        require:
+          - pattern: '\bcontinue\b'
+            message: Skip the multiples of 4 with `continue`.
+          - pattern: '\bbreak\b'
+            message: Stop the loop with `break` once the number is above 15.
+        hints:
+          - "At the top of the loop body: `if n % 4 == 0 { continue; }`."
+          - "Then `if n > 15 { break; }` before printing."
+        tests:
+          - expect: "1 2 3 5 6 7 9 10 11 13 14 15"
+      - task: |
+          The starter code has a working `is_prime`. Write `fn count_primes(limit: u32) -> u32` that counts the primes from 2 up to and including `limit`, by calling `is_prime` in a `for` loop. Use `continue` to skip the numbers that aren't prime.
+        seed: |
+          fn is_prime(n: u32) -> bool {
+              if n < 2 {
+                  return false;
+              }
+              for d in 2..n {
+                  if d * d > n {
+                      break;
+                  }
+                  if n % d == 0 {
+                      return false;
+                  }
+              }
+              true
+          }
+
+          fn count_primes(limit: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn is_prime(n: u32) -> bool {
+              if n < 2 {
+                  return false;
+              }
+              for d in 2..n {
+                  if d * d > n {
+                      break;
+                  }
+                  if n % d == 0 {
+                      return false;
+                  }
+              }
+              true
+          }
+
+          fn count_primes(limit: u32) -> u32 {
+              let mut count = 0;
+              for n in 2..=limit {
+                  if !is_prime(n) {
+                      continue;
+                  }
+                  count += 1;
+              }
+              count
+          }
+        harness: |
+          #[test]
+          fn four_primes_up_to_ten() {
+              assert_eq!(count_primes(10), 4, "count_primes(10)");
+          }
+
+          #[test]
+          fn the_limit_is_included() {
+              assert_eq!(count_primes(7), 4, "count_primes(7)");
+              assert_eq!(count_primes(2), 1, "count_primes(2)");
+          }
+
+          #[test]
+          fn no_primes_below_two() {
+              assert_eq!(count_primes(1), 0, "count_primes(1)");
+              assert_eq!(count_primes(0), 0, "count_primes(0)");
+          }
+
+          #[test]
+          fn larger_limits() {
+              assert_eq!(count_primes(100), 25, "count_primes(100)");
+              assert_eq!(count_primes(1000), 168, "count_primes(1000)");
+          }
+        require:
+          - pattern: '\bcontinue\b'
+            message: Skip the non-primes with `continue`.
+          - pattern: 'is_prime\(\s*\w+\s*\)'
+            message: Call `is_prime` for each number.
+        hints:
+          - "Loop over `2..=limit` with a counter `let mut count = 0;`."
+          - "`if !is_prime(n) { continue; }` then `count += 1;`."
+
+  - title: Nested loops and labels
+    id: control-7
+    text: |
+      A loop inside another loop is a **nested loop**: the inner loop runs completely for every single iteration of the outer one. That's how you walk over grids and tables:
+
+      ```rust run
+      fn main() {
+          for row in 1..=3 {
+              for col in 1..=4 {
+                  print!("{} ", row * col);
+              }
+              println!();
+          }
+      }
+      ```
+
+      ```output
+      1 2 3 4
+      2 4 6 8
+      3 6 9 12
+      ```
+
+      The inner body runs 3 × 4 = 12 times in total. The `println!()` belongs to the outer loop, so it ends each row.
+
+      ### Breaking out of an outer loop
+
+      `break` and `continue` apply to the innermost loop. To target an outer one, give it a **label**: a name starting with an apostrophe, like `'search:`, written before the loop. Then `break 'search;` leaves that loop, and `continue 'search;` jumps to its next iteration:
+
+      ```rust run
+      fn main() {
+          let target = 42;
+          'search: for a in 1..=10 {
+              for b in a..=10 {
+                  if a * b == target {
+                      println!("found {a} x {b} = {target}");
+                      break 'search;
+                  }
+              }
+          }
+          println!("search finished");
+      }
+      ```
+
+      ```output
+      found 6 x 7 = 42
+      search finished
+      ```
+
+      Without the label, `break` would only leave the inner loop, and the outer loop would carry on searching with `a = 7, 8, ...`, wasting work (and possibly printing more matches).
+
+      `continue 'outer` means "give up on the rest of this row and start the next one". Labels work on `loop` and `while` too, and a labeled `loop` can even `break 'label value`.
+
+      ### Common mistakes
+
+      - **Forgetting the label** on `break`, so only the inner loop stops.
+      - **Label syntax**: the label is declared as `'search:` in front of the loop and used as `break 'search;`, both with the apostrophe. Labels look like lifetimes (a later topic) but have nothing to do with them.
+      - **Deep nesting**: three or four levels of loops are hard to read. At work, a nested search usually becomes its own function that `return`s the answer as soon as it finds it.
+
+      **Your turn:** print a right triangle of `*` with 5 rows, where row 1 has one star and row 5 has five. Use two nested `for` loops: `print!("*")` in the inner loop, and `println!()` after it to end each row.
+
+      ```
+      *
+      **
+      ***
+      ****
+      *****
+      ```
+    seed: |
+      fn main() {
+      }
+    solution: |
+      fn main() {
+          for row in 1..=5 {
+              for _ in 0..row {
+                  print!("*");
+              }
+              println!();
+          }
+      }
+    require:
+      - pattern: '\bfor\b[\s\S]*\bfor\b'
+        message: Use two nested `for` loops.
+    forbid:
+      - pattern: '"\*\*'
+        strings: true
+        message: Print one star at a time with `print!("*")`.
+    hints:
+      - "The outer loop counts rows: `for row in 1..=5`."
+      - "The inner loop runs `row` times: `for _ in 0..row { print!(\"*\"); }`, then `println!();`."
+    tests:
+      - expect: "*\n**\n***\n****\n*****"
+    more:
+      - task: |
+          Find the pair of whole numbers `a` and `b` (with `1 <= a <= b <= 20`) whose sum is 23 and whose product is 120. Search with nested loops (`a` from 1 to 20, `b` from `a` to 20), and count every pair you check in a variable `checked`. When you find the pair, print it and stop **both** loops with a labeled `break`. After the loops, print the count:
+
+          ```
+          found a=8 b=15
+          checked 127 pairs
+          ```
+
+          (With a plain `break`, the outer loop would keep going and the count would be wrong.)
+        seed: |
+          fn main() {
+              let mut checked = 0;
+          }
+        solution: |
+          fn main() {
+              let mut checked = 0;
+              'search: for a in 1..=20 {
+                  for b in a..=20 {
+                      checked += 1;
+                      if a + b == 23 && a * b == 120 {
+                          println!("found a={a} b={b}");
+                          break 'search;
+                      }
+                  }
+              }
+              println!("checked {checked} pairs");
+          }
+        require:
+          - pattern: '''\w+\s*:\s*for'
+            message: "Label the outer loop, like `'search: for a in 1..=20`."
+          - pattern: 'break\s+''\w+'
+            message: "Stop both loops with `break 'search;`."
+        hints:
+          - "Increment `checked` at the start of the inner loop body, before testing the pair."
+          - "Label the outer loop `'search:` and use `break 'search;` right after printing the pair."
+        tests:
+          - expect: "found a=8 b=15\nchecked 127 pairs"
+      - task: |
+          Write `fn count_pairs(limit: u32, target: u32) -> u32` that counts the pairs of numbers `a` and `b` with `1 <= a < b <= limit` and `a + b == target`. For example, `count_pairs(5, 6)` is 2: the pairs (1, 5) and (2, 4). Use nested `for` loops.
+        seed: |
+          fn count_pairs(limit: u32, target: u32) -> u32 {
+              todo!()
+          }
+        solution: |
+          fn count_pairs(limit: u32, target: u32) -> u32 {
+              let mut count = 0;
+              for a in 1..=limit {
+                  for b in (a + 1)..=limit {
+                      if a + b == target {
+                          count += 1;
+                      }
+                  }
+              }
+              count
+          }
+        harness: |
+          #[test]
+          fn two_pairs_make_six() {
+              assert_eq!(count_pairs(5, 6), 2, "count_pairs(5, 6)");
+          }
+
+          #[test]
+          fn the_numbers_must_be_different() {
+              assert_eq!(count_pairs(4, 4), 1, "count_pairs(4, 4)");
+          }
+
+          #[test]
+          fn target_out_of_reach() {
+              assert_eq!(count_pairs(3, 10), 0, "count_pairs(3, 10)");
+              assert_eq!(count_pairs(10, 20), 0, "count_pairs(10, 20)");
+          }
+
+          #[test]
+          fn a_bigger_search() {
+              assert_eq!(count_pairs(100, 101), 50, "count_pairs(100, 101)");
+          }
+        require:
+          - pattern: '\bfor\b[\s\S]*\bfor\b'
+            message: Use two nested `for` loops.
+        hints:
+          - "`a` goes over `1..=limit`, and `b` starts after `a`: `(a + 1)..=limit`."
+          - "Inside the inner loop: `if a + b == target { count += 1; }`."

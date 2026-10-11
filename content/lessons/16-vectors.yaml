@@ -1,0 +1,1538 @@
+id: vectors
+title: Vectors
+phase: "Structuring data"
+summary: "Vec<T>, the growable list you'll use more than any other collection: adding and removing, safe access with get, the three ways to loop, sorting, deduplicating, searching, and vectors of your own structs."
+roadmap: [Vectors, "Collections: Vec"]
+steps:
+  - title: Creating and growing a Vec
+    id: vectors-1
+    text: |
+      A **vector**, written `Vec<T>`, is a list of values of one type `T`, stored next to each other on the heap. An array (`[i32; 5]`) has a length fixed when you compile; a vector grows and shrinks while the program runs. That's what you need whenever the data comes from input, a file or the network, so `Vec` is the collection you'll use most in Rust.
+
+      ```rust run
+      fn main() {
+          let mut scores: Vec<u32> = Vec::new();
+          scores.push(72);
+          scores.push(95);
+          scores.push(88);
+          println!("{:?} (len {})", scores, scores.len());
+
+          let primes = vec![2, 3, 5, 7];
+          let zeros = vec![0; 5];
+          println!("{:?} {:?}", primes, zeros);
+
+          let last = scores.pop();
+          println!("popped {:?}, left {:?}", last, scores);
+          println!("empty? {}", scores.is_empty());
+      }
+      ```
+
+      ```output
+      [72, 95, 88] (len 3)
+      [2, 3, 5, 7] [0, 0, 0, 0, 0]
+      popped Some(88), left [72, 95]
+      empty? false
+      ```
+
+      Piece by piece:
+
+      - `Vec::new()` makes an empty vector. It has no elements yet to infer the type from, so we write it: `Vec<u32>`.
+      - `push` adds an element at the end. It changes the vector, so the variable must be `mut`.
+      - `vec![2, 3, 5, 7]` is a macro that builds a vector from a list; `vec![0; 5]` makes five copies of `0`.
+      - `pop` removes the **last** element and returns it inside an `Option`: `Some(88)`, or `None` if the vector was empty. Rust makes you deal with the empty case instead of handing you garbage.
+      - `len()` counts the elements; `is_empty()` is the idiomatic way to check for zero (clippy suggests it over `len() == 0`).
+
+      ### How a Vec is stored
+
+      The vector variable itself is three numbers on the stack: a pointer to a buffer on the heap, the **length** (how many elements are in use) and the **capacity** (how many fit before the buffer is full). When a `push` finds the buffer full, the Vec allocates a bigger one (about twice the size), moves the elements over and frees the old one. Doubling means most pushes are cheap; growing is rare.
+
+      ### Common mistakes
+
+      - **Forgetting `mut`:**
+
+        ```rust compile_fail
+        fn main() {
+            let v = Vec::new();
+            v.push(1);
+        }
+        ```
+
+        ```error
+        error[E0596]: cannot borrow `v` as mutable, as it is not declared as mutable
+        ```
+
+      - **An empty vector the compiler can't figure out.** If nothing ever goes into it, Rust can't guess the element type:
+
+        ```rust compile_fail
+        fn main() {
+            let v = Vec::new();
+            println!("{}", v.len());
+        }
+        ```
+
+        ```error
+        error[E0282]: type annotations needed for `Vec<_>`
+        ```
+
+        Write `let v: Vec<i32> = Vec::new();`.
+      - **Mixing types.** `vec![1, "two"]` is a `mismatched types` error: every element has the same type.
+
+      **Your turn:** a coffee bar keeps orders in a stack (the newest order is made first). Fill in the blanks: the vector's type, the method that adds an order, and the method that takes the newest one off.
+    fill: |
+      fn main() {
+          let mut orders: [[Vec<String>]] = Vec::new();
+          orders.[[push]](String::from("latte"));
+          orders.push(String::from("mocha"));
+          orders.push(String::from("tea"));
+          let made = orders.[[pop]]();
+          println!("made {:?}, waiting {:?}", made, orders);
+      }
+    hints:
+      - "The orders are `String`s, so the vector is a `Vec<String>`."
+      - "`push` adds to the end; `pop` removes from the end and returns an `Option`."
+    tests:
+      - expect: "made Some(\"tea\"), waiting [\"latte\", \"mocha\"]"
+    more:
+      - task: |
+          Write a program that reads whole numbers separated by spaces or newlines, stores them in a `Vec<i64>`, prints `read N numbers`, and then prints them in **reverse** order, one per line, by popping them off with `while let Some(n) = numbers.pop()`.
+        seed: |
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("could not read input");
+              // push each number into a Vec, then pop them all off
+          }
+        solution: |
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("could not read input");
+              // push each number into a Vec, then pop them all off
+              let mut numbers: Vec<i64> = Vec::new();
+              for word in input.split_whitespace() {
+                  numbers.push(word.parse().expect("not a number"));
+              }
+              println!("read {} numbers", numbers.len());
+              while let Some(n) = numbers.pop() {
+                  println!("{n}");
+              }
+          }
+        tests:
+          - stdin: "3 1 4\n1 5\n"
+            expect: "read 5 numbers\n5\n1\n4\n1\n3"
+          - stdin: "-7\n"
+          - stdin: "10 20 30 40 50 60\n"
+            hidden: true
+        require:
+          - pattern: '\.push\('
+            message: "Store each number with `push`."
+          - pattern: 'while\s+let\s+Some'
+            message: "Print them with `while let Some(n) = numbers.pop()`."
+        hints:
+          - "`let mut numbers: Vec<i64> = Vec::new();` then `for word in input.split_whitespace() { numbers.push(word.parse().expect(\"not a number\")); }`"
+          - "After the loop: `println!(\"read {} numbers\", numbers.len());`"
+          - "`while let Some(n) = numbers.pop() { println!(\"{n}\"); }` prints the last number first."
+      - task: |
+          A shop wants running totals of its daily sales. Write `fn running_totals(sales: &[u32]) -> Vec<u32>`: element `i` of the result is the sum of `sales[0]` to `sales[i]`. For `[5, 10, 3]` return `[5, 15, 18]`; for an empty slice return an empty vector.
+        seed: |
+          fn running_totals(sales: &[u32]) -> Vec<u32> {
+              todo!()
+          }
+        solution: |
+          fn running_totals(sales: &[u32]) -> Vec<u32> {
+              let mut totals = Vec::new();
+              let mut sum = 0;
+              for s in sales {
+                  sum += *s;
+                  totals.push(sum);
+              }
+              totals
+          }
+        harness: |
+          #[test]
+          fn adds_up_as_it_goes() {
+              assert_eq!(running_totals(&[5, 10, 3]), vec![5, 15, 18], "running_totals(&[5, 10, 3])");
+          }
+
+          #[test]
+          fn empty_input_gives_empty_vec() {
+              assert_eq!(running_totals(&[]), Vec::<u32>::new(), "running_totals(&[])");
+          }
+
+          #[test]
+          fn single_day() {
+              assert_eq!(running_totals(&[42]), vec![42], "running_totals(&[42])");
+          }
+
+          #[test]
+          fn zero_sales_keep_the_total() {
+              assert_eq!(running_totals(&[0, 7, 0, 1]), vec![0, 7, 7, 8], "running_totals(&[0, 7, 0, 1])");
+          }
+        hints:
+          - "Start with `let mut totals = Vec::new();` and `let mut sum = 0;`"
+          - "Loop with `for s in sales`: add `*s` to `sum`, then `totals.push(sum)`."
+          - "Return `totals` as the last expression."
+
+  - title: Reading elements with [] and get
+    id: vectors-2
+    text: |
+      There are two ways to read an element. Indexing, `v[i]`, gives you the element directly and **panics** if `i` is past the end. `v.get(i)` returns an `Option`: `Some(&element)` or `None`.
+
+      ```rust run
+      fn main() {
+          let podium = vec!["Ferris", "Corro", "Bunny"];
+          println!("winner: {}", podium[0]);
+          println!("third: {}", podium[2]);
+
+          match podium.get(5) {
+              Some(name) => println!("sixth: {name}"),
+              None => println!("no sixth place"),
+          }
+          println!("{:?} {:?}", podium.first(), podium.last());
+      }
+      ```
+
+      ```output
+      winner: Ferris
+      third: Bunny
+      no sixth place
+      Some("Ferris") Some("Bunny")
+      ```
+
+      Indexes start at 0, so the last valid index is `len() - 1`. `first()` and `last()` are `get(0)` and `get(len - 1)` with names, and return `None` on an empty vector.
+
+      Here's what happens when indexing goes past the end:
+
+      ```rust panics
+      fn main() {
+          let podium = vec!["Ferris", "Corro", "Bunny"];
+          println!("checking place 4");
+          println!("{}", podium[3]);
+      }
+      ```
+
+      ```output
+      checking place 4
+      ```
+
+      The program stops with this message, plus the file and line of the bad index:
+
+      ```text
+      index out of bounds: the len is 3 but the index is 3
+      ```
+
+      A **panic** stops the program with a message. Unlike C or C++, Rust never reads whatever memory happens to be past the end: it always checks.
+
+      ### Which one to use
+
+      - Use `v[i]` when an index past the end would be a **bug** in your own code (a loop bound you control). The panic points straight at the bug.
+      - Use `v.get(i)` when the index comes from **outside**: user input, a file, a request. A missing element is then a normal situation you handle with `match`, `if let` or `let ... else`.
+
+      ### Indexes are usize
+
+      Indexes and lengths have the type `usize`. An `i32` index doesn't compile:
+
+      ```rust compile_fail
+      fn main() {
+          let v = vec![10, 20, 30];
+          let i: i32 = 1;
+          println!("{}", v[i]);
+      }
+      ```
+
+      ```error
+      error[E0277]: the type `[{integer}]` cannot be indexed by `i32`
+      ```
+
+      Make the variable a `usize`, or convert with `i as usize` when you know it isn't negative.
+
+      ### Common mistake: moving out by index
+
+      `v[0]` on a `Vec<i32>` copies the number. On a `Vec<String>` it would have to move the String out and leave a hole, which Rust doesn't allow:
+
+      ```rust compile_fail
+      fn main() {
+          let names = vec![String::from("Ana"), String::from("Bo")];
+          let first = names[0];
+          println!("{first}");
+      }
+      ```
+
+      ```error
+      error[E0507]: cannot move out of index of `Vec<String>`
+      ```
+
+      Borrow it (`let first = &names[0];`) or copy it explicitly (`names[0].clone()`). In the same way, `get` gives you a reference (`Option<&String>`), never the value itself.
+
+      **Your turn:** a game inventory has numbered slots. Write `fn inventory_line(items: &[&str], slot: usize) -> String` that returns `"slot 2: shield"` for an existing slot and `"slot 9: empty"` for a slot past the end. Use `get`, so a big slot number can't crash the game.
+    seed: |
+      fn inventory_line(items: &[&str], slot: usize) -> String {
+          todo!()
+      }
+    solution: |
+      fn inventory_line(items: &[&str], slot: usize) -> String {
+          match items.get(slot) {
+              Some(item) => format!("slot {slot}: {item}"),
+              None => format!("slot {slot}: empty"),
+          }
+      }
+    harness: |
+      #[test]
+      fn existing_slot() {
+          let items = ["sword", "potion", "shield"];
+          assert_eq!(inventory_line(&items, 2), "slot 2: shield", "inventory_line(&[sword, potion, shield], 2)");
+          assert_eq!(inventory_line(&items, 0), "slot 0: sword", "inventory_line(&[sword, potion, shield], 0)");
+      }
+
+      #[test]
+      fn slot_just_past_the_end() {
+          let items = ["sword", "potion", "shield"];
+          assert_eq!(inventory_line(&items, 3), "slot 3: empty", "inventory_line(&[sword, potion, shield], 3)");
+      }
+
+      #[test]
+      fn huge_slot_number() {
+          let items = ["sword"];
+          assert_eq!(inventory_line(&items, 9999), "slot 9999: empty", "inventory_line(&[sword], 9999)");
+      }
+
+      #[test]
+      fn empty_inventory() {
+          assert_eq!(inventory_line(&[], 0), "slot 0: empty", "inventory_line(&[], 0)");
+      }
+    forbid:
+      - pattern: 'items\s*\['
+        message: "Use `items.get(slot)` instead of indexing, so a slot past the end can't panic."
+    hints:
+      - "`items.get(slot)` returns `Some(&item)` or `None`."
+      - "`match items.get(slot) { Some(item) => format!(\"slot {slot}: {item}\"), None => ... }`"
+    more:
+      - task: |
+          The first input line lists player names separated by spaces. Every line after that holds an index. For each index print the player's name, or `no player at index N` if there's no such player. The reading code is done; write the lookup with `get`.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut first = String::new();
+              io::stdin().read_line(&mut first).expect("could not read names");
+              let players: Vec<&str> = first.split_whitespace().collect();
+
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let index: usize = line.trim().parse().expect("not an index");
+                  // print the player at `index`, or "no player at index N"
+              }
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut first = String::new();
+              io::stdin().read_line(&mut first).expect("could not read names");
+              let players: Vec<&str> = first.split_whitespace().collect();
+
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let index: usize = line.trim().parse().expect("not an index");
+                  // print the player at `index`, or "no player at index N"
+                  match players.get(index) {
+                      Some(name) => println!("{name}"),
+                      None => println!("no player at index {index}"),
+                  }
+              }
+          }
+        tests:
+          - stdin: "ana bo cy\n1\n5\n0\n"
+            expect: "bo\nno player at index 5\nana"
+          - stdin: "solo\n0\n1\n"
+          - stdin: "w x y z\n3\n4\n2\n100\n"
+            hidden: true
+        forbid:
+          - pattern: 'players\s*\['
+            message: "Use `players.get(index)` so a bad index doesn't panic."
+        hints:
+          - "`match players.get(index) { Some(name) => ..., None => ... }`"
+      - task: |
+          Write `fn median(sorted: &[f64]) -> Option<f64>` for a slice that is already sorted. Return `None` for an empty slice. With an odd number of values the median is the middle one; with an even number it's the average of the two middle values (`[1.0, 2.0, 3.0, 10.0]` gives `2.5`).
+        seed: |
+          fn median(sorted: &[f64]) -> Option<f64> {
+              todo!()
+          }
+        solution: |
+          fn median(sorted: &[f64]) -> Option<f64> {
+              let n = sorted.len();
+              if n == 0 {
+                  return None;
+              }
+              let mid = n / 2;
+              if n % 2 == 1 {
+                  Some(sorted[mid])
+              } else {
+                  Some((sorted[mid - 1] + sorted[mid]) / 2.0)
+              }
+          }
+        harness: |
+          #[test]
+          fn empty_has_no_median() {
+              assert_eq!(median(&[]), None, "median(&[])");
+          }
+
+          #[test]
+          fn one_value() {
+              assert_eq!(median(&[3.0]), Some(3.0), "median(&[3.0])");
+          }
+
+          #[test]
+          fn odd_count_takes_the_middle() {
+              assert_eq!(median(&[1.0, 2.0, 10.0]), Some(2.0), "median(&[1.0, 2.0, 10.0])");
+          }
+
+          #[test]
+          fn even_count_averages_the_two_middle_values() {
+              assert_eq!(median(&[1.0, 2.0, 3.0, 10.0]), Some(2.5), "median(&[1.0, 2.0, 3.0, 10.0])");
+              assert_eq!(median(&[4.0, 8.0]), Some(6.0), "median(&[4.0, 8.0])");
+          }
+        hints:
+          - "Handle the empty case first: `if sorted.is_empty() { return None; }`"
+          - "With `let mid = sorted.len() / 2;` the middle of an odd-length slice is `sorted[mid]`."
+          - "For an even length the two middle values are `sorted[mid - 1]` and `sorted[mid]`. Indexing is fine here: you checked the length, so a panic would mean a bug."
+
+  - title: "Looping: &v, &mut v and v"
+    id: vectors-3
+    text: |
+      There are three ways to loop over a vector, and they match the three ways to use any value in Rust: borrow it, borrow it mutably, or take ownership.
+
+      ```rust run
+      fn main() {
+          let mut prices = vec![1200, 450, 999];
+
+          let mut total = 0;
+          for p in &prices {
+              total += *p;
+          }
+          println!("total {total}");
+
+          for p in &mut prices {
+              *p = *p * 9 / 10;
+          }
+          println!("{:?}", prices);
+
+          for p in prices {
+              println!("{p}");
+          }
+      }
+      ```
+
+      ```output
+      total 2649
+      [1080, 405, 899]
+      1080
+      405
+      899
+      ```
+
+      | Loop | Each `p` is | The vector afterwards |
+      |---|---|---|
+      | `for p in &prices` | `&u32`, a shared reference | unchanged, still usable |
+      | `for p in &mut prices` | `&mut u32`, a mutable reference | changed in place, still usable |
+      | `for p in prices` | `u32`, the value itself | **moved**: gone after the loop |
+
+      - In the first loop `p` is a reference, so `*p` reads the number it points to.
+      - In the second loop `*p = ...` writes through the mutable reference into the vector itself (the borrowing module's `*`).
+      - The third loop consumes the vector. Use it when you're done with the vector and want to move its elements somewhere else.
+
+      You'll also see the method forms `prices.iter()`, `prices.iter_mut()` and `prices.into_iter()`; they mean exactly the same three things.
+
+      ### When you need the position too
+
+      `.iter().enumerate()` gives you `(index, element)` pairs, which a `for` pattern takes apart:
+
+      ```rust run
+      fn main() {
+          let runners = vec!["Ana", "Bo", "Cy"];
+          for (i, name) in runners.iter().enumerate() {
+              println!("{}. {name}", i + 1);
+          }
+      }
+      ```
+
+      ```output
+      1. Ana
+      2. Bo
+      3. Cy
+      ```
+
+      That's tidier than `for i in 0..runners.len()` with `runners[i]`, and clippy suggests it (`needless_range_loop`). Module 27 covers `enumerate` and friends properly.
+
+      ### Common mistakes
+
+      - **Using the vector after a consuming loop:**
+
+        ```rust compile_fail
+        fn main() {
+            let v = vec![1, 2, 3];
+            for x in v {
+                println!("{x}");
+            }
+            println!("{}", v.len());
+        }
+        ```
+
+        ```error
+        error[E0382]: borrow of moved value: `v`
+        ```
+
+        Loop over `&v` if you still need `v` afterwards.
+      - **Changing the vector while looping over it.** The loop holds a borrow of `v`; `push` needs a mutable borrow at the same time:
+
+        ```rust compile_fail
+        fn main() {
+            let mut v = vec![1, 2, 3];
+            for x in &v {
+                if *x == 2 {
+                    v.push(20);
+                }
+            }
+        }
+        ```
+
+        ```error
+        error[E0502]: cannot borrow `v` as mutable because it is also borrowed as immutable
+        ```
+
+        This isn't fussiness: `push` might move the whole buffer to a bigger allocation, and the loop's reference would point at freed memory. In C++ this is a classic crash (iterator invalidation); in Rust it doesn't compile. Collect what you want to add in a second vector and add it after the loop.
+      - **Forgetting the `*`:** `x += 1` where `x: &mut i32` fails with ``binary assignment operation `+=` cannot be applied to type `&mut i32` ``. Write `*x += 1`.
+
+      **Your turn:** write `fn apply_raise(salaries: &mut [u32], percent: u32)` that raises every salary in place by `percent` percent (integer math: `s * (100 + percent) / 100`). Loop over the slice mutably; don't index.
+    seed: |
+      fn apply_raise(salaries: &mut [u32], percent: u32) {
+          todo!()
+      }
+    solution: |
+      fn apply_raise(salaries: &mut [u32], percent: u32) {
+          for s in salaries {
+              *s = *s * (100 + percent) / 100;
+          }
+      }
+    harness: |
+      #[test]
+      fn ten_percent_raise() {
+          let mut s = vec![1000, 2500];
+          apply_raise(&mut s, 10);
+          assert_eq!(s, vec![1100, 2750], "salaries [1000, 2500] after a 10% raise");
+      }
+
+      #[test]
+      fn zero_percent_changes_nothing() {
+          let mut s = vec![1234, 5];
+          apply_raise(&mut s, 0);
+          assert_eq!(s, vec![1234, 5], "salaries [1234, 5] after a 0% raise");
+      }
+
+      #[test]
+      fn rounds_down() {
+          let mut s = vec![999];
+          apply_raise(&mut s, 5);
+          assert_eq!(s, vec![1048], "salary [999] after a 5% raise");
+      }
+
+      #[test]
+      fn empty_list_is_fine() {
+          let mut s: Vec<u32> = Vec::new();
+          apply_raise(&mut s, 50);
+          assert_eq!(s, Vec::<u32>::new(), "an empty list after a raise");
+      }
+    forbid:
+      - pattern: 'salaries\s*\['
+        message: "Loop with `for s in salaries` (each `s` is a `&mut u32`) instead of indexing."
+    hints:
+      - "`salaries` is already a mutable slice, so `for s in salaries` gives you a `&mut u32` for each element."
+      - "Write through the reference: `*s = *s * (100 + percent) / 100;`"
+    more:
+      - task: |
+          Write `fn clamp_all(values: &mut [i32], low: i32, high: i32)` that changes every value below `low` to `low` and every value above `high` to `high`, in place. (Sensors sometimes report wild numbers; this keeps them in a sane range.)
+        seed: |
+          fn clamp_all(values: &mut [i32], low: i32, high: i32) {
+              todo!()
+          }
+        solution: |
+          fn clamp_all(values: &mut [i32], low: i32, high: i32) {
+              for v in values {
+                  if *v < low {
+                      *v = low;
+                  } else if *v > high {
+                      *v = high;
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn clamps_both_ends() {
+              let mut v = vec![-50, 3, 200, 7];
+              clamp_all(&mut v, 0, 100);
+              assert_eq!(v, vec![0, 3, 100, 7], "clamp_all([-50, 3, 200, 7], 0, 100)");
+          }
+
+          #[test]
+          fn values_in_range_are_unchanged() {
+              let mut v = vec![1, 2, 3];
+              clamp_all(&mut v, 1, 3);
+              assert_eq!(v, vec![1, 2, 3], "clamp_all([1, 2, 3], 1, 3)");
+          }
+
+          #[test]
+          fn negative_range() {
+              let mut v = vec![-100, -5, 0];
+              clamp_all(&mut v, -10, -1);
+              assert_eq!(v, vec![-10, -5, -1], "clamp_all([-100, -5, 0], -10, -1)");
+          }
+        forbid:
+          - pattern: 'values\s*\['
+            message: "Loop with `for v in values` and write through `*v`."
+        hints:
+          - "`for v in values { ... }` gives a `&mut i32` each time."
+          - "`if *v < low { *v = low; } else if *v > high { *v = high; }`"
+      - task: |
+          Write a program that reads one temperature per line (like `21.5`), stores them in a `Vec<f64>`, then prints the average with one decimal, followed by each reading (one decimal) and whether it's `above`, `below` or `equal` to the average. You need the average before you can label the readings, which is why they have to be stored first.
+
+          For the input `21.5`, `19.0`, `23.5` print:
+
+          ```
+          average: 21.3
+          21.5 above
+          19.0 below
+          23.5 above
+          ```
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut temps: Vec<f64> = Vec::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  temps.push(line.trim().parse().expect("not a number"));
+              }
+              let mut sum = 0.0;
+              for t in &temps {
+                  sum += *t;
+              }
+              let average = sum / temps.len() as f64;
+              println!("average: {average:.1}");
+              for t in &temps {
+                  let label = if *t > average {
+                      "above"
+                  } else if *t < average {
+                      "below"
+                  } else {
+                      "equal"
+                  };
+                  println!("{t:.1} {label}");
+              }
+          }
+        tests:
+          - stdin: "21.5\n19.0\n23.5\n"
+            expect: "average: 21.3\n21.5 above\n19.0 below\n23.5 above"
+          - stdin: "10\n20\n30\n"
+          - stdin: "-4.5\n0.25\n3\n7.75\n"
+            hidden: true
+        hints:
+          - "Read each line, `trim()` it, `parse()` it and `push` it into `temps`."
+          - "Sum with `for t in &temps { sum += *t; }` and divide by `temps.len() as f64`."
+          - "Format with one decimal: `println!(\"{t:.1} {label}\")`."
+
+  - title: Insert, remove, swap, truncate, clear
+    id: vectors-4
+    text: |
+      `push` and `pop` work at the end. These methods work anywhere in the vector:
+
+      ```rust run
+      fn main() {
+          let mut playlist = vec!["intro", "verse", "chorus", "outro"];
+
+          playlist.insert(1, "drums");
+          println!("{:?}", playlist);
+
+          let removed = playlist.remove(0);
+          println!("removed {removed}: {:?}", playlist);
+
+          playlist.swap(0, 2);
+          println!("{:?}", playlist);
+
+          playlist.truncate(2);
+          println!("{:?}", playlist);
+
+          playlist.extend(["bridge", "finale"]);
+          println!("{:?}", playlist);
+
+          playlist.clear();
+          println!("{:?} len {}", playlist, playlist.len());
+      }
+      ```
+
+      ```output
+      ["intro", "drums", "verse", "chorus", "outro"]
+      removed intro: ["drums", "verse", "chorus", "outro"]
+      ["chorus", "verse", "drums", "outro"]
+      ["chorus", "verse"]
+      ["chorus", "verse", "bridge", "finale"]
+      [] len 0
+      ```
+
+      | Method | What it does |
+      |---|---|
+      | `insert(i, x)` | puts `x` at index `i`, shifting everything after it one place right |
+      | `remove(i)` | takes out the element at `i` and returns it, shifting the rest left |
+      | `swap(i, j)` | exchanges two elements |
+      | `truncate(n)` | keeps the first `n` elements, drops the rest |
+      | `extend(other)` | appends every element of `other` |
+      | `clear()` | removes everything (the capacity is kept for reuse) |
+
+      ### What things cost
+
+      `insert` and `remove` near the **front** have to shift every later element, so on a vector with a million elements, `remove(0)` moves a million values. At the **end**, `push`/`pop` are cheap. If order doesn't matter, `swap_remove(i)` removes in constant time by moving the last element into the hole. If you need a queue (add at the back, take from the front), module 44's `VecDeque` does both ends cheaply.
+
+      ### Bad indexes panic
+
+      `remove` and `insert` check the index like `v[i]` does:
+
+      ```text
+      removal index (is 7) should be < len (is 4)
+      insertion index (is 9) should be <= len (is 4)
+      ```
+
+      Note the `<=` for insert: inserting at `len()` is allowed and means "at the end".
+
+      ### Common mistake: removing inside an index loop
+
+      ```rust
+      for i in 0..v.len() {
+          if v[i] < 0 {
+              v.remove(i); // shifts the rest left: the next element is skipped,
+          }                // and the last indexes are now out of bounds
+      }
+      ```
+
+      Removing changes the indexes of everything after it. To remove every element that matches a condition, use `retain`, which you'll meet in two steps.
+
+      **Your turn:** finish this playlist editor. Each input line is a command (songs are single words, indexes are always numbers):
+
+      - `add SONG`: push it (done for you)
+      - `insert I SONG`: insert at index `I`, or print `error: bad index` if `I` is greater than the length
+      - `remove I`: remove the song at `I` and print `removed SONG`, or print `error: bad index`
+      - `swap I J`: swap two songs, or print `error: bad index` if either index is too big
+
+      At the end the program prints the playlist (done for you).
+    seed: |
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let mut playlist: Vec<String> = Vec::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let words: Vec<&str> = line.split_whitespace().collect();
+              match words.as_slice() {
+                  ["add", song] => playlist.push(song.to_string()),
+                  // insert, remove and swap go here
+                  _ => println!("error: unknown command"),
+              }
+          }
+          println!("playlist: {:?}", playlist);
+      }
+    solution: |
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let mut playlist: Vec<String> = Vec::new();
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("could not read a line");
+              let words: Vec<&str> = line.split_whitespace().collect();
+              match words.as_slice() {
+                  ["add", song] => playlist.push(song.to_string()),
+                  // insert, remove and swap go here
+                  ["insert", i, song] => {
+                      let i: usize = i.parse().expect("index must be a number");
+                      if i <= playlist.len() {
+                          playlist.insert(i, song.to_string());
+                      } else {
+                          println!("error: bad index");
+                      }
+                  }
+                  ["remove", i] => {
+                      let i: usize = i.parse().expect("index must be a number");
+                      if i < playlist.len() {
+                          let song = playlist.remove(i);
+                          println!("removed {song}");
+                      } else {
+                          println!("error: bad index");
+                      }
+                  }
+                  ["swap", i, j] => {
+                      let i: usize = i.parse().expect("index must be a number");
+                      let j: usize = j.parse().expect("index must be a number");
+                      if i < playlist.len() && j < playlist.len() {
+                          playlist.swap(i, j);
+                      } else {
+                          println!("error: bad index");
+                      }
+                  }
+                  _ => println!("error: unknown command"),
+              }
+          }
+          println!("playlist: {:?}", playlist);
+      }
+    tests:
+      - stdin: "add intro\nadd chorus\ninsert 1 verse\nswap 0 2\nremove 1\nremove 5\n"
+        expect: "removed verse\nerror: bad index\nplaylist: [\"chorus\", \"intro\"]"
+      - stdin: "insert 0 first\ninsert 1 last\ninsert 5 nowhere\nswap 0 3\nadd extra\n"
+      - stdin: "add a\nadd b\nadd c\nremove 0\nremove 0\nswap 0 0\ninsert 1 z\nremove 2\n"
+        hidden: true
+    hints:
+      - "Add arms like `[\"remove\", i] => { ... }`. Inside, turn the word into a number: `let i: usize = i.parse().expect(\"index must be a number\");`"
+      - "Check before you call: `remove` and `swap` need `i < playlist.len()`, but `insert` allows `i <= playlist.len()`."
+      - "`let song = playlist.remove(i); println!(\"removed {song}\");`"
+    more:
+      - task: |
+          An editor keeps a "recent files" list, most recent first. Write `fn move_to_front(list: &mut Vec<String>, index: usize)` that moves the file at `index` to the front (index 0), keeping the others in order. If `index` is out of range, leave the list unchanged.
+        seed: |
+          fn move_to_front(list: &mut Vec<String>, index: usize) {
+              todo!()
+          }
+        solution: |
+          fn move_to_front(list: &mut Vec<String>, index: usize) {
+              if index < list.len() {
+                  let item = list.remove(index);
+                  list.insert(0, item);
+              }
+          }
+        harness: |
+          fn files(names: &[&str]) -> Vec<String> {
+              let mut v = Vec::new();
+              for n in names {
+                  v.push(n.to_string());
+              }
+              v
+          }
+
+          #[test]
+          fn moves_a_middle_file_to_the_front() {
+              let mut list = files(&["a.rs", "b.rs", "c.rs", "d.rs"]);
+              move_to_front(&mut list, 2);
+              assert_eq!(list, files(&["c.rs", "a.rs", "b.rs", "d.rs"]), "move_to_front(index 2)");
+          }
+
+          #[test]
+          fn moving_the_last_file() {
+              let mut list = files(&["a.rs", "b.rs", "c.rs"]);
+              move_to_front(&mut list, 2);
+              assert_eq!(list, files(&["c.rs", "a.rs", "b.rs"]), "move_to_front(index 2 of 3)");
+          }
+
+          #[test]
+          fn index_zero_changes_nothing() {
+              let mut list = files(&["a.rs", "b.rs"]);
+              move_to_front(&mut list, 0);
+              assert_eq!(list, files(&["a.rs", "b.rs"]), "move_to_front(index 0)");
+          }
+
+          #[test]
+          fn out_of_range_changes_nothing() {
+              let mut list = files(&["a.rs", "b.rs"]);
+              move_to_front(&mut list, 2);
+              assert_eq!(list, files(&["a.rs", "b.rs"]), "move_to_front(index 2 of 2)");
+          }
+        hints:
+          - "Guard against bad indexes first: `if index < list.len() { ... }`"
+          - "`let item = list.remove(index);` then `list.insert(0, item);`"
+      - task: |
+          Write `fn insert_sorted(list: &mut Vec<i32>, value: i32)`. The list is already sorted from smallest to largest; insert `value` at the right place so it stays sorted (after any equal values). Find the position with a loop, then call `insert`.
+        seed: |
+          fn insert_sorted(list: &mut Vec<i32>, value: i32) {
+              todo!()
+          }
+        solution: |
+          fn insert_sorted(list: &mut Vec<i32>, value: i32) {
+              let mut i = 0;
+              while i < list.len() && list[i] <= value {
+                  i += 1;
+              }
+              list.insert(i, value);
+          }
+        harness: |
+          #[test]
+          fn into_an_empty_list() {
+              let mut v = Vec::new();
+              insert_sorted(&mut v, 5);
+              assert_eq!(v, vec![5], "insert_sorted([], 5)");
+          }
+
+          #[test]
+          fn at_the_start() {
+              let mut v = vec![3, 8];
+              insert_sorted(&mut v, -1);
+              assert_eq!(v, vec![-1, 3, 8], "insert_sorted([3, 8], -1)");
+          }
+
+          #[test]
+          fn in_the_middle() {
+              let mut v = vec![1, 4, 9];
+              insert_sorted(&mut v, 5);
+              assert_eq!(v, vec![1, 4, 5, 9], "insert_sorted([1, 4, 9], 5)");
+          }
+
+          #[test]
+          fn at_the_end() {
+              let mut v = vec![1, 4, 9];
+              insert_sorted(&mut v, 20);
+              assert_eq!(v, vec![1, 4, 9, 20], "insert_sorted([1, 4, 9], 20)");
+          }
+
+          #[test]
+          fn with_duplicates() {
+              let mut v = vec![2, 2, 7];
+              insert_sorted(&mut v, 2);
+              assert_eq!(v, vec![2, 2, 2, 7], "insert_sorted([2, 2, 7], 2)");
+          }
+        forbid:
+          - pattern: '\.sort'
+            message: "Find the position yourself and use `insert` (no sorting the whole list)."
+        hints:
+          - "Walk an index `i` forward while `list[i] <= value`."
+          - "`while i < list.len() && list[i] <= value { i += 1; }` (check the length first so `list[i]` never goes out of bounds)."
+          - "Then `list.insert(i, value);`. Inserting at `list.len()` is allowed and appends."
+
+  - title: Sorting
+    id: vectors-5
+    text: |
+      `sort()` puts a vector in ascending order, in place. `reverse()` flips the order.
+
+      ```rust run
+      fn main() {
+          let mut scores = vec![88, 42, 97, 61, 42];
+          scores.sort();
+          println!("{:?}", scores);
+          scores.reverse();
+          println!("{:?}", scores);
+
+          let mut names = vec!["mika", "Ana", "bo", "Zed"];
+          names.sort();
+          println!("{:?}", names);
+          names.sort_by_key(|name| name.to_lowercase());
+          println!("{:?}", names);
+      }
+      ```
+
+      ```output
+      [42, 42, 61, 88, 97]
+      [97, 88, 61, 42, 42]
+      ["Ana", "Zed", "bo", "mika"]
+      ["Ana", "bo", "mika", "Zed"]
+      ```
+
+      Strings sort by their character codes, and every uppercase letter comes before every lowercase one, so `"Zed"` lands before `"bo"`. To sort ignoring case, `sort_by_key` sorts by a **key** computed from each element.
+
+      `|name| name.to_lowercase()` is a **closure**: a small function without a name, written right where it's used. Between the bars are its parameters; after them comes the value it returns. Here: "given a name, the key is its lowercase version". Module 26 covers closures in depth; for sorting, this shape is all you need.
+
+      ### Custom orders with sort_by
+
+      `sort_by` takes a closure that compares two elements and returns an `Ordering` (`Less`, `Equal` or `Greater`). `a.cmp(&b)` produces one:
+
+      ```rust run
+      fn main() {
+          let mut results = vec![("bo", 72), ("ana", 91), ("dee", 72), ("cy", 85)];
+
+          results.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+          for (name, score) in &results {
+              println!("{name}: {score}");
+          }
+
+          let mut lap_times: Vec<f64> = vec![61.2, 59.8, 60.5];
+          lap_times.sort_by(|a, b| a.total_cmp(b));
+          println!("{:?}", lap_times);
+      }
+      ```
+
+      ```output
+      ana: 91
+      cy: 85
+      bo: 72
+      dee: 72
+      [59.8, 60.5, 61.2]
+      ```
+
+      - `b.1.cmp(&a.1)` compares the scores **backwards** (b before a), which sorts from highest to lowest.
+      - `.then(...)` breaks ties: if the scores are equal, compare the names normally. That's how leaderboards, reports and tests get a fully predictable order.
+      - `total_cmp` is how you sort floats (see the next section).
+
+      ### Stable and unstable
+
+      `sort`, `sort_by` and `sort_by_key` are **stable**: elements that compare equal keep their original order. `sort_unstable` (and `sort_unstable_by`, `sort_unstable_by_key`) may reorder equal elements but is a little faster and needs no extra memory. For plain numbers you can't tell equal values apart, so `sort_unstable` is a good default there.
+
+      ### Common mistakes
+
+      - **Sorting floats with `sort()`:**
+
+        ```rust compile_fail
+        fn main() {
+            let mut temps: Vec<f64> = vec![21.5, 19.0, 23.25];
+            temps.sort();
+            println!("{:?}", temps);
+        }
+        ```
+
+        ```error
+        error[E0277]: the trait bound `f64: Ord` is not satisfied
+        ```
+
+        `sort` needs a **total order** (`Ord`): every pair of values must compare as less, equal or greater. Floats have `NaN` ("not a number"), which isn't even equal to itself, so `f64` isn't `Ord`. Use `temps.sort_by(|a, b| a.total_cmp(b))`, which defines an order for every float, NaN included.
+      - **Expecting a sorted copy.** `sort` sorts in place and returns nothing: `let sorted = v.sort();` gives you `()`. To keep the original, copy it first (`let mut sorted = v.clone();` or, from a slice, `v.to_vec()`) and sort the copy.
+
+      **Your turn:** write `fn top_three(scores: &[u32]) -> Vec<u32>` that returns the three highest scores, highest first (fewer if there are fewer than three). You can't sort a borrowed slice, so start with `let mut sorted = scores.to_vec();`, which copies it into a new vector you own.
+    seed: |
+      fn top_three(scores: &[u32]) -> Vec<u32> {
+          todo!()
+      }
+    solution: |
+      fn top_three(scores: &[u32]) -> Vec<u32> {
+          let mut sorted = scores.to_vec();
+          sorted.sort();
+          sorted.reverse();
+          sorted.truncate(3);
+          sorted
+      }
+    harness: |
+      #[test]
+      fn picks_the_three_highest() {
+          assert_eq!(top_three(&[40, 95, 12, 88, 70]), vec![95, 88, 70], "top_three(&[40, 95, 12, 88, 70])");
+      }
+
+      #[test]
+      fn keeps_duplicates() {
+          assert_eq!(top_three(&[5, 9, 9, 1]), vec![9, 9, 5], "top_three(&[5, 9, 9, 1])");
+      }
+
+      #[test]
+      fn fewer_than_three_scores() {
+          assert_eq!(top_three(&[7, 30]), vec![30, 7], "top_three(&[7, 30])");
+          assert_eq!(top_three(&[]), Vec::<u32>::new(), "top_three(&[])");
+      }
+
+      #[test]
+      fn does_not_change_the_input() {
+          let scores = vec![3, 1, 2];
+          let _ = top_three(&scores);
+          assert_eq!(scores, vec![3, 1, 2], "the scores after top_three");
+      }
+    hints:
+      - "`let mut sorted = scores.to_vec();` gives you a vector you can sort."
+      - "Sort descending with `sorted.sort();` then `sorted.reverse();` (or `sorted.sort_by(|a, b| b.cmp(a));`)."
+      - "`sorted.truncate(3);` keeps at most three, then return `sorted`."
+    more:
+      - task: |
+          Write `fn sort_by_length(words: &mut [String])` that sorts words from shortest to longest, with words of the same length in alphabetical order. Use `sort_by` with `.then(...)`, or use the fact that sorting is stable: sort alphabetically first, then `sort_by_key(|w| w.len())`.
+        seed: |
+          fn sort_by_length(words: &mut [String]) {
+              todo!()
+          }
+        solution: |
+          fn sort_by_length(words: &mut [String]) {
+              words.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
+          }
+        harness: |
+          fn strings(list: &[&str]) -> Vec<String> {
+              let mut v = Vec::new();
+              for s in list {
+                  v.push(s.to_string());
+              }
+              v
+          }
+
+          #[test]
+          fn shortest_first() {
+              let mut w = strings(&["banana", "fig", "apple"]);
+              sort_by_length(&mut w);
+              assert_eq!(w, strings(&["fig", "apple", "banana"]), "sort_by_length([banana, fig, apple])");
+          }
+
+          #[test]
+          fn ties_are_alphabetical() {
+              let mut w = strings(&["pear", "fig", "kiwi", "date", "apple"]);
+              sort_by_length(&mut w);
+              assert_eq!(w, strings(&["fig", "date", "kiwi", "pear", "apple"]), "sort_by_length([pear, fig, kiwi, date, apple])");
+          }
+
+          #[test]
+          fn empty_list() {
+              let mut w: Vec<String> = Vec::new();
+              sort_by_length(&mut w);
+              assert_eq!(w, Vec::<String>::new(), "sort_by_length([])");
+          }
+        hints:
+          - "Compare lengths with `a.len().cmp(&b.len())`."
+          - "Break ties with `.then(a.cmp(b))`: `words.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));`"
+      - task: |
+          Write a program that reads race times in seconds (one per line, like `9.58`) and prints them fastest first, numbered, with two decimals:
+
+          ```
+          1. 9.58
+          2. 9.69
+          3. 9.72
+          ```
+
+          Remember that `f64` can't use `sort()`.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut times: Vec<f64> = Vec::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  times.push(line.trim().parse().expect("not a number"));
+              }
+              times.sort_by(|a, b| a.total_cmp(b));
+              for (i, t) in times.iter().enumerate() {
+                  println!("{}. {:.2}", i + 1, t);
+              }
+          }
+        tests:
+          - stdin: "9.72\n9.58\n9.69\n"
+            expect: "1. 9.58\n2. 9.69\n3. 9.72"
+          - stdin: "12.5\n"
+          - stdin: "10.01\n9.9\n10\n9.95\n"
+            hidden: true
+        require:
+          - pattern: 'total_cmp|partial_cmp'
+            message: "Sort the floats with `sort_by(|a, b| a.total_cmp(b))`."
+        hints:
+          - "Read and parse each line into a `Vec<f64>`."
+          - "`times.sort_by(|a, b| a.total_cmp(b));`"
+          - "Number them with `for (i, t) in times.iter().enumerate()` and print `i + 1` with `{:.2}` for the time."
+
+  - title: dedup, retain, contains and binary_search
+    id: vectors-6
+    text: |
+      Real data is messy: duplicate entries, invalid readings, things you need to look up. Vectors have tools for each.
+
+      ```rust run
+      fn main() {
+          let mut visitors = vec![42, 7, 42, 42, 13, 7];
+          visitors.dedup();
+          println!("{:?}", visitors);
+          visitors.sort();
+          visitors.dedup();
+          println!("{:?}", visitors);
+
+          let mut readings = vec![12, -1, 15, -1, 9];
+          readings.retain(|&r| r >= 0);
+          println!("{:?}", readings);
+
+          println!("{}", visitors.contains(&13));
+          println!("{:?} {:?}", visitors.binary_search(&13), visitors.binary_search(&10));
+      }
+      ```
+
+      ```output
+      [42, 7, 42, 13, 7]
+      [7, 13, 42]
+      [12, 15, 9]
+      true
+      Ok(1) Err(1)
+      ```
+
+      Piece by piece:
+
+      - `dedup()` removes **consecutive** repeats only: the two 42s next to each other became one, but the other repeats stayed. Sort first, so equal values sit next to each other, and then `dedup` removes every duplicate.
+      - `retain(|&r| r >= 0)` keeps only the elements for which the closure returns `true`, and removes the rest in one pass (correctly, unlike removing inside an index loop). `retain` hands the closure a reference to each element; the parameter pattern `&r` copies the number out, so the condition can say `r >= 0`.
+      - `contains(&13)` checks every element until it finds a match. It takes a reference, like most lookups.
+      - `binary_search(&13)` works only on a **sorted** vector. It halves the search range at each step, so it needs about 20 comparisons for a million elements, where `contains` might need a million. It returns `Ok(index)` if found, or `Err(index)` with the position where the value *would* go to keep the vector sorted, which is exactly what you need to insert it there.
+
+      ### Common mistakes
+
+      - **`dedup` on unsorted data** removes only adjacent repeats. If you need unique values in their original order, the next module's `HashSet` does that.
+      - **`binary_search` on unsorted data** doesn't fail, it just gives meaningless answers. Only use it on data you know is sorted.
+      - **Forgetting the `&`.** `visitors.contains(13)` is a `mismatched types` error: write `contains(&13)`.
+
+      **Your turn:** write `fn clean_log(lines: &mut Vec<String>)` that removes every line containing `"DEBUG"` and then collapses consecutive identical lines into one (a service that retries prints the same line many times in a row).
+    seed: |
+      fn clean_log(lines: &mut Vec<String>) {
+          todo!()
+      }
+    solution: |
+      fn clean_log(lines: &mut Vec<String>) {
+          lines.retain(|line| !line.contains("DEBUG"));
+          lines.dedup();
+      }
+    harness: |
+      fn log(list: &[&str]) -> Vec<String> {
+          let mut v = Vec::new();
+          for s in list {
+              v.push(s.to_string());
+          }
+          v
+      }
+
+      #[test]
+      fn removes_debug_lines() {
+          let mut l = log(&["start", "DEBUG x=1", "ready", "DEBUG y=2"]);
+          clean_log(&mut l);
+          assert_eq!(l, log(&["start", "ready"]), "clean_log on a log with DEBUG lines");
+      }
+
+      #[test]
+      fn collapses_repeated_lines() {
+          let mut l = log(&["retry", "retry", "retry", "ok", "retry"]);
+          clean_log(&mut l);
+          assert_eq!(l, log(&["retry", "ok", "retry"]), "clean_log on repeated lines");
+      }
+
+      #[test]
+      fn repeats_separated_only_by_debug_lines_collapse_too() {
+          let mut l = log(&["timeout", "DEBUG waiting", "timeout", "done"]);
+          clean_log(&mut l);
+          assert_eq!(l, log(&["timeout", "done"]), "clean_log removes DEBUG first, then dedups");
+      }
+
+      #[test]
+      fn empty_log() {
+          let mut l: Vec<String> = Vec::new();
+          clean_log(&mut l);
+          assert_eq!(l, Vec::<String>::new(), "clean_log on an empty log");
+      }
+    hints:
+      - "`retain` keeps the elements whose closure returns true: `lines.retain(|line| !line.contains(\"DEBUG\"));`"
+      - "Then `lines.dedup();` removes consecutive duplicates. The order matters: remove DEBUG lines first."
+    more:
+      - task: |
+          A sorted list of user ids must stay sorted and unique. Write `fn insert_unique(sorted: &mut Vec<u32>, id: u32) -> bool` with `binary_search`: if the id is already there return `false` and change nothing; otherwise insert it at the position `binary_search` reports and return `true`.
+        seed: |
+          fn insert_unique(sorted: &mut Vec<u32>, id: u32) -> bool {
+              todo!()
+          }
+        solution: |
+          fn insert_unique(sorted: &mut Vec<u32>, id: u32) -> bool {
+              match sorted.binary_search(&id) {
+                  Ok(_) => false,
+                  Err(pos) => {
+                      sorted.insert(pos, id);
+                      true
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn inserts_a_new_id_in_order() {
+              let mut ids = vec![3, 8, 20];
+              assert_eq!(insert_unique(&mut ids, 10), true, "insert_unique([3, 8, 20], 10)");
+              assert_eq!(ids, vec![3, 8, 10, 20], "ids after inserting 10");
+          }
+
+          #[test]
+          fn refuses_a_duplicate() {
+              let mut ids = vec![3, 8, 20];
+              assert_eq!(insert_unique(&mut ids, 8), false, "insert_unique([3, 8, 20], 8)");
+              assert_eq!(ids, vec![3, 8, 20], "ids after trying to insert 8 again");
+          }
+
+          #[test]
+          fn works_at_both_ends_and_when_empty() {
+              let mut ids = Vec::new();
+              assert_eq!(insert_unique(&mut ids, 5), true, "insert_unique([], 5)");
+              assert_eq!(insert_unique(&mut ids, 1), true, "insert_unique([5], 1)");
+              assert_eq!(insert_unique(&mut ids, 9), true, "insert_unique([1, 5], 9)");
+              assert_eq!(ids, vec![1, 5, 9], "ids after three inserts");
+          }
+        require:
+          - pattern: 'binary_search'
+            message: "Use `binary_search` to find the id or its insertion point."
+        hints:
+          - "`match sorted.binary_search(&id) { Ok(_) => ..., Err(pos) => ... }`"
+          - "In the `Err(pos)` arm: `sorted.insert(pos, id); true`"
+      - task: |
+          Build a guest list. Read names, one per line. Ignore blank lines, treat names case-insensitively (store them in lowercase), and print the unique names in alphabetical order, one per line, followed by `N unique guests`.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let mut guests: Vec<String> = Vec::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let name = line.trim();
+                  if !name.is_empty() {
+                      guests.push(name.to_lowercase());
+                  }
+              }
+              guests.sort();
+              guests.dedup();
+              for g in &guests {
+                  println!("{g}");
+              }
+              println!("{} unique guests", guests.len());
+          }
+        tests:
+          - stdin: "Ana\nbo\n\nana\nCy\nBO\n"
+            expect: "ana\nbo\ncy\n3 unique guests"
+          - stdin: "ferris\n"
+          - stdin: "zed\n  Amy  \namy\n\n\nZED\nkim\n"
+            hidden: true
+        hints:
+          - "Push `line.trim().to_lowercase()` for every non-empty line."
+          - "`guests.sort();` then `guests.dedup();` leaves each name once, in order."
+          - "Finish with `println!(\"{} unique guests\", guests.len());`"
+
+  - title: A Vec of structs
+    id: vectors-7
+    text: |
+      Most real vectors hold structs: students in a grade book, items in an inventory, orders in a queue. Everything from this module works the same way.
+
+      ```rust run
+      struct Student {
+          name: String,
+          score: u32,
+      }
+
+      fn main() {
+          let mut class = Vec::with_capacity(3);
+          class.push(Student { name: String::from("Ana"), score: 91 });
+          class.push(Student { name: String::from("Bo"), score: 78 });
+          class.push(Student { name: String::from("Cy"), score: 85 });
+
+          for s in &mut class {
+              s.score = (s.score + 5).min(100);
+          }
+
+          class.sort_by(|a, b| b.score.cmp(&a.score));
+          for (i, s) in class.iter().enumerate() {
+              println!("{}. {} {}", i + 1, s.name, s.score);
+          }
+
+          let best = &class[0];
+          println!("best: {}", best.name);
+      }
+      ```
+
+      ```output
+      1. Ana 96
+      2. Cy 90
+      3. Bo 83
+      best: Ana
+      ```
+
+      - `for s in &mut class` gives a `&mut Student` each time, and `s.score = ...` changes the student inside the vector. (Field access through a reference doesn't need `*`: Rust follows the reference for you.) `.min(100)` caps the curved score at 100.
+      - `sort_by` compares the `score` fields. Structs have no built-in order, so you say which field to sort by.
+      - `&class[0]` borrows the best student instead of moving it out.
+
+      ### with_capacity
+
+      `Vec::with_capacity(n)` allocates room for `n` elements up front. The vector is still empty (`len() == 0`), but the first `n` pushes won't need to grow it. When you know roughly how many elements are coming (the number of lines in a file, the size of another collection), it saves allocations. It's a performance hint, never required for correctness.
+
+      ### Common mistakes
+
+      - **Moving a struct out by index:** `let top = class[0];` is `cannot move out of index of Vec<Student>`. Use `&class[0]`.
+      - **`sort()` on structs:**
+
+        ```rust compile_fail
+        struct Student {
+            name: String,
+            score: u32,
+        }
+
+        fn main() {
+            let mut class = vec![Student { name: String::from("Ana"), score: 91 }];
+            class.sort();
+            println!("{} {}", class[0].name, class[0].score);
+        }
+        ```
+
+        ```error
+        error[E0277]: the trait bound `Student: Ord` is not satisfied
+        ```
+
+        Rust doesn't guess whether to sort students by name or by score. Say it: `class.sort_by_key(|s| s.score)` or `sort_by` with a comparison.
+      - **Holding a reference while pushing.** `let best = &class[0]; class.push(...);` and then using `best` fails with E0502, for the same reason as pushing inside a loop.
+
+      **Your turn:** write `fn restock_list(items: &[Item], min_qty: u32) -> Vec<String>` that returns the names of the items whose quantity is below `min_qty`, in alphabetical order. You'll need owned `String`s for the result, so push `item.name.clone()`.
+    seed: |
+      struct Item {
+          name: String,
+          qty: u32,
+      }
+
+      fn restock_list(items: &[Item], min_qty: u32) -> Vec<String> {
+          todo!()
+      }
+    solution: |
+      struct Item {
+          name: String,
+          qty: u32,
+      }
+
+      fn restock_list(items: &[Item], min_qty: u32) -> Vec<String> {
+          let mut names = Vec::new();
+          for item in items {
+              if item.qty < min_qty {
+                  names.push(item.name.clone());
+              }
+          }
+          names.sort();
+          names
+      }
+    harness: |
+      fn item(name: &str, qty: u32) -> Item {
+          Item { name: name.to_string(), qty }
+      }
+
+      #[test]
+      fn lists_low_items_alphabetically() {
+          let stock = [item("tape", 2), item("glue", 40), item("bolts", 0), item("nails", 9)];
+          assert_eq!(restock_list(&stock, 10), vec!["bolts", "nails", "tape"], "restock_list(stock, 10)");
+      }
+
+      #[test]
+      fn exactly_the_minimum_is_enough() {
+          let stock = [item("tape", 10)];
+          assert_eq!(restock_list(&stock, 10), Vec::<String>::new(), "restock_list([tape 10], 10)");
+      }
+
+      #[test]
+      fn empty_inventory() {
+          assert_eq!(restock_list(&[], 5), Vec::<String>::new(), "restock_list([], 5)");
+      }
+    hints:
+      - "Loop with `for item in items`; each `item` is a `&Item`."
+      - "`if item.qty < min_qty { names.push(item.name.clone()); }`"
+      - "Sort the names before returning them: `names.sort(); names`"
+    more:
+      - task: |
+          Write `fn most_valuable(items: &[Product]) -> Option<String>` that returns the name of the product with the largest stock value (`qty * price_cents`), or `None` for an empty slice. On a tie, keep the first one.
+
+          Tip: `let [first, rest @ ..] = items else { return None; };` handles the empty case and gives you a starting "best" in one line.
+        seed: |
+          struct Product {
+              name: String,
+              qty: u32,
+              price_cents: u32,
+          }
+
+          fn most_valuable(items: &[Product]) -> Option<String> {
+              todo!()
+          }
+        solution: |
+          struct Product {
+              name: String,
+              qty: u32,
+              price_cents: u32,
+          }
+
+          fn most_valuable(items: &[Product]) -> Option<String> {
+              let [first, rest @ ..] = items else {
+                  return None;
+              };
+              let mut best = first;
+              for p in rest {
+                  if p.qty * p.price_cents > best.qty * best.price_cents {
+                      best = p;
+                  }
+              }
+              Some(best.name.clone())
+          }
+        harness: |
+          fn product(name: &str, qty: u32, price_cents: u32) -> Product {
+              Product { name: name.to_string(), qty, price_cents }
+          }
+
+          #[test]
+          fn finds_the_largest_stock_value() {
+              let items = [product("mug", 10, 900), product("plush", 3, 2500), product("sticker", 400, 50)];
+              assert_eq!(most_valuable(&items), Some(String::from("sticker")), "most_valuable(mug 9000, plush 7500, sticker 20000)");
+          }
+
+          #[test]
+          fn first_one_wins_a_tie() {
+              let items = [product("a", 2, 50), product("b", 1, 100)];
+              assert_eq!(most_valuable(&items), Some(String::from("a")), "most_valuable(a 100, b 100)");
+          }
+
+          #[test]
+          fn empty_gives_none() {
+              assert_eq!(most_valuable(&[]), None, "most_valuable(&[])");
+          }
+        hints:
+          - "Start from the first product: `let [first, rest @ ..] = items else { return None; }; let mut best = first;`"
+          - "Loop over `rest` and replace `best` when `p.qty * p.price_cents > best.qty * best.price_cents` (strictly greater keeps the first on ties)."
+          - "Return `Some(best.name.clone())`."
+      - task: |
+          Write a grade book program. Each input line is `name score`. Store the students in a `Vec` of a `Student` struct you define, sort them by score (highest first, equal scores in name order), print them numbered, then print the class average with one decimal:
+
+          ```
+          1. ana 91
+          2. cy 85
+          3. bo 78
+          average: 84.7
+          ```
+        seed: |
+          use std::io::{self, BufRead};
+
+          // define struct Student here
+
+          fn main() {
+          }
+        solution: |
+          use std::io::{self, BufRead};
+
+          // define struct Student here
+          struct Student {
+              name: String,
+              score: u32,
+          }
+
+          fn main() {
+              let mut class: Vec<Student> = Vec::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("could not read a line");
+                  let words: Vec<&str> = line.split_whitespace().collect();
+                  if let [name, score] = words.as_slice() {
+                      class.push(Student {
+                          name: name.to_string(),
+                          score: score.parse().expect("score must be a number"),
+                      });
+                  }
+              }
+              class.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
+              let mut total = 0;
+              for (i, s) in class.iter().enumerate() {
+                  println!("{}. {} {}", i + 1, s.name, s.score);
+                  total += s.score;
+              }
+              println!("average: {:.1}", total as f64 / class.len() as f64);
+          }
+        tests:
+          - stdin: "bo 78\nana 91\ncy 85\n"
+            expect: "1. ana 91\n2. cy 85\n3. bo 78\naverage: 84.7"
+          - stdin: "zed 70\namy 70\nkim 100\n"
+          - stdin: "solo 64\n"
+            hidden: true
+          - stdin: "d 50\nc 50\nb 99\na 1\n"
+            hidden: true
+        require:
+          - pattern: 'struct\s+Student'
+            message: "Define a `struct Student` with a name and a score."
+        hints:
+          - "`struct Student { name: String, score: u32 }`, then push one per line."
+          - "Sort with `class.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));`"
+          - "Add up the scores while printing and divide by `class.len() as f64` for the average."

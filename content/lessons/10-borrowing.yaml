@@ -1,0 +1,1644 @@
+id: borrowing
+title: Borrowing
+phase: "Ownership"
+summary: Use a value without taking ownership of it. References (&T and &mut T), the "many readers or one writer" rule, and how the borrow checker makes dangling pointers and data races impossible.
+roadmap: [Borrowing, References and Slices, Ownership Rules & Memory Safety]
+steps:
+  - title: "References: borrowing a value"
+    id: borrowing-1
+    text: |
+      The ownership module ended with an awkward pattern: to let a function look at a `String`, you had to move it in and get it back in a tuple. Real Rust code almost never does that. Instead, it lends the function a **reference**.
+
+      A **reference** is a pointer to a value that someone else owns. You make one with `&`: `&msg` means "a reference to `msg`". The type of a reference to a `String` is `&String`. Making a reference is called **borrowing**: you get to use the value, but you don't own it, so you never drop it, and the owner still has it afterwards.
+
+      ```rust run
+      fn char_count(text: &String) -> usize {   // borrows a String
+          text.chars().count()
+      }                                          // text goes away, but it owned nothing: nothing is dropped
+
+      fn main() {
+          let msg = String::from("good game");
+          let n = char_count(&msg);              // lend msg to the function
+          println!("'{}' has {} characters", msg, n);   // msg is still ours
+      }
+      ```
+
+      ```output
+      'good game' has 9 characters
+      ```
+
+      Compare it with the tuple version from the ownership module: no giving back, no shadowing. In memory, the reference is just one more pointer, pointing at the owner:
+
+      ```text
+         char_count's frame          main's frame
+         text                        msg
+        ┌────────────┐              ┌────────────┐          HEAP
+        │ ptr ───────┼────────────► │ ptr ───────┼─────► ┌───┬───┬───┬─ ─ ─┬───┐
+        └────────────┘              │ len 9      │       │ g │ o │ o │ ... │ e │
+                                    │ cap 9      │       └───┴───┴───┴─ ─ ─┴───┘
+                                    └────────────┘
+      ```
+
+      When `char_count` returns, `text` disappears. It was only a borrow, so the `String` isn't dropped: `msg` is still its owner.
+
+      ### Reading through a reference
+
+      Method calls and `println!` work through references automatically: `text.chars()`, `text.len()` and `println!("{}", text)` all reach the `String` behind the reference. You don't need any extra syntax to *read* through a `&`.
+
+      You can borrow in a `let` and in a `for` loop too. `for x in &v` loops over a vector **without moving it**: each `x` is a reference to one element.
+
+      ```rust run
+      fn main() {
+          let names = vec![String::from("Ana"), String::from("Ben")];
+          for name in &names {              // borrow the vector: name is a &String
+              println!("hello, {}", name);
+          }
+          println!("{} names, still ours", names.len());
+          let first = &names[0];            // borrow one element: no clone needed
+          println!("first: {}", first);
+      }
+      ```
+
+      ```output
+      hello, Ana
+      hello, Ben
+      2 names, still ours
+      first: Ana
+      ```
+
+      Those are exactly the fixes the compiler suggested for the loop and index errors in the ownership module. With a `Vec<i32>` or `Vec<f64>`, each `x` in `for x in &v` is a `&i32` or `&f64`, and arithmetic accepts those directly: `sum += x` works.
+
+      You've been using one kind of reference since your first program: string literals. Their type, `&str`, is a reference to text stored in the program itself. The slices module covers `&str` properly; for now, it's the type to write for a parameter that receives a string literal.
+
+      ### Common mistakes
+
+      - **Passing the value instead of a reference.** If the function takes `&String` and you pass `msg`, the types don't match:
+
+      ```rust compile_fail
+      fn char_count(text: &String) -> usize {
+          text.chars().count()
+      }
+
+      fn main() {
+          let msg = String::from("gg");
+          println!("{}", char_count(msg));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:7:31
+        |
+      7 |     println!("{}", char_count(msg));
+        |                    ---------- ^^^ expected `&String`, found `String`
+        |
+      help: consider borrowing here
+        |
+      7 |     println!("{}", char_count(&msg));
+        |                               +
+      ```
+
+      - **Trying to change a value through a `&` reference.** Plain references are read-only. The next step shows how to lend something for changing.
+      - **Taking ownership when you only need to read.** If a function only looks at a value, its parameter should be a reference.
+
+      **Your turn:** fill in the blanks so `average` **borrows** the vector of temperatures instead of taking ownership of it (the parameter type, then the argument), so `main` can still print the readings afterwards. The program should print:
+
+      ```
+      average of [18.5, 21.0, 19.5, 22.0]: 20.25
+      ```
+    fill: |
+      fn average(temps: [[&Vec<f64>‖&[f64]]]) -> f64 {
+          let mut sum = 0.0;
+          for t in temps {
+              sum += t; // t is a &f64: arithmetic works through the reference
+          }
+          sum / temps.len() as f64
+      }
+
+      fn main() {
+          let readings = vec![18.5, 21.0, 19.5, 22.0];
+          let avg = average([[&readings]]);
+          println!("average of {:?}: {:.2}", readings, avg);
+      }
+    hints:
+      - The parameter type is a reference to a vector of f64, and the argument is a reference to `readings`.
+      - "`&Vec<f64>` for the type, `&readings` for the argument."
+    tests:
+      - expect: "average of [18.5, 21.0, 19.5, 22.0]: 20.25"
+    more:
+      - task: |
+          `print_receipt` takes ownership of the order, so the second call and the last line don't compile. Change the function to **borrow** the order instead, and update the calls. Don't use `.clone()`. The program should print:
+
+          ```
+          Receipt for #204 noodles
+          Receipt for #204 noodles
+          Archived #204 noodles
+          ```
+        seed: |
+          fn print_receipt(order: String) {
+              println!("Receipt for {}", order);
+          }
+
+          fn main() {
+              let order = String::from("#204 noodles");
+              print_receipt(order);
+              print_receipt(order);
+              println!("Archived {}", order);
+          }
+        solution: |
+          fn print_receipt(order: &String) {
+              println!("Receipt for {}", order);
+          }
+
+          fn main() {
+              let order = String::from("#204 noodles");
+              print_receipt(&order);
+              print_receipt(&order);
+              println!("Archived {}", order);
+          }
+        require:
+          - pattern: 'order:\s*&'
+            message: "Make the parameter a reference: `order: &String`."
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "Borrow the order instead of cloning it."
+        hints:
+          - "The function only prints the order, so it only needs to read it."
+          - "Change the parameter to `order: &String` and call it as `print_receipt(&order);`."
+        tests:
+          - expect: "Receipt for #204 noodles\nReceipt for #204 noodles\nArchived #204 noodles"
+      - task: |
+          Write `count_long`. It borrows a vector of words and returns how many of them have **at least** `min` characters. Count characters with `.chars().count()`, not bytes, so `"café"` counts as 4. Don't use `.clone()`.
+        seed: |
+          fn count_long(words: &Vec<String>, min: usize) -> usize {
+              todo!()
+          }
+        solution: |
+          fn count_long(words: &Vec<String>, min: usize) -> usize {
+              let mut count = 0;
+              for word in words {
+                  if word.chars().count() >= min {
+                      count += 1;
+                  }
+              }
+              count
+          }
+        harness: |
+          #[test]
+          fn counts_words_with_at_least_min_characters() {
+              let words = vec![String::from("crab"), String::from("ox"), String::from("lobster")];
+              assert_eq!(count_long(&words, 4), 2, "count_long([crab, ox, lobster], 4)");
+          }
+
+          #[test]
+          fn returns_zero_for_an_empty_vector() {
+              assert_eq!(count_long(&Vec::new(), 1), 0, "count_long([], 1)");
+          }
+
+          #[test]
+          fn counts_characters_not_bytes() {
+              let words = vec![String::from("café"), String::from("naïve")];
+              assert_eq!(count_long(&words, 5), 1, "count_long([café, naïve], 5)");
+          }
+
+          #[test]
+          fn leaves_the_vector_usable() {
+              let words = vec![String::from("arena")];
+              assert_eq!(count_long(&words, 3), 1, "count_long([arena], 3)");
+              assert_eq!(count_long(&words, 6), 0, "count_long([arena], 6)");
+              assert_eq!(words.len(), 1, "words.len() after the calls");
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "Read the words through the reference; no clone needed."
+        hints:
+          - "`for word in words` loops over the borrowed vector; each `word` is a `&String`."
+          - "Inside: `if word.chars().count() >= min { count += 1; }`, then return `count`."
+
+  - title: Mutable references
+    id: borrowing-2
+    text: |
+      A `&` reference is read-only. Try to change something through one and the compiler stops you:
+
+      ```rust compile_fail
+      fn shout(text: &String) {
+          text.push_str("!");
+      }
+
+      fn main() {
+          let mut s = String::from("hi");
+          shout(&s);
+          println!("{}", s);
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `*text` as mutable, as it is behind a `&` reference
+       --> src/main.rs:2:5
+        |
+      2 |     text.push_str("!");
+        |     ^^^^ `text` is a `&` reference, so it cannot be borrowed as mutable
+        |
+      help: consider changing this to be a mutable reference
+        |
+      1 | fn shout(text: &mut String) {
+        |                 +++
+      ```
+
+      To lend a value **for changing**, use a **mutable reference**, `&mut`. Its type is `&mut String`, and you create one with `&mut s`. Three places have to agree:
+
+      1. the owner is declared `mut` (you can't lend out write access to something you can't write yourself),
+      2. the parameter's type is `&mut T`,
+      3. the call passes `&mut value`.
+
+      ```rust run
+      fn add_signature(letter: &mut String) {
+          letter.push_str("\n-- Ferris");
+      }
+
+      fn restock(shelf: &mut Vec<String>) {
+          shelf.push(String::from("milk"));
+          shelf.push(String::from("eggs"));
+      }
+
+      fn main() {
+          let mut letter = String::from("See you in the arena!");
+          add_signature(&mut letter);
+          println!("{}", letter);
+
+          let mut shelf = vec![String::from("bread")];
+          restock(&mut shelf);
+          println!("{:?}", shelf);
+      }
+      ```
+
+      ```output
+      See you in the arena!
+      -- Ferris
+      ["bread", "milk", "eggs"]
+      ```
+
+      As with `&`, method calls work through a `&mut` automatically: `letter.push_str(...)` changes the `String` that `main` owns. When the function returns, the borrow is over and `main` can use its value again, now changed.
+
+      You've used a mutable reference since the input module: `std::io::stdin().read_line(&mut line)`. `read_line` borrows your `String` mutably so it can append the typed line to it, then gives the borrow back. Now you know why the `&mut` is there.
+
+      The picture is the same as for `&`. The difference is a promise the compiler enforces: while a `&mut` exists, it is the **only** way to reach the value (step 4 explains why).
+
+      ```text
+         add_signature's frame       main's frame
+         letter: &mut String         letter: String
+        ┌────────────┐              ┌────────────┐          HEAP
+        │ ptr ───────┼────────────► │ ptr ───────┼─────► "See you in the arena!" + more text
+        └────────────┘              │ len ...    │
+          exclusive access:         │ cap ...    │
+          can read and write        └────────────┘
+      ```
+
+      ### Common mistakes
+
+      - **Forgetting `mut` on the variable.** You can't borrow mutably from an immutable variable:
+
+      ```rust compile_fail
+      fn main() {
+          let s = String::from("hi");
+          let r = &mut s;
+          r.push('!');
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `s` as mutable, as it is not declared as mutable
+      ```
+
+      - **Writing `&` at the call when the function wants `&mut`**: ``error[E0308]: mismatched types`` with the note `types differ in mutability`.
+      - **Asking for `&mut` when you only read.** Callers then need a `mut` variable, and (step 4) nobody else can look at the value while your borrow is active. Ask for the least access you need.
+
+      **Your turn:** write `add_entry`. It appends `entry` to the `log` it borrows mutably. If the log already has text in it, put `"; "` before the new entry, so entries come out as `start; hit; miss`. (`entry: &str` lets you pass string literals like `"hit"`. `log.is_empty()` tells you whether a `String` has no text.)
+    seed: |
+      fn add_entry(log: &mut String, entry: &str) {
+          todo!()
+      }
+    solution: |
+      fn add_entry(log: &mut String, entry: &str) {
+          if !log.is_empty() {
+              log.push_str("; ");
+          }
+          log.push_str(entry);
+      }
+    harness: |
+      #[test]
+      fn adds_the_first_entry_without_a_separator() {
+          let mut log = String::new();
+          add_entry(&mut log, "start");
+          assert_eq!(log, "start", "log after add_entry(\"start\")");
+      }
+
+      #[test]
+      fn separates_entries_with_a_semicolon() {
+          let mut log = String::from("start");
+          add_entry(&mut log, "hit");
+          assert_eq!(log, "start; hit", "\"start\" after add_entry(\"hit\")");
+      }
+
+      #[test]
+      fn builds_up_over_several_calls() {
+          let mut log = String::new();
+          add_entry(&mut log, "start");
+          add_entry(&mut log, "hit");
+          add_entry(&mut log, "miss");
+          assert_eq!(log, "start; hit; miss", "log after start, hit, miss");
+      }
+    hints:
+      - "`log` is a `&mut String`, so `log.push_str(...)` changes the caller's String directly."
+      - "`if !log.is_empty() { log.push_str(\"; \"); }` then `log.push_str(entry);`"
+    more:
+      - task: |
+          `level_up` should add a skill to the player's skill list, but the program has three mistakes: the function takes `&` instead of `&mut`, the variable isn't `mut`, and the call passes `&` instead of `&mut`. Fix all three (read the compiler's messages one at a time) so it prints:
+
+          ```
+          ["run", "jump", "double jump"]
+          ```
+        seed: |
+          fn level_up(skills: &Vec<String>) {
+              skills.push(String::from("double jump"));
+          }
+
+          fn main() {
+              let skills = vec![String::from("run"), String::from("jump")];
+              level_up(&skills);
+              println!("{:?}", skills);
+          }
+        solution: |
+          fn level_up(skills: &mut Vec<String>) {
+              skills.push(String::from("double jump"));
+          }
+
+          fn main() {
+              let mut skills = vec![String::from("run"), String::from("jump")];
+              level_up(&mut skills);
+              println!("{:?}", skills);
+          }
+        require:
+          - pattern: 'skills:\s*&mut\s+Vec'
+            message: "The function changes the vector, so its parameter must be `&mut Vec<String>`."
+          - pattern: 'level_up\(\s*&mut\s+skills\s*\)'
+            message: "Pass a mutable reference at the call: `level_up(&mut skills)`."
+        hints:
+          - "Start with the function: changing the vector needs `skills: &mut Vec<String>`."
+          - "Then `let mut skills = ...` and `level_up(&mut skills);`."
+        tests:
+          - expect: "[\"run\", \"jump\", \"double jump\"]"
+      - task: |
+          Write `pad_right`. It borrows `text` mutably and pushes `.` characters onto the end until the text is `width` characters long. If it's already that long or longer, leave it unchanged. Count characters with `.chars().count()`, so `"café"` padded to 6 becomes `"café.."`.
+        seed: |
+          fn pad_right(text: &mut String, width: usize) {
+              todo!()
+          }
+        solution: |
+          fn pad_right(text: &mut String, width: usize) {
+              while text.chars().count() < width {
+                  text.push('.');
+              }
+          }
+        harness: |
+          #[test]
+          fn pads_short_text_with_dots() {
+              let mut s = String::from("crab");
+              pad_right(&mut s, 8);
+              assert_eq!(s, "crab....", "pad_right(\"crab\", 8)");
+          }
+
+          #[test]
+          fn leaves_long_text_unchanged() {
+              let mut s = String::from("lobster");
+              pad_right(&mut s, 3);
+              assert_eq!(s, "lobster", "pad_right(\"lobster\", 3)");
+          }
+
+          #[test]
+          fn leaves_text_of_exactly_the_width_unchanged() {
+              let mut s = String::from("ok");
+              pad_right(&mut s, 2);
+              assert_eq!(s, "ok", "pad_right(\"ok\", 2)");
+          }
+
+          #[test]
+          fn pads_an_empty_string() {
+              let mut s = String::new();
+              pad_right(&mut s, 3);
+              assert_eq!(s, "...", "pad_right(\"\", 3)");
+          }
+
+          #[test]
+          fn counts_characters_not_bytes() {
+              let mut s = String::from("café");
+              pad_right(&mut s, 6);
+              assert_eq!(s, "café..", "pad_right(\"café\", 6)");
+          }
+        hints:
+          - "A `while` loop fits: keep pushing while the text is too short."
+          - "`while text.chars().count() < width { text.push('.'); }`"
+
+  - title: Changing values through &mut with *
+    id: borrowing-3
+    text: |
+      Method calls work through a `&mut` automatically. But operators and assignment that act on the value itself need the **dereference operator** `*`: `*r` means "the value `r` points to". Without it, you'd be doing arithmetic on the reference:
+
+      ```rust compile_fail
+      fn add_one(count: &mut i32) {
+          count += 1;
+      }
+
+      fn main() {
+          let mut c = 0;
+          add_one(&mut c);
+          println!("{}", c);
+      }
+      ```
+
+      ```error
+      error[E0368]: binary assignment operation `+=` cannot be applied to type `&mut i32`
+       --> src/main.rs:2:5
+        |
+      2 |     count += 1;
+        |     -----^^^^^
+        |     |
+        |     cannot use `+=` on type `&mut i32`
+        |
+      help: `+=` can be used on `i32` if you dereference the left-hand side
+        |
+      2 |     *count += 1;
+        |     +
+      ```
+
+      With `*` it works:
+
+      ```rust run
+      fn add_points(score: &mut u32, points: u32) {
+          *score += points;
+      }
+
+      fn reset(name: &mut String) {
+          *name = String::from("(empty slot)");   // the old String is dropped here
+      }
+
+      fn main() {
+          let mut score = 100;
+          add_points(&mut score, 25);
+          add_points(&mut score, 5);
+          println!("score: {}", score);
+
+          let mut slot = String::from("Ferris");
+          reset(&mut slot);
+          println!("slot: {}", slot);
+      }
+      ```
+
+      ```output
+      score: 130
+      slot: (empty slot)
+      ```
+
+      `*name = String::from(...)` replaces the whole value behind the reference. Ownership still works: the old `String` ("Ferris") is dropped right there, and the caller's variable now owns the new one.
+
+      When do you need `*`?
+
+      | You write | Need `*`? |
+      |---|---|
+      | `r.push_str("x")`, `r.len()` (method calls) | No: automatic |
+      | `println!("{}", r)` | No |
+      | `*r += 1`, `*r = 0`, `*r * 2` (operators and assignment on the value) | Yes |
+      | `if *r > 10` (comparing with a plain number) | Yes |
+
+      You can also read a `Copy` value out through a reference: `let copy = *r;`.
+
+      ### Changing every element: for x in &mut v
+
+      `for x in &mut v` borrows the vector mutably and gives you a `&mut` to each element in turn, so you change elements with `*x`:
+
+      ```rust run
+      fn main() {
+          let mut prices = vec![100, 250, 40];
+          for price in &mut prices {
+              *price = *price * 9 / 10;     // 10% off
+          }
+          println!("{:?}", prices);
+      }
+      ```
+
+      ```output
+      [90, 225, 36]
+      ```
+
+      If `prices` arrives in a function as a `&mut Vec<u32>` parameter, it's already a mutable reference: loop with `for price in prices`.
+
+      The three ways to loop over a vector:
+
+      | Loop | Each `x` is | The vector afterwards |
+      |---|---|---|
+      | `for x in v` | the element itself (moved out) | gone |
+      | `for x in &v` | `&T`, read-only | unchanged, still usable |
+      | `for x in &mut v` | `&mut T`, change it with `*x` | changed, still usable |
+
+      ### Common mistakes
+
+      - **Forgetting the `*`.** `count += 1` gives E0368; `r = 5` gives ``error[E0308]: mismatched types`` (`expected &mut i32, found integer`), and the help suggests the `*`.
+      - **Adding `*` to method calls.** `(*name).push_str("x")` works but nobody writes it: `name.push_str("x")` does the same.
+      - **Assigning through a `&`**: ``error[E0594]: cannot assign to `*score`, which is behind a `&` reference``. The parameter must be `&mut`.
+
+      **Your turn:** a small bank account. Write `deposit`, which adds `amount` to the balance it borrows, and `withdraw`, which takes `amount` out **only if** the balance is at least `amount`. `withdraw` returns `true` if it took the money and `false` (leaving the balance unchanged) if there wasn't enough.
+    seed: |
+      fn deposit(balance: &mut u64, amount: u64) {
+          todo!()
+      }
+
+      fn withdraw(balance: &mut u64, amount: u64) -> bool {
+          todo!()
+      }
+    solution: |
+      fn deposit(balance: &mut u64, amount: u64) {
+          *balance += amount;
+      }
+
+      fn withdraw(balance: &mut u64, amount: u64) -> bool {
+          if *balance < amount {
+              return false;
+          }
+          *balance -= amount;
+          true
+      }
+    harness: |
+      #[test]
+      fn deposit_adds_to_the_balance() {
+          let mut balance = 100;
+          deposit(&mut balance, 50);
+          assert_eq!(balance, 150, "balance 100 after deposit(50)");
+      }
+
+      #[test]
+      fn withdraw_takes_money_when_there_is_enough() {
+          let mut balance = 100;
+          let ok = withdraw(&mut balance, 30);
+          assert_eq!(ok, true, "withdraw(30) from 100 returns");
+          assert_eq!(balance, 70, "balance 100 after withdraw(30)");
+      }
+
+      #[test]
+      fn withdraw_refuses_when_there_is_not_enough() {
+          let mut balance = 20;
+          let ok = withdraw(&mut balance, 50);
+          assert_eq!(ok, false, "withdraw(50) from 20 returns");
+          assert_eq!(balance, 20, "balance 20 after a refused withdraw(50)");
+      }
+
+      #[test]
+      fn withdraw_can_empty_the_account() {
+          let mut balance = 40;
+          assert_eq!(withdraw(&mut balance, 40), true, "withdraw(40) from 40 returns");
+          assert_eq!(balance, 0, "balance after withdrawing everything");
+      }
+
+      #[test]
+      fn several_operations_add_up() {
+          let mut balance = 0;
+          deposit(&mut balance, 10);
+          deposit(&mut balance, 5);
+          withdraw(&mut balance, 7);
+          assert_eq!(balance, 8, "balance after +10, +5, -7");
+      }
+    hints:
+      - "`deposit` is one line: `*balance += amount;`"
+      - "In `withdraw`, compare first: `if *balance < amount { return false; }`. Otherwise subtract with `*balance -= amount;` and end with `true`."
+    more:
+      - task: |
+          `heal` should add `amount` to the hit points but never go above `max`. It's missing every `*`: fix the function (read the compiler's help lines) so the program prints:
+
+          ```
+          hp: 60
+          hp: 100
+          ```
+        seed: |
+          fn heal(hp: &mut u32, amount: u32, max: u32) {
+              hp += amount;
+              if hp > max {
+                  hp = max;
+              }
+          }
+
+          fn main() {
+              let mut hp = 40;
+              heal(&mut hp, 20, 100);
+              println!("hp: {}", hp);
+              heal(&mut hp, 75, 100);
+              println!("hp: {}", hp);
+          }
+        solution: |
+          fn heal(hp: &mut u32, amount: u32, max: u32) {
+              *hp += amount;
+              if *hp > max {
+                  *hp = max;
+              }
+          }
+
+          fn main() {
+              let mut hp = 40;
+              heal(&mut hp, 20, 100);
+              println!("hp: {}", hp);
+              heal(&mut hp, 75, 100);
+              println!("hp: {}", hp);
+          }
+        hints:
+          - "Every place that uses the number behind `hp` (adding, comparing, assigning) needs `*hp`."
+          - "`*hp += amount;`, `if *hp > max {` and `*hp = max;`"
+        tests:
+          - expect: "hp: 60\nhp: 100"
+      - task: |
+          Write `clamp_all`. It borrows a vector of sensor readings mutably and changes every reading below `low` to `low` and every reading above `high` to `high`. Readings in between stay as they are.
+
+          For example, readings `[-5, 12, 40]` with `low` 0 and `high` 30 become `[0, 12, 30]`.
+        seed: |
+          fn clamp_all(readings: &mut Vec<i32>, low: i32, high: i32) {
+              todo!()
+          }
+        solution: |
+          fn clamp_all(readings: &mut Vec<i32>, low: i32, high: i32) {
+              for r in readings {
+                  if *r < low {
+                      *r = low;
+                  } else if *r > high {
+                      *r = high;
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn clamps_low_and_high_readings() {
+              let mut readings = vec![-5, 12, 40];
+              clamp_all(&mut readings, 0, 30);
+              assert_eq!(readings, vec![0, 12, 30], "clamp_all([-5, 12, 40], 0, 30)");
+          }
+
+          #[test]
+          fn leaves_readings_in_range_alone() {
+              let mut readings = vec![1, 2, 3];
+              clamp_all(&mut readings, 0, 10);
+              assert_eq!(readings, vec![1, 2, 3], "clamp_all([1, 2, 3], 0, 10)");
+          }
+
+          #[test]
+          fn keeps_the_limits_themselves() {
+              let mut readings = vec![0, 30];
+              clamp_all(&mut readings, 0, 30);
+              assert_eq!(readings, vec![0, 30], "clamp_all([0, 30], 0, 30)");
+          }
+
+          #[test]
+          fn handles_an_empty_vector() {
+              let mut readings: Vec<i32> = Vec::new();
+              clamp_all(&mut readings, 0, 30);
+              assert_eq!(readings, Vec::<i32>::new(), "clamp_all([], 0, 30)");
+          }
+        hints:
+          - "`readings` is already a `&mut Vec<i32>`, so `for r in readings` gives you a `&mut i32` for each element."
+          - "Inside the loop: `if *r < low { *r = low; } else if *r > high { *r = high; }`"
+
+  - title: "The rules: many readers or one writer"
+    id: borrowing-4
+    text: |
+      Here is the rule at the heart of the borrow checker. For any value, at any moment, you can have **either**:
+
+      - any number of `&` references (many readers), **or**
+      - exactly one `&mut` reference (one writer),
+
+      but **not both at once**. (There's a second rule, "references must always be valid", in step 6.)
+
+      Many Rust programmers find the names **shared reference** (`&`) and **exclusive reference** (`&mut`) clearer than "immutable" and "mutable": a `&mut` is about having the value to yourself.
+
+      Many readers are fine, because nobody changes anything:
+
+      ```rust run
+      fn main() {
+          let motto = String::from("one writer or many readers");
+          let r1 = &motto;
+          let r2 = &motto;
+          let r3 = r1;          // & references are Copy: this copies the pointer
+          println!("{} | {} | {}", r1, r2, r3);
+      }
+      ```
+
+      ```output
+      one writer or many readers | one writer or many readers | one writer or many readers
+      ```
+
+      ### Two writers: E0499
+
+      ```rust compile_fail
+      fn main() {
+          let mut log = String::from("start");
+          let a = &mut log;
+          let b = &mut log;
+          a.push_str(" / a");
+          b.push_str(" / b");
+          println!("{}", log);
+      }
+      ```
+
+      ```error
+      error[E0499]: cannot borrow `log` as mutable more than once at a time
+       --> src/main.rs:4:13
+        |
+      3 |     let a = &mut log;
+        |             -------- first mutable borrow occurs here
+      4 |     let b = &mut log;
+        |             ^^^^^^^^ second mutable borrow occurs here
+      5 |     a.push_str(" / a");
+        |     - first borrow later used here
+      ```
+
+      ### A reader and a writer: E0502
+
+      This one prevents a real, classic bug:
+
+      ```rust compile_fail
+      fn main() {
+          let mut scores = vec![10, 20, 30];
+          let first = &scores[0];
+          scores.push(40);
+          println!("{}", first);
+      }
+      ```
+
+      ```error
+      error[E0502]: cannot borrow `scores` as mutable because it is also borrowed as immutable
+       --> src/main.rs:4:5
+        |
+      3 |     let first = &scores[0];
+        |                  ------ immutable borrow occurs here
+      4 |     scores.push(40);
+        |     ^^^^^^^^^^^^^^^ mutable borrow occurs here
+      5 |     println!("{}", first);
+        |                    ----- immutable borrow later used here
+      ```
+
+      Why is this dangerous? `push` needs room. If the vector's heap block is full, `push` allocates a bigger block, copies the elements over and **frees the old block**. `first` would still point into the old one:
+
+      ```text
+      before the push:   scores ──► [10, 20, 30]          capacity 3: full
+                                      ▲
+                                    first
+
+      after the push:    scores ──► [10, 20, 30, 40, _, _]   a new, bigger block
+                                    [10, 20, 30]  ◄── first  the old block: FREED
+      ```
+
+      Reading `first` would be a use-after-free. In C++, holding a reference into a `std::vector` across a `push_back` is exactly this bug, and it compiles without a word. Rust refuses to compile it. Note that `push` doesn't take a `&mut` you can see: method calls borrow the value automatically, `&mut` for `push`, `&` for `len`.
+
+      ### Why this rule matters even more with threads
+
+      A **data race** happens when two threads access the same memory at the same time, at least one of them writes, and nothing coordinates them. The result depends on timing: data gets corrupted, sometimes, on some machines. "Many readers or one writer" makes data races impossible to compile. You'll see in the threads module that the same rule you're learning here is what makes concurrent Rust safe.
+
+      ### Fixing these errors
+
+      - **Copy out what you need** instead of keeping a reference: `let first = scores[0];` copies an `i32`, so there's no borrow left.
+      - **Finish reading before writing**: the next step shows that a borrow ends at its last use, so reordering often fixes the error.
+      - **Collect first, change later**: you can't push to a vector while looping over it with `for x in &v`. Work out what to add in the loop, then add it afterwards.
+
+      ```rust run
+      fn main() {
+          let mut scores = vec![10, 20, 30];
+          let first = scores[0];      // a copy of the number, not a borrow
+          scores.push(40);
+          println!("first was {}, now {} scores", first, scores.len());
+      }
+      ```
+
+      ```output
+      first was 10, now 4 scores
+      ```
+
+      ### Common mistakes
+
+      - **Holding a reference into a vector while pushing to it** (E0502).
+      - **Changing a vector inside `for x in &v`** (E0502): the loop holds a shared borrow of the whole vector until it ends.
+      - **Two `&mut` to the same value** (E0499), including passing `&mut x` to a function while another `&mut x` is still in use.
+
+      **Your turn:** every score of 100 or more earns a bonus round, which is added as a `10` at the end of the list. The program tries to `push` while looping over `&scores`, which is E0502. Fix it **without** `.clone()`: for example, count the bonus rounds in the loop, then push them after it. It should print:
+
+      ```
+      [120, 80, 100, 45, 10, 10]
+      ```
+    seed: |
+      fn main() {
+          let mut scores = vec![120, 80, 100, 45];
+          for score in &scores {
+              if *score >= 100 {
+                  scores.push(10);
+              }
+          }
+          println!("{:?}", scores);
+      }
+    solution: |
+      fn main() {
+          let mut scores = vec![120, 80, 100, 45];
+          let mut bonus_rounds = 0;
+          for score in &scores {
+              if *score >= 100 {
+                  bonus_rounds += 1;
+              }
+          }
+          for _ in 0..bonus_rounds {
+              scores.push(10);
+          }
+          println!("{:?}", scores);
+      }
+    forbid:
+      - pattern: '\.clone\(\)'
+        message: "Don't copy the whole vector: count first, push afterwards."
+    hints:
+      - "While `for score in &scores` runs, `scores` is borrowed for reading, so it can't be changed."
+      - "Use a counter: `let mut bonus_rounds = 0;` and `bonus_rounds += 1;` inside the loop. After the loop: `for _ in 0..bonus_rounds { scores.push(10); }`"
+    tests:
+      - expect: "[120, 80, 100, 45, 10, 10]"
+    more:
+      - task: |
+          Two mutable references to `score` exist at the same time (E0499). Fix it so only one writer is active at any moment, for example by using a single `&mut`, so it prints:
+
+          ```
+          team score: 15
+          ```
+        seed: |
+          fn main() {
+              let mut score = 0;
+              let player_one = &mut score;
+              let player_two = &mut score;
+              *player_one += 10;
+              *player_two += 5;
+              println!("team score: {}", score);
+          }
+        solution: |
+          fn main() {
+              let mut score = 0;
+              let team = &mut score;
+              *team += 10;
+              *team += 5;
+              println!("team score: {}", score);
+          }
+        hints:
+          - "The error points at the second `&mut score` and at the line where the first one is used later."
+          - "Use one reference for both additions: `let team = &mut score; *team += 10; *team += 5;`"
+        tests:
+          - expect: "team score: 15"
+      - task: |
+          Write `append_doubles`. It borrows a vector mutably and appends, at the end, the double of every **original** element: `[1, 2, 3]` becomes `[1, 2, 3, 2, 4, 6]`. You can't push while looping over the vector by reference, so loop over the **indexes** of the original length instead. No `.clone()`.
+        seed: |
+          fn append_doubles(values: &mut Vec<i32>) {
+              todo!()
+          }
+        solution: |
+          fn append_doubles(values: &mut Vec<i32>) {
+              let n = values.len();
+              for i in 0..n {
+                  let doubled = values[i] * 2;
+                  values.push(doubled);
+              }
+          }
+        harness: |
+          #[test]
+          fn appends_the_double_of_each_element() {
+              let mut v = vec![1, 2, 3];
+              append_doubles(&mut v);
+              assert_eq!(v, vec![1, 2, 3, 2, 4, 6], "append_doubles([1, 2, 3])");
+          }
+
+          #[test]
+          fn leaves_an_empty_vector_empty() {
+              let mut v: Vec<i32> = Vec::new();
+              append_doubles(&mut v);
+              assert_eq!(v, Vec::<i32>::new(), "append_doubles([])");
+          }
+
+          #[test]
+          fn handles_negatives_and_zero() {
+              let mut v = vec![-4, 0];
+              append_doubles(&mut v);
+              assert_eq!(v, vec![-4, 0, -8, 0], "append_doubles([-4, 0])");
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "Read each original element by index instead of copying the whole vector."
+        hints:
+          - "Save the original length first, `let n = values.len();`, so the new elements aren't doubled again."
+          - "`for i in 0..n { let doubled = values[i] * 2; values.push(doubled); }`: `values[i]` copies the number, so no borrow is held during the push."
+
+  - title: Borrows end at their last use
+    id: borrowing-5
+    text: |
+      A borrow doesn't last until the end of the scope. It lasts from where the reference is created to the **last place it's used**. (The compiler feature is called **non-lexical lifetimes**; Rust has worked this way since 2018.)
+
+      ```rust run
+      fn main() {
+          let mut scores = vec![10, 20, 30];
+          let first = &scores[0];
+          println!("first: {}", first);    // last use of `first`: the borrow ends here
+          scores.push(40);                  // so changing scores is fine
+          println!("{:?}", scores);
+      }
+      ```
+
+      ```output
+      first: 10
+      [10, 20, 30, 40]
+      ```
+
+      ```text
+      let first = &scores[0];   ─┐  shared borrow of scores starts
+      println!("{}", first);    ─┘  last use: the borrow ends
+      scores.push(40);              no borrow active: OK
+      ```
+
+      So many borrow errors are fixed by **reordering**: finish using the reference before you change, move or reassign the owner. The error messages help: they point at three places, where the borrow starts, the conflicting action, and the "later used here" line that keeps the borrow alive. Move that later use above the conflict, or stop needing it.
+
+      Borrows passed to a function last only for the call: after `add_points(&mut score, 5);` returns, you can use `score` freely.
+
+      ### Moving while borrowed: E0505
+
+      ```rust compile_fail
+      fn main() {
+          let name = String::from("Ferris");
+          let r = &name;
+          let moved = name;
+          println!("{} {}", r, moved);
+      }
+      ```
+
+      ```error
+      error[E0505]: cannot move out of `name` because it is borrowed
+       --> src/main.rs:4:17
+        |
+      2 |     let name = String::from("Ferris");
+        |         ---- binding `name` declared here
+      3 |     let r = &name;
+        |             ----- borrow of `name` occurs here
+      4 |     let moved = name;
+        |                 ^^^^ move out of `name` occurs here
+      5 |     println!("{} {}", r, moved);
+        |                       - borrow later used here
+      ```
+
+      If `name` moved (say, into a function that drops it), `r` would point at a value that no longer exists. Fix: use `r` before the move, or use `moved` instead of `r` afterwards.
+
+      ### Assigning while borrowed: E0506
+
+      ```rust compile_fail
+      fn main() {
+          let mut score = 10;
+          let r = &score;
+          score = 20;
+          println!("{} {}", r, score);
+      }
+      ```
+
+      ```error
+      error[E0506]: cannot assign to `score` because it is borrowed
+       --> src/main.rs:4:5
+        |
+      3 |     let r = &score;
+        |             ------ `score` is borrowed here
+      4 |     score = 20;
+        |     ^^^^^^^^^^ `score` is assigned to here but it was already borrowed
+      5 |     println!("{} {}", r, score);
+        |                       - borrow later used here
+      ```
+
+      A `&` promises that the value won't change while you're looking at it. Here you want the *old* number after it changed, so don't borrow it at all: copy it, `let old = score;`.
+
+      ### Common mistakes
+
+      - **Grabbing a reference "for later".** `let first = &v[0];` at the top of a function, used at the bottom, blocks every change to `v` in between.
+      - **Reaching for `.clone()` first.** Most borrow errors go away by reordering, or by copying a small `Copy` value.
+      - **Fixing the line the error points at instead of the "later used here" line.** Often it's the later use that should move.
+
+      **Your turn:** fix this program by **reordering** one line (no `.clone()`, no new strings) so it prints:
+
+      ```
+      was: Rust for Beginners
+      now: Rust for Beginners, 2nd edition
+      ```
+    seed: |
+      fn main() {
+          let mut title = String::from("Rust for Beginners");
+          let original = &title;
+          title.push_str(", 2nd edition");
+          println!("was: {}", original);
+          println!("now: {}", title);
+      }
+    solution: |
+      fn main() {
+          let mut title = String::from("Rust for Beginners");
+          let original = &title;
+          println!("was: {}", original);
+          title.push_str(", 2nd edition");
+          println!("now: {}", title);
+      }
+    forbid:
+      - pattern: '\.clone\(\)|to_string|to_owned|format!'
+        message: "No copies needed: print `original` before the String changes."
+      - pattern: 'String::from[\s\S]*String::from'
+        message: "Don't create a second String: reorder the lines instead."
+    hints:
+      - "The borrow `original` is alive from its `let` to the `println!` that uses it, and `push_str` sits in between."
+      - "Move `println!(\"was: {}\", original);` above the `push_str` line."
+    tests:
+      - expect: "was: Rust for Beginners\nnow: Rust for Beginners, 2nd edition"
+    more:
+      - task: |
+          `archive` takes ownership of the report, but `preview` still borrows it afterwards (E0505). Fix it by reordering, without `.clone()`, so it prints:
+
+          ```
+          preview: Q3 sales: up 12%
+          archived 16 bytes
+          ```
+        seed: |
+          fn archive(report: String) {
+              println!("archived {} bytes", report.len());
+          }
+
+          fn main() {
+              let report = String::from("Q3 sales: up 12%");
+              let preview = &report;
+              archive(report);
+              println!("preview: {}", preview);
+          }
+        solution: |
+          fn archive(report: String) {
+              println!("archived {} bytes", report.len());
+          }
+
+          fn main() {
+              let report = String::from("Q3 sales: up 12%");
+              let preview = &report;
+              println!("preview: {}", preview);
+              archive(report);
+          }
+        forbid:
+          - pattern: '\.clone\(\)|to_string|to_owned'
+            message: "Use the preview before the report moves; no copy needed."
+        hints:
+          - "Once `archive(report)` runs, the report is gone, so the preview has to be printed first."
+          - "Swap the last two lines of `main`."
+        tests:
+          - expect: "preview: Q3 sales: up 12%\narchived 16 bytes"
+      - task: |
+          This program has three borrow errors: E0506, E0502 and E0505. Fix all three **without** `.clone()`. Each needs a different idea: copy a `Copy` value instead of borrowing it, borrow *after* changing instead of before, and let a function borrow instead of taking ownership. It should print:
+
+          ```
+          level: 1 -> 2
+          first item: claw (2 items now)
+          ferris -> FERRIS
+          ```
+        seed: |
+          fn shout(text: String) -> String {
+              text.to_uppercase()
+          }
+
+          fn main() {
+              let mut level = 1;
+              let level_ref = &level;
+              level += 1;
+              println!("level: {} -> {}", level_ref, level);
+
+              let mut items = vec![String::from("claw")];
+              let first_item = &items[0];
+              items.push(String::from("shell"));
+              println!("first item: {} ({} items now)", first_item, items.len());
+
+              let name = String::from("ferris");
+              let name_ref = &name;
+              let loud = shout(name);
+              println!("{} -> {}", name_ref, loud);
+          }
+        solution: |
+          fn shout(text: &String) -> String {
+              text.to_uppercase()
+          }
+
+          fn main() {
+              let mut level = 1;
+              let old_level = level;
+              level += 1;
+              println!("level: {} -> {}", old_level, level);
+
+              let mut items = vec![String::from("claw")];
+              items.push(String::from("shell"));
+              let first_item = &items[0];
+              println!("first item: {} ({} items now)", first_item, items.len());
+
+              let name = String::from("ferris");
+              let loud = shout(&name);
+              println!("{} -> {}", name, loud);
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "All three errors can be fixed without cloning."
+        hints:
+          - "Level: an `i32` is Copy, so keep a copy of the old value (`let old_level = level;`) instead of a reference."
+          - "Items: take `&items[0]` after the push. Name: `shout` only reads its text, so make it take `&String` and call `shout(&name)`."
+        tests:
+          - expect: "level: 1 -> 2\nfirst item: claw (2 items now)\nferris -> FERRIS"
+
+  - title: No dangling references
+    id: borrowing-6
+    text: |
+      A **dangling reference** points at memory that has already been freed. In C you can return a pointer to a local variable: it compiles, and reading through it later gives garbage, a crash, or a security hole. Rust's second borrowing rule is: **a reference must never outlive the value it points to.** The compiler checks it everywhere.
+
+      ### Returning a reference to a local: E0106
+
+      ```rust compile_fail
+      fn make_label() -> &String {
+          let label = String::from("VIP");
+          &label
+      }
+
+      fn main() {
+          println!("{}", make_label());
+      }
+      ```
+
+      ```error
+      error[E0106]: missing lifetime specifier
+       --> src/main.rs:1:20
+        |
+      1 | fn make_label() -> &String {
+        |                    ^ expected named lifetime parameter
+        |
+        = help: this function's return type contains a borrowed value, but there is no value for it to be borrowed from
+      help: instead, you are more likely to want to return an owned value
+        |
+      1 - fn make_label() -> &String {
+      1 + fn make_label() -> String {
+      ```
+
+      `label` is dropped at the end of `make_label`, so a reference to it would dangle the moment the function returns. The help line says it exactly: a returned reference has to borrow from something, and there's nothing here to borrow from. ("Lifetime" is the compiler's word for how long a reference stays valid; you'll learn to write lifetimes in their own module.)
+
+      The fix isn't a lifetime: it's to **return the owned value**. Ownership moves to the caller, so nothing dangles:
+
+      ```rust run
+      fn make_label(vip: bool) -> String {
+          let label = if vip { String::from("VIP") } else { String::from("standard") };
+          label    // ownership moves to the caller
+      }
+
+      fn main() {
+          let a = make_label(true);
+          let b = make_label(false);
+          println!("{} / {}", a, b);
+      }
+      ```
+
+      ```output
+      VIP / standard
+      ```
+
+      If the function has a reference parameter, the error is different but means the same thing:
+
+      ```rust compile_fail
+      fn shout(text: &String) -> &String {
+          let loud = text.to_uppercase();
+          &loud
+      }
+
+      fn main() {
+          println!("{}", shout(&String::from("hi")));
+      }
+      ```
+
+      ```error
+      error[E0515]: cannot return reference to local variable `loud`
+       --> src/main.rs:3:5
+        |
+      3 |     &loud
+        |     ^^^^^ returns a reference to data owned by the current function
+      ```
+
+      Returning a reference **is** fine when it points into something the caller gave you, because that value lives in the caller:
+
+      ```rust run
+      fn first_item(list: &Vec<String>) -> &String {
+          &list[0]           // borrows from list, which the caller owns
+      }
+
+      fn main() {
+          let items = vec![String::from("sword"), String::from("shield")];
+          let first = first_item(&items);
+          println!("first: {}", first);
+      }
+      ```
+
+      ```output
+      first: sword
+      ```
+
+      ### A reference outliving a scope: E0597
+
+      ```rust compile_fail
+      fn main() {
+          let r;
+          {
+              let s = String::from("hi");
+              r = &s;
+          }
+          println!("{}", r);
+      }
+      ```
+
+      ```error
+      error[E0597]: `s` does not live long enough
+       --> src/main.rs:5:13
+        |
+      4 |         let s = String::from("hi");
+        |             - binding `s` declared here
+      5 |         r = &s;
+        |             ^^ borrowed value does not live long enough
+      6 |     }
+        |     - `s` dropped here while still borrowed
+      7 |     println!("{}", r);
+        |                    - borrow later used here
+      ```
+
+      ```text
+      let r;
+      {
+          let s = String::from("hi");   ── s lives ──┐
+          r = &s;                                     │
+      }                                 ◄────────────┘  s dropped here
+      println!("{}", r);                ← r would point at freed memory
+      ```
+
+      Fix it by making the value live as long as the reference (declare `s` in the outer scope), or by having `r` own a value instead of borrowing one.
+
+      **Workplace note:** this check is what removes use-after-free from safe Rust. In practice it gives a simple rule for signatures: functions that **create** new data return owned values (`String`, `Vec<T>`); functions that **look something up** in their input can return a reference into it.
+
+      ### Common mistakes
+
+      - **Returning `&String` from a function that builds a new string** (E0106 or E0515). Return `String`.
+      - **Keeping a reference to a value from an inner block** after the block (E0597).
+      - **Adding `'static` because the compiler mentions it.** For these errors it's almost never what you want; return an owned value.
+
+      **Your turn:** `make_badge` builds a new `String` and tries to return a reference to it (E0515). Fix the function so it gives the caller ownership of the badge. The program should print:
+
+      ```
+      [7] Ferris
+      Ferris is still ours
+      ```
+    seed: |
+      fn make_badge(name: &String, level: u32) -> &String {
+          let badge = format!("[{}] {}", level, name);
+          &badge
+      }
+
+      fn main() {
+          let player = String::from("Ferris");
+          let badge = make_badge(&player, 7);
+          println!("{}", badge);
+          println!("{} is still ours", player);
+      }
+    solution: |
+      fn make_badge(name: &String, level: u32) -> String {
+          let badge = format!("[{}] {}", level, name);
+          badge
+      }
+
+      fn main() {
+          let player = String::from("Ferris");
+          let badge = make_badge(&player, 7);
+          println!("{}", badge);
+          println!("{} is still ours", player);
+      }
+    require:
+      - pattern: '->\s*String'
+        message: "Return the owned `String`, not a reference to it."
+    hints:
+      - "`badge` is created inside the function, so it's dropped at the end of it unless it's moved out."
+      - "Change the return type to `String` and return `badge` itself (no `&`)."
+    tests:
+      - expect: "[7] Ferris\nFerris is still ours"
+    more:
+      - task: |
+          `winner` borrows from `final_round`, which is dropped at the end of the inner block (E0597). Fix it so it prints:
+
+          ```
+          winner: Ferris
+          ```
+
+          Either make `final_round` live long enough, or give `winner` its own copy of the name.
+        seed: |
+          fn main() {
+              let winner;
+              {
+                  let final_round = vec![String::from("Ferris"), String::from("Corro")];
+                  winner = &final_round[0];
+              }
+              println!("winner: {}", winner);
+          }
+        solution: |
+          fn main() {
+              let winner;
+              let final_round = vec![String::from("Ferris"), String::from("Corro")];
+              {
+                  winner = &final_round[0];
+              }
+              println!("winner: {}", winner);
+          }
+        hints:
+          - "The `}` of the inner block drops `final_round`, but `winner` is used after it."
+          - "Move `let final_round = ...;` above the inner block (or write `winner = final_round[0].clone();` so winner owns its own String)."
+        tests:
+          - expect: "winner: Ferris"
+      - task: |
+          Write `longest`, which borrows a vector of words and returns a **reference** to the longest one (by `.len()`; the first one on a tie). It returns a reference into the vector, not a copy. You can assume the vector isn't empty.
+        seed: |
+          fn longest(words: &Vec<String>) -> &String {
+              todo!()
+          }
+        solution: |
+          fn longest(words: &Vec<String>) -> &String {
+              let mut best = &words[0];
+              for word in words {
+                  if word.len() > best.len() {
+                      best = word;
+                  }
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn returns_the_longest_word() {
+              let words = vec![String::from("crab"), String::from("lobster"), String::from("shrimp")];
+              assert_eq!(longest(&words), "lobster", "longest([crab, lobster, shrimp])");
+          }
+
+          #[test]
+          fn returns_the_first_on_a_tie() {
+              let words = vec![String::from("ab"), String::from("cd")];
+              assert_eq!(longest(&words), "ab", "longest([ab, cd])");
+          }
+
+          #[test]
+          fn works_with_a_single_word() {
+              let words = vec![String::from("solo")];
+              assert_eq!(longest(&words), "solo", "longest([solo])");
+          }
+
+          #[test]
+          fn returns_a_reference_into_the_vector() {
+              let words = vec![String::from("a"), String::from("abc"), String::from("ab")];
+              assert!(std::ptr::eq(longest(&words), &words[1]), "longest(&words) should point at words[1], not at a copy");
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "Return a reference into the vector, not a copy."
+        hints:
+          - "Keep a reference to the best word so far: `let mut best = &words[0];`"
+          - "`for word in words { if word.len() > best.len() { best = word; } }` then return `best`."
+
+  - title: Choosing how to pass a value
+    id: borrowing-7
+    text: |
+      You now have four ways to hand a value to a function. Choosing well is most of what "idiomatic Rust" means for function signatures:
+
+      | The function... | Parameter | Example |
+      |---|---|---|
+      | only reads the value | `&T` | `fn total(items: &Vec<u32>) -> u32` |
+      | changes the value in place | `&mut T` | `fn restock(items: &mut Vec<u32>, n: u32)` |
+      | keeps the value, or uses it up | `T` (move) | `fn archive(report: String)` |
+      | gets a small `Copy` value | `T` (copy) | `fn is_adult(age: u32) -> bool` |
+      | creates new data | returns an owned `T` | `fn make_label(...) -> String` |
+
+      Here's a bank account that uses all of them:
+
+      ```rust run
+      fn print_statement(owner: &String, history: &Vec<i64>) {
+          let mut balance = 0;
+          for amount in history {
+              balance += amount;
+          }
+          println!("{}: {} transactions, balance {}", owner, history.len(), balance);
+      }
+
+      fn deposit(history: &mut Vec<i64>, amount: i64) {
+          history.push(amount);
+      }
+
+      fn close_account(owner: String, history: Vec<i64>) -> String {
+          format!("closed {}'s account after {} transactions", owner, history.len())
+      }
+
+      fn main() {
+          let owner = String::from("Ferris");
+          let mut history = vec![100];
+          deposit(&mut history, 50);
+          deposit(&mut history, -30);
+          print_statement(&owner, &history);
+          let receipt = close_account(owner, history);
+          println!("{}", receipt);
+      }
+      ```
+
+      ```output
+      Ferris: 3 transactions, balance 120
+      closed Ferris's account after 3 transactions
+      ```
+
+      - `print_statement` only reads, so it borrows: `main` keeps both values.
+      - `deposit` changes the history, so it borrows mutably.
+      - `close_account` takes ownership on purpose: after closing, the account must not be used again, and now the compiler guarantees it. Any later use of `owner` or `history` is a compile error. Moves aren't only about memory; they also let a type say "this is finished".
+
+      ### Workplace notes
+
+      - In a typical Rust codebase, most parameters are `&T`. `&mut T` appears where a function's job is to change something, and owned parameters where the function stores or consumes the value.
+      - Don't pass small `Copy` values by reference: `fn is_adult(age: &u32)` just makes callers write `&`. (Clippy's pedantic lints flag it as `trivially_copy_pass_by_ref`.)
+      - Clippy warns about `&String` and `&Vec<T>` parameters (the `ptr_arg` lint). The next module, slices, shows why `&str` and `&[T]` are better parameter types. Everything you've learned here carries over unchanged.
+      - The borrowing rules cost nothing at run time: references are plain pointers, and all checking happens at compile time.
+
+      ### Common mistakes
+
+      - **Taking ownership "to be safe"**, then cloning at every call site. If you only read, borrow.
+      - **Taking `&mut` when `&` would do.** It blocks other readers for no reason.
+      - **Returning references to new data** (step 6). Return owned values.
+
+      **Your turn:** every function below takes ownership of its arguments, which forces `main` to `.clone()` everything. Refactor: give each function the **least access it needs** (`&` to read, `&mut` to change, plain `u32`s stay as they are), update the calls, and remove every `.clone()`. `restock` should change the vector in place and return nothing. The output must stay:
+
+      ```
+      total: 215
+      bolts x120
+      nuts x80
+      gears x50
+      total: 250
+      ```
+    seed: |
+      fn total_stock(stock: Vec<u32>) -> u32 {
+          let mut total = 0;
+          for n in stock {
+              total += n;
+          }
+          total
+      }
+
+      fn restock(mut stock: Vec<u32>, index: usize, amount: u32) -> Vec<u32> {
+          stock[index] += amount;
+          stock
+      }
+
+      fn label(name: String, count: u32) -> String {
+          format!("{} x{}", name, count)
+      }
+
+      fn main() {
+          let names = vec![String::from("bolts"), String::from("nuts"), String::from("gears")];
+          let mut stock = vec![120, 80, 15];
+
+          println!("total: {}", total_stock(stock.clone()));
+          stock = restock(stock.clone(), 2, 35);
+          for i in 0..names.len() {
+              println!("{}", label(names[i].clone(), stock[i]));
+          }
+          println!("total: {}", total_stock(stock.clone()));
+      }
+    solution: |
+      fn total_stock(stock: &Vec<u32>) -> u32 {
+          let mut total = 0;
+          for n in stock {
+              total += n;
+          }
+          total
+      }
+
+      fn restock(stock: &mut Vec<u32>, index: usize, amount: u32) {
+          stock[index] += amount;
+      }
+
+      fn label(name: &String, count: u32) -> String {
+          format!("{} x{}", name, count)
+      }
+
+      fn main() {
+          let names = vec![String::from("bolts"), String::from("nuts"), String::from("gears")];
+          let mut stock = vec![120, 80, 15];
+
+          println!("total: {}", total_stock(&stock));
+          restock(&mut stock, 2, 35);
+          for i in 0..names.len() {
+              println!("{}", label(&names[i], stock[i]));
+          }
+          println!("total: {}", total_stock(&stock));
+      }
+    require:
+      - pattern: 'fn\s+restock\s*\(\s*stock\s*:\s*&mut\b'
+        message: "`restock` changes the vector in place: its parameter should be `&mut Vec<u32>`."
+    forbid:
+      - pattern: '\.clone\(\)'
+        message: "Remove every `.clone()`: borrow instead."
+    hints:
+      - "`total_stock` and `label` only read their argument: make them take `&Vec<u32>` and `&String`."
+      - "`restock(stock: &mut Vec<u32>, index: usize, amount: u32)` with no return value; call it as `restock(&mut stock, 2, 35);`."
+      - "The calls become `total_stock(&stock)` and `label(&names[i], stock[i])`."
+    tests:
+      - expect: "total: 215\nbolts x120\nnuts x80\ngears x50\ntotal: 250"
+    more:
+      - task: |
+          Fill in each function's parameter type: `count_urgent` only reads the task list, `add` changes it, and `archive` uses it up for good. The program should print:
+
+          ```
+          1 urgent tasks
+          archived 3 tasks
+          ```
+        fill: |
+          // Only reads the list.
+          fn count_urgent(tasks: [[&Vec<String>‖&[String]]]) -> usize {
+              let mut n = 0;
+              for task in tasks {
+                  if task.contains("urgent") {
+                      n += 1;
+                  }
+              }
+              n
+          }
+
+          // Changes the list.
+          fn add(tasks: [[&mut Vec<String>]], title: &str) {
+              tasks.push(title.to_string());
+          }
+
+          // Takes the list for good: nobody can use it afterwards.
+          fn archive(tasks: [[Vec<String>]]) -> String {
+              format!("archived {} tasks", tasks.len())
+          }
+
+          fn main() {
+              let mut todo = vec![String::from("write tests")];
+              add(&mut todo, "urgent: fix the login bug");
+              add(&mut todo, "deploy");
+              println!("{} urgent tasks", count_urgent(&todo));
+              println!("{}", archive(todo));
+          }
+        hints:
+          - "Look at how `main` calls each function: `&todo`, `&mut todo` and plain `todo`."
+          - "`&Vec<String>`, `&mut Vec<String>` and `Vec<String>`."
+        tests:
+          - expect: "1 urgent tasks\narchived 3 tasks"
+      - task: |
+          Write `transfer`, which moves `amount` from one balance to another. If `from` holds less than `amount`, change nothing and return `false`; otherwise move the money and return `true`.
+
+          The borrowing rules make one mistake impossible: nobody can call `transfer(&mut a, &mut a, 10)`, because that would be two `&mut` to the same balance (E0499).
+        seed: |
+          fn transfer(from: &mut u64, to: &mut u64, amount: u64) -> bool {
+              todo!()
+          }
+        solution: |
+          fn transfer(from: &mut u64, to: &mut u64, amount: u64) -> bool {
+              if *from < amount {
+                  return false;
+              }
+              *from -= amount;
+              *to += amount;
+              true
+          }
+        harness: |
+          #[test]
+          fn moves_money_when_there_is_enough() {
+              let mut checking = 100;
+              let mut savings = 50;
+              let ok = transfer(&mut checking, &mut savings, 30);
+              assert_eq!(ok, true, "transfer 30 from 100 returns");
+              assert_eq!(checking, 70, "checking after sending 30");
+              assert_eq!(savings, 80, "savings after receiving 30");
+          }
+
+          #[test]
+          fn refuses_when_there_is_not_enough() {
+              let mut checking = 20;
+              let mut savings = 0;
+              let ok = transfer(&mut checking, &mut savings, 25);
+              assert_eq!(ok, false, "transfer 25 from 20 returns");
+              assert_eq!(checking, 20, "checking after a refused transfer");
+              assert_eq!(savings, 0, "savings after a refused transfer");
+          }
+
+          #[test]
+          fn can_send_everything() {
+              let mut a = 40;
+              let mut b = 2;
+              assert_eq!(transfer(&mut a, &mut b, 40), true, "transfer 40 from 40 returns");
+              assert_eq!((a, b), (0, 42), "(a, b) after the transfer");
+          }
+
+          #[test]
+          fn transferring_zero_changes_nothing() {
+              let mut a = 5;
+              let mut b = 5;
+              assert_eq!(transfer(&mut a, &mut b, 0), true, "transfer 0 returns");
+              assert_eq!((a, b), (5, 5), "(a, b) after transferring 0");
+          }
+        hints:
+          - "Check first: `if *from < amount { return false; }`"
+          - "Then `*from -= amount;`, `*to += amount;` and end with `true`."

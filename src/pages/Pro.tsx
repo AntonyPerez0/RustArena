@@ -5,7 +5,7 @@ import { pro } from "../content";
 import { useStore } from "../state/store";
 import { useTitle } from "../lib/title";
 
-export const STARTER_FILE = "pro/cpp-arena-pro.tar.gz";
+export const STARTER_FILE = "pro/rustarena-pro.tar.gz";
 
 export function starterUrl() {
   return new URL(import.meta.env.BASE_URL + STARTER_FILE, location.origin).href;
@@ -46,9 +46,9 @@ export default function Pro() {
       <div className="page-head">
         <h1>Pro Track</h1>
         <p className="muted">
-          The last step from learning C and C++ to working in them. {pro.length} projects (about {hours} hours) on a real Linux machine with the tools
-          teams use every day: CMake, Git and pull requests, gdb and sanitizers, GoogleTest, clang-tidy, profilers, libraries, system calls, and two
-          capstones. Every project is graded automatically by GitHub Actions each time you push.
+          The last step from learning Rust to working in it. {pro.length} projects (about {hours} hours) on a real machine with the tools Rust teams use every
+          day: rustup and Cargo, Git and pull requests, rustfmt and clippy, unit, integration and property tests, clap, Tokio, axum, SQLx, tracing, criterion,
+          Docker and CI. Every project is graded automatically by GitHub Actions each time you push, like a team's CI.
         </p>
         <div className="muted small">
           {done}/{pro.length} projects passing
@@ -66,7 +66,7 @@ export default function Pro() {
         </p>
         <ol className="pro-steps">
           <li>
-            On GitHub, create a <b>new public repository</b> (for example <code>cpp-arena-pro</code>) and tick <b>Add a README file</b>. Public
+            On GitHub, create a <b>new public repository</b> (for example <code>rustarena-pro</code>) and tick <b>Add a README file</b>. Public
             repositories get unlimited free Actions minutes, and it doubles as your portfolio.
           </li>
           <li>
@@ -83,8 +83,8 @@ export default function Pro() {
           </li>
         </ol>
         <p className="muted small">
-          Prefer your own Linux or macOS machine? <a href={starterUrl()}>Download the starter</a>, extract it into a new Git repository, run{" "}
-          <code>bash tools/setup.sh</code> (Ubuntu/Debian), and push it to GitHub.
+          Prefer your own machine (Linux, macOS, or Windows with WSL)? <a href={starterUrl()}>Download the starter</a>, extract it into a new Git repository, run{" "}
+          <code>bash tools/setup.sh</code> (it installs Rust with rustup if needed), and push it to GitHub.
         </p>
       </section>
 

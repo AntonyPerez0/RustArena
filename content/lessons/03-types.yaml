@@ -1,0 +1,1139 @@
+id: types
+title: Numbers, Booleans and Characters
+phase: "Foundations"
+summary: Rust's basic types up close. Integer sizes and what happens when they overflow, floating-point numbers, converting between types with as, true/false logic, and Unicode characters.
+roadmap: [Integers, Floats, Boolean, Character]
+steps:
+  - title: Integer types and literals
+    id: types-1
+    text: |
+      In the last module, whole numbers were `i32`. Rust actually has a family of **integer** types. They differ in two ways: how many **bits** of memory they use (more bits, bigger range), and whether they're **signed** (can be negative, names start with `i`) or **unsigned** (zero or positive only, names start with `u`).
+
+      | Bits | Signed | Range | Unsigned | Range |
+      |---|---|---|---|---|
+      | 8 | `i8` | -128 to 127 | `u8` | 0 to 255 |
+      | 16 | `i16` | -32,768 to 32,767 | `u16` | 0 to 65,535 |
+      | 32 | `i32` | about -2.1 to 2.1 billion | `u32` | 0 to about 4.3 billion |
+      | 64 | `i64` | about ±9.2 × 10¹⁸ | `u64` | 0 to about 1.8 × 10¹⁹ |
+      | 128 | `i128` | about ±1.7 × 10³⁸ | `u128` | 0 to about 3.4 × 10³⁸ |
+      | machine | `isize` | same as `i64` on 64-bit computers | `usize` | same as `u64` on 64-bit computers |
+
+      Every integer type knows its own limits, as the constants `MIN` and `MAX`:
+
+      ```rust run
+      fn main() {
+          println!("u8:  {} to {}", u8::MIN, u8::MAX);
+          println!("i8:  {} to {}", i8::MIN, i8::MAX);
+          println!("i32: {} to {}", i32::MIN, i32::MAX);
+          println!("u64 max: {}", u64::MAX);
+      }
+      ```
+
+      ```output
+      u8:  0 to 255
+      i8:  -128 to 127
+      i32: -2147483648 to 2147483647
+      u64 max: 18446744073709551615
+      ```
+
+      `u8::MAX` means "the item called `MAX` that belongs to `u8`". The `::` is the **path separator**; you'll use it a lot.
+
+      ### Which one should you use?
+
+      - `i32` is the default and a good general choice.
+      - Use an **unsigned** type when a negative value would be a bug: a quantity, a count, an age. The type then documents the rule and the compiler enforces it.
+      - `u8` for bytes (0 to 255, like the red, green and blue parts of a color).
+      - `i64`/`u64` when values can pass about 2 billion: money in cents, file sizes, milliseconds.
+      - `usize` for lengths and positions of things in memory. That's what `.len()` returns.
+
+      ### Writing integer literals
+
+      A number typed into code is a **literal**, and Rust has several ways to write one:
+
+      ```rust run
+      fn main() {
+          let population = 8_100_000_000_u64;
+          let red = 0xff;
+          let flags = 0b1010;
+          let permissions = 0o755;
+          let small = 200u8;
+          println!("{population} {red} {flags} {permissions} {small}");
+      }
+      ```
+
+      ```output
+      8100000000 255 10 493 200
+      ```
+
+      - `_` separates digits so they're easy to read; the compiler ignores it. `1_000_000` is one million.
+      - `0x` starts a **hexadecimal** number (base 16, digits 0-9 and a-f): `0xff` is 255. Common for colors and bytes.
+      - `0b` starts a **binary** number (base 2): `0b1010` is 10. `0o` starts an octal number (base 8), used for Unix file permissions.
+      - A **suffix** sets the type: `200u8` is a `u8`, `8_100_000_000_u64` a `u64`. Without the suffix, the population would be an `i32`, which can't hold 8.1 billion.
+
+      ### Common mistakes
+
+      A literal that doesn't fit its type is an error:
+
+      ```rust compile_fail
+      fn main() {
+          let level: u8 = 256;
+          println!("{level}");
+      }
+      ```
+
+      ```error
+      error: literal out of range for `u8`
+       --> src/main.rs:2:21
+        |
+      2 |     let level: u8 = 256;
+        |                     ^^^
+      ```
+
+      - **A negative value in an unsigned type**: `let stock: u32 = -1;` gives `` error[E0600]: cannot apply unary operator `-` to type `u32` ``.
+      - **Mixing integer types**: if `a` is a `u32` and `b` an `i32`, `a + b` is `error[E0308]: mismatched types`. Rust never converts between number types silently; later in this module you'll learn to convert explicitly.
+
+      **Your turn:** fill in the blanks so the program prints the range of `i16` and the largest `u16`:
+
+      ```
+      i16: -32768 to 32767
+      u16 max: 65535
+      ```
+    fill: |
+      fn main() {
+          println!("i16: {} to {}", i16::[[MIN]], i16::[[MAX]]);
+          println!("u16 max: {}", [[u16]]::MAX);
+      }
+    hints:
+      - Every integer type has `MIN` and `MAX` constants, reached with `::`.
+      - The last blank is the type's name, `u16`.
+    tests:
+      - expect: "i16: -32768 to 32767\nu16 max: 65535"
+    more:
+      - task: |
+          Fill in the literals so the program prints `255 10 1000000`. Write 255 in hexadecimal, 10 in binary, and one million with `_` separators.
+        fill: |
+          fn main() {
+              let max_byte = [[0xff‖0xFF‖0x00ff]];
+              let mask = [[0b1010‖0b0000_1010‖0b00001010]];
+              let million = [[1_000_000]];
+              println!("{max_byte} {mask} {million}");
+          }
+        hints:
+          - "Hexadecimal starts with `0x`, binary with `0b`."
+          - "255 is `0xff`, 10 is `0b1010`, one million is `1_000_000`."
+        tests:
+          - expect: "255 10 1000000"
+      - task: |
+          A game stores three numbers. Declare each with the type that fits:
+
+          - `lives`: `3`, never negative and never above 5, so `u8`
+          - `gold`: `5_000_000_000` (write it with underscores), never negative and too big for 32 bits, so `u64`
+          - `temperature`: `-12`, can be negative, so `i16`
+
+          Then print `lives=3 gold=5000000000 temp=-12`.
+        seed: |
+          fn main() {
+          }
+        solution: |
+          fn main() {
+              let lives: u8 = 3;
+              let gold: u64 = 5_000_000_000;
+              let temperature: i16 = -12;
+              println!("lives={lives} gold={gold} temp={temperature}");
+          }
+        require:
+          - pattern: 'lives\s*:\s*u8'
+            message: "Declare `lives` as a `u8`."
+          - pattern: 'gold\s*:\s*u64'
+            message: "Declare `gold` as a `u64`."
+          - pattern: 'temperature\s*:\s*i16'
+            message: "Declare `temperature` as an `i16`."
+          - pattern: '5_000_000_000'
+            message: "Write the gold amount with separators: `5_000_000_000`."
+        hints:
+          - "`let lives: u8 = 3;` and similar lines for the other two."
+          - 'Then `println!("lives={lives} gold={gold} temp={temperature}");`'
+        tests:
+          - expect: "lives=3 gold=5000000000 temp=-12"
+
+  - title: Integer division and remainder
+    id: types-2
+    text: |
+      In the first module you saw that `7 / 2` is `3`. When both sides are integers, `/` is **integer division**: it divides and throws away the fractional part. The `%` operator (**remainder**, often called "modulo") gives what was left over:
+
+      ```rust run
+      fn main() {
+          println!("{} {}", 7 / 2, 7 % 2);
+          println!("{} {}", 17 / 5, 17 % 5);
+          println!("{} {}", -7 / 2, -7 % 2);
+      }
+      ```
+
+      ```output
+      3 1
+      3 2
+      -3 -1
+      ```
+
+      Integer division **truncates toward zero**: `-7 / 2` is `-3`, not `-4`. The remainder takes the sign of the left side, so `-7 % 2` is `-1`.
+
+      ### Why this is useful
+
+      Integer division and remainder split a quantity into units:
+
+      ```rust run
+      fn main() {
+          let total_minutes = 135;
+          let hours = total_minutes / 60;
+          let minutes = total_minutes % 60;
+          println!("{total_minutes} min = {hours} h {minutes} min");
+
+          let n = 1234;
+          println!("last digit: {}", n % 10);
+          println!("without it: {}", n / 10);
+      }
+      ```
+
+      ```output
+      135 min = 2 h 15 min
+      last digit: 4
+      without it: 123
+      ```
+
+      Patterns you'll use again and again:
+
+      - `n % 2` is `0` for even numbers and `1` for odd (positive) numbers.
+      - `n % 10` is the last digit of `n`, and `n / 10` removes it.
+      - For positive `n`, `n % k` is always between `0` and `k - 1`, which is how things wrap around: hours on a clock, whose turn it is in a game.
+
+      ### Dividing by zero
+
+      Integer division by zero has no answer, so Rust stops the program with a **panic** (a deliberate crash with a message), `attempt to divide by zero`. When the compiler can already see the zero, it refuses to compile instead (`error: this operation will panic at runtime`). Floats behave differently, as you'll see.
+
+      ### Common mistakes
+
+      - **Expecting a fraction**: `let average = 7 / 2;` is `3`. For `3.5` you need floats (two steps from now).
+      - **Order of operations**: `*`, `/` and `%` happen before `+` and `-`, as in math, so `2 + 3 * 4` is `14`. Add parentheses when in doubt: `(2 + 3) * 4`.
+
+      **Your turn:** a video is `754` seconds long. Use `/` and `%` on `total_seconds` to print it as minutes and seconds: `12 min 34 s`. Don't type 12 or 34 yourself.
+    seed: |
+      fn main() {
+          let total_seconds = 754;
+      }
+    solution: |
+      fn main() {
+          let total_seconds = 754;
+          let minutes = total_seconds / 60;
+          let seconds = total_seconds % 60;
+          println!("{minutes} min {seconds} s");
+      }
+    require:
+      - pattern: '/\s*60'
+        message: Get the minutes with integer division by 60.
+      - pattern: '%\s*60'
+        message: Get the leftover seconds with `% 60`.
+    forbid:
+      - pattern: '\b(12|34)\b'
+        strings: true
+        message: Let Rust compute 12 and 34 from `total_seconds`.
+    hints:
+      - There are 60 seconds in a minute. Whole minutes are `total_seconds / 60`.
+      - "The seconds left over are `total_seconds % 60`."
+    tests:
+      - expect: "12 min 34 s"
+    more:
+      - task: |
+          Eggs are packed in boxes of 12. Fill in the operators so the program prints how many full boxes 98 eggs make and how many eggs are left over: `Boxes: 8, left over: 2`.
+        fill: |
+          fn main() {
+              let eggs = 98;
+              let per_box = 12;
+              println!("Boxes: {}, left over: {}", eggs [[/]] per_box, eggs [[%]] per_box);
+          }
+        hints:
+          - Full boxes come from integer division; the leftovers are the remainder.
+        tests:
+          - expect: "Boxes: 8, left over: 2"
+      - task: |
+          Split the three-digit number `n = 583` into its digits using only `/` and `%` (with 10 and 100), and print:
+
+          ```
+          hundreds: 5, tens: 8, ones: 3
+          ```
+        seed: |
+          fn main() {
+              let n = 583;
+          }
+        solution: |
+          fn main() {
+              let n = 583;
+              let hundreds = n / 100;
+              let tens = n / 10 % 10;
+              let ones = n % 10;
+              println!("hundreds: {hundreds}, tens: {tens}, ones: {ones}");
+          }
+        require:
+          - pattern: '%\s*10'
+            message: Use `% 10` to get a last digit.
+        forbid:
+          - pattern: '\b[358]\b'
+            strings: true
+            message: Compute each digit from `n` instead of typing it.
+        hints:
+          - "`n / 100` is 5 and `n % 10` is 3."
+          - "For the middle digit, first drop the last digit with `n / 10` (58), then take its last digit with `% 10`."
+        tests:
+          - expect: "hundreds: 5, tens: 8, ones: 3"
+
+  - title: When numbers overflow
+    id: types-3
+    text: |
+      Every integer type has a fixed range. What happens when a calculation goes past it? That's called **integer overflow**, and in many languages it silently produces a wrong number (a classic source of security bugs).
+
+      Rust doesn't let it pass silently:
+
+      - If the compiler can see the overflow, it refuses to compile.
+      - In a **debug build** (`cargo run`, and on this site), an overflow at run time makes the program **panic**.
+      - In a **release build** (`cargo build --release`), the checks are switched off for speed and the value **wraps around**: 255 + 1 in a `u8` becomes 0.
+
+      ```rust compile_fail
+      fn main() {
+          let level: u8 = 255;
+          let next = level + 1;
+          println!("{next}");
+      }
+      ```
+
+      ```error
+      error: this arithmetic operation will overflow
+       --> src/main.rs:3:16
+        |
+      3 |     let next = level + 1;
+        |                ^^^^^^^^^ attempt to compute `u8::MAX + 1_u8`, which would overflow
+      ```
+
+      When the values change while the program runs, the compiler can't see the problem, so the debug build checks at run time:
+
+      ```rust panics
+      fn main() {
+          let mut level: u8 = 250;
+          println!("level {level}");
+          level += 10;
+          println!("level {level}");
+      }
+      ```
+
+      ```output
+      level 250
+      ```
+
+      ```text
+      thread 'main' panicked at src/main.rs:4:5:
+      attempt to add with overflow
+      ```
+
+      ### Choosing what should happen
+
+      A panic isn't always what you want, so every integer type has **methods** that say explicitly how to handle overflow. A method is a function that belongs to a value, called with a dot: `value.method(argument)`.
+
+      ```rust run
+      fn main() {
+          let hp: u8 = 250;
+          println!("{}", hp.saturating_add(10));
+          println!("{}", hp.wrapping_add(10));
+          println!("{:?}", hp.checked_add(10));
+          println!("{:?}", hp.checked_add(5));
+      }
+      ```
+
+      ```output
+      255
+      4
+      None
+      Some(255)
+      ```
+
+      - `saturating_add` stops at the limit: 255. Good for volume, health bars, anything that caps.
+      - `wrapping_add` wraps around like a car's odometer: 260 - 256 = 4. Used in checksums, hashing and random number generators.
+      - `checked_add` gives back `Some(answer)` if the answer fits, or `None` if it would overflow. This is an **`Option`**, Rust's way of saying "maybe a value". You'll learn to work with it properly later; for now, print it with `{:?}`.
+
+      There are versions for each operation: `_sub`, `_mul`, `_div`. For unsigned types, `saturating_sub` stops at 0:
+
+      ```rust run
+      fn main() {
+          let stock: u32 = 3;
+          println!("{}", stock.saturating_sub(5));
+          println!("{:?}", stock.checked_sub(5));
+          println!("{:?}", stock.checked_sub(2));
+      }
+      ```
+
+      ```output
+      0
+      None
+      Some(1)
+      ```
+
+      ### At work
+
+      When values come from outside the program (user input, files, the network), a plain `+` can panic in debug builds or wrap in release builds. Careful code uses `checked_` where overflow means bad data and `saturating_` where capping is the intended behavior. Often the simplest fix is a big enough type: money in cents as an `i64` won't overflow in practice.
+
+      **Your turn:** a music player's volume is a `u8`. Starting from `volume = 245`, print the volume after turning it up by 20 (it should stop at 255), then print what `checked_add` says about adding 20:
+
+      ```
+      255
+      None
+      ```
+    seed: |
+      fn main() {
+          let volume: u8 = 245;
+      }
+    solution: |
+      fn main() {
+          let volume: u8 = 245;
+          println!("{}", volume.saturating_add(20));
+          println!("{:?}", volume.checked_add(20));
+      }
+    require:
+      - pattern: '\.saturating_add\(\s*20\s*\)'
+        message: "Turn it up with `volume.saturating_add(20)`."
+      - pattern: '\.checked_add\(\s*20\s*\)'
+        message: "Ask `volume.checked_add(20)` and print it with `{:?}`."
+    hints:
+      - "`volume.saturating_add(20)` stops at `u8::MAX`."
+      - "`checked_add` returns an `Option`, which prints with `{:?}`: `println!(\"{:?}\", volume.checked_add(20));`"
+    tests:
+      - expect: "255\nNone"
+    more:
+      - task: |
+          A shop's stock can't go below zero. Fill in the method so selling 7 items from a stock of 4 leaves `0` instead of panicking.
+        fill: |
+          fn main() {
+              let stock: u32 = 4;
+              let left = stock.[[saturating_sub]](7);
+              println!("{left}");
+          }
+        hints:
+          - Subtraction that stops at the limit instead of overflowing is the "saturating" kind.
+        tests:
+          - expect: "0"
+      - task: |
+          An 8-bit counter `ticks` is at `200`. Print `ticks + 100` three ways, one per line: wrapping, saturating and checked:
+
+          ```
+          44
+          255
+          None
+          ```
+        seed: |
+          fn main() {
+              let ticks: u8 = 200;
+          }
+        solution: |
+          fn main() {
+              let ticks: u8 = 200;
+              println!("{}", ticks.wrapping_add(100));
+              println!("{}", ticks.saturating_add(100));
+              println!("{:?}", ticks.checked_add(100));
+          }
+        require:
+          - pattern: '\.wrapping_add\('
+            message: Use `wrapping_add` for the first line.
+          - pattern: '\.saturating_add\('
+            message: Use `saturating_add` for the second line.
+          - pattern: '\.checked_add\('
+            message: Use `checked_add` for the third line.
+        hints:
+          - 200 + 100 = 300, which wraps to 300 - 256 = 44.
+          - "Print the `checked_add` result with `{:?}`."
+        tests:
+          - expect: "44\n255\nNone"
+
+  - title: Floating-point numbers
+    id: types-4
+    text: |
+      Numbers with a fractional part are **floating-point** numbers, or "floats". Rust has two: `f64` (64 bits, about 15 to 16 significant digits, the default) and `f32` (32 bits, less precise, used in graphics and games where memory matters). Use `f64` unless you have a reason not to.
+
+      A float literal needs a decimal point: `2.0`, not `2`.
+
+      ```rust run
+      fn main() {
+          let price = 19.99;
+          let quantity = 3.0;
+          let total = price * quantity;
+          println!("{total}");
+          println!("{:.1}", total);
+          println!("{}", 7.0 / 2.0);
+      }
+      ```
+
+      ```output
+      59.97
+      60.0
+      3.5
+      ```
+
+      ### Rounding in the output
+
+      `{:.2}` prints a float rounded to 2 digits after the decimal point; `{:.0}`, `{:.1}` and `{:.3}` work the same way. It combines with a name: `{total:.2}`. Only the printed text is rounded; the value itself doesn't change.
+
+      ### Floats are approximate
+
+      Floats are stored in binary, and most decimal fractions (like 0.1) can't be stored exactly, just as 1/3 can't be written exactly in decimal:
+
+      ```rust run
+      fn main() {
+          let sum = 0.1 + 0.2;
+          println!("{sum}");
+          println!("{sum:.2}");
+      }
+      ```
+
+      ```output
+      0.30000000000000004
+      0.30
+      ```
+
+      Two consequences you'll meet at work:
+
+      - Don't compare floats with `==` after calculations; check whether they're *close enough* instead.
+      - Don't store money in floats. Payment systems store amounts as whole **cents** in an integer type and only format them as dollars for display.
+
+      Float division by zero doesn't panic: `1.0 / 0.0` is `inf` (infinity), and `0.0 / 0.0` is `NaN` ("not a number").
+
+      ### Useful float methods
+
+      ```rust run
+      fn main() {
+          let x: f64 = 2.0;
+          println!("{:.4}", x.sqrt());
+          println!("{}", x.powi(10));
+          let temperature: f64 = -7.5;
+          println!("{}", temperature.abs());
+          println!("{}", 2.567_f64.round());
+          println!("{}", 2.567_f64.floor());
+      }
+      ```
+
+      ```output
+      1.4142
+      1024
+      7.5
+      3
+      2
+      ```
+
+      `sqrt` is the square root, `powi(10)` raises to a whole-number power, `abs` drops the sign, `round` rounds to the nearest whole number and `floor` rounds down. Notice that `{}` prints a float with no fractional part as `3`; `{:?}` would print `3.0`.
+
+      ### Common mistakes
+
+      Rust won't mix integers and floats in arithmetic:
+
+      ```rust compile_fail
+      fn main() {
+          let total = 5 + 2.5;
+          println!("{total}");
+      }
+      ```
+
+      ```error
+      error[E0277]: cannot add a float to an integer
+       --> src/main.rs:2:19
+        |
+      2 |     let total = 5 + 2.5;
+        |                   ^ no implementation for `{integer} + {float}`
+      ```
+
+      Write `5.0 + 2.5`, or convert the integer (coming next).
+
+      - **A method on an unannotated float**: `let x = 2.0; x.sqrt()` gives `` error[E0689]: can't call method `sqrt` on ambiguous numeric type `{float}` ``. The compiler doesn't know yet whether `x` is `f32` or `f64`; write `let x: f64 = 2.0;`.
+      - **Minus signs and methods**: `-7.5_f64.abs()` is `-7.5`, because the method runs before the minus: it means `-(7.5_f64.abs())`. Use a variable or parentheses: `(-7.5_f64).abs()`.
+
+      **Your turn:** three test scores are `81.0`, `92.5` and `77.25`. Print their average rounded to two decimals: `Average: 83.58`.
+    seed: |
+      fn main() {
+          let a = 81.0;
+          let b = 92.5;
+          let c = 77.25;
+      }
+    solution: |
+      fn main() {
+          let a = 81.0;
+          let b = 92.5;
+          let c = 77.25;
+          let average = (a + b + c) / 3.0;
+          println!("Average: {average:.2}");
+      }
+    require:
+      - pattern: ':\.2\}'
+        strings: true
+        message: "Round the output with `{:.2}` (or `{average:.2}`)."
+    forbid:
+      - pattern: '83\.5'
+        strings: true
+        message: Let Rust compute the average.
+    hints:
+      - Add the three scores in parentheses, then divide by `3.0` (a float).
+      - '`let average = (a + b + c) / 3.0;` then `println!("Average: {average:.2}");`'
+    tests:
+      - expect: "Average: 83.58"
+    more:
+      - task: |
+          Fill in the format so the price prints with exactly two decimals: `Price: 4.50`.
+        fill: |
+          fn main() {
+              let price = 4.5;
+              println!("Price: {[[:.2]]}", price);
+          }
+        hints:
+          - "Precision is written after a colon: a dot and the number of decimals."
+        tests:
+          - expect: "Price: 4.50"
+      - task: |
+          A circular arena has a radius of `2.5` meters. Print its area (π times the radius squared) with three decimals: `Area: 19.635`. Rust has π built in as `std::f64::consts::PI` (a path into the standard library, `std`).
+        seed: |
+          fn main() {
+              let radius: f64 = 2.5;
+          }
+        solution: |
+          fn main() {
+              let radius: f64 = 2.5;
+              let area = std::f64::consts::PI * radius.powi(2);
+              println!("Area: {area:.3}");
+          }
+        require:
+          - pattern: 'PI'
+            message: "Use the built-in constant `std::f64::consts::PI`."
+        forbid:
+          - pattern: '19\.6|3\.14'
+            strings: true
+            message: Compute the area from `PI` and `radius`.
+        hints:
+          - "The radius squared is `radius * radius` or `radius.powi(2)`."
+          - '`let area = std::f64::consts::PI * radius * radius;` then print it with `{area:.3}`.'
+        tests:
+          - expect: "Area: 19.635"
+
+  - title: Converting types with as
+    id: types-5
+    text: |
+      Rust never converts one number type into another behind your back: `a + b` with an `i32` and an `f64` doesn't compile. You convert explicitly with the keyword `as`:
+
+      ```rust run
+      fn main() {
+          let total_points: u32 = 17;
+          let games: u32 = 4;
+          let average = total_points as f64 / games as f64;
+          println!("integer division: {}", total_points / games);
+          println!("float division: {average}");
+      }
+      ```
+
+      ```output
+      integer division: 4
+      float division: 4.25
+      ```
+
+      `as` happens before arithmetic, so `total_points as f64 / games as f64` converts both sides, then divides.
+
+      ### What as does in each direction
+
+      ```rust run
+      fn main() {
+          println!("{}", 3.99_f64 as i32);
+          println!("{}", -3.99_f64 as i32);
+          println!("{}", 300.7_f64 as u8);
+          println!("{}", 300_i32 as u8);
+          println!("{}", -1_i32 as u32);
+          println!("{}", 65_u8 as char);
+      }
+      ```
+
+      ```output
+      3
+      -3
+      255
+      44
+      4294967295
+      A
+      ```
+
+      - **Float to integer** drops the fraction (toward zero) and **clamps** to the target's range: 300.7 becomes 255, the largest `u8`.
+      - **Integer to a smaller integer** keeps only the low bits, which wraps: 300 becomes 44 (300 - 256).
+      - **Signed to unsigned**: -1 becomes the largest `u32`.
+      - **`u8` to `char`** gives the character with that code: 65 is `A`.
+      - **To a bigger type** (`u8` to `u32`, `i32` to `i64`, `i32` to `f64`): the value is kept exactly.
+
+      So `as` never fails, but it can silently change a value when the target can't hold it. To round instead of truncate, round first: `2.7_f64.round() as i32` is `3`.
+
+      At work: `as` is everyday code for widening conversions and for turning integers into floats to do math. For conversions that might lose data, idiomatic code uses `try_from`, which reports failure instead (a later module), and clippy's stricter lint group (`clippy::pedantic`) flags risky casts.
+
+      ### Common mistakes
+
+      Converting only one side doesn't compile, because the two sides of `/` must have the same type:
+
+      ```rust compile_fail
+      fn main() {
+          let total_points: u32 = 17;
+          let games: u32 = 4;
+          let average = total_points as f64 / games;
+          println!("{average}");
+      }
+      ```
+
+      ```error
+      error[E0277]: cannot divide `f64` by `u32`
+       --> src/main.rs:4:39
+        |
+      4 |     let average = total_points as f64 / games;
+        |                                       ^ no implementation for `f64 / u32`
+      ```
+
+      - **Converting after dividing**: `(17 / 4) as f64` is `4.0`, because the integer division already threw the fraction away. Convert *before* dividing.
+      - **Expecting rounding**: `2.99 as i32` is `2`. Round first if that's what you mean.
+
+      **Your turn:** a student got `7` of `9` questions right. Convert both to `f64`, compute the percentage, and print it with two decimals: `Score: 77.78%`.
+    seed: |
+      fn main() {
+          let correct: u32 = 7;
+          let total: u32 = 9;
+      }
+    solution: |
+      fn main() {
+          let correct: u32 = 7;
+          let total: u32 = 9;
+          let percent = correct as f64 / total as f64 * 100.0;
+          println!("Score: {percent:.2}%");
+      }
+    require:
+      - pattern: 'correct\s+as\s+f64'
+        message: "Convert with `correct as f64`."
+      - pattern: 'total\s+as\s+f64'
+        message: "Convert with `total as f64`."
+    forbid:
+      - pattern: '77\.7'
+        strings: true
+        message: Let Rust compute the percentage.
+    hints:
+      - "Both values are `u32`. Convert each with `as f64` before dividing."
+      - "`correct as f64 / total as f64 * 100.0`, printed with `{:.2}`."
+    tests:
+      - expect: "Score: 77.78%"
+    more:
+      - task: |
+          Fill in the blanks so both integers are converted to floats before dividing, and the program prints `2.5`.
+        fill: |
+          fn main() {
+              let distance_km: i32 = 5;
+              let hours: i32 = 2;
+              println!("{}", distance_km [[as f64‖as f32]] / hours [[as f64‖as f32]]);
+          }
+        hints:
+          - "Each blank is the keyword `as` and a float type."
+        tests:
+          - expect: "2.5"
+      - task: |
+          A temperature sensor reports `-3.7` degrees, but a small display shows whole numbers. Print the reading three ways, one per line: cast directly with `as i32` (truncates), rounded and then cast, and the original float with one decimal:
+
+          ```
+          -3
+          -4
+          -3.7
+          ```
+        seed: |
+          fn main() {
+              let reading: f64 = -3.7;
+          }
+        solution: |
+          fn main() {
+              let reading: f64 = -3.7;
+              println!("{}", reading as i32);
+              println!("{}", reading.round() as i32);
+              println!("{reading:.1}");
+          }
+        require:
+          - pattern: 'reading\s+as\s+i32'
+            message: "Cast directly with `reading as i32` for the first line."
+          - pattern: '\.round\(\)\s+as\s+i32'
+            message: "Round first, then cast: `reading.round() as i32`."
+        hints:
+          - "`as i32` drops the fraction toward zero, so -3.7 becomes -3."
+          - "`.round()` gives -4.0, and `as i32` then makes it -4."
+        tests:
+          - expect: "-3\n-4\n-3.7"
+
+  - title: Booleans and logic
+    id: types-6
+    text: |
+      A **`bool`** has exactly two values, `true` and `false`. It's the answer to every yes/no question a program asks.
+
+      ### Comparisons produce bools
+
+      You'll use these constantly from the next modules on:
+
+      | Operator | Meaning |
+      |---|---|
+      | `==` | equal (two `=` signs; a single `=` binds or assigns) |
+      | `!=` | not equal |
+      | `<` and `>` | less than, greater than |
+      | `<=` and `>=` | less than or equal, greater than or equal |
+
+      ```rust run
+      fn main() {
+          let age = 17;
+          let is_adult = age >= 18;
+          let is_teen = age >= 13 && age <= 19;
+          println!("adult: {is_adult}, teen: {is_teen}");
+      }
+      ```
+
+      ```output
+      adult: false, teen: true
+      ```
+
+      Both sides of a comparison must have the same type: comparing an `i32` with an `f64` doesn't compile.
+
+      ### Logic operators
+
+      - `a && b` (**and**) is true when both are true.
+      - `a || b` (**or**) is true when at least one is true.
+      - `!a` (**not**) is true when `a` is false.
+
+      ```rust run
+      fn main() {
+          let has_ticket = true;
+          let is_vip = false;
+          let banned = false;
+          let can_enter = (has_ticket || is_vip) && !banned;
+          println!("can enter: {can_enter}");
+          println!("{} {} {}", true && false, true || false, !true);
+      }
+      ```
+
+      ```output
+      can enter: true
+      false true false
+      ```
+
+      `&&` binds tighter than `||`, the way `*` binds tighter than `+`. Use parentheses to make your meaning obvious, as in `can_enter` above.
+
+      ### Short-circuiting
+
+      `&&` and `||` stop as soon as the answer is known. In `a && b`, if `a` is false, `b` is never evaluated. That lets the left side protect the right side:
+
+      ```rust run
+      fn main() {
+          let count = 0;
+          let total = 50;
+          let busy = count != 0 && total / count > 10;
+          println!("busy: {busy}");
+      }
+      ```
+
+      ```output
+      busy: false
+      ```
+
+      `total / count` would panic (division by zero), but it never runs because `count != 0` is already false.
+
+      ### No "truthy" values
+
+      In some languages, `0` or empty text count as false. Rust has no such rule: where a `bool` is expected, only a `bool` will do. `let ok: bool = 1;` is a type error. Write the comparison you mean, like `count != 0`. If you ever need the number, `true as i32` is `1`.
+
+      ### Common mistakes
+
+      Chaining comparisons as in math doesn't work:
+
+      ```rust compile_fail
+      fn main() {
+          let age = 15;
+          let is_teen = 13 <= age <= 19;
+          println!("{is_teen}");
+      }
+      ```
+
+      ```error
+      error: comparison operators cannot be chained
+       --> src/main.rs:3:22
+        |
+      3 |     let is_teen = 13 <= age <= 19;
+        |                      ^^     ^^
+        |
+      help: split the comparison into two
+        |
+      3 |     let is_teen = 13 <= age && age <= 19;
+        |                             ++++++
+      ```
+
+      - **`=` instead of `==`**: `=` binds or assigns; `==` compares.
+      - **`&` or `|` instead of `&&` and `||`**: the single-character versions exist (they're bitwise operators) but don't short-circuit. Use the doubled ones for logic.
+
+      **Your turn:** a ride needs riders to be at least `120` cm tall, and riders under `16` must have an adult with them. Compute `can_ride` from the three variables (tall enough, **and** either 16 or older **or** with an adult) and print `can ride: true`.
+    seed: |
+      fn main() {
+          let height_cm = 132;
+          let age = 12;
+          let with_adult = true;
+      }
+    solution: |
+      fn main() {
+          let height_cm = 132;
+          let age = 12;
+          let with_adult = true;
+          let can_ride = height_cm >= 120 && (age >= 16 || with_adult);
+          println!("can ride: {can_ride}");
+      }
+    require:
+      - pattern: 'height_cm\s*>=\s*120'
+        message: "Check the height with `height_cm >= 120`."
+      - pattern: '&&'
+        message: Combine the height check and the age rule with `&&`.
+      - pattern: '\|\|'
+        message: "The age rule is \"16 or older, or with an adult\": use `||`."
+    forbid:
+      - pattern: '"can ride: true"'
+        strings: true
+        message: Print the computed `can_ride` value, not the word true.
+    hints:
+      - "The age part is `(age >= 16 || with_adult)`; keep the parentheses."
+      - "`let can_ride = height_cm >= 120 && (age >= 16 || with_adult);`"
+    tests:
+      - expect: "can ride: true"
+    more:
+      - task: |
+          A login succeeds when the password is correct **and** the account is **not** locked. Fill in the operators so the program prints `login ok: true`.
+        fill: |
+          fn main() {
+              let password_ok = true;
+              let locked = false;
+              let login_ok = password_ok [[&&]] [[!]]locked;
+              println!("login ok: {login_ok}");
+          }
+        hints:
+          - "\"and\" is `&&`, and \"not\" is `!` in front of a bool."
+        tests:
+          - expect: "login ok: true"
+      - task: |
+          A year is a **leap year** if it's divisible by 4 and not by 100, or if it's divisible by 400. ("Divisible by 4" means `year % 4 == 0`.) For each of the three years in the starter code, compute a `bool` with this rule and print it:
+
+          ```
+          2024: true
+          1900: false
+          2000: true
+          ```
+
+          Writing the same rule three times is tedious; in the next module you'll write it once, as a function.
+        seed: |
+          fn main() {
+              let y1 = 2024;
+              let y2 = 1900;
+              let y3 = 2000;
+          }
+        solution: |
+          fn main() {
+              let y1 = 2024;
+              let y2 = 1900;
+              let y3 = 2000;
+              let leap1 = (y1 % 4 == 0 && y1 % 100 != 0) || y1 % 400 == 0;
+              let leap2 = (y2 % 4 == 0 && y2 % 100 != 0) || y2 % 400 == 0;
+              let leap3 = (y3 % 4 == 0 && y3 % 100 != 0) || y3 % 400 == 0;
+              println!("{y1}: {leap1}");
+              println!("{y2}: {leap2}");
+              println!("{y3}: {leap3}");
+          }
+        require:
+          - pattern: '%\s*400'
+            message: The rule needs `% 400`.
+          - pattern: '%\s*100'
+            message: The rule needs `% 100`.
+          - pattern: '%\s*4\b'
+            message: The rule needs `% 4`.
+        forbid:
+          - pattern: '"[^"]*\b(true|false)\b[^"]*"'
+            strings: true
+            message: Print the computed bools, not the words true and false.
+        hints:
+          - "`(y1 % 4 == 0 && y1 % 100 != 0) || y1 % 400 == 0`"
+          - 'Store each result in a variable and print it with `println!("{y1}: {leap1}");`'
+        tests:
+          - expect: "2024: true\n1900: false\n2000: true"
+
+  - title: Characters
+    id: types-7
+    text: |
+      A **`char`** holds one character, written in **single quotes**: `'a'`, `'Z'`, `'7'`, `'?'`. Rust's `char` is a **Unicode scalar value**: it can be any character from any writing system, including emoji. Every `char` takes 4 bytes of memory.
+
+      ```rust run
+      fn main() {
+          let letter = 'R';
+          let accented = 'é';
+          let kanji = '錆';
+          let crab = '🦀';
+          println!("{letter} {accented} {kanji} {crab}");
+          println!("{}", 'A' as u32);
+          println!("{}", crab as u32);
+      }
+      ```
+
+      ```output
+      R é 錆 🦀
+      65
+      129408
+      ```
+
+      `as u32` gives a character's **code point**, its number in the Unicode table: `'A'` is 65, the crab is 129408. (`錆` means "rust" in Japanese.)
+
+      ### char versus text
+
+      `'F'` is a `char`. `"F"` is a `&str`: text that happens to be one character long. They are different types:
+
+      ```rust compile_fail
+      fn main() {
+          let initial: char = "F";
+          println!("{initial}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:2:25
+        |
+      2 |     let initial: char = "F";
+        |                  ----   ^^^ expected `char`, found `&str`
+        |                  |
+        |                  expected due to this
+        |
+      help: if you meant to write a `char` literal, use single quotes
+        |
+      2 -     let initial: char = "F";
+      2 +     let initial: char = 'F';
+      ```
+
+      ### Asking questions about characters
+
+      `char` has many methods. Most answer a yes/no question, so they return a `bool`:
+
+      ```rust run
+      fn main() {
+          let c = '7';
+          println!("{}", c.is_ascii_digit());
+          println!("{}", c.is_alphabetic());
+          println!("{}", 'q'.is_lowercase());
+          println!("{}", 'q'.to_ascii_uppercase());
+          println!("{:?}", c.to_digit(10));
+          println!("{}", ' '.is_whitespace());
+      }
+      ```
+
+      ```output
+      true
+      false
+      true
+      Q
+      Some(7)
+      true
+      ```
+
+      - `is_alphabetic`, `is_numeric`, `is_alphanumeric`, `is_whitespace`, `is_uppercase` and `is_lowercase` work for every language.
+      - `is_ascii_digit`, `to_ascii_uppercase` and `to_ascii_lowercase` work on the basic Latin letters and digits (**ASCII**) and leave everything else alone.
+      - `to_digit(10)` turns `'7'` into the number 7 (as `Some(7)`, or `None` if it isn't a digit). The 10 is the base.
+
+      ### Doing arithmetic with characters
+
+      You can't add a number to a `char` (`` error[E0369]: cannot add `{integer}` to `char` ``). Convert it to a number, compute, and convert back. Only `u8` converts to `char` with `as`, because every `u8` value is a valid character:
+
+      ```rust run
+      fn main() {
+          let letter = 'c';
+          let position = letter as u8 - b'a' + 1;
+          let next = (letter as u8 + 1) as char;
+          println!("{letter} is letter {position}, next is {next}");
+      }
+      ```
+
+      ```output
+      c is letter 3, next is d
+      ```
+
+      `b'a'` is a **byte literal**: the `u8` value of the ASCII character `a` (97). This trick only works for ASCII letters: `as u8` would cut a character like `'é'` down to a wrong value.
+
+      ### Common mistakes
+
+      - **Double quotes for a char**, or several characters in single quotes: `'ab'` gives `error: character literal may only contain one codepoint`.
+      - **Assuming a `char` is one byte**, as in C. It's 4 bytes. Text (`&str`) is stored more compactly, as UTF-8; the strings modules explain the difference.
+
+      **Your turn:** print three facts about `grade`, one per line: whether it's alphabetic, its uppercase form, and its code point (`as u32`). For `'b'` that's:
+
+      ```
+      true
+      B
+      98
+      ```
+    seed: |
+      fn main() {
+          let grade = 'b';
+      }
+    solution: |
+      fn main() {
+          let grade = 'b';
+          println!("{}", grade.is_alphabetic());
+          println!("{}", grade.to_ascii_uppercase());
+          println!("{}", grade as u32);
+      }
+    require:
+      - pattern: '\.is_alphabetic\(\)'
+        message: "Check it with `grade.is_alphabetic()`."
+      - pattern: '\.to_(ascii_)?uppercase\(\)'
+        message: "Get the uppercase form with `grade.to_ascii_uppercase()`."
+      - pattern: 'grade\s+as\s+u32'
+        message: "Get the code point with `grade as u32`."
+    forbid:
+      - pattern: '\b98\b'
+        message: Let Rust compute the code point.
+    hints:
+      - "Each line prints the result of one method or cast on `grade`."
+      - "`grade.is_alphabetic()`, `grade.to_ascii_uppercase()`, `grade as u32`."
+    tests:
+      - expect: "true\nB\n98"
+    more:
+      - task: |
+          Fill in the method that checks whether a character is a digit, so the program prints `true false`.
+        fill: |
+          fn main() {
+              let a = '5';
+              let b = 'x';
+              println!("{} {}", a.[[is_ascii_digit‖is_numeric]](), b.[[is_ascii_digit‖is_numeric]]());
+          }
+        hints:
+          - "The method's name starts with `is_` and ends with `digit`."
+        tests:
+          - expect: "true false"
+      - task: |
+          A Caesar cipher shifts each letter 3 places along the alphabet, wrapping from `z` back to `a`. Shift `letter` (`'y'`) and print `y -> b`.
+
+          Turn the letter into its position 0 to 25 (`letter as u8 - b'a'`), add 3, wrap with `% 26`, add `b'a'` back, and convert to `char`.
+        seed: |
+          fn main() {
+              let letter = 'y';
+          }
+        solution: |
+          fn main() {
+              let letter = 'y';
+              let position = letter as u8 - b'a';
+              let shifted = ((position + 3) % 26 + b'a') as char;
+              println!("{letter} -> {shifted}");
+          }
+        require:
+          - pattern: '%\s*26'
+            message: "Wrap around the alphabet with `% 26`."
+          - pattern: 'as\s+char'
+            message: Convert the number back with `as char`.
+        forbid:
+          - pattern: '''b''|-> b'
+            strings: true
+            message: Compute the shifted letter instead of typing it.
+        hints:
+          - "`'y'` is position 24. 24 + 3 = 27, and 27 % 26 = 1, which is `b`."
+          - "`let shifted = ((letter as u8 - b'a' + 3) % 26 + b'a') as char;`"
+        tests:
+          - expect: "y -> b"

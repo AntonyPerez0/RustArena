@@ -1,98 +1,80 @@
-# C/C++ Arena
+# RustArena
 
-Live at **https://cpparena.com**.
+Learn Rust from zero to job-ready, freeCodeCamp style, with **every exercise compiled and tested by the real Rust compiler**.
 
-Learn C and C++ from zero to advanced, freeCodeCamp style, with **real compilation in your browser**.
+RustArena is the Rust sister site of [C/C++ Arena](https://github.com/AntonyPerez0/cpp-arena) and [Java Arena](https://github.com/AntonyPerez0/Java-Arena), with the same design, and a curriculum that follows the community [Rust developer roadmap](https://roadmap.sh/rust).
 
-- **Learn**: 48 modules, 318 steps, from `printf` to professional C++. C first (basics, pointers, memory, structs and unions, linked lists, bits, random numbers, then real-world C: text and binary files, function pointers and callbacks, variadic functions, integer types, type punning and undefined behavior, where a program's data lives in memory, organizing programs with headers, `static`/`extern`, `argv` and exit codes). Then C++ (how C++ differs from C, classes, RAII, operators, the STL, streams, iterators, lambdas, smart pointers, move semantics, templates, polymorphism and casts, C++20, error handling and exceptions, `<random>`), professional C++ (writing iterators and containers, variadic templates, type traits, value categories, SFINAE and CRTP, `std::format` and `chrono`, design patterns and type erasure, attributes and consteval, threads, concurrency, memory ordering and lock-free stacks, performance: caches, data layout, branch prediction, false sharing and `std::pmr` allocators), data structures and algorithms (complexity, searching, sorting, hash tables, trees and heaps, graphs, backtracking, dynamic programming), and a code-review capstone. Early steps are fill-in-the-blank; later steps have you write most of the code. Every step has hints you reveal one at a time and a "show solution" escape hatch.
-- **Deathmatch**: endless reps drawn from what you've learned: each drill unlocks when you finish the lesson step that teaches it (worked out at build time from the features the drill uses). Predict the output, fill the token, spot the bug, will it compile. Instant checks keep the respawn fast, and every 8th rep is a compiled boss rep. One life (ranked), three lives (casual), a spaced-review warm-up that feeds you what you missed, or interview prep. 657 drills (including 62 classic interview questions), CS-style ranks from Silver I to The Global Elite.
-- **Projects**: 11 multi-milestone builds, from a calculator and a text adventure to a dynamic array, a memory allocator, a matrix library, your own `vector<T>`, an expression interpreter and a buy-menu economy.
-- **Pro Track**: 12 projects done on a real machine (GitHub Codespaces or Linux/macOS) with professional tools: CMake, Git and pull requests, gdb and sanitizers, GoogleTest (graded by mutation testing), exceptions, threads and ThreadSanitizer, clang-tidy and clang-format, profiling, third-party libraries, POSIX processes and sockets, and two capstones (a multi-threaded key-value server and a C library). Each project is graded by GitHub Actions in the learner's own repository. See [`pro-track/`](pro-track/README.md).
-- **Watch code run**: 30 visualizations that step through real programs line by line, drawing the stack, the heap and every pointer as an arrow. They're recorded at build time by running each program under gdb, and linked from the lesson steps they explain.
-- **Playground** (`/playground`): run any C or C++ program with input, see compiler errors explained and crashes described, keep the code in the browser, and share it as a link that carries the code.
-- **Topics**: 52 short reference pages (`/topics/...`) on the core ideas, each with a compiled and tested example, written for learners and for search engines. A "Where to go next" page (`/next`) collects books, practice sites and projects for after the course.
-- **Daily challenge, placement quiz and certificates**: one problem a day with a streak, a 16-question quiz that lets experienced learners skip ahead, and printable certificates for finishing the course and the Pro Track.
-- **Comfort**: lessons ask before downloading the compiler on mobile data or Data Saver, light and dark themes, adjustable text size, a symbol bar for phone keyboards, "Report a problem" on every exercise, progress sync (transfer link or QR code, or a private GitHub Gist), and offline use once visited (it can be installed to a phone's home screen).
+- **Learn**: 48 modules from `println!` to professional Rust. Foundations (variables, types, functions, control flow, compound types, strings, input), then the heart of Rust (ownership, borrowing, slices), structuring data (structs, methods, enums, pattern matching, vectors, hash maps, strings in depth), errors and abstraction (Result and `?`, custom errors, generics, traits, standard traits, lifetimes, trait objects), idiomatic Rust (closures, iterators, modules and Cargo, smart pointers, testing), concurrency and async (threads, channels and shared state, async/await with Tokio), advanced Rust (advanced traits and type-level programming, macros, unsafe and FFI, performance), Rust at work (serde, anyhow and thiserror, command-line tools, web services, idiomatic patterns and code review, debugging and tooling), and algorithms for interviews, ending in a capstone. Early steps are fill-in-the-blank; later steps have you write whole programs, functions checked by hidden `#[test]`s, and your own test suites graded against planted bugs. Every step has hints you reveal one at a time and a "show solution" escape hatch.
+- **Roadmap** (`/roadmap`): every topic on roadmap.sh/rust, in order, linked to the lessons and projects that teach it, with your progress.
+- **Deathmatch**: endless reps drawn from what you've learned: predict the output, fill the token, spot the bug, and "does this compile?" against the borrow checker. Each drill unlocks when you finish the lesson step that teaches it. Every 8th rep is a boss rep you compile for real. One life (ranked), three lives (casual), a spaced-review warm-up, or interview prep.
+- **Projects**: guided multi-milestone builds (a to-do CLI, a bank ledger, a tokenizer and calculator, a JSON inventory, a log analyzer, a task scheduler and more). Your code carries forward between milestones.
+- **Pro Track**: 12 projects done on a real machine (GitHub Codespaces or your own computer) with the tools Rust teams use: rustup and Cargo, Git and pull requests, rustfmt and clippy, unit, integration and property tests (graded by mutation testing), clap, a library crate with typed errors and docs, threads and rayon, Tokio networking, an axum REST API, SQLx and SQLite, tracing and configuration, criterion benchmarks and profiling, and a production-ready capstone service with Docker and CI. Each project is graded by GitHub Actions in the learner's own repository. See [`pro-track/`](pro-track/README.md).
+- **Playground** (`/playground`): run any Rust program with input and command-line arguments, with serde, tokio, anyhow, thiserror, regex, itertools, rayon and chrono available, compiler errors explained, panics described, and share links that carry the code.
+- **Topics**: short reference pages (`/topics/...`) on the core ideas (ownership, the borrow checker's most common errors, lifetimes, traits, Option and Result, iterators, smart pointers, async...), each with a compiled and tested example. A "Where to go next" page (`/next`) collects books, practice sites, projects and job advice.
+- **Daily challenge, placement quiz and certificates**: one problem a day with a streak, a quiz that lets experienced learners skip ahead, and printable certificates for finishing the course and the Pro Track.
+- **Comfort**: light and dark themes in Rust's colors, adjustable text size, a symbol bar for phone keyboards (`&`, `::`, `=>`, `'a`...), "Report a problem" on every exercise, progress sync (transfer link or QR code, or a private GitHub Gist), and offline reading once visited.
 
-Everything you submit is compiled by Clang 20 running as WebAssembly in a Web Worker and executed on a WASI runtime, with a 3 second time limit for infinite loops. Each run gets its own in-memory folder, so lessons can read and write files, and tests can pass command-line arguments and check exit codes. Compiler errors come with plain-English explanations. There is no server: the site is static and works on GitHub Pages.
+## How code runs
+
+RustArena is a static site with no server of its own. When a learner presses **Check** or **Run**, the site sends the code to the [Rust Playground](https://play.rust-lang.org) (the official service that runs the examples in The Rust Programming Language book), which compiles it with the current stable `rustc` (edition 2024, debug build) and runs it.
+
+- **One request per check.** The site wraps the learner's code with a small hidden runner (`src/grader/assemble.js`): the learner's `fn main` is renamed, and a new `main` starts the program once per test case as a child process, each with its own stdin, command-line arguments, files in a private working folder, a 2 second time limit and a 64 KB output cap. It prints one record per run (exit code, signal, timing, and base64 stdout/stderr), so one Playground request grades every test, and stdin works even though the Playground has no stdin.
+- **Function exercises** append hidden `#[test]`-style functions; each runs as its own child process, so a failed `assert_eq!` fails only that check, and the site shows "expected X, got Y" from the panic message.
+- **"Write the tests" exercises** run real `cargo test` on the Playground, then run again with each planted bug (mutant) to check the learner's tests catch it.
+- **Errors**: rustc's messages are shown with their snippet, a plain-English note for common error codes (E0382 moved value, E0502 borrow conflict, E0106 missing lifetime...), the line marked in the editor, and a link to the official error index. Panics are explained with the learner's line.
+- **Caching and courtesy**: identical requests are answered from memory for the session, and requests go one at a time.
+- **Your own runner**: `npm run runner` starts `scripts/local-runner.mjs`, which serves the same API using your own Rust installation (and the crates in `runner-deps/`). In the site, **Settings > Where your code runs** switches to it (or to any self-hosted Playground). It works offline and suits classrooms.
 
 ## Deploy to GitHub Pages
 
-1. Create an empty repository on GitHub (any name, for example `cpp-arena`).
-2. Push this folder to it:
+1. Push this repository to GitHub.
+2. On GitHub, open **Settings > Pages** and set **Source** to **GitHub Actions**.
 
-   ```bash
-   cd cpp-arena
-   git init -b main
-   git add .
-   git commit -m "C/C++ Arena"
-   git remote add origin https://github.com/<you>/<repo>.git
-   git push -u origin main
-   ```
+The workflow in `.github/workflows/deploy.yml` runs on every push to `main`. It installs dependencies and stable Rust, compiles and runs every lesson solution, worked example, drill and project milestone with the real Rust compiler (the build fails if any expected output is wrong), builds the site, runs the browser tests (including the accessibility checks, with code run by the local runner), and publishes it.
 
-3. On GitHub, open **Settings > Pages** and set **Source** to **GitHub Actions**.
-
-The workflow in `.github/workflows/deploy.yml` then runs on every push to `main`. It installs dependencies, compiles and runs every lesson solution, drill and project milestone with GCC (the build fails if any expected output is wrong), builds the site, runs the browser tests (including the accessibility checks), and publishes it.
-
-The site address is set by `CUSTOM_DOMAIN` at the top of the workflow (`cpparena.com` here). To use your own domain, change it and enter the same domain under **Settings > Pages > Custom domain**. To publish at `https://<you>.github.io/<repo>/` instead, set `CUSTOM_DOMAIN` to an empty string; the workflow then passes the repository name to the build, so any repository name works.
+The site is published at `https://<you>.github.io/<repo>/` by default. To use your own domain, set `CUSTOM_DOMAIN` at the top of the workflow and enter the same domain under **Settings > Pages > Custom domain**.
 
 ## Run locally
 
-```bash
-npm install        # also copies the Clang toolchain into public/toolchain
-npm run dev        # http://localhost:5173/
-```
+Needs Node 22 and Rust (stable, via [rustup](https://rustup.rs)).
 
-Other scripts:
+```bash
+npm install
+npm run content    # compile and run every lesson, drill and project; writes src/generated/
+npm run dev        # http://localhost:5173/
+npm run runner     # optional: run code on this machine instead of the Playground (then pick it in Settings)
+```
 
 | Script | What it does |
 |---|---|
-| `npm run content` | Rebuilds `src/generated/content.json` from `content/**/*.yaml`, compiling and running everything with GCC/G++, then records the visualizations with gdb (`scripts/build-visuals.mjs`) |
-| `npm run verify:wasm` | Cross-checks all content against the exact browser toolchain (browsercc Clang in Node) |
-| `npm run build` | Type-checks and builds `dist/` |
-| `npm run test:e2e` | Serves `dist/` and drives the real UI in headless Chromium, including axe accessibility scans (WCAG 2.2 AA) of every page type and SEO checks |
-| `npm run check:pro` | Checks every Pro Track grader: the starter must fail and the reference solution must pass (needs the tools from `pro-track/starter/tools/setup.sh`) |
+| `npm run content` | Builds `src/generated/content.json` from `content/**/*.yaml`, compiling and running everything with your Rust toolchain. `node scripts/build-content.mjs --only <path part>` checks a few files without writing anything. |
+| `npm run runner` | A local stand-in for the Rust Playground on `127.0.0.1:8787` |
+| `npm run build` | Type-checks and builds `dist/`, packs the Pro Track starter, and pre-renders every page |
+| `npm run test:e2e` | Serves `dist/` and drives the real UI in headless Chromium (code runs on the local runner), including axe accessibility scans (WCAG 2.2 AA) of every page type in both themes, phone widths, offline use and SEO checks |
+| `npm run check:pro` | Checks every Pro Track grader: the starter must fail and the reference solution must pass |
+
+## Branding and credits
+
+- **Colors** come from Rust and Ferris: Ferris orange `#F74C00`, amber `#F9A11B` and rust red `#B7410E`, on warm darks and creams, with every text color at WCAG AA contrast.
+- **The logo** is our own drawing of a crab (`src/components/Brand.tsx`; `scripts/make-brand-images.mjs` renders the favicon, app icons and share image). The official **Rust logo** is a trademark of the Rust Foundation, and its trademark policy restricts using it in ways that suggest endorsement, so RustArena doesn't use it. RustArena uses the word "Rust" only to say what it teaches, and states that it isn't affiliated with or endorsed by the Rust Foundation or the Rust Project.
+- **Ferris the crab** (`public/ferris.png`), the community's unofficial mascot by Karen Rustad Tölva, is in the public domain (CC0), from [rustacean.net](https://rustacean.net/).
+- The curriculum order follows [roadmap.sh/rust](https://roadmap.sh/rust) (not affiliated).
 
 ## How it works
 
-- **Compiler**: [browsercc](https://github.com/BertalanD/browsercc) (Clang/LLD 20 compiled to WebAssembly, MIT license). `src/compiler/core.js` compiles the big wasm modules once and re-instantiates them per compile. The toolchain downloads once and is kept in Cache Storage: about 27 MB for C and 38 MB for C++ (the precompiled standard library header), because `scripts/copy-toolchain.mjs` also writes gzip copies of the files (88 and 107 MB uncompressed) and the compiler worker unpacks them as they arrive with `DecompressionStream`. Browsers without it fetch the full files.
-- **C++ exceptions**: browsercc's C++ libraries are built without exceptions, so `vendor/libcxx-eh` holds libc++, libc++abi and libunwind 19.1.5 rebuilt with WebAssembly exception handling (`scripts/build-eh-runtime.sh` reproduces them from LLVM source), plus `libarena.a`, which lets the page print `terminate called after throwing an instance of '...'` for an uncaught exception. `scripts/copy-toolchain.mjs` swaps them into the sysroot and rebuilds the precompiled header to match. Browsers have supported these WebAssembly exception instructions since 2021 and 2022 (Chrome 95, Safari 15.2, Firefox 100); the site uses the original instruction set, not the newer `try_table` form.
-- **Flags**: C uses `-std=c17 -O1 -Wall -Wextra`. C++ uses `-std=c++20 -O2 -fwasm-exceptions -Wall -Wextra` with the precompiled header, which is why a warm C++ compile takes about a second.
-- **Running**: each run happens in a short-lived worker with `@bjorn3/browser_wasi_shim`. stdin is supplied up front, output is capped at 64 KB, and the worker is killed after 3 seconds.
-- **Grading**: stdout steps compare normalized output against test cases (some hidden, so hard-coding answers fails). Function steps append a hidden `main()` that calls your code and reports `@@PASS`/`@@FAIL` lines. Steps can also require or forbid patterns (for example "use a for loop").
-- **Progress**: stored in your browser's localStorage. The Profile page moves it between devices with a transfer link (compressed into the address, also shown as a QR code), a private GitHub Gist (using a token with only the `gist` permission, kept in the browser), or a file. Imports merge rather than overwrite.
-- **Visualizations**: `scripts/trace/tracer.py` is a gdb script that steps a program and records, at every line, each stack frame's variables, the live heap blocks (tracked by wrapping `malloc`/`free` and `new`/`delete`) and the output so far. Pointers are resolved to what they point at, so the page can draw arrows. Recordings go to `public/visuals/`.
-- **Offline**: `public/sw.js` saves the app's built files when it installs (the build fills in the list and a version), so one visit is enough, and saves each page as it's visited; unvisited pages open from the saved app. The compiler worker caches the toolchain separately, with a copy of its manifest, so a downloaded compiler also starts offline.
-- **Lighthouse** (pull requests): after the browser tests, `lighthouserc.json` has Lighthouse CI score five key pages as a phone would (median of 3 runs) and fails the PR below 80 performance, below 95 accessibility, best practices or SEO, or over 900 KB of JavaScript. The scores table is on the run's summary page, and the full reports are attached to the run.
-- **Outside links** (weekly): `.github/workflows/links.yml` runs `scripts/check-links.mjs` every Monday (or from the Actions tab). Broken links go into one "Broken outside links" issue, updated while any stay broken and closed once all work again. Sites that refuse automated checks (401, 403, 429) are listed separately, not counted as broken.
-- **Design**: `src/styles.css` is a token-based design system (colors, spacing, corners and shadows defined once for the dark and light themes, each text color at least 4.5:1 contrast). Inter and JetBrains Mono are self-hosted from `@fontsource-variable` (Latin only, about 90 KB together), so nothing loads from other sites and offline use keeps working. Icons come from `lucide-react`. The logo is drawn in `src/components/Brand.tsx`; `scripts/make-brand-images.mjs` renders the same mark into `public/favicon.svg`, the app icons and the `og-image.png` share picture.
-- **Analytics** (optional): set a repository variable `CF_BEACON_TOKEN` to a Cloudflare Web Analytics token and the build adds its cookie-free beacon. Without it, nothing is sent.
-
-## Accessibility and SEO
-
-- **Accessibility** targets WCAG 2.2 AA: a skip link, focus moved to each new page's heading, visible focus rings, labeled editor and blanks, results announced to screen readers, keyboard access to every drill, an option to turn off single-key shortcuts, 24px tap targets, sufficient contrast (including syntax colors), and reduced motion support. `npm run test:e2e` runs axe-core on every page type, in both the light and dark themes, and on interactive states (results, drills, the death screen, the visualizer), and CI fails on any violation.
-- **SEO**: every page has a real URL (`/learn/c-hello/your-first-program`); old `#/` links and numbered step addresses redirect. `scripts/prerender.mjs` writes a static HTML file per route with its own title, description, canonical link, Open Graph tags, structured data (`Course`, `LearningResource`, `TechArticle`) and the lesson text, plus `sitemap.xml`, `robots.txt` and `404.html`. The build reads `BASE_PATH` (default `/`) and `SITE_URL` (default `https://cpparena.com`); the workflow sets both from `CUSTOM_DOMAIN`.
-
-## Known limits
-
-- No threads (WASI). The concurrency module's thread examples are `cpp native` code blocks, compiled with `-pthread` and run three times by `npm run content` (their output must match every time), while its exercises practice the parts that run without threads (atomics work). The Pro Track teaches exceptions and concurrency hands-on on a real machine.
-- WebAssembly memory is only bounds-checked at its outer edge, so many out-of-bounds bugs won't crash the way they do natively.
-- Programs can't read input interactively; each test supplies stdin in advance. Use "Run with my input" to try your own.
-- Because C++ compiles with a precompiled `<bits/stdc++.h>`, a missing `#include` in C++ code still compiles here. The GCC check in CI uses real includes.
+- **Content** (`content/`): YAML lessons, drills, projects, topics, the roadmap, placement quiz and Pro Track list. `scripts/build-content.mjs` compiles and runs every reference solution through the same wrapper the browser uses, so expected outputs come from real runs; checks that starter code doesn't already pass, that worked examples print what the text says (and that "doesn't compile" examples really fail with the error shown), that solutions have no compiler warnings, and that output is deterministic across runs. Results are cached by program text in `node_modules/.cache/rustarena`.
+- **Crates**: `runner-deps/Cargo.toml` lists the crates lesson code may use (all available on the Playground). The build and local runner compile them once with Cargo and link each program against that build with plain `rustc`.
+- **Progress**: stored in the browser's localStorage. The Profile page moves it between devices with a transfer link (also as a QR code), a private GitHub Gist, or a file. Imports merge rather than overwrite.
+- **Offline**: `public/sw.js` saves the app when it installs, so lessons and pages open offline after one visit. Running code needs the runner (online, unless you run your own).
+- **Accessibility** targets WCAG 2.2 AA: a skip link, focus moved to each new page's heading, visible focus rings, labeled editor and blanks, results announced to screen readers, keyboard access to every drill, 24px tap targets, sufficient contrast (including syntax colors), and reduced-motion support.
+- **SEO**: every page has a real URL (`/learn/ownership/<step>`). `scripts/prerender.mjs` writes a static HTML file per route with its own title, description, canonical link, Open Graph tags and structured data (`Course`, `LearningResource`, `TechArticle`), plus `sitemap.xml`, `robots.txt` and `404.html`.
 
 ## Writing content
 
-Content lives in YAML under `content/`:
+See [`docs/AUTHORING.md`](docs/AUTHORING.md): the YAML formats for lessons, exercises (fill-in, programs with stdin/args/files/exit codes, functions with hidden tests, learner-written tests with mutants), worked examples (`rust run`, `rust panics`, `rust compile_fail`), drills, determinism rules, and the full curriculum outline.
 
-- `content/lessons/NN-id.yaml`: a module with `steps`. A step has a unique, permanent `id` (saved progress is keyed by it, so never renumber ids), `title`, `text` (Markdown), `hints`, and either `fill:` (code with `[[answer]]` blanks) or `seed:` + `solution:`. Add `tests:` with `stdin:` for programs, or `harness:` (a hidden `main` using `CHECK`, `CHECK_INT`, `CHECK_STR`, `CHECK_DBL` in C, or `CHECK` and `CHECK_EQ` in C++) for function steps. A test can also give `files:` (name to contents, placed in the program's working folder), `args:` (command-line arguments) and `exit:` (the expected exit code). Optional `require:`/`forbid:` rules take a regex `pattern` and a `message`. The `text` must end with a `**Your turn:**` paragraph: that part becomes the highlighted task card above the editor, together with the first visible test's input and expected output (or, for function steps, the names of the checks). A step can list extra challenges under `more:`, each with its own `task` plus the same exercise fields; the step counts as done once every challenge passes. Worked examples in `text` are fenced as `c run` or `cpp run` (compiled, run, and compared with the `output` block after them) or `cpp native` for thread code the browser can't build (compiled with `-pthread` and run three times at build time only).
-- `content/drills/<module-id>.yaml`: drills of type `predict`, `fill`, `bug` (mark the line with `// BUG` and give `fix:`), `compiles` and `boss` (an exercise like a lesson step). `pre:` holds code above `main`; `body:` goes inside `main`. The build works out which step teaches each drill (`scripts/drill-steps.mjs`); set `after: <step id>` to choose it yourself.
-- `content/step-urls.yaml`: every step's permanent address (`/learn/<module>/<slug>`) and the old numbered addresses, which forward to the same lessons. `npm run content` adds new steps; commit it.
-- `content/next.yaml`: the "Where to go next" page.
-- `content/projects/NN-id.yaml`: a `seed` and `milestones`, each with the full `solution` at that point. Your code carries forward between milestones.
-- `content/pro.yaml`: the Pro Track project list. Each project's lesson is `pro-track/starter/projects/<dir>/README.md`.
-- `content/drills/interview-*.yaml`: interview prep (topic `interview`). Besides the drill types above, any drill file can use `choice` (a `prompt`, 2 to 4 `choices` and the number of the right `answer`; add `verify: output` to have the build check the right choice against the program's real output). Choices are shuffled when shown.
-- `content/placement.yaml`: the placement quiz, one question per curriculum milestone, in curriculum order.
-- `content/topics/*.yaml`: topic pages with `slug`, `title`, `description`, `modules`, an optional `visual`, a Markdown `body` and an `example` that must compile cleanly and run (`native: true` builds a thread example with `-pthread` instead).
-- `content/visuals/*.yaml`: visualizations with `id`, `title`, `lang`, the `module` and `steps` they belong to, `summary`, `text` and `code` (kept short: at most 400 recorded lines).
+## Known limits
 
-Expected outputs are computed from the reference solutions by `npm run content`, so you never type them by hand. `python3 scripts/yaml-quote-fix.py content/*/*.yaml` quotes prose lines that contain colons.
+- Running code needs a connection to the Rust Playground (or a runner you host). The Playground is a free, shared service; if it's busy or down, the site says so and suggests the alternatives.
+- Programs can't read input interactively; each test supplies stdin in advance. Use "Run with my input" to try your own.
+- Only the crates in `runner-deps/Cargo.toml` are used in browser lessons. Frameworks that need a network, a database or several files (axum, sqlx, clap derive in a real crate) are taught hands-on in the Pro Track.

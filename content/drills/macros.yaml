@@ -1,0 +1,241 @@
+topic: macros
+drills:
+  - type: predict
+    after: macros-1
+    pre: |
+      macro_rules! square {
+          ($x:expr) => {
+              $x * $x
+          };
+      }
+    body: |
+      println!("{}", square!(2 + 3));
+    why: An expr fragment is pasted in as one unit, as if in parentheses, so this is (2 + 3) * (2 + 3) = 25, not 2 + 3 * 2 + 3.
+  - type: predict
+    after: macros-2
+    pre: |
+      macro_rules! kind {
+          ($x:literal) => { "literal" };
+          ($x:ident) => { "ident" };
+          ($x:expr) => { "expr" };
+      }
+    body: |
+      let v = 3;
+      println!("{} {} {}", kind!(4), kind!(v), kind!(v + 1));
+    why: "Rules are tried top to bottom. 4 is a literal; v is an identifier; v + 1 isn't a lone literal or identifier, so only the expr rule matches."
+  - type: predict
+    after: macros-3
+    pre: |
+      macro_rules! shout_all {
+          ($($w:expr),*) => {
+              $( print!("{}! ", $w); )*
+              println!();
+          };
+      }
+    body: |
+      shout_all!("go", "crab", 1);
+    why: The $( ... )* in the transcriber repeats once per matched value, so there are three print! calls before the final println!.
+  - type: predict
+    after: macros-5
+    pre: |
+      macro_rules! double_it {
+          ($e:expr) => {{
+              let x = $e;
+              x * 2
+          }};
+      }
+    body: |
+      let x = 10;
+      println!("{} {}", double_it!(x + 1), x);
+    why: Hygiene keeps the macro's x separate from the caller's x. $e still means the caller's x + 1 (11), doubled to 22, and the caller's x stays 10.
+  - type: predict
+    after: macros-3
+    body: |
+      let a = 1;
+      println!("{}", stringify!(a + b * 2));
+    why: stringify! turns its tokens into a string literal at compile time. It doesn't evaluate anything, so b doesn't even need to exist.
+  - type: predict
+    after: macros-4
+    pre: |
+      macro_rules! count {
+          () => { 0 };
+          ($head:expr $(, $tail:expr)*) => { 1 + count!($($tail),*) };
+      }
+    body: |
+      println!("{}", count!('a', 'b', 'c', 'd'));
+    why: Each recursive step removes one value and adds 1, until the empty base rule returns 0. 1 + 1 + 1 + 1 + 0 = 4.
+  - type: fill
+    after: macros-1
+    prompt: Match any expression.
+    pre: |
+      macro_rules! twice {
+          ($x:[[expr]]) => {
+              $x * 2
+          };
+      }
+    body: |
+      println!("{}", twice!(10 + 1));
+    why: The expr fragment specifier matches a whole expression, which is pasted in as one unit.
+  - type: fill
+    after: macros-3
+    prompt: Repeat the push once for every matched value.
+    pre: |
+      macro_rules! my_vec {
+          ($($x:expr),*) => {{
+              let mut v = Vec::new();
+              $( v.push($x); )[[*]]
+              v
+          }};
+      }
+    body: |
+      let v: Vec<i32> = my_vec![4, 5, 6];
+      println!("{:?}", v);
+    why: In the transcriber, $( ... )* repeats its contents once for each value the matching repetition captured.
+  - type: fill
+    after: macros-3
+    prompt: Turn the variant's name into a string.
+    pre: |
+      macro_rules! name_of {
+          ($v:ident) => {
+              [[stringify!]]($v)
+          };
+      }
+    body: |
+      println!("{}", name_of!(Warning));
+    why: stringify! converts the tokens it receives into a string literal, here "Warning".
+  - type: bug
+    after: macros-1
+    pre: |
+      macro_rules! square {
+          ($x:expr) => {{ $x * $x }}; // BUG
+      }
+    body: |
+      let mut n = 2;
+      let s = square!({ n += 1; n });
+      println!("{s}");
+    fix: '($x:expr) => {{ let v = $x; v * v }};'
+    prompt: This should print 9 (the block runs once, giving 3, and 3 squared is 9). Click the line with the bug.
+    why: $x * $x pastes the block in twice, so it runs twice (3 * 4 = 12). Binding it to a local first evaluates it once.
+  - type: bug
+    after: macros-3
+    pre: |
+      macro_rules! my_vec {
+          ($($x:expr),*) => { vec![$($x),*] }; // BUG
+      }
+    body: |
+      let v: Vec<i32> = my_vec![1, 2, 3,];
+      println!("{:?}", v);
+    fix: '($($x:expr),* $(,)?) => { vec![$($x),*] };'
+    prompt: This should print `[1, 2, 3]`, but the call has a trailing comma. Click the line with the bug.
+    why: After the last comma the matcher expects another expression. Adding $(,)? allows an optional trailing comma.
+  - type: bug
+    after: macros-4
+    pre: |
+      macro_rules! max {
+          ($x:expr) => { $x };
+          ($x:expr, $($rest:expr),+) => {{
+              let a = $x;
+              let b = max!($($rest),+);
+              if a < b { a } else { b } // BUG
+          }};
+      }
+    body: |
+      println!("{}", max!(4, 9, 2));
+    fix: 'if a > b { a } else { b }'
+    why: The comparison was flipped, so every level kept the smaller value and the macro returned the minimum, 2.
+  - type: compiles
+    after: macros-1
+    answer: no
+    body: |
+      println!("{}", triple!(3));
+      macro_rules! triple {
+          ($x:expr) => { $x * 3 };
+      }
+    why: A macro_rules! macro must be defined above its first use in the file. Here triple! is used before its definition.
+  - type: compiles
+    after: macros-5
+    answer: no
+    pre: |
+      macro_rules! add_bonus {
+          ($x:expr) => {
+              $x + bonus
+          };
+      }
+    body: |
+      let bonus = 5;
+      println!("{}", add_bonus!(10));
+    why: Hygiene stops a macro from reaching the caller's local variables. bonus must be passed in as an argument.
+  - type: compiles
+    after: macros-2
+    answer: yes
+    pre: |
+      macro_rules! getter {
+          ($name:ident, $value:expr) => {
+              fn $name() -> u32 {
+                  $value
+              }
+          };
+      }
+
+      getter!(max_hp, 100);
+    body: |
+      println!("{}", max_hp());
+    why: Macros can expand to items. getter! generates a function named max_hp at the top level, which main then calls.
+  - type: choice
+    after: macros-1
+    prompt: You need to clamp a number into a range in several places. What should you write?
+    choices: ["A macro_rules! macro, because it's inlined", "A plain function (or use the built-in clamp)", "A procedural macro"]
+    answer: 2
+    why: If a function can do the job, write a function. It's easier to read, type-checks normally and gives clearer errors. Functions get inlined by the optimizer anyway.
+  - type: choice
+    after: macros-6
+    prompt: "What does a derive macro like #[derive(Serialize)] do?"
+    choices: ["It reads the struct's tokens at compile time and adds new code (an impl) next to it", "It uses reflection at runtime to find the struct's fields", "It edits the struct's fields to add serialization data"]
+    answer: 1
+    why: Derive macros run in the compiler. They receive the item's tokens and output extra items, typically a trait impl. Rust has no runtime reflection.
+  - type: boss
+    after: macros-3
+    prompt: |
+      Write a `query!` macro that builds a URL query string from `key = value` pairs: `query!(page = 2, sort = "name")` returns the `String` `"page=2&sort=name"`. Keys are identifiers (turn them into text with `stringify!`), values are any expressions that implement `Display`. `query!()` returns an empty `String`, and a trailing comma is allowed.
+    seed: |
+      macro_rules! query {
+          () => {
+              String::new()
+          };
+          // TODO: one or more key = value pairs
+      }
+    solution: |
+      macro_rules! query {
+          () => {
+              String::new()
+          };
+          ($($key:ident = $value:expr),+ $(,)?) => {{
+              let parts: Vec<String> = vec![$( format!("{}={}", stringify!($key), $value) ),+];
+              parts.join("&")
+          }};
+      }
+    harness: |
+      #[test]
+      fn builds_one_pair() {
+          assert_eq!(query!(page = 2), "page=2", "query!(page = 2)");
+      }
+
+      #[test]
+      fn joins_pairs_with_ampersands() {
+          assert_eq!(query!(page = 2, sort = "name"), "page=2&sort=name", "query!(page = 2, sort = \"name\")");
+      }
+
+      #[test]
+      fn values_can_be_expressions_and_a_trailing_comma_is_fine() {
+          let user = "ferris";
+          assert_eq!(query!(user = user, limit = 10 * 5,), "user=ferris&limit=50", "query!(user = user, limit = 10 * 5,)");
+      }
+
+      #[test]
+      fn no_pairs_is_an_empty_string() {
+          assert_eq!(query!(), "", "query!()");
+      }
+    hints:
+      - "Matcher: `($($key:ident = $value:expr),+ $(,)?)`."
+      - "Build one `format!(\"{}={}\", stringify!($key), $value)` per pair inside `vec![...]`, then `.join(\"&\")`."
+    why: Repetition builds one formatted piece per pair, stringify! turns the identifier into its name, and join puts the separators only between pieces.

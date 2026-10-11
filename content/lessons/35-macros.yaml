@@ -1,0 +1,1623 @@
+id: macros
+title: Macros
+phase: "Advanced Rust"
+summary: Code that writes code. Build your own macro_rules! macros (from one-liners to repetition, recursion and small DSLs), debug them, and see what procedural macros like derive(Debug) and derive(Serialize) generate.
+roadmap: ["Declarative Macros with macro_rules!", "Procedural Macros & Custom Derive", "Domain Specific Languages (DSLs)"]
+steps:
+  - title: Your first macro_rules! macro
+    id: macros-1
+    text: |
+      You've used macros since your first program: `println!`, `format!`, `vec!`, `assert_eq!`, `todo!`. A **macro** is code that writes code. The compiler expands it **before** type checking, replacing the call with the code the macro produces.
+
+      ### Why have macros at all?
+
+      Functions are great, but they have limits that macros don't:
+
+      - A function takes a fixed number of arguments with fixed types. `println!` takes any number, and checks its format string at compile time.
+      - A function can't create new structs, impls or functions. A macro can generate whole items.
+      - A function can't `return` from its caller. A macro expands *inside* the caller, so it can.
+
+      The price: macros are harder to read, their errors point into generated code, and editors understand them less well. The rule teams follow is simple: **if a function (or a generic, or a trait) can do it, write a function.** Reach for a macro when it can't.
+
+      ### macro_rules!
+
+      **Declarative macros** are written with `macro_rules!`. Each **rule** has a **matcher** (the pattern the call must look like) and a **transcriber** (the code it expands to):
+
+      ```rust run
+      macro_rules! square {
+          ($x:expr) => {
+              $x * $x
+          };
+      }
+
+      macro_rules! greet {
+          () => {
+              println!("Hello, arena!")
+          };
+          ($name:expr) => {
+              println!("Hello, {}!", $name)
+          };
+      }
+
+      fn main() {
+          println!("{}", square!(7));
+          println!("{}", square!(2 + 3));
+          greet!();
+          greet!("Ferris");
+      }
+      ```
+
+      ```output
+      49
+      25
+      Hello, arena!
+      Hello, Ferris!
+      ```
+
+      Piece by piece:
+
+      - `($x:expr) => { $x * $x };` is one rule. `$x` is a **metavariable**, and `expr` is its **fragment specifier**: "match one Rust expression here". In the transcriber, `$x` is replaced by whatever was matched.
+      - `greet!` has two rules. The compiler tries them **top to bottom** and uses the first one that matches, so `greet!()` picks the first and `greet!("Ferris")` the second. Put specific rules before general ones.
+      - `square!(2 + 3)` is 25, not 11. The matched expression is pasted in as **one unit**, as if it had parentheses. (C's `#define SQUARE(x) x*x` pastes text and gets this wrong; Rust macros work on syntax, not text.)
+      - You can call a macro with any brackets: `square!(7)`, `square![7]` and `square!{7}` are the same. By convention, `()` looks like a function call, `[]` builds a collection (`vec![]`), and `{}` wraps blocks or items.
+      - A `macro_rules!` macro must be defined **above** the code that uses it in the file. Otherwise: ``cannot find macro `square` in this scope``.
+
+      ### Common mistakes
+
+      **No rule matches the call.** The error names the token where matching failed:
+
+      ```rust compile_fail
+      macro_rules! greet {
+          () => {
+              println!("Hello, arena!")
+          };
+          ($name:expr) => {
+              println!("Hello, {}!", $name)
+          };
+      }
+
+      fn main() {
+          greet!("Ferris", "Corro");
+      }
+      ```
+
+      ```error
+      error: no rules expected `,`
+      ```
+
+      **Evaluating an argument twice.** `$x * $x` pastes the expression in twice, so it **runs** twice. That matters when it has side effects or is expensive:
+
+      ```rust run
+      macro_rules! square {
+          ($x:expr) => {
+              $x * $x
+          };
+      }
+
+      macro_rules! square_once {
+          ($x:expr) => {{
+              let v = $x;
+              v * v
+          }};
+      }
+
+      fn main() {
+          let a = square!({ println!("computing"); 3 });
+          println!("{a}");
+          let b = square_once!({ println!("computing"); 3 });
+          println!("{b}");
+      }
+      ```
+
+      ```output
+      computing
+      computing
+      9
+      computing
+      9
+      ```
+
+      The fix stores the value in a local first. Notice the **double braces** `{{ ... }}`: the outer pair belongs to the rule, the inner pair is a block expression in the expanded code, so `let v` and `v * v` become one expression.
+
+      **Your turn:** fill in the blanks of a `cube!` macro that evaluates its argument once. The program should print `27` and then `8`.
+    fill: |
+      macro_rules! cube {
+          ($x:[[expr]]) => {{
+              let v = [[$x]];
+              v * v * v
+          }};
+      }
+
+      fn main() {
+          println!("{}", cube!(3));
+          println!("{}", cube!(1 + 1));
+      }
+    hints:
+      - "The fragment specifier for \"any expression\" is `expr`."
+      - "In the transcriber, the matched expression is written with its dollar sign: `$x`."
+    tests:
+      - expect: "27\n8"
+    more:
+      - task: |
+          Write `max2!(a, b)`, which evaluates to the larger of two values. Each argument must be evaluated **exactly once** (a hidden test counts the calls), so store both in locals inside a block before comparing.
+        seed: |
+          macro_rules! max2 {
+              ($a:expr, $b:expr) => {
+                  todo!()
+              };
+          }
+        solution: |
+          macro_rules! max2 {
+              ($a:expr, $b:expr) => {{
+                  let a = $a;
+                  let b = $b;
+                  if a > b { a } else { b }
+              }};
+          }
+        harness: |
+          #[test]
+          fn picks_the_larger_value() {
+              assert_eq!(max2!(3, 7), 7, "max2!(3, 7)");
+              assert_eq!(max2!(9, 2), 9, "max2!(9, 2)");
+          }
+
+          #[test]
+          fn works_with_expressions_and_negatives() {
+              assert_eq!(max2!(-5, 2 - 10), -5, "max2!(-5, 2 - 10)");
+          }
+
+          #[test]
+          fn works_with_floats() {
+              assert_eq!(max2!(1.5, 0.25), 1.5, "max2!(1.5, 0.25)");
+          }
+
+          #[test]
+          fn evaluates_each_argument_once() {
+              let mut calls = 0;
+              let mut next = || {
+                  calls += 1;
+                  calls * 10
+              };
+              assert_eq!(max2!(next(), 5), 10, "max2!(next(), 5)");
+              assert_eq!(calls, 1, "next() should run exactly once");
+          }
+        hints:
+          - "Use double braces so the expansion is one block expression: `($a:expr, $b:expr) => {{ ... }};`."
+          - "Inside: `let a = $a; let b = $b; if a > b { a } else { b }`."
+      - task: |
+          Matchers can contain plain tokens as well as metavariables. Write a `log!` macro that returns a `String`:
+
+          - `log!(warn, msg)` gives `"[WARN] <msg>"`
+          - `log!(error, msg)` gives `"[ERROR] <msg>"`
+          - `log!(msg)` gives `"[INFO] <msg>"`
+
+          `msg` can be any expression that implements `Display`. Write the `warn` and `error` rules before the general one.
+        seed: |
+          macro_rules! log {
+              ($msg:expr) => {
+                  todo!()
+              };
+          }
+        solution: |
+          macro_rules! log {
+              (warn, $msg:expr) => {
+                  format!("[WARN] {}", $msg)
+              };
+              (error, $msg:expr) => {
+                  format!("[ERROR] {}", $msg)
+              };
+              ($msg:expr) => {
+                  format!("[INFO] {}", $msg)
+              };
+          }
+        harness: |
+          #[test]
+          fn plain_messages_are_info() {
+              assert_eq!(log!("server started"), "[INFO] server started", "log!(\"server started\")");
+          }
+
+          #[test]
+          fn warn_messages_are_tagged() {
+              assert_eq!(log!(warn, "disk 91% full"), "[WARN] disk 91% full", "log!(warn, ...)");
+          }
+
+          #[test]
+          fn error_messages_are_tagged() {
+              assert_eq!(log!(error, "connection lost"), "[ERROR] connection lost", "log!(error, ...)");
+          }
+
+          #[test]
+          fn the_message_can_be_any_display_expression() {
+              let code = 503;
+              assert_eq!(log!(error, format!("status {code}")), "[ERROR] status 503", "log!(error, format!(...))");
+              assert_eq!(log!(42), "[INFO] 42", "log!(42)");
+          }
+        hints:
+          - "A literal word in a matcher must appear exactly: `(warn, $msg:expr) => { ... };`."
+          - "Each rule returns `format!(\"[WARN] {}\", $msg)` (and so on). Put `($msg:expr)` last."
+
+  - title: Fragment specifiers and generating code
+    id: macros-2
+    text: |
+      `expr` is one of several **fragment specifiers**. Each tells the macro what kind of syntax to match:
+
+      | Specifier | Matches | Examples |
+      |---|---|---|
+      | `expr` | an expression | `2 + 3`, `x.len()`, `"hi"` |
+      | `ident` | a name | `max_players`, `Meters` |
+      | `ty` | a type | `u32`, `Vec<String>`, `&'static str` |
+      | `literal` | a literal | `8`, `"hi"`, `'c'`, `true` |
+      | `pat` | a pattern | `Some(x)`, `1..=5`, `_` |
+      | `block` | a `{ ... }` block | `{ let a = 1; a + 1 }` |
+      | `stmt` | a statement | `let x = 5` |
+      | `tt` | one **token tree**: a single token, or anything inside matching `()`, `[]` or `{}` | `+`, `foo`, `(a, b)` |
+      | `item`, `path`, `lifetime`, `vis`, `meta` | an item, a path, a lifetime, a visibility (`pub`), an attribute's contents | `fn f() {}`, `std::io`, `'a`, `pub` |
+
+      With `ident` and `ty`, a macro can generate **items**: functions, structs, impls. That's where macros save the most typing.
+
+      ```rust run
+      macro_rules! constant_fn {
+          ($name:ident -> $t:ty = $value:expr) => {
+              fn $name() -> $t {
+                  $value
+              }
+          };
+      }
+
+      macro_rules! newtype {
+          ($name:ident($inner:ty)) => {
+              #[derive(Debug, Clone, Copy, PartialEq)]
+              struct $name($inner);
+          };
+      }
+
+      constant_fn!(max_players -> u32 = 8);
+      constant_fn!(server_name -> &'static str = "arena-eu-1");
+      newtype!(Meters(f64));
+
+      fn main() {
+          println!("{} players on {}", max_players(), server_name());
+          let d = Meters(12.5);
+          println!("{:?} is {} m", d, d.0);
+      }
+      ```
+
+      ```output
+      8 players on arena-eu-1
+      Meters(12.5) is 12.5 m
+      ```
+
+      - The matcher `$name:ident -> $t:ty = $value:expr` invents its own little syntax. `->` and `=` are plain tokens the call must contain.
+      - `fn $name() -> $t` pastes the identifier and the type into a function definition. The macro calls sit at the top level of the file, so they expand to items there.
+      - `newtype!(Meters(f64))` expands to a whole struct with its derives. The standard library uses this trick to implement traits for all twelve integer types with one macro.
+
+      ### Common mistakes
+
+      **What may follow a fragment is restricted.** So that future Rust syntax can't change how a macro parses, an `expr` or `stmt` may only be followed by `=>`, `,` or `;`. Types and paths allow a few more (`=`, `|`, `{`, `:`, `>`, `as`, `where`).
+
+      ```rust compile_fail
+      macro_rules! both {
+          ($a:expr and $b:expr) => {
+              $a && $b
+          };
+      }
+
+      fn main() {
+          println!("{}", both!(true and false));
+      }
+      ```
+
+      ```error
+      error: `$a:expr` is followed by `and`, which is not allowed for `expr` fragments
+      ```
+
+      Use a comma (`($a:expr, $b:expr)`) or match `$a:tt and $b:tt` if each side is a single token.
+
+      **Using the wrong specifier.** An `ident` is only a name: passing `x + 1` where the macro expects `$v:ident` fails with `no rules expected` and points at the `+`.
+
+      **Your turn:** write an `id_type!` macro that generates an id newtype. `id_type!(UserId, u32)` should expand to a tuple struct `UserId(u32)` deriving `Debug, Clone, Copy, PartialEq`, plus an `impl` with `fn new(value: u32) -> Self` and `fn value(&self) -> u32`. Then use it twice: `UserId` wrapping `u32` and `Sku` wrapping `u64`.
+    seed: |
+      macro_rules! id_type {
+          ($name:ident, $inner:ty) => {
+              // TODO: the struct (with derives) and an impl with new() and value()
+          };
+      }
+
+      // TODO: id_type!(UserId, u32); and id_type!(Sku, u64);
+    solution: |
+      macro_rules! id_type {
+          ($name:ident, $inner:ty) => {
+              #[derive(Debug, Clone, Copy, PartialEq)]
+              struct $name($inner);
+
+              impl $name {
+                  fn new(value: $inner) -> Self {
+                      $name(value)
+                  }
+
+                  fn value(&self) -> $inner {
+                      self.0
+                  }
+              }
+          };
+      }
+
+      id_type!(UserId, u32);
+      id_type!(Sku, u64);
+    harness: |
+      #[test]
+      fn user_ids_store_their_value() {
+          assert_eq!(UserId::new(5).value(), 5, "UserId::new(5).value()");
+      }
+
+      #[test]
+      fn skus_hold_big_numbers() {
+          assert_eq!(Sku::new(9_000_000_000).value(), 9_000_000_000, "Sku::new(9_000_000_000).value()");
+      }
+
+      #[test]
+      fn ids_compare_by_value() {
+          assert_eq!(UserId::new(1), UserId::new(1), "UserId::new(1) == UserId::new(1)");
+          assert_ne!(UserId::new(1), UserId::new(2), "UserId::new(1) != UserId::new(2)");
+      }
+
+      #[test]
+      fn ids_print_with_their_type_name() {
+          assert_eq!(format!("{:?}", UserId::new(7)), "UserId(7)", "Debug output of UserId::new(7)");
+          assert_eq!(format!("{:?}", Sku::new(3)), "Sku(3)", "Debug output of Sku::new(3)");
+      }
+    require:
+      - pattern: 'id_type!\s*\(\s*UserId'
+        message: "Create `UserId` with the macro: `id_type!(UserId, u32);`."
+      - pattern: 'id_type!\s*\(\s*Sku'
+        message: "Create `Sku` with the macro: `id_type!(Sku, u64);`."
+    forbid:
+      - pattern: 'struct\s+(UserId|Sku)\b'
+        message: Let the macro write the structs; don't define `UserId` or `Sku` by hand.
+    hints:
+      - "The transcriber can hold several items: first `#[derive(Debug, Clone, Copy, PartialEq)] struct $name($inner);`, then `impl $name { ... }`."
+      - "Inside the impl, use `$inner` for the types: `fn new(value: $inner) -> Self { $name(value) }` and `fn value(&self) -> $inner { self.0 }`."
+      - "Outside the macro, at the top level: `id_type!(UserId, u32);` and `id_type!(Sku, u64);`."
+    more:
+      - task: |
+          Write `make_adder!(name, amount)`, which generates a function `fn name(x: i32) -> i32` returning `x + amount`. Then use it three times to create `add_five` (adds 5), `add_ten` (adds 10) and `subtract_one` (adds -1).
+        seed: |
+          macro_rules! make_adder {
+              ($name:ident, $amount:expr) => {
+                  // TODO: generate the function
+              };
+          }
+
+          // TODO: create add_five, add_ten and subtract_one
+        solution: |
+          macro_rules! make_adder {
+              ($name:ident, $amount:expr) => {
+                  fn $name(x: i32) -> i32 {
+                      x + $amount
+                  }
+              };
+          }
+
+          make_adder!(add_five, 5);
+          make_adder!(add_ten, 10);
+          make_adder!(subtract_one, -1);
+        harness: |
+          #[test]
+          fn add_five_adds_five() {
+              assert_eq!(add_five(1), 6, "add_five(1)");
+          }
+
+          #[test]
+          fn add_ten_adds_ten() {
+              assert_eq!(add_ten(-10), 0, "add_ten(-10)");
+          }
+
+          #[test]
+          fn subtract_one_subtracts_one() {
+              assert_eq!(subtract_one(0), -1, "subtract_one(0)");
+              assert_eq!(subtract_one(100), 99, "subtract_one(100)");
+          }
+        forbid:
+          - pattern: 'fn\s+(add_five|add_ten|subtract_one)\b'
+            message: Generate the three functions with `make_adder!` instead of writing them by hand.
+        hints:
+          - "The transcriber is a function definition with the name pasted in: `fn $name(x: i32) -> i32 { x + $amount }`."
+          - "Then three calls at the top level: `make_adder!(add_five, 5);` and so on (the last one with `-1`)."
+      - task: |
+          Because a macro expands inside the function that calls it, it can `return` from that function. That's how `anyhow::ensure!` works. Write `ensure!(condition, message)`: if the condition is false, it returns `Err(message.to_string())` from the calling function.
+
+          Then use it (at least three times) in `validate_username`, with these checks in this order:
+
+          1. at least 3 bytes long, else `"too short"`
+          2. at most 16 bytes long, else `"too long"`
+          3. only ASCII letters, digits and `_`, else `"only letters, digits and _ allowed"`
+          4. doesn't start with a digit, else `"must not start with a digit"`
+        seed: |
+          macro_rules! ensure {
+              ($cond:expr, $msg:expr) => {
+                  // TODO
+              };
+          }
+
+          fn validate_username(name: &str) -> Result<(), String> {
+              todo!()
+          }
+        solution: |
+          macro_rules! ensure {
+              ($cond:expr, $msg:expr) => {
+                  if !$cond {
+                      return Err($msg.to_string());
+                  }
+              };
+          }
+
+          fn validate_username(name: &str) -> Result<(), String> {
+              ensure!(name.len() >= 3, "too short");
+              ensure!(name.len() <= 16, "too long");
+              ensure!(
+                  name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                  "only letters, digits and _ allowed"
+              );
+              ensure!(!name.starts_with(|c: char| c.is_ascii_digit()), "must not start with a digit");
+              Ok(())
+          }
+        harness: |
+          #[test]
+          fn accepts_a_good_name() {
+              assert_eq!(validate_username("ferris_42"), Ok(()), "validate_username(\"ferris_42\")");
+          }
+
+          #[test]
+          fn rejects_short_and_long_names() {
+              assert_eq!(validate_username("ab"), Err("too short".to_string()), "validate_username(\"ab\")");
+              assert_eq!(validate_username("a_very_long_username"), Err("too long".to_string()), "20 characters");
+          }
+
+          #[test]
+          fn rejects_bad_characters() {
+              assert_eq!(validate_username("crab-man"), Err("only letters, digits and _ allowed".to_string()), "validate_username(\"crab-man\")");
+          }
+
+          #[test]
+          fn rejects_a_leading_digit() {
+              assert_eq!(validate_username("1crab"), Err("must not start with a digit".to_string()), "validate_username(\"1crab\")");
+          }
+        require:
+          - pattern: 'ensure!\s*\([\s\S]*ensure!\s*\([\s\S]*ensure!\s*\('
+            message: Use your `ensure!` macro for the checks (at least three times).
+        hints:
+          - "The macro expands to an `if`: `if !$cond { return Err($msg.to_string()); }`. The `return` leaves the function that called the macro."
+          - "`!$cond` is safe even for `a >= b`: the expression is pasted in as one unit."
+          - "`name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')` and `name.starts_with(|c: char| c.is_ascii_digit())` cover the last two checks."
+
+  - title: Repetition
+    id: macros-3
+    text: |
+      Macros really shine when they accept **any number** of inputs. That's **repetition**: `$( ... )` with a separator and a repetition operator.
+
+      ```rust run
+      macro_rules! my_vec {
+          ( $( $x:expr ),* $(,)? ) => {{
+              let mut v = Vec::new();
+              $( v.push($x); )*
+              v
+          }};
+      }
+
+      macro_rules! print_all {
+          ( $( $label:literal : $value:expr ),+ ) => {
+              $( println!("{:>6}: {}", $label, $value); )+
+          };
+      }
+
+      fn main() {
+          let scores = my_vec![90, 72, 85,];
+          println!("{:?}", scores);
+          print_all!("best": 90, "worst": 72, "count": scores.len());
+      }
+      ```
+
+      ```output
+      [90, 72, 85]
+        best: 90
+       worst: 72
+       count: 3
+      ```
+
+      How to read it:
+
+      - In the matcher, `$( $x:expr ),*` means "zero or more expressions, separated by commas". The separator (here `,`) goes between the `)` and the operator.
+      - The operators: `*` is zero or more, `+` is one or more, `?` is zero or one.
+      - `$(,)?` at the end allows an optional **trailing comma**, so `my_vec![90, 72, 85,]` works. Every collection macro should allow one; people reorder lines and leave commas behind.
+      - In the transcriber, `$( v.push($x); )*` repeats its contents **once for each** `$x` that was matched. Three inputs, three `push` lines.
+      - A repetition can capture several metavariables at once, like `$label` and `$value`. They're repeated together, pair by pair.
+
+      Here's (simplified) how std's own `vec!` is written. `$crate` means "the crate this macro comes from", so the macro works even if the caller has never imported `Vec`:
+
+      ```rust
+      macro_rules! vec {
+          () => ( $crate::vec::Vec::new() );
+          ($elem:expr; $n:expr) => ( $crate::vec::from_elem($elem, $n) );
+          ($($x:expr),+ $(,)?) => ( <[_]>::into_vec($crate::boxed::Box::new([$($x),+])) );
+      }
+      ```
+
+      In your own macros, write full paths like `::std::collections::HashMap` for the same reason.
+
+      ### Common mistakes
+
+      **Using a repeated variable outside a repetition:**
+
+      ```rust compile_fail
+      macro_rules! pairs {
+          ($($x:expr),*) => {
+              vec![$x]
+          };
+      }
+
+      fn main() {
+          let v: Vec<i32> = pairs![1, 2];
+          println!("{:?}", v);
+      }
+      ```
+
+      ```error
+      error: variable `x` is still repeating at this depth
+      ```
+
+      `$x` stands for a whole list, so it must appear inside a `$( ... )*` in the transcriber too: `vec![$($x),*]`.
+
+      **Forgetting the trailing comma rule:** without `$(,)?`, the call `my_vec![1, 2, 3,]` fails with `unexpected end of macro invocation`, because after the last comma the matcher expects another expression.
+
+      **An empty call with `let mut`:** `my_vec![]` expands to a `let mut v` that's never changed, which warns, and Rust can't infer the element type. Give the empty case its own rule (`() => { Vec::new() };`), as std does.
+
+      **Your turn:** write a `hashmap!` macro: `hashmap!{ "a" => 1, "b" => 2 }` builds a `HashMap` containing those entries. Allow an optional trailing comma. The starter already has the rule for `hashmap!{}` (an empty map); add a rule for one or more `key => value` pairs. Use the full path `::std::collections::HashMap` so callers don't need a `use`.
+    seed: |
+      macro_rules! hashmap {
+          () => {
+              ::std::collections::HashMap::new()
+          };
+          // TODO: a rule for one or more `key => value` pairs, with an optional trailing comma
+      }
+    solution: |
+      macro_rules! hashmap {
+          () => {
+              ::std::collections::HashMap::new()
+          };
+          ( $( $key:expr => $value:expr ),+ $(,)? ) => {{
+              let mut map = ::std::collections::HashMap::new();
+              $( map.insert($key, $value); )+
+              map
+          }};
+      }
+    harness: |
+      use std::collections::HashMap;
+
+      #[test]
+      fn builds_a_map_from_pairs() {
+          let m = hashmap! { "a" => 1, "b" => 2 };
+          assert_eq!(m.len(), 2, "number of entries");
+          assert_eq!(m.get("a"), Some(&1), "m.get(\"a\")");
+          assert_eq!(m.get("b"), Some(&2), "m.get(\"b\")");
+      }
+
+      #[test]
+      fn accepts_a_trailing_comma() {
+          let m = hashmap! {
+              "x" => 10,
+              "y" => 20,
+          };
+          assert_eq!(m.get("y"), Some(&20), "m.get(\"y\")");
+      }
+
+      #[test]
+      fn empty_braces_make_an_empty_map() {
+          let m: HashMap<String, u32> = hashmap! {};
+          assert!(m.is_empty(), "hashmap!{{}} should be empty");
+      }
+
+      #[test]
+      fn keys_and_values_can_be_any_expressions() {
+          let item = String::from("potion");
+          let m = hashmap! { item.clone() => 2 + 3, "map".to_string() => "crab".len() };
+          assert_eq!(m.get("potion"), Some(&5), "m.get(\"potion\")");
+          assert_eq!(m.get("map"), Some(&4), "m.get(\"map\")");
+      }
+
+      #[test]
+      fn a_repeated_key_keeps_the_last_value() {
+          let m = hashmap! { "k" => 1, "k" => 2 };
+          assert_eq!(m.len(), 1, "number of entries");
+          assert_eq!(m["k"], 2, "m[\"k\"]");
+      }
+    hints:
+      - "The matcher: `( $( $key:expr => $value:expr ),+ $(,)? )`. `=>` after an `expr` is allowed."
+      - "The transcriber is a block: create `let mut map = ::std::collections::HashMap::new();`, insert each pair, then return `map`. Use double braces."
+      - "`$( map.insert($key, $value); )+` repeats the insert for every pair."
+    more:
+      - task: |
+          Write `sum!`, which adds any number of values: `sum!(1, 2, 3)` expands to `1 + 2 + 3`. `sum!()` is `0`, and a trailing comma is allowed. It must also work for floats (`sum!(1.5, 2.5)` is `4.0`), so don't start the expansion with an integer `0` when there are values: match the first value separately and repeat `+ $rest` for the others.
+        seed: |
+          macro_rules! sum {
+              () => {
+                  0
+              };
+              // TODO: one or more values
+          }
+        solution: |
+          macro_rules! sum {
+              () => {
+                  0
+              };
+              ( $first:expr $( , $rest:expr )* $(,)? ) => {
+                  $first $( + $rest )*
+              };
+          }
+        harness: |
+          #[test]
+          fn adds_several_integers() {
+              assert_eq!(sum!(1, 2, 3), 6, "sum!(1, 2, 3)");
+          }
+
+          #[test]
+          fn a_single_value_is_itself() {
+              assert_eq!(sum!(5), 5, "sum!(5)");
+          }
+
+          #[test]
+          fn nothing_sums_to_zero() {
+              assert_eq!(sum!(), 0, "sum!()");
+          }
+
+          #[test]
+          fn works_with_floats_and_a_trailing_comma() {
+              assert_eq!(sum!(1.5, 2.5,), 4.0, "sum!(1.5, 2.5,)");
+          }
+
+          #[test]
+          fn values_can_be_expressions() {
+              let v = vec![10, 20];
+              assert_eq!(sum!(v[0], v[1] * 2, 3 - 1), 52, "sum!(v[0], v[1] * 2, 3 - 1)");
+          }
+        hints:
+          - "Matcher: `( $first:expr $( , $rest:expr )* $(,)? )`. The comma is inside the repetition, before each extra value."
+          - "Transcriber: `$first $( + $rest )*`. The `+` is plain text repeated before each `$rest`."
+      - task: |
+          Write `enum_str!`, which generates an enum plus two helper methods, a common way to avoid writing the same list of variants three times. `enum_str!(Level { Debug, Info, Warn, Error })` should expand to:
+
+          - `enum Level { Debug, Info, Warn, Error }` deriving `Debug, Clone, Copy, PartialEq`
+          - `fn as_str(&self) -> &'static str` returning the variant's name (`Level::Warn.as_str()` is `"Warn"`)
+          - `fn all() -> Vec<Level>` listing every variant in order
+
+          `stringify!(tokens)` turns tokens into a string literal at compile time: `stringify!(Warn)` is `"Warn"`. Allow a trailing comma after the last variant, and use the macro to create `Level` as shown.
+        seed: |
+          macro_rules! enum_str {
+              ($name:ident { $( $variant:ident ),* $(,)? }) => {
+                  // TODO: the enum and an impl with as_str() and all()
+              };
+          }
+
+          // TODO: enum_str!(Level { Debug, Info, Warn, Error });
+        solution: |
+          macro_rules! enum_str {
+              ($name:ident { $( $variant:ident ),* $(,)? }) => {
+                  #[derive(Debug, Clone, Copy, PartialEq)]
+                  enum $name {
+                      $( $variant ),*
+                  }
+
+                  impl $name {
+                      fn as_str(&self) -> &'static str {
+                          match self {
+                              $( $name::$variant => stringify!($variant), )*
+                          }
+                      }
+
+                      fn all() -> Vec<$name> {
+                          vec![$( $name::$variant ),*]
+                      }
+                  }
+              };
+          }
+
+          enum_str!(Level { Debug, Info, Warn, Error });
+        harness: |
+          #[test]
+          fn as_str_gives_the_variant_name() {
+              assert_eq!(Level::Warn.as_str(), "Warn", "Level::Warn.as_str()");
+              assert_eq!(Level::Debug.as_str(), "Debug", "Level::Debug.as_str()");
+          }
+
+          #[test]
+          fn all_lists_every_variant_in_order() {
+              assert_eq!(Level::all(), vec![Level::Debug, Level::Info, Level::Warn, Level::Error], "Level::all()");
+          }
+
+          #[test]
+          fn all_and_as_str_agree() {
+              let names: Vec<&str> = Level::all().iter().map(|l| l.as_str()).collect();
+              assert_eq!(names, vec!["Debug", "Info", "Warn", "Error"], "names of Level::all()");
+          }
+        require:
+          - pattern: 'enum_str!\s*\(\s*Level'
+            message: "Create the enum with your macro: `enum_str!(Level { Debug, Info, Warn, Error });`."
+          - pattern: 'stringify!'
+            message: Use `stringify!($variant)` to turn each variant name into a string.
+        hints:
+          - "The enum body repeats the variants with commas: `enum $name { $( $variant ),* }`."
+          - "In `as_str`, one match arm per variant: `$( $name::$variant => stringify!($variant), )*`."
+          - "`all()` is `vec![$( $name::$variant ),*]`."
+
+  - title: Recursive macros
+    id: macros-4
+    text: |
+      A macro can call **itself** in its expansion. Each call peels off part of the input until a base rule matches, just like a recursive function. This is how you handle input that repetition alone can't, such as combining values pairwise.
+
+      ```rust run
+      macro_rules! count {
+          () => { 0usize };
+          ($head:expr $(, $tail:expr)*) => { 1usize + count!($($tail),*) };
+      }
+
+      fn main() {
+          println!("{}", count!());
+          println!("{}", count!(7));
+          println!("{}", count!("a", "b", "c"));
+      }
+      ```
+
+      ```output
+      0
+      1
+      3
+      ```
+
+      Expanding `count!("a", "b", "c")` by hand:
+
+      ```text
+      count!("a", "b", "c")
+      1usize + count!("b", "c")
+      1usize + 1usize + count!("c")
+      1usize + 1usize + 1usize + count!()
+      1usize + 1usize + 1usize + 0usize
+      ```
+
+      All of this happens at compile time; the program just contains the sum (which the optimizer folds to `3`). Two rules matter, like in any recursion: a **base case** (`()`) and a step that makes the input **smaller**.
+
+      ### Accumulators and internal rules
+
+      Recursing "first value, then the rest" builds the result from the **right**. For subtraction that's the wrong grouping. The fix is an **accumulator**: carry the result so far through the recursive calls. Rules that start with a marker like `@acc` are **internal rules**, a naming convention for helper rules that callers aren't meant to use.
+
+      ```rust run
+      // Right to left: 100 - (20 - 5)
+      macro_rules! sub_right {
+          ($x:expr) => { $x };
+          ($x:expr, $($rest:expr),+) => { $x - sub_right!($($rest),+) };
+      }
+
+      // Left to right with an accumulator: (100 - 20) - 5
+      macro_rules! sub_left {
+          (@acc $acc:expr) => { $acc };
+          (@acc $acc:expr, $x:expr $(, $rest:expr)*) => { sub_left!(@acc ($acc - $x) $(, $rest)*) };
+          ($first:expr $(, $rest:expr)*) => { sub_left!(@acc $first $(, $rest)*) };
+      }
+
+      fn main() {
+          println!("{}", sub_right!(100, 20, 5));
+          println!("{}", sub_left!(100, 20, 5));
+      }
+      ```
+
+      ```output
+      85
+      75
+      ```
+
+      The public rule (last) starts the accumulator with the first value. Each `@acc` step folds in one more value, `($acc - $x)`, until none are left. Macros that eat their input a few tokens at a time like this are called **TT munchers** (they often match `$($rest:tt)*`), and they're how people build small languages inside macros.
+
+      ### Common mistakes
+
+      - **Forgetting the base case**, or a step that doesn't shrink the input: the expansion never ends, and you get ``error: recursion limit reached while expanding `count!` ``. The limit is 128 levels by default; `#![recursion_limit = "256"]` raises it, but if you need that, a different design is usually better.
+      - **Expanding an argument in several recursive branches**, which evaluates it several times. Bind it to a local first, as in step 1.
+      - **Deep recursion slows compilation.** Each level is a full macro expansion. Fine for a handful of values, not for thousands of tokens.
+
+      **Your turn:** write `max!`, which takes **one or more** values and evaluates to the largest. `max!(x)` is `x`; for more values, compare the first with `max!` of the rest. Evaluate each argument only once (bind it with `let` inside a block).
+    seed: |
+      macro_rules! max {
+          ($x:expr) => {
+              $x
+          };
+          // TODO: a recursive rule for two or more values
+      }
+    solution: |
+      macro_rules! max {
+          ($x:expr) => {
+              $x
+          };
+          ($x:expr, $($rest:expr),+) => {{
+              let first = $x;
+              let rest = max!($($rest),+);
+              if first > rest { first } else { rest }
+          }};
+      }
+    harness: |
+      #[test]
+      fn one_value_is_its_own_max() {
+          assert_eq!(max!(3), 3, "max!(3)");
+      }
+
+      #[test]
+      fn finds_the_max_of_several_values() {
+          assert_eq!(max!(1, 9, 4), 9, "max!(1, 9, 4)");
+          assert_eq!(max!(7, 2, 5, 3, 6), 7, "max!(7, 2, 5, 3, 6)");
+          assert_eq!(max!(2, 4, 8), 8, "max!(2, 4, 8)");
+      }
+
+      #[test]
+      fn works_with_negatives_and_floats() {
+          assert_eq!(max!(-5, -2, -9), -2, "max!(-5, -2, -9)");
+          assert_eq!(max!(0.5, 2.25, 1.0), 2.25, "max!(0.5, 2.25, 1.0)");
+      }
+
+      #[test]
+      fn evaluates_each_argument_once() {
+          let mut calls = 0;
+          let mut next = || {
+              calls += 1;
+              calls
+          };
+          assert_eq!(max!(next(), next(), next()), 3, "max!(next(), next(), next())");
+          assert_eq!(calls, 3, "three arguments should mean three calls");
+      }
+    hints:
+      - "Matcher for two or more: `($x:expr, $($rest:expr),+)`."
+      - "In a block: `let first = $x; let rest = max!($($rest),+);` then return the larger."
+      - "`($x:expr, $($rest:expr),+) => {{ let first = $x; let rest = max!($($rest),+); if first > rest { first } else { rest } }};`"
+    more:
+      - task: |
+          Write `first_some!`, which takes one or more `Option` expressions and evaluates to the first one that is `Some`, or the last one if all are `None`. It must be **lazy**: later arguments are only evaluated if the earlier ones were `None` (a function can't do that without closures). Typical use: `first_some!(from_env(), from_file(), Some(8080))`.
+        seed: |
+          macro_rules! first_some {
+              ($x:expr) => {
+                  $x
+              };
+              // TODO: a recursive rule for two or more options
+          }
+        solution: |
+          macro_rules! first_some {
+              ($x:expr) => {
+                  $x
+              };
+              ($x:expr, $($rest:expr),+) => {
+                  match $x {
+                      Some(v) => Some(v),
+                      None => first_some!($($rest),+),
+                  }
+              };
+          }
+        harness: |
+          #[test]
+          fn returns_the_first_some() {
+              assert_eq!(first_some!(None, Some(2), Some(3)), Some(2), "first_some!(None, Some(2), Some(3))");
+          }
+
+          #[test]
+          fn a_single_option_is_itself() {
+              assert_eq!(first_some!(Some("x")), Some("x"), "first_some!(Some(\"x\"))");
+          }
+
+          #[test]
+          fn all_none_gives_none() {
+              let none: Option<i32> = None;
+              assert_eq!(first_some!(none, none, none), None, "three Nones");
+          }
+
+          #[test]
+          fn later_arguments_are_not_evaluated() {
+              let mut calls = 0;
+              let mut probe = |v: Option<i32>| {
+                  calls += 1;
+                  v
+              };
+              assert_eq!(first_some!(probe(None), probe(Some(2)), probe(Some(3))), Some(2), "probing three options");
+              assert_eq!(calls, 2, "the third option should never be evaluated");
+          }
+        hints:
+          - "The recursive rule matches the first option and the rest: `($x:expr, $($rest:expr),+)`."
+          - "Expand to a `match`: `match $x { Some(v) => Some(v), None => first_some!($($rest),+) }`. The rest only runs in the `None` arm."
+      - task: |
+          Build a tiny DSL with a TT muncher: `calc!(10 minus 2 minus 3)` is `5`, `calc!(2 plus 3 times 4)` is `20`. The words `plus`, `minus` and `times` work **strictly left to right** (no precedence), and every number is a literal. Use an accumulator with internal `@acc` rules:
+
+          - `calc!(n ...)` starts with `calc!(@acc n; ...)`
+          - `calc!(@acc acc; plus x ...)` continues with `calc!(@acc (acc + x); ...)` (same for `minus` and `times`)
+          - `calc!(@acc acc;)` with nothing left is the answer
+        seed: |
+          macro_rules! calc {
+              // TODO: the end rule, three operator rules, and the starting rule
+              ($x:literal) => {
+                  $x
+              };
+          }
+        solution: |
+          macro_rules! calc {
+              (@acc $acc:expr;) => {
+                  $acc
+              };
+              (@acc $acc:expr; plus $x:literal $($rest:tt)*) => {
+                  calc!(@acc ($acc + $x); $($rest)*)
+              };
+              (@acc $acc:expr; minus $x:literal $($rest:tt)*) => {
+                  calc!(@acc ($acc - $x); $($rest)*)
+              };
+              (@acc $acc:expr; times $x:literal $($rest:tt)*) => {
+                  calc!(@acc ($acc * $x); $($rest)*)
+              };
+              ($x:literal $($rest:tt)*) => {
+                  calc!(@acc $x; $($rest)*)
+              };
+          }
+        harness: |
+          #[test]
+          fn a_single_number_is_itself() {
+              assert_eq!(calc!(7), 7, "calc!(7)");
+          }
+
+          #[test]
+          fn adds_and_subtracts_left_to_right() {
+              assert_eq!(calc!(10 minus 2 minus 3), 5, "calc!(10 minus 2 minus 3)");
+              assert_eq!(calc!(1 plus 2 plus 3), 6, "calc!(1 plus 2 plus 3)");
+          }
+
+          #[test]
+          fn has_no_precedence() {
+              assert_eq!(calc!(2 plus 3 times 4), 20, "calc!(2 plus 3 times 4)");
+          }
+
+          #[test]
+          fn mixes_all_three_words() {
+              assert_eq!(calc!(5 times 4 minus 8 plus 1), 13, "calc!(5 times 4 minus 8 plus 1)");
+          }
+        hints:
+          - "The end rule: `(@acc $acc:expr;) => { $acc };`. The `;` after `$acc:expr` is allowed."
+          - "An operator rule: `(@acc $acc:expr; plus $x:literal $($rest:tt)*) => { calc!(@acc ($acc + $x); $($rest)*) };`. Copy it for `minus` and `times`."
+          - "The starting rule goes last: `($x:literal $($rest:tt)*) => { calc!(@acc $x; $($rest)*) };`."
+
+  - title: Hygiene, small DSLs and debugging macros
+    id: macros-5
+    text: |
+      ### Hygiene
+
+      Macros in Rust are **hygienic**: a local variable created inside a macro lives in its own world, separate from the caller's variables, even if the names are the same.
+
+      ```rust run
+      macro_rules! double_it {
+          ($e:expr) => {{
+              let x = $e;
+              x * 2
+          }};
+      }
+
+      fn main() {
+          let x = 10;
+          println!("{}", double_it!(x + 1));
+          println!("{}", x);
+      }
+      ```
+
+      ```output
+      22
+      10
+      ```
+
+      The macro's `let x` doesn't capture or shadow the caller's `x`: `$e` is still `x + 1` with the caller's `x`, giving 22, and the caller's `x` is untouched. In C, the same trick with `#define` would quietly compute with the wrong variable.
+
+      Hygiene works the other way too: a macro can't reach into the caller's local variables unless they're passed in.
+
+      ```rust compile_fail
+      macro_rules! add_count {
+          ($x:expr) => {
+              $x + count
+          };
+      }
+
+      fn main() {
+          let count = 2;
+          println!("{}", add_count!(5));
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find value `count` in this scope
+      ```
+
+      The compiler even adds: `an identifier with the same name exists, but is not accessible due to macro hygiene`. Pass it in instead (`add_count!(5, count)`); then it's visible at the call site, which is what readers expect.
+
+      Hygiene covers local variables and labels. Function, struct and other item names a macro creates or uses are looked up normally, which is why `make_adder!(add_five, 5)` could create a function you call later. For macros shared between crates, mark them `#[macro_export]` and write paths as `$crate::...` so they resolve inside your crate, wherever the macro is used.
+
+      ### Small DSLs
+
+      A **DSL** (domain-specific language) is a mini-language for one job. Macros let you invent readable syntax that expands to plain Rust. A favorite at work is a **table of test cases** that generates one `#[test]` per row:
+
+      ```rust
+      macro_rules! level_tests {
+          ($($name:ident: $input:expr => $expected:expr,)*) => {
+              $(
+                  #[test]
+                  fn $name() {
+                      assert_eq!(parse_level($input), $expected);
+                  }
+              )*
+          };
+      }
+
+      level_tests! {
+          parses_info: "info" => Some(Level::Info),
+          parses_upper: "WARN" => Some(Level::Warn),
+          rejects_junk: "loud" => None,
+      }
+      ```
+
+      Each row becomes a separate test with its own name, so a failure tells you exactly which case broke. Crates like `rstest` and `test-case` do this with attribute macros. Other DSLs you'll meet: `serde_json::json!({ "id": 1 })`, `html!` in web frameworks, and `sqlx::query!`.
+
+      Here's a version you can run that collects results instead of generating tests. `stringify!` turns tokens into a string literal, so the table can report the source text of each input:
+
+      ```rust run
+      macro_rules! check_table {
+          ($func:ident { $($input:expr => $expected:expr),* $(,)? }) => {
+              $(
+                  let got = $func($input);
+                  let mark = if got == $expected { "ok  " } else { "FAIL" };
+                  println!("{} {}({}) = {:?}", mark, stringify!($func), stringify!($input), got);
+              )*
+          };
+      }
+
+      fn grade(score: u32) -> char {
+          match score {
+              90.. => 'A',
+              75..=89 => 'B',
+              _ => 'C',
+          }
+      }
+
+      fn main() {
+          check_table!(grade {
+              95 => 'A',
+              80 => 'B',
+              74 => 'B',
+          });
+      }
+      ```
+
+      ```output
+      ok   grade(95) = 'A'
+      ok   grade(80) = 'B'
+      FAIL grade(74) = 'C'
+      ```
+
+      ### Debugging macros
+
+      When a macro doesn't do what you expect, look at what it **expands to**:
+
+      - **`cargo expand`** prints your code with every macro expanded. Install it once with `cargo install cargo-expand` (it needs a nightly toolchain installed, `rustup toolchain install nightly`, but your project can stay on stable). `cargo expand` shows the whole crate; `cargo expand path::to::module` narrows it down.
+
+      ```text
+      $ cargo expand
+      fn main() {
+          let x = 10;
+          {
+              ::std::io::_print(format_args!("{0}\n", { let x = x + 1; x * 2 }));
+          };
+          ...
+      ```
+
+      (`println!` itself expands too, which is why the output is noisier than your code.) Notice `let x = x + 1;`: printed code can't show hygiene, so the macro's `x` and yours look like one variable. The compiler still keeps them apart; read expanded code with that in mind.
+
+      - **rust-analyzer** in VS Code and other editors has a command "Expand macro recursively at caret" that shows the expansion of the call under your cursor.
+      - Put `stringify!(...)` or `println!` calls inside the transcriber to see what was matched.
+      - Read the error's note: `in this macro invocation` points at your call, and the arrows point into the macro's rules.
+
+      **Your turn:** write `test_table!`, which runs a function over a table of cases and returns a `Vec<String>` describing each failure. `test_table!(double { 1 => 2, 5 => 11 })` returns `vec!["double(5): expected 11, got 10"]` (the function and input are shown as source text with `stringify!`, the expected and actual values with `{:?}`). Rows that pass add nothing. Allow a trailing comma, and evaluate each expected value once.
+    seed: |
+      macro_rules! test_table {
+          ($func:ident { $($input:expr => $expected:expr),* $(,)? }) => {{
+              let mut failures: Vec<String> = Vec::new();
+              // TODO: for each row, call the function and record a failure if needed
+              failures
+          }};
+      }
+    solution: |
+      macro_rules! test_table {
+          ($func:ident { $($input:expr => $expected:expr),* $(,)? }) => {{
+              let mut failures: Vec<String> = Vec::new();
+              $(
+                  let expected = $expected;
+                  let got = $func($input);
+                  if got != expected {
+                      failures.push(format!(
+                          "{}({}): expected {:?}, got {:?}",
+                          stringify!($func),
+                          stringify!($input),
+                          expected,
+                          got
+                      ));
+                  }
+              )*
+              failures
+          }};
+      }
+    harness: |
+      fn double(x: i32) -> i32 {
+          x * 2
+      }
+
+      fn shout(s: &str) -> String {
+          s.to_uppercase()
+      }
+
+      #[test]
+      fn a_passing_table_has_no_failures() {
+          let failures = test_table!(double { 1 => 2, 5 => 10, -3 => -6 });
+          assert_eq!(failures, Vec::<String>::new(), "all rows pass");
+      }
+
+      #[test]
+      fn a_wrong_row_is_reported() {
+          let failures = test_table!(double { 1 => 2, 5 => 11 });
+          assert_eq!(failures, vec!["double(5): expected 11, got 10".to_string()], "one failing row");
+      }
+
+      #[test]
+      fn every_failure_is_reported_in_order() {
+          let failures = test_table!(double {
+              0 => 1,
+              2 => 4,
+              4 => 9,
+          });
+          assert_eq!(
+              failures,
+              vec!["double(0): expected 1, got 0".to_string(), "double(4): expected 9, got 8".to_string()],
+              "two failing rows"
+          );
+      }
+
+      #[test]
+      fn works_with_string_functions() {
+          let failures = test_table!(shout { "hi" => "HI", "crab" => "Crab" });
+          assert_eq!(failures, vec!["shout(\"crab\"): expected \"Crab\", got \"CRAB\"".to_string()], "string table");
+      }
+    hints:
+      - "Repeat a block of statements for each row: `$( let expected = $expected; let got = $func($input); ... )*`."
+      - "Compare with `if got != expected { failures.push(format!(...)); }`."
+      - "`format!(\"{}({}): expected {:?}, got {:?}\", stringify!($func), stringify!($input), expected, got)`"
+    more:
+      - task: |
+          Thanks to hygiene, a `swap!` macro can use a temporary variable called `tmp` even when the caller has a variable called `tmp`. Write `swap!(a, b)` (taking two **identifiers** of mutable variables) that swaps their values using `let tmp = $a;`. The program should print `tmp = 2, other = 1`.
+        seed: |
+          macro_rules! swap {
+              ($a:ident, $b:ident) => {
+                  // TODO: swap using a temporary called tmp
+              };
+          }
+
+          fn main() {
+              let mut tmp = 1;
+              let mut other = 2;
+              swap!(tmp, other);
+              println!("tmp = {tmp}, other = {other}");
+          }
+        solution: |
+          macro_rules! swap {
+              ($a:ident, $b:ident) => {
+                  let tmp = $a;
+                  $a = $b;
+                  $b = tmp;
+              };
+          }
+
+          fn main() {
+              let mut tmp = 1;
+              let mut other = 2;
+              swap!(tmp, other);
+              println!("tmp = {tmp}, other = {other}");
+          }
+        require:
+          - pattern: 'let\s+tmp\s*=\s*\$a'
+            message: "Use a temporary inside the macro: `let tmp = $a;`."
+        forbid:
+          - pattern: 'mem::swap'
+            message: Write the swap yourself with a temporary (in real code, `std::mem::swap` is the right tool).
+        hints:
+          - "Three statements: `let tmp = $a; $a = $b; $b = tmp;`."
+          - "The macro's `tmp` and the caller's `tmp` are different variables because of hygiene, so `$a` (the caller's `tmp`) still means the caller's."
+        tests:
+          - expect: "tmp = 2, other = 1"
+      - task: |
+          Write a `state_machine!` DSL. Each row is `From + event => To`, and the macro generates `fn next_state(state: &str, event: &str) -> Option<&'static str>`, which returns the target state's name for a known `(state, event)` pair and `None` otherwise. Then use it to define this machine for a media player:
+
+          ```text
+          Idle + play => Playing
+          Playing + pause => Paused
+          Paused + play => Playing
+          Playing + stop => Idle
+          Paused + stop => Idle
+          ```
+
+          Hint: `stringify!` works in match patterns too.
+        seed: |
+          macro_rules! state_machine {
+              ($($from:ident + $event:ident => $to:ident),* $(,)?) => {
+                  // TODO: generate next_state
+              };
+          }
+
+          // TODO: state_machine! { ... }
+        solution: |
+          macro_rules! state_machine {
+              ($($from:ident + $event:ident => $to:ident),* $(,)?) => {
+                  fn next_state(state: &str, event: &str) -> Option<&'static str> {
+                      match (state, event) {
+                          $( (stringify!($from), stringify!($event)) => Some(stringify!($to)), )*
+                          _ => None,
+                      }
+                  }
+              };
+          }
+
+          state_machine! {
+              Idle + play => Playing,
+              Playing + pause => Paused,
+              Paused + play => Playing,
+              Playing + stop => Idle,
+              Paused + stop => Idle,
+          }
+        harness: |
+          #[test]
+          fn play_starts_playing() {
+              assert_eq!(next_state("Idle", "play"), Some("Playing"), "Idle + play");
+          }
+
+          #[test]
+          fn pause_and_resume() {
+              assert_eq!(next_state("Playing", "pause"), Some("Paused"), "Playing + pause");
+              assert_eq!(next_state("Paused", "play"), Some("Playing"), "Paused + play");
+          }
+
+          #[test]
+          fn stop_goes_back_to_idle() {
+              assert_eq!(next_state("Playing", "stop"), Some("Idle"), "Playing + stop");
+              assert_eq!(next_state("Paused", "stop"), Some("Idle"), "Paused + stop");
+          }
+
+          #[test]
+          fn unknown_moves_give_none() {
+              assert_eq!(next_state("Idle", "pause"), None, "Idle + pause");
+              assert_eq!(next_state("Broken", "play"), None, "Broken + play");
+          }
+        require:
+          - pattern: 'state_machine!\s*\{'
+            message: "Define the machine with your macro: `state_machine! { Idle + play => Playing, ... }`."
+        hints:
+          - "Generate one function with a `match (state, event) { ... }` inside."
+          - "One arm per row: `$( (stringify!($from), stringify!($event)) => Some(stringify!($to)), )*`, then `_ => None`."
+          - "Invoke it at the top level with braces and the five rows separated by commas."
+
+  - title: Procedural macros and derive
+    id: macros-6
+    text: |
+      `macro_rules!` matches patterns. **Procedural macros** are different: they're ordinary Rust functions that run **inside the compiler**, receive your code as a stream of tokens, and return new tokens. There are three kinds:
+
+      | Kind | Looks like | Examples |
+      |---|---|---|
+      | **derive** | `#[derive(Serialize)]` on a struct or enum | `serde`'s `Serialize`/`Deserialize`, `thiserror::Error`, `clap::Parser` |
+      | **attribute** | `#[name]` on an item, can rewrite it | `#[tokio::main]`, `#[test]`, `#[async_trait]` |
+      | **function-like** | `name!(...)`, like `macro_rules!` but with full Rust logic | `sqlx::query!` (checks SQL at compile time), `html!` |
+
+      ### What a derive writes for you
+
+      A derive reads the struct's definition and **adds** an impl next to it. For `#[derive(Debug)]` on a struct, the generated code is close to this hand-written impl:
+
+      ```rust run
+      use std::fmt;
+
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      // Roughly what #[derive(Debug)] generates:
+      impl fmt::Debug for Point {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              f.debug_struct("Point")
+                  .field("x", &self.x)
+                  .field("y", &self.y)
+                  .finish()
+          }
+      }
+
+      fn main() {
+          let p = Point { x: 3, y: -1 };
+          println!("{:?}", p);
+          println!("{:#?}", p);
+      }
+      ```
+
+      ```output
+      Point { x: 3, y: -1 }
+      Point {
+          x: 3,
+          y: -1,
+      }
+      ```
+
+      `debug_struct` is a helper in `std::fmt` that handles both `{:?}` and the pretty `{:#?}` form. Tuple structs use `debug_tuple`, and unit variants just write their name.
+
+      `#[derive(Serialize)]` (from serde, covered in the serde module) works the same way. It reads the field names and any `#[serde(...)]` attributes, and generates an impl that describes the struct to a **serializer**:
+
+      ```rust run
+      use serde::ser::{Serialize, SerializeStruct, Serializer};
+
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+
+      // Roughly what #[derive(Serialize)] generates:
+      impl Serialize for Point {
+          fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+              let mut state = serializer.serialize_struct("Point", 2)?;
+              state.serialize_field("x", &self.x)?;
+              state.serialize_field("y", &self.y)?;
+              state.end()
+          }
+      }
+
+      fn main() {
+          let p = Point { x: 3, y: -1 };
+          println!("{}", serde_json::to_string(&p).unwrap());
+      }
+      ```
+
+      ```output
+      {"x":3,"y":-1}
+      ```
+
+      The generated code never mentions JSON. It only calls the `Serializer` trait's methods ("a struct with 2 fields", "field x", "field y"), and `serde_json` is one implementation of that trait. That's why the same derive works for TOML, YAML, MessagePack and dozens of other formats. `#[serde(rename = "pos_x")]` simply changes the string the derive passes to `serialize_field`.
+
+      ### How a procedural macro is built
+
+      A proc macro must live in its **own crate** with a special flag, which is why this site can't compile one for you:
+
+      ```toml
+      # describe-derive/Cargo.toml
+      [lib]
+      proc-macro = true
+
+      [dependencies]
+      syn = "2"     # parses the tokens into a syntax tree
+      quote = "1"   # turns Rust-like templates back into tokens
+      ```
+
+      ```rust
+      use proc_macro::TokenStream;
+      use quote::quote;
+      use syn::{parse_macro_input, DeriveInput};
+
+      #[proc_macro_derive(Describe)]
+      pub fn derive_describe(input: TokenStream) -> TokenStream {
+          let ast = parse_macro_input!(input as DeriveInput); // the struct or enum
+          let name = &ast.ident;                                // its name
+          let expanded = quote! {
+              impl Describe for #name {
+                  fn describe() -> String {
+                      format!("I am {}", stringify!(#name))
+                  }
+              }
+          };
+          expanded.into()
+      }
+      ```
+
+      Users add `describe-derive` as a dependency and write `#[derive(Describe)]`. `#name` in `quote!` pastes a value in, like `$name` in `macro_rules!`.
+
+      An attribute macro receives the item it's attached to and may replace it entirely. `#[tokio::main]` turns your `async fn main` into roughly this:
+
+      ```rust
+      fn main() {
+          tokio::runtime::Builder::new_multi_thread()
+              .enable_all()
+              .build()
+              .unwrap()
+              .block_on(async {
+                  // the body of your async fn main
+              })
+      }
+      ```
+
+      ### Should you write one?
+
+      Rarely. You'll **use** derive and attribute macros daily, but writing one costs a lot: a separate crate, slower compile times (`syn` is big), and code that's harder to debug. Teams write them when a pattern repeats across many types in a large codebase and no trait or `macro_rules!` can capture it. Before that, try a trait with default methods, a generic function, or a `macro_rules!` that implements a trait for a list of types (one of the challenges below). `cargo expand` shows derive output too, which is the best way to learn what a derive really does.
+
+      **Your turn:** implement `Debug` for `Ticket` by hand, the way `#[derive(Debug)]` would, using `f.debug_struct(...)`. The output must be exactly what the derive prints: `Ticket { id: 7, title: "Crash on start", open: true }`, and the pretty `{:#?}` form must match too.
+    seed: |
+      use std::fmt;
+
+      struct Ticket {
+          id: u32,
+          title: String,
+          open: bool,
+      }
+
+      // TODO: impl fmt::Debug for Ticket (no #[derive])
+    solution: |
+      use std::fmt;
+
+      struct Ticket {
+          id: u32,
+          title: String,
+          open: bool,
+      }
+
+      impl fmt::Debug for Ticket {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              f.debug_struct("Ticket")
+                  .field("id", &self.id)
+                  .field("title", &self.title)
+                  .field("open", &self.open)
+                  .finish()
+          }
+      }
+    harness: |
+      fn sample() -> Ticket {
+          Ticket { id: 7, title: "Crash on start".to_string(), open: true }
+      }
+
+      #[test]
+      fn matches_what_derive_would_print() {
+          assert_eq!(format!("{:?}", sample()), "Ticket { id: 7, title: \"Crash on start\", open: true }", "Debug output");
+      }
+
+      #[test]
+      fn the_pretty_form_matches_too() {
+          let expected = "Ticket {\n    id: 7,\n    title: \"Crash on start\",\n    open: true,\n}";
+          assert_eq!(format!("{:#?}", sample()), expected, "pretty Debug output");
+      }
+
+      #[test]
+      fn works_for_other_values() {
+          let t = Ticket { id: 0, title: String::new(), open: false };
+          assert_eq!(format!("{:?}", t), "Ticket { id: 0, title: \"\", open: false }", "Debug output of an empty ticket");
+      }
+    require:
+      - pattern: 'debug_struct'
+        message: Build the output with `f.debug_struct("Ticket")`, like the derive does.
+    forbid:
+      - pattern: 'derive\s*\([^)]*Debug'
+        message: Write the impl by hand instead of deriving it.
+    hints:
+      - "Start with `impl fmt::Debug for Ticket { fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { ... } }`."
+      - "`f.debug_struct(\"Ticket\").field(\"id\", &self.id)` and so on for each field, then `.finish()`."
+    more:
+      - task: |
+          Now the other two shapes. Implement `Debug` by hand (no derive) for the tuple struct `Rgb` and the enum `Status`, matching what `#[derive(Debug)]` prints:
+
+          - `Rgb(255, 0, 10)` prints `Rgb(255, 0, 10)`: use `f.debug_tuple("Rgb")` with one `.field(...)` per value.
+          - `Status::Active` prints `Active`, and `Status::Banned(reason)` prints `Banned("spam")`. Use `f.write_str` for the unit variant and `debug_tuple` for the other.
+        seed: |
+          use std::fmt;
+
+          struct Rgb(u8, u8, u8);
+
+          enum Status {
+              Active,
+              Banned(String),
+          }
+
+          // TODO: impl fmt::Debug for Rgb and for Status
+        solution: |
+          use std::fmt;
+
+          struct Rgb(u8, u8, u8);
+
+          enum Status {
+              Active,
+              Banned(String),
+          }
+
+          impl fmt::Debug for Rgb {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  f.debug_tuple("Rgb").field(&self.0).field(&self.1).field(&self.2).finish()
+              }
+          }
+
+          impl fmt::Debug for Status {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      Status::Active => f.write_str("Active"),
+                      Status::Banned(reason) => f.debug_tuple("Banned").field(reason).finish(),
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn rgb_prints_like_a_tuple_struct() {
+              assert_eq!(format!("{:?}", Rgb(255, 0, 10)), "Rgb(255, 0, 10)", "Debug of Rgb(255, 0, 10)");
+          }
+
+          #[test]
+          fn a_unit_variant_prints_its_name() {
+              assert_eq!(format!("{:?}", Status::Active), "Active", "Debug of Status::Active");
+          }
+
+          #[test]
+          fn a_tuple_variant_prints_its_data() {
+              assert_eq!(format!("{:?}", Status::Banned("spam".to_string())), "Banned(\"spam\")", "Debug of Status::Banned");
+          }
+
+          #[test]
+          fn values_inside_a_vec_use_your_impls() {
+              let v = vec![Status::Active, Status::Banned("bot".to_string())];
+              assert_eq!(format!("{:?}", v), "[Active, Banned(\"bot\")]", "Debug of a Vec of Status");
+          }
+        forbid:
+          - pattern: 'derive\s*\([^)]*Debug'
+            message: Write both impls by hand instead of deriving them.
+        hints:
+          - "`f.debug_tuple(\"Rgb\").field(&self.0).field(&self.1).field(&self.2).finish()`"
+          - "For the enum, `match self { Status::Active => f.write_str(\"Active\"), Status::Banned(reason) => f.debug_tuple(\"Banned\").field(reason).finish() }`."
+      - task: |
+          You don't need a proc macro to implement a trait for many types. std implements its traits for all the integer types with `macro_rules!`. Write `impl_describe!`, which takes a comma-separated list of **types** and implements `Describe` for each one: `describe()` returns the type's name, a space, and the value's `Display` text (`5i32.describe()` is `"i32 5"`). Then use it once for `i32, u8, f64, String`.
+        seed: |
+          trait Describe {
+              fn describe(&self) -> String;
+          }
+
+          // TODO: macro_rules! impl_describe, then impl_describe!(i32, u8, f64, String);
+        solution: |
+          trait Describe {
+              fn describe(&self) -> String;
+          }
+
+          macro_rules! impl_describe {
+              ($($t:ty),* $(,)?) => {
+                  $(
+                      impl Describe for $t {
+                          fn describe(&self) -> String {
+                              format!("{} {}", stringify!($t), self)
+                          }
+                      }
+                  )*
+              };
+          }
+
+          impl_describe!(i32, u8, f64, String);
+        harness: |
+          #[test]
+          fn describes_an_i32() {
+              assert_eq!(5i32.describe(), "i32 5", "5i32.describe()");
+          }
+
+          #[test]
+          fn describes_a_u8() {
+              assert_eq!(200u8.describe(), "u8 200", "200u8.describe()");
+          }
+
+          #[test]
+          fn describes_an_f64() {
+              assert_eq!(2.5f64.describe(), "f64 2.5", "2.5f64.describe()");
+          }
+
+          #[test]
+          fn describes_a_string() {
+              assert_eq!(String::from("crab").describe(), "String crab", "String::from(\"crab\").describe()");
+          }
+        require:
+          - pattern: 'impl_describe!\s*\('
+            message: "Use your macro once for all four types: `impl_describe!(i32, u8, f64, String);`."
+        forbid:
+          - pattern: 'impl\s+Describe\s+for\s+(i32|u8|f64|String)\b'
+            message: Let the macro write the impls instead of writing them by hand.
+        hints:
+          - "Match a list of types: `($($t:ty),* $(,)?)`."
+          - "Repeat a whole impl per type: `$( impl Describe for $t { fn describe(&self) -> String { ... } } )*`."
+          - "Inside: `format!(\"{} {}\", stringify!($t), self)`."

@@ -1,0 +1,275 @@
+topic: app-errors
+drills:
+  - type: predict
+    pre: |
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum LoginError {
+          #[error("no user {0:?}")]
+          NoUser(String),
+          #[error("wrong password ({tries} tries left)")]
+          WrongPassword { tries: u8 },
+      }
+    body: |
+      println!("{}", LoginError::NoUser(String::from("bo")));
+      println!("{}", LoginError::WrongPassword { tries: 2 });
+    why: "Each #[error] is the Display message. {0:?} Debug-formats the first field (so the name gets quotes) and {tries} inserts the named field."
+
+  - type: predict
+    pre: |
+      use anyhow::Context;
+    body: |
+      let e = "x".parse::<u32>().context("reading the count").unwrap_err();
+      println!("{e}");
+      println!("{e:#}");
+    why: "{} shows only the outermost message (the context). {:#} shows the whole chain joined with \": \"."
+
+  - type: predict
+    pre: |
+      use anyhow::{ensure, Result};
+
+      fn check(age: u32) -> Result<u32> {
+          ensure!(age >= 18, "too young: {age}");
+          Ok(age)
+      }
+    body: |
+      for age in [20, 12] {
+          match check(age) {
+              Ok(a) => println!("ok {a}"),
+              Err(e) => println!("{e}"),
+          }
+      }
+    why: ensure! returns an error with the message when the condition is false, and does nothing when it's true.
+
+  - type: predict
+    pre: |
+      use std::error::Error;
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum LoadError {
+          #[error("bad number")]
+          BadNumber(#[from] std::num::ParseIntError),
+          #[error("empty input")]
+          Empty,
+      }
+    body: |
+      let a: LoadError = "z".parse::<i32>().unwrap_err().into();
+      println!("{}", a.source().is_some());
+      println!("{}", LoadError::Empty.source().is_some());
+    why: "#[from] both generates the From impl (used by .into() here) and marks the field as the source. Empty has no source."
+
+  - type: predict
+    pre: |
+      use anyhow::Context;
+    body: |
+      let e = "x".parse::<u8>().context("parsing level").context("loading save file").unwrap_err();
+      println!("{}", e.chain().count());
+      println!("{}", e.root_cause());
+    why: The chain has three layers, outermost first, two contexts plus the ParseIntError. root_cause() is the innermost one.
+
+  - type: fill
+    prompt: Derive the trait from thiserror.
+    pre: |
+      use thiserror::Error;
+
+      #[derive(Debug, [[Error]])]
+      #[error("queue is full")]
+      struct QueueFull;
+    body: |
+      let e: Box<dyn std::error::Error> = Box::new(QueueFull);
+      println!("{e}");
+    why: "thiserror's derive is named Error; it implements Display (from #[error]) and std::error::Error."
+
+  - type: fill
+    prompt: Return early with an error message.
+    pre: |
+      use anyhow::{bail, Result};
+
+      fn divide(a: i32, b: i32) -> Result<i32> {
+          if b == 0 {
+              [[bail!]]("cannot divide {a} by zero");
+          }
+          Ok(a / b)
+      }
+    body: |
+      println!("{}", divide(7, 0).unwrap_err());
+    why: "bail!(...) is short for return Err(anyhow!(...))."
+
+  - type: fill
+    prompt: Add a message to the error, built only if there is an error.
+    pre: |
+      use anyhow::{Context, Result};
+
+      fn port(raw: &str) -> Result<u16> {
+          let p = raw.parse().[[with_context]](|| format!("bad port {raw:?}"))?;
+          Ok(p)
+      }
+    body: |
+      println!("{:#}", port("80a").unwrap_err());
+    why: with_context takes a closure, so the format! runs only on the error path. context takes a ready-made message.
+
+  - type: bug
+    pre: |
+      use anyhow::Context;
+    body: |
+      let r = std::fs::read_to_string("db.toml").context("could not read db.toml");
+      if let Err(e) = r {
+          println!("{e}"); // BUG
+      }
+    fix: 'println!("{e:#}");'
+    prompt: "This should print the whole chain on one line: `could not read db.toml: No such file or directory (os error 2)`. Click the line with the bug."
+    why: "{} shows only the outermost message. {:#} joins all layers with \": \"."
+
+  - type: bug
+    pre: |
+      use anyhow::{ensure, Result};
+
+      fn book(seats: u32) -> Result<u32> {
+          ensure!(seats > 8, "at most 8 seats per booking"); // BUG
+          Ok(seats)
+      }
+    body: |
+      println!("{:?}", book(2).is_ok());
+      println!("{:?}", book(9).is_ok());
+    fix: 'ensure!(seats <= 8, "at most 8 seats per booking");'
+    prompt: "Bookings of up to 8 seats are fine. This should print `true` then `false`. Click the line with the bug."
+    why: ensure! states the condition that must hold; the error is returned when it's false. The check was written backwards.
+
+  - type: bug
+    pre: |
+      use anyhow::Context;
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      #[error("stock is empty")]
+      struct Empty;
+    body: |
+      let r: Result<(), Empty> = Err(Empty);
+      let e = r.context("taking a mug").unwrap_err();
+      let is_empty = e.downcast_ref::<std::io::Error>().is_some(); // BUG
+      println!("{is_empty}");
+    fix: 'let is_empty = e.downcast_ref::<Empty>().is_some();'
+    prompt: "This should print `true`: the error inside is an `Empty`. Click the line with the bug."
+    why: downcast_ref only finds the type that is really inside. The error is an Empty (under a context layer), not an io::Error.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum SaveError {
+          #[error("disk full")]
+          DiskFull,
+          ReadOnly,
+      }
+    body: |
+      println!("{}", SaveError::DiskFull);
+    why: "thiserror needs an #[error(\"...\")] message on every variant; ReadOnly has none."
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn first_word(s: &str) -> anyhow::Result<&str> {
+          let w = s.split_whitespace().next()?;
+          Ok(w)
+      }
+    body: |
+      println!("{:?}", first_word("hi there").is_ok());
+    why: next() returns an Option, and ? on an Option doesn't work in a function returning Result. Use .context("empty input")? to give None a message.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      use anyhow::{Context, Result};
+
+      fn first_word(s: &str) -> Result<&str> {
+          let w = s.split_whitespace().next().context("empty input")?;
+          Ok(w)
+      }
+    body: |
+      println!("{}", first_word("hi there").unwrap());
+    why: anyhow's Context trait works on Option too, turning None into an error with the message.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::num::ParseIntError;
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum RowError {
+          #[error("bad id")]
+          Id(#[from] ParseIntError),
+          #[error("bad qty")]
+          Qty(#[from] ParseIntError),
+      }
+    body: |
+      println!("ok");
+    why: "Both variants would generate From<ParseIntError> for RowError, and two impls of the same trait conflict. Use #[source] and map_err for one of them."
+
+  - type: choice
+    prompt: "You're writing a crate other teams will call, and they need to react differently to \"not found\" and \"permission denied\". Which error type should its functions return?"
+    choices: ["anyhow::Error", "A thiserror enum with one variant per failure", "String", "Box<dyn std::error::Error>"]
+    answer: 2
+    why: Callers can match on enum variants. anyhow::Error, Box<dyn Error> and String hide which failure happened.
+
+  - type: choice
+    prompt: "What happens when `fn main() -> anyhow::Result<()>` returns `Err(e)`?"
+    choices: ["The program panics with exit code 101", "\"Error: \" and the Debug report of e go to stderr, and the exit code is 1", "e is printed to stdout and the exit code is 0", "Nothing is printed and the exit code is 1"]
+    answer: 2
+    why: Rust prints the error's Debug format (anyhow's multi-line report with Caused by) to stderr and exits with 1, so scripts see the failure.
+
+  - type: boss
+    prompt: |
+      Write `fn load_ports(text: &str) -> anyhow::Result<BTreeMap<String, u16>>`. Each non-empty line is `service=port`. A line without `=` fails with `line N: expected service=port`; a port that doesn't parse fails with the context `line N: bad port for <service>` around the parse error. Line numbers count from 1.
+    seed: |
+      use anyhow::{bail, Context, Result};
+      use std::collections::BTreeMap;
+
+      fn load_ports(text: &str) -> Result<BTreeMap<String, u16>> {
+          todo!()
+      }
+    solution: |
+      use anyhow::{bail, Context, Result};
+      use std::collections::BTreeMap;
+
+      fn load_ports(text: &str) -> Result<BTreeMap<String, u16>> {
+          let mut ports = BTreeMap::new();
+          for (i, line) in text.lines().enumerate() {
+              let n = i + 1;
+              if line.trim().is_empty() {
+                  continue;
+              }
+              let Some((service, port)) = line.split_once('=') else {
+                  bail!("line {n}: expected service=port");
+              };
+              let service = service.trim();
+              let port: u16 = port.trim().parse().with_context(|| format!("line {n}: bad port for {service}"))?;
+              ports.insert(service.to_string(), port);
+          }
+          Ok(ports)
+      }
+    harness: |
+      #[test]
+      fn reads_every_service() {
+          let p = load_ports("api=8080\n\ndb = 5432\n").unwrap();
+          assert_eq!(p.get("db"), Some(&5432), "db port");
+          assert_eq!(p.len(), 2, "number of services");
+      }
+
+      #[test]
+      fn a_line_without_equals_fails() {
+          assert_eq!(format!("{:#}", load_ports("api=1\ncache").unwrap_err()), "line 2: expected service=port", "error");
+      }
+
+      #[test]
+      fn a_bad_port_keeps_the_cause() {
+          assert_eq!(format!("{:#}", load_ports("api=99999").unwrap_err()), "line 1: bad port for api: number too large to fit in target type", "error");
+      }
+    hints:
+      - "Loop over `text.lines().enumerate()`, skip empty lines, and split with `split_once('=')`."
+      - "`port.trim().parse().with_context(|| format!(\"line {n}: bad port for {service}\"))?`"
+    why: bail! and with_context produce errors that say exactly where and why, while keeping the original parse error as the cause.

@@ -1,0 +1,305 @@
+topic: smart-pointers
+drills:
+  - type: predict
+    body: |
+      let b = Box::new(5);
+      let c = *b + 1;
+      println!("{} {}", b, c);
+    why: "*b reads the 5 inside the Box, so c is 6. Printing a Box prints the value it points to."
+
+  - type: predict
+    pre: |
+      use std::rc::Rc;
+    body: |
+      let a = Rc::new(String::from("crab"));
+      let b = Rc::clone(&a);
+      {
+          let _c = Rc::clone(&a);
+          print!("{} ", Rc::strong_count(&a));
+      }
+      println!("{} {}", Rc::strong_count(&b), b);
+    why: Inside the block there are three owners (a, b, _c). When the block ends _c is dropped, leaving two. All of them point at the same String.
+
+  - type: predict
+    pre: |
+      struct Noisy(&'static str);
+
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              println!("drop {}", self.0);
+          }
+      }
+    body: |
+      let _first = Noisy("first");
+      let _second = Noisy("second");
+      println!("end");
+    why: Locals are dropped at the end of the scope in reverse order of declaration, so second goes before first.
+
+  - type: predict
+    pre: |
+      use std::rc::Rc;
+    body: |
+      let weak = {
+          let team = Rc::new(String::from("Crabs"));
+          let w = Rc::downgrade(&team);
+          println!("{:?}", w.upgrade());
+          w
+      };
+      println!("{:?}", weak.upgrade());
+    why: While team is alive, upgrade() returns Some(Rc). A Weak doesn't keep the value alive, so after the block drops team, upgrade() returns None.
+
+  - type: predict
+    pre: |
+      use std::cell::Cell;
+    body: |
+      let hits = Cell::new(0);
+      let counter = &hits;
+      counter.set(counter.get() + 1);
+      hits.set(hits.get() + 10);
+      println!("{}", hits.get());
+    why: Cell allows changes through shared references. Both counter and hits refer to the same Cell, so the value goes 0, 1, 11.
+
+  - type: fill
+    prompt: Give the recursive variant a fixed size.
+    body: |
+      enum Tree {
+          Leaf(i32),
+          Pair([[Box<Tree>]], Box<Tree>),
+      }
+      fn sum(t: &Tree) -> i32 {
+          match t {
+              Tree::Leaf(n) => *n,
+              Tree::Pair(a, b) => sum(a) + sum(b),
+          }
+      }
+      let t = Tree::Pair(Box::new(Tree::Leaf(2)), Box::new(Tree::Leaf(3)));
+      println!("{}", sum(&t));
+    why: A type that contains itself needs a pointer in the recursive spot. Box<Tree> has a known size (one pointer) no matter how deep the tree is.
+
+  - type: fill
+    prompt: Make a second owner of the same list without copying it.
+    pre: |
+      use std::rc::Rc;
+    body: |
+      let scores = Rc::new(vec![10, 20]);
+      let view = [[Rc::clone(&scores)‖scores.clone()]];
+      println!("{} {}", view.len(), Rc::strong_count(&scores));
+    why: Rc::clone copies the pointer and adds 1 to the strong count. The Vec itself is not copied.
+
+  - type: fill
+    prompt: Create a non-owning link to the parent.
+    pre: |
+      use std::rc::{Rc, Weak};
+    body: |
+      let parent = Rc::new(String::from("root"));
+      let link: Weak<String> = Rc::[[downgrade]](&parent);
+      println!("{} {}", Rc::strong_count(&parent), Rc::weak_count(&parent));
+    why: Rc::downgrade makes a Weak. It adds to the weak count but leaves the strong count at 1, so it doesn't keep the parent alive.
+
+  - type: bug
+    body: |
+      let price = Box::new(10);
+      let doubled = price * 2; // BUG
+      println!("{doubled}");
+    fix: 'let doubled = *price * 2;'
+    prompt: "This should print `20`. Click the line with the bug."
+    why: "A Box<i32> is a pointer, not a number, so Box * i32 doesn't compile. Dereference it with *price to get the i32 inside."
+
+  - type: bug
+    pre: |
+      struct Guard(&'static str);
+
+      impl Drop for Guard {
+          fn drop(&mut self) {
+              println!("release {}", self.0);
+          }
+      }
+    body: |
+      let _ = Guard("lock"); // BUG
+      println!("working");
+    fix: 'let _guard = Guard("lock");'
+    prompt: "The lock should be held while working: this should print `working` and then `release lock`. Click the line with the bug."
+    why: "let _ = ... doesn't bind the value, so the Guard is dropped on the spot and releases before the work. let _guard keeps it alive to the end of the scope."
+
+  - type: bug
+    pre: |
+      use std::cell::RefCell;
+    body: |
+      let title = RefCell::new(String::from("draft"));
+      let old = title.borrow(); // BUG
+      title.borrow_mut().push_str(" v2");
+      println!("{} -> {}", old, title.borrow());
+    fix: 'let old = title.borrow().clone();'
+    prompt: "This should print `draft -> draft v2`. Click the line with the bug."
+    why: "The Ref in old stays alive until the end of the scope, so borrow_mut() panics with \"RefCell already borrowed\". Cloning the String out lets the borrow end on the same line."
+
+  - type: compiles
+    answer: no
+    body: |
+      enum List {
+          Cons(i32, List),
+          Nil,
+      }
+      let l = List::Nil;
+    why: "Cons contains a whole List directly, so the type would have infinite size (E0072). Use Box<List> for the recursive field."
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::rc::Rc;
+    body: |
+      let team = Rc::new(vec![String::from("ana")]);
+      team.push(String::from("bo"));
+    why: "Rc only gives shared (&) access to its value, so you can't push through it (E0596). Use Rc<RefCell<Vec<_>>> to share and mutate."
+
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::cell::RefCell;
+      use std::rc::Rc;
+    body: |
+      let team = Rc::new(RefCell::new(vec![String::from("ana")]));
+      let other = Rc::clone(&team);
+      other.borrow_mut().push(String::from("bo"));
+      println!("{}", team.borrow().len());
+    why: RefCell provides mutation through a shared reference, checked at run time. Both Rcs point at the same RefCell, so team sees bo too.
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct File(&'static str);
+
+      impl Drop for File {
+          fn drop(&mut self) {
+              println!("closing {}", self.0);
+          }
+      }
+    body: |
+      let f = File("notes.txt");
+      f.drop();
+    why: "Calling a destructor directly is not allowed (E0040), because it would run again at the end of the scope. Use drop(f), which takes ownership."
+
+  - type: choice
+    prompt: A tree node needs a link to its parent, and the parent owns its children through Rc. What type should the parent link be?
+    choices: ["Rc<Node>", "Weak<Node>", "Box<Node>", "&Node"]
+    answer: 2
+    why: An Rc back-link would form a cycle (parent and child keep each other alive forever). Weak doesn't own, so the parent can be dropped; upgrade() tells you if it's still there.
+
+  - type: choice
+    prompt: Which statement about RefCell<T> is true?
+    choices: ["It lets several threads mutate the value safely", "It checks the borrowing rules at run time and panics if they're broken", "It copies the value on every borrow", "It turns off the borrowing rules completely"]
+    answer: 2
+    why: RefCell enforces the same many-readers-or-one-writer rule, just at run time. It is single-threaded; Mutex is the thread-safe equivalent.
+
+  - type: boss
+    prompt: |
+      Build a stack on linked nodes: `struct Stack { head: Option<Box<Node>>, len: usize }` where each `Node` holds a `value: i32` and `next: Option<Box<Node>>`. Implement `Stack::new()`, `push(&mut self, value)`, `pop(&mut self) -> Option<i32>` (last pushed comes out first), `peek(&self) -> Option<i32>` and `len(&self) -> usize`.
+    seed: |
+      struct Node {
+          value: i32,
+          next: Option<Box<Node>>,
+      }
+
+      struct Stack {
+          head: Option<Box<Node>>,
+          len: usize,
+      }
+
+      impl Stack {
+          fn new() -> Stack {
+              todo!()
+          }
+
+          fn push(&mut self, value: i32) {
+              todo!()
+          }
+
+          fn pop(&mut self) -> Option<i32> {
+              todo!()
+          }
+
+          fn peek(&self) -> Option<i32> {
+              todo!()
+          }
+
+          fn len(&self) -> usize {
+              todo!()
+          }
+      }
+    solution: |
+      struct Node {
+          value: i32,
+          next: Option<Box<Node>>,
+      }
+
+      struct Stack {
+          head: Option<Box<Node>>,
+          len: usize,
+      }
+
+      impl Stack {
+          fn new() -> Stack {
+              Stack { head: None, len: 0 }
+          }
+
+          fn push(&mut self, value: i32) {
+              let old = self.head.take();
+              self.head = Some(Box::new(Node { value, next: old }));
+              self.len += 1;
+          }
+
+          fn pop(&mut self) -> Option<i32> {
+              let node = self.head.take()?;
+              self.head = node.next;
+              self.len -= 1;
+              Some(node.value)
+          }
+
+          fn peek(&self) -> Option<i32> {
+              self.head.as_ref().map(|n| n.value)
+          }
+
+          fn len(&self) -> usize {
+              self.len
+          }
+      }
+    harness: |
+      #[test]
+      fn pops_in_reverse_order() {
+          let mut s = Stack::new();
+          s.push(1);
+          s.push(2);
+          s.push(3);
+          assert_eq!(s.pop(), Some(3), "first pop");
+          assert_eq!(s.pop(), Some(2), "second pop");
+          assert_eq!(s.pop(), Some(1), "third pop");
+          assert_eq!(s.pop(), None, "pop on empty");
+      }
+
+      #[test]
+      fn peek_does_not_remove() {
+          let mut s = Stack::new();
+          assert_eq!(s.peek(), None, "peek on empty");
+          s.push(7);
+          assert_eq!(s.peek(), Some(7), "peek");
+          assert_eq!(s.len(), 1, "len after peek");
+      }
+
+      #[test]
+      fn tracks_length() {
+          let mut s = Stack::new();
+          assert_eq!(s.len(), 0, "new stack");
+          s.push(4);
+          s.push(5);
+          assert_eq!(s.len(), 2, "after two pushes");
+          s.pop();
+          assert_eq!(s.len(), 1, "after a pop");
+          s.pop();
+          s.pop();
+          assert_eq!(s.len(), 0, "popping an empty stack keeps len at 0");
+      }
+    hints:
+      - "`push`: take the old head with `self.head.take()` and make it the new node's `next`."
+      - "`pop`: `let node = self.head.take()?;` then set `self.head = node.next;` and return `Some(node.value)`."
+      - "`peek`: `self.head.as_ref().map(|n| n.value)`."
+    why: Option<Box<Node>> is the classic owned linked structure. take() moves the head out (leaving None) so you can relink nodes without fighting the borrow checker.

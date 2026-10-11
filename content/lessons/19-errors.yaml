@@ -1,0 +1,1846 @@
+id: errors
+title: Error Handling with Result
+phase: "Errors and abstraction"
+summary: Rust has no exceptions. A failure that can happen in normal use is a value of type Result, and the ? operator passes it up to the caller. Learn when to panic, when to return an error, and the combinators that keep error handling short.
+roadmap: [Error Handling, Option and Result Enumerations, "Propagating Errors and `?` Operator"]
+steps:
+  - title: panic! or Result?
+    id: errors-1
+    text: |
+      Programs fail. A user types `twelve` where you asked for a number, a config file is missing, a customer tries to withdraw more money than they have. Rust splits failures into two kinds and gives each its own tool:
+
+      - **Unrecoverable errors** are bugs: situations the code should never get into, like reading element 10 of a 3-element array. Rust stops the program with a **panic**.
+      - **Recoverable errors** are things that go wrong in normal use: bad input, a missing file, not enough money. A function that can fail this way returns a **`Result`**, and the caller decides what to do about it.
+
+      Rust has no exceptions. Whether a function can fail is written in its signature, and the compiler makes sure the caller deals with it.
+
+      ### panic!
+
+      You've already met panics: indexing past the end of an array and integer overflow both panic. You can also panic on purpose with the `panic!` macro, which takes a message like `println!` does:
+
+      ```rust panics
+      fn main() {
+          println!("loading level...");
+          let level = 7;
+          if level > 5 {
+              panic!("level {level} does not exist");
+          }
+          println!("level loaded");
+      }
+      ```
+
+      ```output
+      loading level...
+      ```
+
+      The program stops at the `panic!`. The message goes to the error output (stderr), along with the file and line: `panicked at src/main.rs:5:9: level 7 does not exist`. A panic means "the code is wrong": the fix is to change the program, not to try again.
+
+      ### Result
+
+      For failures that are part of normal life, a function returns `Result<T, E>`, an enum from the standard library:
+
+      ```rust
+      enum Result<T, E> {
+          Ok(T),
+          Err(E),
+      }
+      ```
+
+      `T` and `E` stand for types that you choose (module 21 calls them **generic type parameters**). `T` is the type of the value on success, `E` the type of the error. A function returning `Result<u32, String>` gives back either `Ok(some_u32)` or `Err(some_string)`. Like `Some` and `None`, the variants `Ok` and `Err` can be used without writing `Result::` in front.
+
+      Here's a bank withdrawal that can fail:
+
+      ```rust run
+      fn withdraw(balance: u32, amount: u32) -> Result<u32, String> {
+          if amount > balance {
+              return Err(format!("cannot withdraw {amount}: balance is only {balance}"));
+          }
+          Ok(balance - amount)
+      }
+
+      fn main() {
+          println!("{:?}", withdraw(100, 30));
+          println!("{:?}", withdraw(100, 250));
+      }
+      ```
+
+      ```output
+      Ok(70)
+      Err("cannot withdraw 250: balance is only 100")
+      ```
+
+      Piece by piece:
+
+      - The return type `Result<u32, String>` is part of the function's contract. Anyone calling it can see that it may fail, and that the error is a `String` message.
+      - `return Err(...)` wraps the error and sends it back early.
+      - `Ok(balance - amount)` wraps the new balance. As the last expression, it's the return value.
+      - `{:?}` prints the whole `Result`, so you can see which variant came back.
+
+      Think about what a panic would mean here: one customer asking for too much would crash the bank's server for everyone. Returning an `Err` lets the caller show "insufficient funds" and carry on.
+
+      ### Common mistakes
+
+      - **Using a `Result` as if it were the value.** Parsing can fail, so `parse` gives a `Result`, never a plain number:
+
+      ```rust compile_fail
+      fn main() {
+          let n: i32 = "5".parse::<i32>();
+          println!("{n}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+        |     let n: i32 = "5".parse::<i32>();
+        |            ---   ^^^^^^^^^^^^^^^^^^ expected `i32`, found `Result<i32, ParseIntError>`
+      ```
+
+      The next steps show the ways to get the number out.
+
+      - **Forgetting the `Ok(...)`.** Ending `withdraw` with `balance - amount` gives `expected Result<u32, String>, found u32`. The success value has to be wrapped too.
+      - **Ignoring a `Result`.** Calling `withdraw(100, 250);` and throwing the answer away compiles, but rustc warns: `unused Result that must be used`. Silently ignoring a failure is almost always a bug.
+      - **Panicking on bad input.** `panic!` is for bugs. A typo from a user is not a bug in your program, so it deserves a `Result`.
+
+      **Your turn:** fill in the blanks so `withdraw` returns an error when the amount is larger than the balance, and the new balance otherwise. The program should print:
+
+      ```
+      Ok(70)
+      Err("insufficient funds")
+      ```
+    fill: |
+      fn withdraw(balance: u32, amount: u32) -> [[Result]]<u32, String> {
+          if amount > balance {
+              return [[Err]](String::from("insufficient funds"));
+          }
+          [[Ok]](balance - amount)
+      }
+
+      fn main() {
+          println!("{:?}", withdraw(100, 30));
+          println!("{:?}", withdraw(100, 250));
+      }
+    hints:
+      - The return type is the enum with the variants `Ok` and `Err`.
+      - The error is wrapped in `Err(...)`, the success value in `Ok(...)`.
+    tests:
+      - expect: "Ok(70)\nErr(\"insufficient funds\")"
+    more:
+      - task: |
+          A sign-up form asks for the user's age. Write `fn validate_age(age: i32) -> Result<u32, String>`:
+
+          - a negative age returns `Err("age cannot be negative")`
+          - an age above 150 returns `Err("<age> is not a realistic age")`, for example `Err("200 is not a realistic age")`
+          - anything else returns the age as a `u32` in `Ok` (use `age as u32`)
+        seed: |
+          fn validate_age(age: i32) -> Result<u32, String> {
+              todo!()
+          }
+        solution: |
+          fn validate_age(age: i32) -> Result<u32, String> {
+              if age < 0 {
+                  return Err(String::from("age cannot be negative"));
+              }
+              if age > 150 {
+                  return Err(format!("{age} is not a realistic age"));
+              }
+              Ok(age as u32)
+          }
+        harness: |
+          #[test]
+          fn accepts_a_normal_age() {
+              assert_eq!(validate_age(34), Ok(34), "validate_age(34)");
+          }
+
+          #[test]
+          fn accepts_zero_and_150() {
+              assert_eq!(validate_age(0), Ok(0), "validate_age(0)");
+              assert_eq!(validate_age(150), Ok(150), "validate_age(150)");
+          }
+
+          #[test]
+          fn rejects_a_negative_age() {
+              assert_eq!(validate_age(-3), Err(String::from("age cannot be negative")), "validate_age(-3)");
+          }
+
+          #[test]
+          fn rejects_an_unrealistic_age() {
+              assert_eq!(validate_age(200), Err(String::from("200 is not a realistic age")), "validate_age(200)");
+              assert_eq!(validate_age(151), Err(String::from("151 is not a realistic age")), "validate_age(151)");
+          }
+        hints:
+          - "Check the two bad cases first with `if`, each doing `return Err(...)`."
+          - "`format!(\"{age} is not a realistic age\")` builds the second message."
+          - "The last line is `Ok(age as u32)`."
+      - task: |
+          A command-line tool asks "Continue? (yes/no)". Write `fn parse_yes_no(answer: &str) -> Result<bool, String>`:
+
+          - ignore spaces around the answer and upper/lower case
+          - `y` or `yes` gives `Ok(true)`, `n` or `no` gives `Ok(false)`
+          - anything else gives `Err("expected yes or no, got '<answer>'")` with the trimmed answer, for example `Err("expected yes or no, got 'maybe'")`
+        seed: |
+          fn parse_yes_no(answer: &str) -> Result<bool, String> {
+              todo!()
+          }
+        solution: |
+          fn parse_yes_no(answer: &str) -> Result<bool, String> {
+              let cleaned = answer.trim().to_lowercase();
+              match cleaned.as_str() {
+                  "y" | "yes" => Ok(true),
+                  "n" | "no" => Ok(false),
+                  _ => Err(format!("expected yes or no, got '{}'", answer.trim())),
+              }
+          }
+        harness: |
+          #[test]
+          fn yes_and_y_mean_true() {
+              assert_eq!(parse_yes_no("yes"), Ok(true), "parse_yes_no(\"yes\")");
+              assert_eq!(parse_yes_no("y"), Ok(true), "parse_yes_no(\"y\")");
+          }
+
+          #[test]
+          fn no_and_n_mean_false() {
+              assert_eq!(parse_yes_no("no"), Ok(false), "parse_yes_no(\"no\")");
+              assert_eq!(parse_yes_no("n"), Ok(false), "parse_yes_no(\"n\")");
+          }
+
+          #[test]
+          fn ignores_case_and_spaces() {
+              assert_eq!(parse_yes_no("  Y \n"), Ok(true), "parse_yes_no(\"  Y \\n\")");
+              assert_eq!(parse_yes_no("NO"), Ok(false), "parse_yes_no(\"NO\")");
+          }
+
+          #[test]
+          fn rejects_other_answers() {
+              assert_eq!(parse_yes_no(" maybe "), Err(String::from("expected yes or no, got 'maybe'")), "parse_yes_no(\" maybe \")");
+              assert_eq!(parse_yes_no(""), Err(String::from("expected yes or no, got ''")), "parse_yes_no(\"\")");
+          }
+        hints:
+          - "`answer.trim().to_lowercase()` gives a cleaned-up `String`."
+          - "`match` on `cleaned.as_str()` so the arms can be string literals like `\"y\" | \"yes\"`."
+          - "The catch-all arm is `_ => Err(format!(\"expected yes or no, got '{}'\", answer.trim()))`."
+
+  - title: Handling a Result with match
+    id: errors-2
+    text: |
+      A `Result` is an enum, so the most basic way to look inside is the tool you already know for enums: `match`. Each arm handles one variant and pulls its value out.
+
+      ```rust run
+      fn main() {
+          let inputs = ["3", "12", "two", "", "-1"];
+          for input in inputs {
+              match input.parse::<u32>() {
+                  Ok(qty) => println!("{input:?}: ordered {qty}"),
+                  Err(e) => println!("{input:?}: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      "3": ordered 3
+      "12": ordered 12
+      "two": invalid digit found in string
+      "": cannot parse integer from empty string
+      "-1": invalid digit found in string
+      ```
+
+      - `input.parse::<u32>()` returns `Result<u32, ParseIntError>`. `ParseIntError` (its full path is `std::num::ParseIntError`) is the standard library's error type for failed integer parsing.
+      - `Ok(qty)` matches a success and names the number `qty`. `Err(e)` matches a failure and names the error `e`.
+      - The compiler checks that you handled both. You can't forget the error case by accident.
+      - `-1` fails because a `u32` can't be negative: the `-` is an "invalid digit".
+
+      ### Parse errors
+
+      Printing a `ParseIntError` with `{}` gives a message meant for people; `{:?}` shows its inner structure, meant for developers.
+
+      | Input parsed as `u8` | `{}` | `{:?}` |
+      |---|---|---|
+      | `""` | cannot parse integer from empty string | `ParseIntError { kind: Empty }` |
+      | `"4x"` | invalid digit found in string | `ParseIntError { kind: InvalidDigit }` |
+      | `"300"` | number too large to fit in target type | `ParseIntError { kind: PosOverflow }` |
+
+      Other types have their own errors: parsing an `f64` can fail with a `ParseFloatError` (`invalid float literal`), a `bool` with a `ParseBoolError` (anything but exactly `true` or `false`).
+
+      ### Handling your own Results
+
+      Your own functions work the same way. With `withdraw` from the last step:
+
+      ```rust run
+      fn withdraw(balance: u32, amount: u32) -> Result<u32, String> {
+          if amount > balance {
+              return Err(String::from("insufficient funds"));
+          }
+          Ok(balance - amount)
+      }
+
+      fn main() {
+          let mut balance = 100;
+          for amount in [40, 80, 60] {
+              match withdraw(balance, amount) {
+                  Ok(new_balance) => {
+                      balance = new_balance;
+                      println!("withdrew {amount}, balance {balance}");
+                  }
+                  Err(msg) => println!("declined {amount}: {msg}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      withdrew 40, balance 60
+      declined 80: insufficient funds
+      withdrew 60, balance 0
+      ```
+
+      ### if let and let...else
+
+      When you only care about one side, `if let` and `let...else` (from the enums module) work on `Result` too:
+
+      ```rust run
+      fn port_from(text: &str) -> u16 {
+          let Ok(port) = text.parse::<u16>() else {
+              println!("bad port {text:?}, using 8080");
+              return 8080;
+          };
+          port
+      }
+
+      fn main() {
+          println!("{}", port_from("3000"));
+          println!("{}", port_from("99999"));
+          if let Err(e) = "12.5.1".parse::<f64>() {
+              println!("version is not a number: {e}");
+          }
+      }
+      ```
+
+      ```output
+      3000
+      bad port "99999", using 8080
+      8080
+      version is not a number: invalid float literal
+      ```
+
+      ### Common mistakes
+
+      - **Leaving out the `Err` arm.** A `match` must cover every variant:
+
+      ```rust compile_fail
+      fn main() {
+          match "5".parse::<i32>() {
+              Ok(n) => println!("{n}"),
+          }
+      }
+      ```
+
+      ```error
+      error[E0004]: non-exhaustive patterns: `Err(_)` not covered
+      ```
+
+      - **Parsing a line with its newline still on it.** `read_line` keeps the `\n`, and `"42\n"` is not a number (`invalid digit found in string`). Call `.trim()` before `.parse()`.
+      - **Printing the error with `{:?}` for users.** `ParseIntError { kind: InvalidDigit }` is for developers. Use `{}` in messages people read.
+
+      **Your turn:** a shop receives order quantities, one per line. Read every line, and for each one:
+
+      - if it parses as a `u32` (after trimming), add it to `total`
+      - otherwise print `skipping "<line>": <error>` with the trimmed line and the error's `{}` message
+
+      At the end print `total: <total>`. For the input `3`, `5`, `abc`, an empty line and `2`, the output is:
+
+      ```
+      skipping "abc": invalid digit found in string
+      skipping "": cannot parse integer from empty string
+      total: 10
+      ```
+    seed: |
+      use std::io::BufRead;
+
+      fn main() {
+          let mut total: u32 = 0;
+          for line in std::io::stdin().lock().lines() {
+              let line = line.expect("could not read input");
+              let text = line.trim();
+              // match on text.parse::<u32>():
+              //   Ok  -> add the quantity to total
+              //   Err -> print: skipping "<text>": <error>
+          }
+          println!("total: {total}");
+      }
+    solution: |
+      use std::io::BufRead;
+
+      fn main() {
+          let mut total: u32 = 0;
+          for line in std::io::stdin().lock().lines() {
+              let line = line.expect("could not read input");
+              let text = line.trim();
+              match text.parse::<u32>() {
+                  Ok(qty) => total += qty,
+                  Err(e) => println!("skipping \"{text}\": {e}"),
+              }
+          }
+          println!("total: {total}");
+      }
+    require:
+      - pattern: '\bmatch\b'
+        message: Use a `match` with an `Ok` arm and an `Err` arm.
+    hints:
+      - "`match text.parse::<u32>() { Ok(qty) => ..., Err(e) => ... }`"
+      - "In the `Ok` arm, `total += qty`. In the `Err` arm, print the message with `{e}`."
+      - "To print a double quote inside a string, write `\\\"`: `println!(\"skipping \\\"{text}\\\": {e}\")`."
+    tests:
+      - stdin: "3\n5\nabc\n\n2\n"
+        expect: "skipping \"abc\": invalid digit found in string\nskipping \"\": cannot parse integer from empty string\ntotal: 10"
+      - stdin: "10\n-4\n 7 \n99999999999\n"
+        hidden: true
+      - stdin: "1\n2\n3\n"
+        hidden: true
+    more:
+      - task: |
+          A game reads the level to start on as text. Write `fn level_label(input: &str) -> String` that parses the trimmed input as a `u8` and returns:
+
+          - `"level 5"` for a valid number like `5`
+          - `"invalid level '<trimmed input>': <error>"` otherwise, for example `"invalid level 'seven': invalid digit found in string"`
+        seed: |
+          fn level_label(input: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn level_label(input: &str) -> String {
+              let text = input.trim();
+              match text.parse::<u8>() {
+                  Ok(n) => format!("level {n}"),
+                  Err(e) => format!("invalid level '{text}': {e}"),
+              }
+          }
+        harness: |
+          #[test]
+          fn labels_a_valid_level() {
+              assert_eq!(level_label("5"), "level 5", "level_label(\"5\")");
+          }
+
+          #[test]
+          fn trims_the_input() {
+              assert_eq!(level_label(" 12\n"), "level 12", "level_label(\" 12\\n\")");
+          }
+
+          #[test]
+          fn reports_a_word() {
+              assert_eq!(level_label("seven"), "invalid level 'seven': invalid digit found in string", "level_label(\"seven\")");
+          }
+
+          #[test]
+          fn reports_a_number_too_big_for_u8() {
+              assert_eq!(level_label("300"), "invalid level '300': number too large to fit in target type", "level_label(\"300\")");
+          }
+
+          #[test]
+          fn reports_empty_input() {
+              assert_eq!(level_label(""), "invalid level '': cannot parse integer from empty string", "level_label(\"\")");
+          }
+        hints:
+          - "Trim first: `let text = input.trim();`, then `match text.parse::<u8>()`."
+          - "Each arm returns a `String` built with `format!`."
+      - task: |
+          An ATM reads one line: the amount to withdraw from a balance of 100. Use the `withdraw` function in the starter code. Print:
+
+          - `new balance: <n>` if the withdrawal works
+          - `declined: <message>` if `withdraw` returns an error
+          - `not a number: <error>` if the line isn't a valid `u32`
+
+          You'll need a `match` inside a `match`.
+        seed: |
+          fn withdraw(balance: u32, amount: u32) -> Result<u32, String> {
+              if amount > balance {
+                  return Err(format!("insufficient funds (balance {balance})"));
+              }
+              Ok(balance - amount)
+          }
+
+          fn main() {
+              let balance = 100;
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              // parse the trimmed line, then call withdraw(balance, amount)
+          }
+        solution: |
+          fn withdraw(balance: u32, amount: u32) -> Result<u32, String> {
+              if amount > balance {
+                  return Err(format!("insufficient funds (balance {balance})"));
+              }
+              Ok(balance - amount)
+          }
+
+          fn main() {
+              let balance = 100;
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              match line.trim().parse::<u32>() {
+                  Ok(amount) => match withdraw(balance, amount) {
+                      Ok(left) => println!("new balance: {left}"),
+                      Err(msg) => println!("declined: {msg}"),
+                  },
+                  Err(e) => println!("not a number: {e}"),
+              }
+          }
+        hints:
+          - "The outer `match` is on `line.trim().parse::<u32>()`."
+          - "In its `Ok(amount)` arm, `match withdraw(balance, amount) { ... }` with two more arms."
+        tests:
+          - stdin: "30\n"
+            expect: "new balance: 70"
+          - stdin: "250\n"
+            hidden: true
+          - stdin: "lots\n"
+            hidden: true
+          - stdin: "100\n"
+            hidden: true
+
+  - title: unwrap, expect and safe defaults
+    id: errors-3
+    text: |
+      Writing a `match` for every `Result` gets long. `Result` (and `Option`) have shortcut methods for the common cases.
+
+      ### unwrap and expect
+
+      - `.unwrap()` gives you the value inside `Ok`, or **panics** if it's an `Err`.
+      - `.expect("message")` does the same, but panics with your message in front of the error.
+
+      ```rust panics
+      fn main() {
+          let port: u16 = "8080".parse().expect("the default port is a valid number");
+          println!("port {port}");
+          let qty: u32 = "ten".parse().unwrap();
+          println!("quantity {qty}");
+      }
+      ```
+
+      ```output
+      port 8080
+      ```
+
+      The second parse fails, so the program panics with: ``called `Result::unwrap()` on an `Err` value: ParseIntError { kind: InvalidDigit }``. With `expect`, the message would start with your text instead.
+
+      ### When is unwrap or expect fine?
+
+      Both turn a recoverable error into a crash. That's acceptable when:
+
+      - **In tests.** A panic fails the test, which is exactly what you want.
+      - **In prototypes and quick scripts.** Crashing on bad input is fine while you explore. Search for `unwrap` when you turn the prototype into real code.
+      - **When failure is impossible (an invariant).** `"8080".parse::<u16>()` on a literal you wrote can't fail. Use `expect` and say *why* it can't fail. If it ever does panic, the message tells the next developer which assumption broke.
+
+      They're **not** fine for:
+
+      - **Anything from outside your program:** user input, files, network data, environment variables. It will be wrong eventually, and a typo shouldn't crash your program.
+      - **Library code.** A library can't know whether its caller can survive a crash. Return a `Result` and let the caller decide.
+
+      **Workplace note:** many teams don't allow a bare `unwrap()` in production code and ask for `expect` with a message that states the expectation ("config was validated at startup") instead. Clippy can enforce this with its `unwrap_used` lint, which is off by default.
+
+      ### Safe defaults: unwrap_or and unwrap_or_default
+
+      Often there's a sensible fallback. `unwrap_or(value)` gives the `Ok` value, or `value` on error. `unwrap_or_default()` falls back to the type's **default value**: `0` for numbers, `false` for `bool`, an empty `String` or `Vec`.
+
+      ```rust run
+      fn main() {
+          let retries: u32 = "abc".parse().unwrap_or(3);
+          let workers: u32 = "8".parse().unwrap_or(1);
+          let timeout: u32 = "".parse().unwrap_or_default();
+          let debug: bool = "maybe".parse().unwrap_or_default();
+          println!("retries={retries} workers={workers} timeout={timeout} debug={debug}");
+
+          let nickname: Option<&str> = None;
+          println!("hello, {}", nickname.unwrap_or("guest"));
+      }
+      ```
+
+      ```output
+      retries=3 workers=8 timeout=0 debug=false
+      hello, guest
+      ```
+
+      The same methods work on `Option`, as the last line shows: `None` falls back to `"guest"`.
+
+      ### Common mistakes
+
+      - **A fallback of the wrong type.** The fallback must have the same type as the success value:
+
+      ```rust compile_fail
+      fn main() {
+          let qty: u32 = "x".parse().unwrap_or("0");
+          println!("{qty}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+        |     let qty: u32 = "x".parse().unwrap_or("0");
+        |                                --------- ^^^ expected `u32`, found `&str`
+      ```
+
+      - **Hiding real problems with a default.** If a missing setting is a mistake the user must fix, falling back silently makes the bug hard to find. Use a default only when it's a genuinely reasonable choice.
+      - **`expect` messages that only repeat the failure.** `.expect("parse failed")` adds nothing; the error already says that. Say what you expected: `.expect("PORT should be a number")`.
+
+      **Your turn:** write `fn parse_settings(retries: &str, verbose: &str) -> (u32, bool)` for a tool's settings. Trim both inputs.
+
+      - `retries` is parsed as a `u32`; if that fails, use `3` (with `unwrap_or`)
+      - `verbose` is parsed as a `bool` (only `true` and `false` are valid); if that fails, use the default `false` (with `unwrap_or_default`)
+    seed: |
+      fn parse_settings(retries: &str, verbose: &str) -> (u32, bool) {
+          todo!()
+      }
+    solution: |
+      fn parse_settings(retries: &str, verbose: &str) -> (u32, bool) {
+          let retries: u32 = retries.trim().parse().unwrap_or(3);
+          let verbose: bool = verbose.trim().parse().unwrap_or_default();
+          (retries, verbose)
+      }
+    require:
+      - pattern: '\.unwrap_or\('
+        message: Use `unwrap_or(3)` for the retries fallback.
+      - pattern: '\.unwrap_or_default\(\)'
+        message: Use `unwrap_or_default()` for the verbose fallback.
+    hints:
+      - "`let retries: u32 = retries.trim().parse().unwrap_or(3);`"
+      - "The type annotation `: bool` tells `parse` what to parse into; then `.unwrap_or_default()`."
+      - "Return both as a tuple: `(retries, verbose)`."
+    harness: |
+      #[test]
+      fn parses_valid_settings() {
+          assert_eq!(parse_settings("5", "true"), (5, true), "parse_settings(\"5\", \"true\")");
+      }
+
+      #[test]
+      fn trims_the_inputs() {
+          assert_eq!(parse_settings(" 10 ", " false\n"), (10, false), "parse_settings(\" 10 \", \" false\\n\")");
+      }
+
+      #[test]
+      fn bad_retries_fall_back_to_3() {
+          assert_eq!(parse_settings("abc", "true"), (3, true), "parse_settings(\"abc\", \"true\")");
+          assert_eq!(parse_settings("-1", "true"), (3, true), "parse_settings(\"-1\", \"true\")");
+      }
+
+      #[test]
+      fn bad_verbose_falls_back_to_false() {
+          assert_eq!(parse_settings("2", "yes"), (2, false), "parse_settings(\"2\", \"yes\")");
+          assert_eq!(parse_settings("2", "TRUE"), (2, false), "parse_settings(\"2\", \"TRUE\")");
+      }
+
+      #[test]
+      fn empty_inputs_use_both_fallbacks() {
+          assert_eq!(parse_settings("", ""), (3, false), "parse_settings(\"\", \"\")");
+      }
+    more:
+      - task: |
+          Fill in the blanks so each volume setting falls back to `50` when it isn't a valid `u8`, and each boost falls back to the default `0`. The program prints:
+
+          ```
+          "75": volume 75, boost 75
+          "loud": volume 50, boost 0
+          "": volume 50, boost 0
+          "300": volume 50, boost 0
+          ```
+        fill: |
+          fn main() {
+              let inputs = ["75", "loud", "", "300"];
+              for input in inputs {
+                  let volume: u8 = input.parse().[[unwrap_or]](50);
+                  let boost: u8 = input.parse().[[unwrap_or_default]]();
+                  println!("{input:?}: volume {volume}, boost {boost}");
+              }
+          }
+        hints:
+          - The first method takes the fallback value as an argument.
+          - The second takes no argument and uses the type's default, which is 0 for numbers.
+      - task: |
+          This temperature converter crashes when the user types something that isn't a number. Keep the `expect` on `read_line` (if reading stdin fails, something is badly wrong and crashing is fine), but replace the `unwrap()` on the parse: when the trimmed input isn't a valid `f64`, print `not a temperature: <trimmed input>` instead of crashing.
+        seed: |
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("stdin should be readable");
+              let celsius: f64 = line.trim().parse().unwrap();
+              let fahrenheit = celsius * 9.0 / 5.0 + 32.0;
+              println!("{celsius} C = {fahrenheit} F");
+          }
+        solution: |
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("stdin should be readable");
+              let text = line.trim();
+              let Ok(celsius) = text.parse::<f64>() else {
+                  println!("not a temperature: {text}");
+                  return;
+              };
+              let fahrenheit = celsius * 9.0 / 5.0 + 32.0;
+              println!("{celsius} C = {fahrenheit} F");
+          }
+        forbid:
+          - pattern: '\.unwrap\(\)'
+            message: Don't `unwrap()` user input. Handle the `Err` case.
+        hints:
+          - "Keep the trimmed text in a variable so you can print it in the message."
+          - "`let Ok(celsius) = text.parse::<f64>() else { ...; return; };` handles the error and stops."
+        tests:
+          - stdin: "100\n"
+            expect: "100 C = 212 F"
+          - stdin: "-40\n"
+            expect: "-40 C = -40 F"
+          - stdin: "warm\n"
+            hidden: true
+          - stdin: "37.5\n"
+            hidden: true
+
+  - title: The ? operator
+    id: errors-4
+    text: |
+      Most functions that hit an error can't fix it themselves. A function that parses a number doesn't know whether the right reaction is to ask the user again, skip the line, or stop the program, so it hands the error to its caller. This is called **propagating** the error. With `match`, it looks like this:
+
+      ```rust
+      fn add_quantities(a: &str, b: &str) -> Result<u32, ParseIntError> {
+          let x: u32 = match a.trim().parse() {
+              Ok(v) => v,
+              Err(e) => return Err(e),
+          };
+          let y: u32 = match b.trim().parse() {
+              Ok(v) => v,
+              Err(e) => return Err(e),
+          };
+          Ok(x + y)
+      }
+      ```
+
+      That pattern is so common that Rust has an operator for it. The **`?` operator**, written after an expression that gives a `Result`:
+
+      - on `Ok(v)`: unwraps it, so the expression is just `v`
+      - on `Err(e)`: **returns** `Err(e)` from the current function immediately
+
+      ```rust run
+      use std::num::ParseIntError;
+
+      fn add_quantities(a: &str, b: &str) -> Result<u32, ParseIntError> {
+          let x: u32 = a.trim().parse()?;
+          let y: u32 = b.trim().parse()?;
+          Ok(x + y)
+      }
+
+      fn main() {
+          println!("{:?}", add_quantities("3", " 4"));
+          println!("{:?}", add_quantities("3", "four"));
+      }
+      ```
+
+      ```output
+      Ok(7)
+      Err(ParseIntError { kind: InvalidDigit })
+      ```
+
+      Same behavior as the `match` version, in a third of the code. The happy path reads top to bottom, and every `?` marks a place where the function can stop early. `use std::num::ParseIntError;` lets you write the error type by its short name.
+
+      `?` works anywhere in the function, including inside loops:
+
+      ```rust run
+      use std::num::ParseIntError;
+
+      // Sums a line of package weights like "12 7 30".
+      fn total_weight(line: &str) -> Result<u32, ParseIntError> {
+          let mut total = 0;
+          for word in line.split_whitespace() {
+              total += word.parse::<u32>()?;
+          }
+          Ok(total)
+      }
+
+      fn main() {
+          for line in ["12 7 30", "5 x 9", ""] {
+              match total_weight(line) {
+                  Ok(kg) => println!("{line:?}: {kg} kg"),
+                  Err(e) => println!("{line:?}: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      "12 7 30": 49 kg
+      "5 x 9": invalid digit found in string
+      "": 0 kg
+      ```
+
+      The first bad word stops the whole function. The caller (`main`) is where the decision gets made: here, print the problem and move on to the next line.
+
+      ### ? on Option
+
+      In a function that returns `Option`, `?` works on `Option` values: `Some(v)` gives `v`, `None` returns `None` from the function.
+
+      ```rust run
+      fn initials(full_name: &str) -> Option<String> {
+          let mut words = full_name.split_whitespace();
+          let first = words.next()?.chars().next()?;
+          let last = words.next()?.chars().next()?;
+          Some(format!("{first}{last}"))
+      }
+
+      fn main() {
+          println!("{:?}", initials("Ada Lovelace"));
+          println!("{:?}", initials("Ferris"));
+      }
+      ```
+
+      ```output
+      Some("AL")
+      None
+      ```
+
+      ### Common mistakes
+
+      - **Using `?` in a function that returns `()`.** `?` returns early with the error, so the function must return a `Result` (or an `Option`). That includes `main`:
+
+      ```rust compile_fail
+      fn main() {
+          let n: i32 = "5".parse()?;
+          println!("{n}");
+      }
+      ```
+
+      ```error
+      error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+      ```
+
+      The next step shows how `main` can return a `Result`.
+
+      - **Mismatched error types.** `?` can only pass the error on if it fits the function's error type. Here the function promises a `String` error but `parse` produces a `ParseIntError`:
+
+      ```rust compile_fail
+      fn parse_port(text: &str) -> Result<u16, String> {
+          let port: u16 = text.parse()?;
+          Ok(port)
+      }
+
+      fn main() {
+          println!("{:?}", parse_port("80"));
+      }
+      ```
+
+      ```error
+      error[E0277]: `?` couldn't convert the error to `String`
+        |                    -------^ the trait `From<ParseIntError>` is not implemented for `String`
+      ```
+
+      The fix is to make the types line up: return `Result<u16, ParseIntError>`, convert the error first (with `map_err`, two steps from now), or define your own error type that knows how to absorb a `ParseIntError` (next module).
+
+      - **Using `?` on an `Option` in a function that returns `Result`** (or the other way around). They don't mix: you get ``the `?` operator can only be used on `Result`s, not `Option`s``. Turning one into the other is also coming up with the combinators.
+
+      **Your turn:** a paint app reads colors as three numbers separated by spaces, like `255 128 0`. Write `parse_rgb` using `?` after each parse (no `match`, no `unwrap()`). The starter splits the line for you; `unwrap_or("")` gives an empty string for a missing part, which then fails to parse.
+    seed: |
+      use std::num::ParseIntError;
+
+      fn parse_rgb(line: &str) -> Result<(u8, u8, u8), ParseIntError> {
+          let mut parts = line.split_whitespace();
+          let red = parts.next().unwrap_or("");
+          let green = parts.next().unwrap_or("");
+          let blue = parts.next().unwrap_or("");
+          // Parse each part as a u8 with ?, then return the three numbers in Ok.
+          todo!()
+      }
+    solution: |
+      use std::num::ParseIntError;
+
+      fn parse_rgb(line: &str) -> Result<(u8, u8, u8), ParseIntError> {
+          let mut parts = line.split_whitespace();
+          let red = parts.next().unwrap_or("");
+          let green = parts.next().unwrap_or("");
+          let blue = parts.next().unwrap_or("");
+          // Parse each part as a u8 with ?, then return the three numbers in Ok.
+          let r: u8 = red.parse()?;
+          let g: u8 = green.parse()?;
+          let b: u8 = blue.parse()?;
+          Ok((r, g, b))
+      }
+    require:
+      - pattern: '\.parse(::<u8>)?\(\)\?'
+        message: Put `?` right after each `.parse()`.
+    forbid:
+      - pattern: '\bmatch\b'
+        message: Let `?` do the work instead of `match`.
+      - pattern: '\.unwrap\(\)|\.expect\('
+        message: Don't unwrap here; pass the error to the caller with `?`.
+    hints:
+      - "`let r: u8 = red.parse()?;` parses one part or returns the error."
+      - "Do the same for green and blue, then `Ok((r, g, b))`. Note the double parentheses: `Ok` around a tuple."
+    harness: |
+      #[test]
+      fn parses_three_numbers() {
+          assert_eq!(parse_rgb("255 128 0"), Ok((255, 128, 0)), "parse_rgb(\"255 128 0\")");
+      }
+
+      #[test]
+      fn allows_extra_spaces() {
+          assert_eq!(parse_rgb("  10   20 30 "), Ok((10, 20, 30)), "parse_rgb(\"  10   20 30 \")");
+      }
+
+      #[test]
+      fn rejects_a_word() {
+          let err = parse_rgb("255 red 0").unwrap_err().to_string();
+          assert_eq!(err, "invalid digit found in string", "error message of parse_rgb(\"255 red 0\")");
+      }
+
+      #[test]
+      fn rejects_a_missing_part() {
+          let err = parse_rgb("1 2").unwrap_err().to_string();
+          assert_eq!(err, "cannot parse integer from empty string", "error message of parse_rgb(\"1 2\")");
+      }
+
+      #[test]
+      fn rejects_numbers_above_255() {
+          let err = parse_rgb("256 0 0").unwrap_err().to_string();
+          assert_eq!(err, "number too large to fit in target type", "error message of parse_rgb(\"256 0 0\")");
+      }
+    more:
+      - task: |
+          A leaderboard shows the top three scores. Write `fn podium(scores: &[u32]) -> Option<String>` using `?` on `Option`. The scores are already sorted, best first. With at least three scores, return `Some("1st: 90, 2nd: 75, 3rd: 60")` (with the real numbers); with fewer, return `None`.
+
+          `scores.first()` gives the first element as an `Option<&u32>`, and `scores.get(1)` the second.
+        seed: |
+          fn podium(scores: &[u32]) -> Option<String> {
+              todo!()
+          }
+        solution: |
+          fn podium(scores: &[u32]) -> Option<String> {
+              let first = scores.first()?;
+              let second = scores.get(1)?;
+              let third = scores.get(2)?;
+              Some(format!("1st: {first}, 2nd: {second}, 3rd: {third}"))
+          }
+        require:
+          - pattern: '\)\?'
+            message: Use `?` on the `Option` values.
+        hints:
+          - "`let first = scores.first()?;` returns `None` from the function if the slice is empty."
+          - "Use `scores.get(1)?` and `scores.get(2)?` for the others, then `Some(format!(...))`."
+        harness: |
+          #[test]
+          fn shows_the_top_three() {
+              assert_eq!(podium(&[90, 75, 60, 10]), Some(String::from("1st: 90, 2nd: 75, 3rd: 60")), "podium(&[90, 75, 60, 10])");
+          }
+
+          #[test]
+          fn works_with_exactly_three() {
+              assert_eq!(podium(&[3, 2, 1]), Some(String::from("1st: 3, 2nd: 2, 3rd: 1")), "podium(&[3, 2, 1])");
+          }
+
+          #[test]
+          fn needs_three_scores() {
+              assert_eq!(podium(&[90, 75]), None, "podium(&[90, 75])");
+          }
+
+          #[test]
+          fn empty_list_gives_none() {
+              assert_eq!(podium(&[]), None, "podium(&[])");
+          }
+      - task: |
+          A receipt line lists items as `<quantity>x<price in cents>`, separated by spaces, like `3x250 1x1200 2x99`. Write `fn order_total(line: &str) -> Result<u32, ParseIntError>` that returns the total in cents (`3*250 + 1*1200 + 2*99 = 2148`). An empty line totals `0`. Any bad number (or a missing one, like `2x`) must return the parse error, using `?`.
+
+          Hint for splitting: `item.split('x')` gives the pieces around the `x`.
+        seed: |
+          use std::num::ParseIntError;
+
+          fn order_total(line: &str) -> Result<u32, ParseIntError> {
+              todo!()
+          }
+        solution: |
+          use std::num::ParseIntError;
+
+          fn order_total(line: &str) -> Result<u32, ParseIntError> {
+              let mut total = 0;
+              for item in line.split_whitespace() {
+                  let mut parts = item.split('x');
+                  let qty: u32 = parts.next().unwrap_or("").parse()?;
+                  let price: u32 = parts.next().unwrap_or("").parse()?;
+                  total += qty * price;
+              }
+              Ok(total)
+          }
+        require:
+          - pattern: '\)\?'
+            message: Pass parse errors to the caller with `?`.
+        hints:
+          - "Loop over `line.split_whitespace()`. For each item, `let mut parts = item.split('x');`."
+          - "`let qty: u32 = parts.next().unwrap_or(\"\").parse()?;` and the same for the price."
+          - "Add `qty * price` to a running total and finish with `Ok(total)`."
+        harness: |
+          #[test]
+          fn adds_up_a_receipt() {
+              assert_eq!(order_total("3x250 1x1200 2x99"), Ok(2148), "order_total(\"3x250 1x1200 2x99\")");
+          }
+
+          #[test]
+          fn empty_line_is_zero() {
+              assert_eq!(order_total(""), Ok(0), "order_total(\"\")");
+          }
+
+          #[test]
+          fn rejects_a_missing_price() {
+              let err = order_total("1x100 2x").unwrap_err().to_string();
+              assert_eq!(err, "cannot parse integer from empty string", "error message of order_total(\"1x100 2x\")");
+          }
+
+          #[test]
+          fn rejects_a_bad_quantity() {
+              let err = order_total("ax5").unwrap_err().to_string();
+              assert_eq!(err, "invalid digit found in string", "error message of order_total(\"ax5\")");
+          }
+
+  - title: main can return a Result
+    id: errors-5
+    text: |
+      `?` needs a function that returns `Result`, and `main` is a function. It can return `Result<(), E>`:
+
+      ```rust run
+      use std::num::ParseIntError;
+
+      fn main() -> Result<(), ParseIntError> {
+          let width: u32 = "1920".parse()?;
+          let height: u32 = "1080".parse()?;
+          println!("{} pixels", width * height);
+          Ok(())
+      }
+      ```
+
+      ```output
+      2073600 pixels
+      ```
+
+      - `Result<(), ParseIntError>`: on success there's nothing to give back, so the `Ok` type is `()`, the unit type.
+      - `Ok(())` at the end says "finished successfully". The double parentheses are `Ok` wrapped around the unit value `()`.
+      - If any `?` hits an error, `main` returns that `Err`.
+
+      ### What happens when main returns Err
+
+      Rust prints `Error: ` followed by the error's `{:?}` form to stderr, and the program ends with **exit code** 1 instead of 0. The exit code is how a program tells whoever started it (a shell script, a CI pipeline, another program) whether it worked: 0 means success, anything else means failure.
+
+      ```text
+      $ cargo run
+      Error: ParseIntError { kind: InvalidDigit }
+      $ echo $?
+      1
+      ```
+
+      This makes `main() -> Result` great for tools and scripts: you write the happy path with `?` and every failure stops the program with a non-zero exit code. The message is the developer-oriented `{:?}` form, though. Polished command-line tools print a friendly message themselves (module 40 covers that).
+
+      Any error type works, as long as it can be printed with `{:?}`. With `String` errors:
+
+      ```rust
+      fn main() -> Result<(), String> {
+          Err(String::from("config file missing"))
+      }
+
+      // prints to stderr:  Error: "config file missing"
+      ```
+
+      ### Common mistakes
+
+      - **Forgetting `Ok(())` at the end.** Without it, `main`'s body ends with a statement, so it "returns" `()`, not a `Result`:
+
+      ```rust compile_fail
+      use std::num::ParseIntError;
+
+      fn main() -> Result<(), ParseIntError> {
+          let width: u32 = "1920".parse()?;
+          println!("{width}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+        | fn main() -> Result<(), ParseIntError> {
+        |    ----      ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Result<(), ParseIntError>`, found `()`
+      ```
+
+      - **Mixing error types in `main`.** `read_line` fails with an `std::io::Error`, `parse` with a `ParseIntError`. A `main` that returns `Result<(), ParseIntError>` can't use `?` on both. The next module introduces `Box<dyn Error>`, a type that holds *any* error, which solves this. Until then, `expect` on `read_line` is reasonable: if reading stdin fails, there's nothing better to do.
+
+      **Your turn:** a scoreboard reads points from input (several per line, separated by spaces) and prints the running total after each one. Make `main` return `Result<(), ParseIntError>` and replace the `unwrap()` with `?`, so a bad value stops the program with exit code 1 (after the totals printed so far). For input `10 20 30` the output is:
+
+      ```
+      running total: 10
+      running total: 30
+      running total: 60
+      ```
+    seed: |
+      use std::io::Read;
+      use std::num::ParseIntError;
+
+      fn main() {
+          let mut input = String::new();
+          std::io::stdin().read_to_string(&mut input).expect("could not read input");
+          let mut total: u32 = 0;
+          for word in input.split_whitespace() {
+              let points: u32 = word.parse().unwrap();
+              total += points;
+              println!("running total: {total}");
+          }
+      }
+    solution: |
+      use std::io::Read;
+      use std::num::ParseIntError;
+
+      fn main() -> Result<(), ParseIntError> {
+          let mut input = String::new();
+          std::io::stdin().read_to_string(&mut input).expect("could not read input");
+          let mut total: u32 = 0;
+          for word in input.split_whitespace() {
+              let points: u32 = word.parse()?;
+              total += points;
+              println!("running total: {total}");
+          }
+          Ok(())
+      }
+    require:
+      - pattern: 'fn\s+main\s*\(\s*\)\s*->\s*Result'
+        message: "`main` should return `Result<(), ParseIntError>`."
+      - pattern: '\)\?'
+        message: Use `?` on the parse.
+    forbid:
+      - pattern: '\.unwrap\(\)'
+        message: Replace the `unwrap()` with `?`.
+    hints:
+      - "Change the first line to `fn main() -> Result<(), ParseIntError> {`."
+      - "`let points: u32 = word.parse()?;`"
+      - "Don't forget `Ok(())` as the last line of `main`."
+    tests:
+      - stdin: "10 20 30\n"
+        expect: "running total: 10\nrunning total: 30\nrunning total: 60"
+      - stdin: "5\n7 x 9\n"
+        exit: 1
+        expect: "running total: 5\nrunning total: 12"
+        hidden: true
+      - stdin: "100 -3\n"
+        exit: 1
+        hidden: true
+    more:
+      - task: |
+          A room planner reads one line with a width and a height. Make `main` return `Result<(), ParseIntError>` and use `?` for both parses. Print `width: <w>` right after parsing the width, then `height: <h>`, then `area: <w*h>`. For input `3 4`:
+
+          ```
+          width: 3
+          height: 4
+          area: 12
+          ```
+
+          If a value is missing or not a number, the program should stop with exit code 1.
+        seed: |
+          use std::num::ParseIntError;
+
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              let mut parts = line.split_whitespace();
+              let width = parts.next().unwrap_or("");
+              let height = parts.next().unwrap_or("");
+          }
+        solution: |
+          use std::num::ParseIntError;
+
+          fn main() -> Result<(), ParseIntError> {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              let mut parts = line.split_whitespace();
+              let width: u32 = parts.next().unwrap_or("").parse()?;
+              println!("width: {width}");
+              let height: u32 = parts.next().unwrap_or("").parse()?;
+              println!("height: {height}");
+              println!("area: {}", width * height);
+              Ok(())
+          }
+        require:
+          - pattern: 'fn\s+main\s*\(\s*\)\s*->\s*Result'
+            message: "`main` should return `Result<(), ParseIntError>`."
+        hints:
+          - "`let width: u32 = parts.next().unwrap_or(\"\").parse()?;`"
+          - "End `main` with `Ok(())`."
+        tests:
+          - stdin: "3 4\n"
+            expect: "width: 3\nheight: 4\narea: 12"
+          - stdin: "10 x\n"
+            exit: 1
+            expect: "width: 10"
+            hidden: true
+          - stdin: "7\n"
+            exit: 1
+            hidden: true
+          - stdin: "6 7\n"
+            hidden: true
+      - task: |
+          An ATM processes three withdrawals, 30, 50 and 40, from a balance of 100. Make `main` return `Result<(), String>` and apply each withdrawal with `withdraw(...)?`, printing `withdrew <amount>, balance <balance>` after each success and `all done` at the end.
+
+          The third withdrawal fails, so your program should print two lines and then stop with exit code 1 (Rust prints the `Error: ...` line to stderr).
+        seed: |
+          fn withdraw(balance: u32, amount: u32) -> Result<u32, String> {
+              if amount > balance {
+                  return Err(format!("cannot withdraw {amount}, balance is {balance}"));
+              }
+              Ok(balance - amount)
+          }
+
+          // Make main return Result<(), String> and use ? on each withdrawal.
+          fn main() {
+              let mut balance = 100;
+              for amount in [30, 50, 40] {
+                  // balance = ...
+                  println!("withdrew {amount}, balance {balance}");
+              }
+              println!("all done");
+          }
+        solution: |
+          fn withdraw(balance: u32, amount: u32) -> Result<u32, String> {
+              if amount > balance {
+                  return Err(format!("cannot withdraw {amount}, balance is {balance}"));
+              }
+              Ok(balance - amount)
+          }
+
+          // Make main return Result<(), String> and use ? on each withdrawal.
+          fn main() -> Result<(), String> {
+              let mut balance = 100;
+              for amount in [30, 50, 40] {
+                  balance = withdraw(balance, amount)?;
+                  println!("withdrew {amount}, balance {balance}");
+              }
+              println!("all done");
+              Ok(())
+          }
+        require:
+          - pattern: 'withdraw\([^)]*\)\?'
+            message: "Use `?` on the result of `withdraw(...)`."
+        hints:
+          - "`balance = withdraw(balance, amount)?;`"
+          - "The signature is `fn main() -> Result<(), String>` and the last line is `Ok(())`."
+        tests:
+          - exit: 1
+            expect: "withdrew 30, balance 70\nwithdrew 50, balance 20"
+
+  - title: "Combinators: map, and_then, ok_or, map_err"
+    id: errors-6
+    text: |
+      `Option` and `Result` have methods that transform them without a `match`. They're called **combinators**, and they take a **closure**: a small function without a name, written `|parameters| body`. You've seen closures with `sort_by_key` and `retain`; `|n| n * 2` takes `n` and returns `n * 2`. Module 26 covers closures in depth.
+
+      | Method | Works on | What it does |
+      |---|---|---|
+      | `map(f)` | both | changes the value inside `Some`/`Ok`; `None`/`Err` pass through |
+      | `map_err(f)` | `Result` | changes the error; `Ok` passes through |
+      | `and_then(f)` | both | runs another step that can itself fail, on the value |
+      | `ok_or(err)` | `Option` | `Some(v)` becomes `Ok(v)`, `None` becomes `Err(err)` |
+      | `ok_or_else(f)` | `Option` | like `ok_or`, but builds the error only when needed |
+      | `ok()` | `Result` | `Ok(v)` becomes `Some(v)`, `Err` becomes `None` (the error is dropped) |
+      | `filter(f)` | `Option` | keeps `Some(v)` only if `f(&v)` is true |
+      | `unwrap_or_else(f)` | both | like `unwrap_or`, but computes the fallback only when needed |
+
+      ### Converting errors: a config line parser
+
+      `map_err` and `ok_or` fix the mismatched-types problem from the `?` step. Here's a parser for config lines like `timeout = 30`:
+
+      ```rust run
+      fn parse_setting(line: &str) -> Result<(String, u32), String> {
+          let (key, value) = line
+              .split_once('=')
+              .ok_or_else(|| format!("missing '=' in {line:?}"))?;
+          let key = key.trim();
+          let number = value
+              .trim()
+              .parse::<u32>()
+              .map_err(|e| format!("{key}: {e}"))?;
+          Ok((key.to_string(), number))
+      }
+
+      fn main() {
+          for line in ["timeout = 30", "retries=x", "verbose"] {
+              match parse_setting(line) {
+                  Ok((key, n)) => println!("{key} -> {n}"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      timeout -> 30
+      error: retries: invalid digit found in string
+      error: missing '=' in "verbose"
+      ```
+
+      - `split_once('=')` splits the line at the first `=` and returns `Option<(&str, &str)>`: `None` if there's no `=`.
+      - `.ok_or_else(|| format!(...))` turns that `Option` into a `Result` with a `String` error, so `?` can be used in a function returning `Result<_, String>`. The closure takes no parameters (`||`) and runs only if the value is `None`.
+      - `.map_err(|e| format!("{key}: {e}"))` turns the `ParseIntError` into a `String`, adding **context**: which key had the bad value. Now `?` works.
+
+      Splitting a long chain over several lines, one method per line, is how `cargo fmt` formats it, and it reads like a list of steps.
+
+      ### map, and_then, ok, filter, unwrap_or_else
+
+      ```rust run
+      fn main() {
+          // map: change the success value, errors pass through
+          let doubled = "21".parse::<i32>().map(|n| n * 2);
+          println!("{doubled:?}");
+
+          // and_then: a second step that can also fail
+          let menu = ["coffee", "tea", "juice"];
+          let order = "1".parse::<usize>().ok().and_then(|i| menu.get(i));
+          println!("{order:?}");
+          let order = "9".parse::<usize>().ok().and_then(|i| menu.get(i));
+          println!("{order:?}");
+
+          // ok + filter: keep only even numbers
+          let even = "7".parse::<i32>().ok().filter(|n| n % 2 == 0);
+          println!("{even:?}");
+
+          // unwrap_or_else: the closure gets the error and computes a fallback
+          let level = "".parse::<u32>().unwrap_or_else(|e| {
+              println!("using level 1 ({e})");
+              1
+          });
+          println!("level {level}");
+      }
+      ```
+
+      ```output
+      Ok(42)
+      Some("tea")
+      None
+      None
+      using level 1 (cannot parse integer from empty string)
+      level 1
+      ```
+
+      `menu.get(i)` already returns an `Option` (`None` when `i` is out of range), so the step "look up the item" can fail too. That's what `and_then` is for: its closure returns an `Option` (or `Result`), and you get a single `Option` back.
+
+      ### Common mistakes
+
+      - **`map` where you need `and_then`.** If the closure returns an `Option`, `map` wraps it in another one:
+
+      ```rust compile_fail
+      fn main() {
+          let menu = ["coffee", "tea", "juice"];
+          let order: Option<&&str> = "1".parse::<usize>().ok().map(|i| menu.get(i));
+          println!("{order:?}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+        |     let order: Option<&&str> = "1".parse::<usize>().ok().map(|i| menu.get(i));
+        |                -------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<&&str>`, found `Option<Option<&&str>>`
+      ```
+
+      - **Throwing away useful errors.** `.ok()` and `unwrap_or` discard the error. That's fine for "use a default", but if someone needs to know *why* something failed, keep the `Result` and add context with `map_err`.
+      - **Chains nobody can read.** Combinators are great for one or two steps. If a chain needs comments to follow, a `match` or a few `let ... ?` lines are clearer. Clippy suggests combinators when a `match` is just a longer way of writing one (for example its `manual_map` lint), but readability wins.
+
+      **Your turn:** write `fn read_port(line: &str) -> Result<u16, String>` for a config line like `port=8080`.
+
+      - Trim the line, then call `.strip_prefix("port=")`. It returns `Some(rest)` if the line starts with `port=`, and `None` otherwise. Turn the `None` into the error `"expected port=NUMBER"` with `ok_or`, and use `?`.
+      - Parse the rest as a `u16`. Turn a parse error into `"invalid port: <error>"` with `map_err`, for example `"invalid port: number too large to fit in target type"`.
+    seed: |
+      fn read_port(line: &str) -> Result<u16, String> {
+          todo!()
+      }
+    solution: |
+      fn read_port(line: &str) -> Result<u16, String> {
+          let value = line
+              .trim()
+              .strip_prefix("port=")
+              .ok_or(String::from("expected port=NUMBER"))?;
+          value.parse::<u16>().map_err(|e| format!("invalid port: {e}"))
+      }
+    require:
+      - pattern: '\.ok_or(_else)?\('
+        message: Turn the `Option` from `strip_prefix` into a `Result` with `ok_or`.
+      - pattern: '\.map_err\('
+        message: Convert the parse error with `map_err`.
+    hints:
+      - "`let value = line.trim().strip_prefix(\"port=\").ok_or(String::from(\"expected port=NUMBER\"))?;`"
+      - "`value.parse::<u16>()` gives `Result<u16, ParseIntError>`; `.map_err(|e| format!(\"invalid port: {e}\"))` makes the error a `String`."
+      - The `map_err` result already has the right type, so it can be the last expression, without `?` and `Ok`.
+    harness: |
+      #[test]
+      fn reads_a_valid_port() {
+          assert_eq!(read_port("port=8080"), Ok(8080), "read_port(\"port=8080\")");
+      }
+
+      #[test]
+      fn trims_the_line() {
+          assert_eq!(read_port("  port=443 \n"), Ok(443), "read_port(\"  port=443 \\n\")");
+      }
+
+      #[test]
+      fn rejects_a_line_without_the_prefix() {
+          assert_eq!(read_port("host=example.com"), Err(String::from("expected port=NUMBER")), "read_port(\"host=example.com\")");
+      }
+
+      #[test]
+      fn rejects_a_port_that_is_too_big() {
+          assert_eq!(read_port("port=70000"), Err(String::from("invalid port: number too large to fit in target type")), "read_port(\"port=70000\")");
+      }
+
+      #[test]
+      fn rejects_an_empty_value() {
+          assert_eq!(read_port("port="), Err(String::from("invalid port: cannot parse integer from empty string")), "read_port(\"port=\")");
+      }
+    more:
+      - task: |
+          A weather station sends temperatures as text. Write `fn parse_temperature(text: &str) -> Option<f64>` in one chain: trim, parse as `f64`, turn the `Result` into an `Option` with `.ok()`, and keep only readings from `-90.0` to `60.0` (inclusive) with `.filter(...)`. Anything else (not a number, or outside the range: a sensor glitch) gives `None`.
+        seed: |
+          fn parse_temperature(text: &str) -> Option<f64> {
+              todo!()
+          }
+        solution: |
+          fn parse_temperature(text: &str) -> Option<f64> {
+              text.trim()
+                  .parse::<f64>()
+                  .ok()
+                  .filter(|t| *t >= -90.0 && *t <= 60.0)
+          }
+        require:
+          - pattern: '\.ok\(\)'
+            message: Use `.ok()` to turn the `Result` into an `Option`.
+          - pattern: '\.filter\('
+            message: Use `.filter(...)` to drop readings outside the range.
+        hints:
+          - "`text.trim().parse::<f64>().ok()` gives an `Option<f64>`."
+          - "`filter`'s closure gets a reference: `.filter(|t| *t >= -90.0 && *t <= 60.0)`."
+        harness: |
+          #[test]
+          fn reads_a_normal_temperature() {
+              assert_eq!(parse_temperature("21.5"), Some(21.5), "parse_temperature(\"21.5\")");
+          }
+
+          #[test]
+          fn trims_and_reads_negative_values() {
+              assert_eq!(parse_temperature(" -12 "), Some(-12.0), "parse_temperature(\" -12 \")");
+          }
+
+          #[test]
+          fn includes_the_limits() {
+              assert_eq!(parse_temperature("-90"), Some(-90.0), "parse_temperature(\"-90\")");
+              assert_eq!(parse_temperature("60"), Some(60.0), "parse_temperature(\"60\")");
+          }
+
+          #[test]
+          fn rejects_text() {
+              assert_eq!(parse_temperature("hot"), None, "parse_temperature(\"hot\")");
+          }
+
+          #[test]
+          fn rejects_glitches() {
+              assert_eq!(parse_temperature("999"), None, "parse_temperature(\"999\")");
+              assert_eq!(parse_temperature("-100"), None, "parse_temperature(\"-100\")");
+          }
+      - task: |
+          A café takes orders like `tea 3` (item, a space, quantity). Write `fn order_cost(menu: &[(&str, u32)], line: &str) -> Result<u32, String>` returning the price (from `price_of`, in the starter) times the quantity. Check in this order and use `?` for each step:
+
+          1. no space in the trimmed line: `Err("expected ITEM QTY")` (use `split_once(' ')` and `ok_or_else`)
+          2. item not on the menu: `Err("unknown item: <item>")`
+          3. quantity not a valid `u32`: `Err("bad quantity: <error>")`
+        seed: |
+          fn price_of(menu: &[(&str, u32)], name: &str) -> Option<u32> {
+              for (item, price) in menu {
+                  if *item == name {
+                      return Some(*price);
+                  }
+              }
+              None
+          }
+
+          fn order_cost(menu: &[(&str, u32)], line: &str) -> Result<u32, String> {
+              todo!()
+          }
+        solution: |
+          fn price_of(menu: &[(&str, u32)], name: &str) -> Option<u32> {
+              for (item, price) in menu {
+                  if *item == name {
+                      return Some(*price);
+                  }
+              }
+              None
+          }
+
+          fn order_cost(menu: &[(&str, u32)], line: &str) -> Result<u32, String> {
+              let (name, qty) = line
+                  .trim()
+                  .split_once(' ')
+                  .ok_or_else(|| String::from("expected ITEM QTY"))?;
+              let price = price_of(menu, name).ok_or_else(|| format!("unknown item: {name}"))?;
+              let qty: u32 = qty.trim().parse().map_err(|e| format!("bad quantity: {e}"))?;
+              Ok(price * qty)
+          }
+        hints:
+          - "`let (name, qty) = line.trim().split_once(' ').ok_or_else(|| String::from(\"expected ITEM QTY\"))?;`"
+          - "`price_of(menu, name)` is an `Option<u32>`: `.ok_or_else(|| format!(\"unknown item: {name}\"))?`"
+          - "`qty.trim().parse::<u32>().map_err(|e| format!(\"bad quantity: {e}\"))?`, then `Ok(price * qty)`."
+        harness: |
+          const MENU: &[(&str, u32)] = &[("coffee", 250), ("tea", 180), ("cake", 320)];
+
+          #[test]
+          fn prices_an_order() {
+              assert_eq!(order_cost(MENU, "tea 3"), Ok(540), "order_cost(MENU, \"tea 3\")");
+              assert_eq!(order_cost(MENU, "coffee 1"), Ok(250), "order_cost(MENU, \"coffee 1\")");
+          }
+
+          #[test]
+          fn rejects_a_line_without_a_quantity() {
+              assert_eq!(order_cost(MENU, "coffee"), Err(String::from("expected ITEM QTY")), "order_cost(MENU, \"coffee\")");
+          }
+
+          #[test]
+          fn rejects_an_unknown_item() {
+              assert_eq!(order_cost(MENU, "soup 2"), Err(String::from("unknown item: soup")), "order_cost(MENU, \"soup 2\")");
+          }
+
+          #[test]
+          fn rejects_a_bad_quantity() {
+              assert_eq!(order_cost(MENU, "cake lots"), Err(String::from("bad quantity: invalid digit found in string")), "order_cost(MENU, \"cake lots\")");
+          }
+
+  - title: "Putting it together: a config reader"
+    id: errors-7
+    text: |
+      Real programs combine everything from this module. Here's a reader for a small config file: blank lines and `#` comments are skipped, every other line must be `key = number`. Bad lines are reported with their line number, and the program keeps going.
+
+      ```rust run
+      use std::io::BufRead;
+
+      fn parse_line(line: &str) -> Result<(String, u32), String> {
+          let (key, value) = line
+              .split_once('=')
+              .ok_or_else(|| String::from("expected key = value"))?;
+          let key = key.trim();
+          if key.is_empty() {
+              return Err(String::from("missing key"));
+          }
+          let value = value
+              .trim()
+              .parse::<u32>()
+              .map_err(|e| format!("bad value for {key}: {e}"))?;
+          Ok((key.to_string(), value))
+      }
+
+      fn main() {
+          let mut number = 0;
+          let mut settings = 0;
+          let mut errors = 0;
+          for line in std::io::stdin().lock().lines() {
+              let line = line.expect("could not read input");
+              number += 1;
+              let text = line.trim();
+              if text.is_empty() || text.starts_with('#') {
+                  continue;
+              }
+              match parse_line(text) {
+                  Ok((key, value)) => {
+                      settings += 1;
+                      println!("{key} = {value}");
+                  }
+                  Err(e) => {
+                      errors += 1;
+                      println!("line {number}: {e}");
+                  }
+              }
+          }
+          println!("{settings} settings, {errors} errors");
+      }
+      ```
+
+      ```input
+      # server settings
+      port = 8080
+      workers = four
+
+      timeout 30
+       = 5
+      retries = 3
+      ```
+
+      ```output
+      port = 8080
+      line 3: bad value for workers: invalid digit found in string
+      line 5: expected key = value
+      line 6: missing key
+      retries = 3
+      2 settings, 3 errors
+      ```
+
+      The design decisions are the ones you'll make at work:
+
+      - **Low-level code propagates, high-level code decides.** `parse_line` doesn't print or exit; it returns a `Result` and uses `?`. Only `main` knows the right policy: report and continue.
+      - **Errors carry context.** `invalid digit found in string` alone doesn't help anyone. `line 3: bad value for workers: invalid digit found in string` says where and what. Each layer adds what it knows: `parse_line` knows the key, `main` knows the line number.
+      - **Report all problems, or stop at the first?** For a config file, listing every bad line at once saves the user several rounds of fix-and-retry. For a sequence of steps where later ones depend on earlier ones (like the ATM), stopping at the first error with `?` is right.
+      - **No `unwrap` on input.** The only `expect` is on reading stdin, which only fails if something is badly wrong with the system.
+
+      ### Common mistakes
+
+      - **Printing inside low-level functions.** A `parse_line` that prints its own errors can't be reused by a program that wants to show them in a web page or a log. Return the error; let the caller present it.
+      - **Losing the original error.** `.map_err(|_| String::from("bad value"))` throws away the reason. Include it: `.map_err(|e| format!("bad value: {e}"))`.
+      - **Counting lines after skipping.** Users count every line in the file, including comments and blank lines. Increment the line number before any `continue`.
+
+      **Your turn:** a warehouse imports inventory rows like `widget,4,2.50` (name, quantity, price). Write `fn parse_item(line: &str) -> Result<Item, String>` that splits the trimmed line on commas and checks, in this order:
+
+      1. not exactly 3 fields: `Err("expected 3 fields, got <n>")`
+      2. empty name (after trimming): `Err("missing name")`
+      3. quantity not a valid `u32`: `Err("bad quantity: <error>")`
+      4. price not a valid `f64`: `Err("bad price: <error>")`
+
+      Trim each field. `line.split(',').collect()` gathers the pieces into a `Vec<&str>` (the starter does this for you).
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct Item {
+          name: String,
+          quantity: u32,
+          price: f64,
+      }
+
+      fn parse_item(line: &str) -> Result<Item, String> {
+          let fields: Vec<&str> = line.trim().split(',').collect();
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct Item {
+          name: String,
+          quantity: u32,
+          price: f64,
+      }
+
+      fn parse_item(line: &str) -> Result<Item, String> {
+          let fields: Vec<&str> = line.trim().split(',').collect();
+          if fields.len() != 3 {
+              return Err(format!("expected 3 fields, got {}", fields.len()));
+          }
+          let name = fields[0].trim();
+          if name.is_empty() {
+              return Err(String::from("missing name"));
+          }
+          let quantity = fields[1]
+              .trim()
+              .parse::<u32>()
+              .map_err(|e| format!("bad quantity: {e}"))?;
+          let price = fields[2]
+              .trim()
+              .parse::<f64>()
+              .map_err(|e| format!("bad price: {e}"))?;
+          Ok(Item { name: name.to_string(), quantity, price })
+      }
+    hints:
+      - "Check `fields.len() != 3` first and return `Err(format!(\"expected 3 fields, got {}\", fields.len()))`."
+      - "`fields[1].trim().parse::<u32>().map_err(|e| format!(\"bad quantity: {e}\"))?` gives the quantity or returns the error."
+      - "Finish with `Ok(Item { name: name.to_string(), quantity, price })`."
+    harness: |
+      #[test]
+      fn parses_a_valid_row() {
+          let expected = Item { name: String::from("widget"), quantity: 4, price: 2.5 };
+          assert_eq!(parse_item("widget,4,2.50"), Ok(expected), "parse_item(\"widget,4,2.50\")");
+      }
+
+      #[test]
+      fn trims_every_field() {
+          let expected = Item { name: String::from("gear box"), quantity: 12, price: 19.99 };
+          assert_eq!(parse_item(" gear box , 12 , 19.99 \n"), Ok(expected), "parse_item(\" gear box , 12 , 19.99 \\n\")");
+      }
+
+      #[test]
+      fn counts_the_fields() {
+          assert_eq!(parse_item("widget,4"), Err(String::from("expected 3 fields, got 2")), "parse_item(\"widget,4\")");
+          assert_eq!(parse_item("a,1,2,3"), Err(String::from("expected 3 fields, got 4")), "parse_item(\"a,1,2,3\")");
+      }
+
+      #[test]
+      fn rejects_an_empty_name() {
+          assert_eq!(parse_item(" ,4,2.50"), Err(String::from("missing name")), "parse_item(\" ,4,2.50\")");
+      }
+
+      #[test]
+      fn rejects_a_bad_quantity() {
+          assert_eq!(parse_item("bolt,-2,0.10"), Err(String::from("bad quantity: invalid digit found in string")), "parse_item(\"bolt,-2,0.10\")");
+      }
+
+      #[test]
+      fn rejects_a_bad_price() {
+          assert_eq!(parse_item("bolt,2,cheap"), Err(String::from("bad price: invalid float literal")), "parse_item(\"bolt,2,cheap\")");
+      }
+    more:
+      - task: |
+          Now the whole import program. The starter has a working `parse_item`. Read every line from stdin, counting line numbers from 1 (blank lines count too, but skip them). For each non-blank line:
+
+          - on `Ok(item)`: print `<name>: <quantity> x <price with 2 decimals>` and add `quantity * price` to a total value
+          - on `Err(e)`: print `line <n>: <e>`
+
+          At the end print `total value: <total with 2 decimals>`. For the input below the output is:
+
+          ```
+          widget: 4 x 2.50
+          line 2: bad quantity: invalid digit found in string
+          gear: 2 x 10.00
+          total value: 30.00
+          ```
+
+          (input: `widget,4,2.50`, then `bolt,many,0.10`, then a blank line, then `gear,2,10`)
+        seed: |
+          use std::io::BufRead;
+
+          struct Item {
+              name: String,
+              quantity: u32,
+              price: f64,
+          }
+
+          fn parse_item(line: &str) -> Result<Item, String> {
+              let fields: Vec<&str> = line.trim().split(',').collect();
+              if fields.len() != 3 {
+                  return Err(format!("expected 3 fields, got {}", fields.len()));
+              }
+              let name = fields[0].trim();
+              if name.is_empty() {
+                  return Err(String::from("missing name"));
+              }
+              let quantity = fields[1].trim().parse::<u32>().map_err(|e| format!("bad quantity: {e}"))?;
+              let price = fields[2].trim().parse::<f64>().map_err(|e| format!("bad price: {e}"))?;
+              Ok(Item { name: name.to_string(), quantity, price })
+          }
+
+          fn main() {
+              let mut number = 0;
+              let mut total = 0.0;
+              for line in std::io::stdin().lock().lines() {
+                  let line = line.expect("could not read input");
+                  // count the line, skip it if blank, then match on parse_item
+              }
+              println!("total value: {total:.2}");
+          }
+        solution: |
+          use std::io::BufRead;
+
+          struct Item {
+              name: String,
+              quantity: u32,
+              price: f64,
+          }
+
+          fn parse_item(line: &str) -> Result<Item, String> {
+              let fields: Vec<&str> = line.trim().split(',').collect();
+              if fields.len() != 3 {
+                  return Err(format!("expected 3 fields, got {}", fields.len()));
+              }
+              let name = fields[0].trim();
+              if name.is_empty() {
+                  return Err(String::from("missing name"));
+              }
+              let quantity = fields[1].trim().parse::<u32>().map_err(|e| format!("bad quantity: {e}"))?;
+              let price = fields[2].trim().parse::<f64>().map_err(|e| format!("bad price: {e}"))?;
+              Ok(Item { name: name.to_string(), quantity, price })
+          }
+
+          fn main() {
+              let mut number = 0;
+              let mut total = 0.0;
+              for line in std::io::stdin().lock().lines() {
+                  let line = line.expect("could not read input");
+                  number += 1;
+                  if line.trim().is_empty() {
+                      continue;
+                  }
+                  match parse_item(&line) {
+                      Ok(item) => {
+                          println!("{}: {} x {:.2}", item.name, item.quantity, item.price);
+                          total += item.quantity as f64 * item.price;
+                      }
+                      Err(e) => println!("line {number}: {e}"),
+                  }
+              }
+              println!("total value: {total:.2}");
+          }
+        hints:
+          - "Increment `number` first, then `if line.trim().is_empty() { continue; }`."
+          - "`match parse_item(&line) { Ok(item) => ..., Err(e) => println!(\"line {number}: {e}\") }`"
+          - "`{:.2}` prints a float with two decimals; convert the quantity with `item.quantity as f64` before multiplying."
+        tests:
+          - stdin: "widget,4,2.50\nbolt,many,0.10\n\ngear,2,10\n"
+            expect: "widget: 4 x 2.50\nline 2: bad quantity: invalid digit found in string\ngear: 2 x 10.00\ntotal value: 30.00"
+          - stdin: "a,1,1\n\n\nb,2\n,3,4\nc,1,x\n"
+            hidden: true
+          - stdin: "pump,3,99.95\n"
+            hidden: true
+      - task: |
+          A sign-up form sends a username, an age and an email as text. Write `fn validate_signup(username: &str, age: &str, email: &str) -> Result<Signup, String>` (the struct is in the starter). Trim all three inputs, then check in this order, using `?` where it helps:
+
+          1. username shorter than 3 characters: `Err("username too short")`
+          2. age not a valid `u8`: `Err("invalid age: <error>")`
+          3. age under 13: `Err("must be at least 13")`
+          4. email without an `@`: `Err("invalid email")`
+
+          On success return the `Signup` with the trimmed username and email.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Signup {
+              username: String,
+              age: u8,
+              email: String,
+          }
+
+          fn validate_signup(username: &str, age: &str, email: &str) -> Result<Signup, String> {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Signup {
+              username: String,
+              age: u8,
+              email: String,
+          }
+
+          fn validate_signup(username: &str, age: &str, email: &str) -> Result<Signup, String> {
+              let username = username.trim();
+              if username.chars().count() < 3 {
+                  return Err(String::from("username too short"));
+              }
+              let age: u8 = age.trim().parse().map_err(|e| format!("invalid age: {e}"))?;
+              if age < 13 {
+                  return Err(String::from("must be at least 13"));
+              }
+              let email = email.trim();
+              if !email.contains('@') {
+                  return Err(String::from("invalid email"));
+              }
+              Ok(Signup {
+                  username: username.to_string(),
+                  age,
+                  email: email.to_string(),
+              })
+          }
+        hints:
+          - "Count characters with `username.chars().count()`, not bytes."
+          - "`let age: u8 = age.trim().parse().map_err(|e| format!(\"invalid age: {e}\"))?;`"
+          - "`email.contains('@')` checks for the `@`."
+        harness: |
+          #[test]
+          fn accepts_a_valid_signup() {
+              let expected = Signup { username: String::from("ferris"), age: 30, email: String::from("ferris@rust.dev") };
+              assert_eq!(validate_signup(" ferris ", "30", "ferris@rust.dev\n"), Ok(expected), "validate_signup(\" ferris \", \"30\", \"ferris@rust.dev\\n\")");
+          }
+
+          #[test]
+          fn rejects_a_short_username() {
+              assert_eq!(validate_signup("al", "30", "al@x.io"), Err(String::from("username too short")), "validate_signup(\"al\", \"30\", \"al@x.io\")");
+          }
+
+          #[test]
+          fn rejects_an_age_that_is_not_a_number() {
+              assert_eq!(validate_signup("crab", "old", "c@x.io"), Err(String::from("invalid age: invalid digit found in string")), "validate_signup(\"crab\", \"old\", \"c@x.io\")");
+              assert_eq!(validate_signup("crab", "300", "c@x.io"), Err(String::from("invalid age: number too large to fit in target type")), "validate_signup(\"crab\", \"300\", \"c@x.io\")");
+          }
+
+          #[test]
+          fn rejects_children_under_13() {
+              assert_eq!(validate_signup("kiddo", "12", "k@x.io"), Err(String::from("must be at least 13")), "validate_signup(\"kiddo\", \"12\", \"k@x.io\")");
+          }
+
+          #[test]
+          fn rejects_an_email_without_at() {
+              assert_eq!(validate_signup("crab", "20", "crab.example.com"), Err(String::from("invalid email")), "validate_signup(\"crab\", \"20\", \"crab.example.com\")");
+          }

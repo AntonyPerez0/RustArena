@@ -1,0 +1,365 @@
+topic: custom-errors
+drills:
+  - type: predict
+    pre: |
+      use std::fmt;
+
+      #[derive(Debug)]
+      enum OrderError {
+          OutOfStock(String),
+      }
+
+      impl fmt::Display for OrderError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  OrderError::OutOfStock(item) => write!(f, "{item} is out of stock"),
+              }
+          }
+      }
+    body: |
+      let e = OrderError::OutOfStock(String::from("tea"));
+      println!("{e}");
+      println!("{e:?}");
+    why: "{} uses your Display implementation (the message for people); {:?} uses the derived Debug, which shows the variant and its data."
+  - type: predict
+    pre: |
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum AppError {
+          Parse(ParseIntError),
+      }
+
+      impl From<ParseIntError> for AppError {
+          fn from(e: ParseIntError) -> Self {
+              AppError::Parse(e)
+          }
+      }
+
+      fn read(s: &str) -> Result<u8, AppError> {
+          Ok(s.parse::<u8>()?)
+      }
+    body: |
+      println!("{:?}", read("256"));
+    why: 256 doesn't fit in a u8, so parse fails. The ? operator calls AppError::from on the ParseIntError, wrapping it in the Parse variant.
+  - type: predict
+    pre: |
+      use std::error::Error;
+    body: |
+      let e: Box<dyn Error> = "disk full".into();
+      println!("error: {e}");
+    why: A &str converts into a Box<dyn Error> holding that message, and printing the box shows the message.
+  - type: predict
+    pre: |
+      use std::error::Error;
+      use std::fmt;
+
+      #[derive(Debug)]
+      struct LoadError {
+          source: std::num::ParseIntError,
+      }
+
+      impl fmt::Display for LoadError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "could not load settings")
+          }
+      }
+
+      impl Error for LoadError {
+          fn source(&self) -> Option<&(dyn Error + 'static)> {
+              Some(&self.source)
+          }
+      }
+    body: |
+      let e = LoadError { source: "".parse::<u8>().unwrap_err() };
+      println!("{e}");
+      if let Some(cause) = e.source() {
+          println!("caused by: {cause}");
+      }
+    why: The Display message is only the outer error. source() hands out the wrapped ParseIntError, whose message explains the cause.
+  - type: predict
+    pre: |
+      use anyhow::Context;
+    body: |
+      let result: anyhow::Result<u32> = "12a".parse::<u32>().context("reading max players");
+      let err = result.unwrap_err();
+      println!("{err}");
+      println!("{err:#}");
+    why: "context wraps the error with a new outer message. {} shows only that outer message; {:#} shows the whole chain joined by \": \"."
+  - type: predict
+    pre: |
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum CartError {
+          #[error("only {left} left of {item}")]
+          NotEnough { item: String, left: u32 },
+      }
+    body: |
+      let e = CartError::NotEnough { item: String::from("socks"), left: 2 };
+      println!("{e}");
+    why: "thiserror turns the #[error(...)] attribute into a Display implementation, filling in named fields by name."
+  - type: fill
+    prompt: Write the message into the formatter.
+    pre: |
+      use std::fmt;
+
+      struct Timeout {
+          seconds: u32,
+      }
+
+      impl fmt::Display for Timeout {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              [[write!]](f, "timed out after {}s", self.seconds)
+          }
+      }
+    body: |
+      println!("{}", Timeout { seconds: 30 });
+    why: Inside fmt, write!(f, ...) formats text into the formatter and returns the fmt::Result the method needs.
+  - type: fill
+    prompt: Let ? convert a ParseIntError into an AppError.
+    pre: |
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum AppError {
+          BadNumber(ParseIntError),
+      }
+
+      impl [[From]]<ParseIntError> for AppError {
+          fn from(e: ParseIntError) -> Self {
+              AppError::BadNumber(e)
+          }
+      }
+
+      fn parse(s: &str) -> Result<i32, AppError> {
+          Ok(s.parse::<i32>()?)
+      }
+    body: |
+      println!("{:?} {}", parse("-7"), parse("x").is_err());
+    why: "? converts errors with From::from, so implementing From<ParseIntError> for AppError is what makes ? compile here."
+  - type: fill
+    prompt: Return a type that can hold any error.
+    pre: |
+      use std::error::Error;
+
+      fn total(a: &str, b: &str) -> Result<i32, [[Box<dyn Error>‖Box<dyn std::error::Error>]]> {
+          let x: i32 = a.parse()?;
+          let y: i32 = b.parse()?;
+          Ok(x + y)
+      }
+    body: |
+      println!("{:?}", total("2", "3").ok());
+    why: Box<dyn Error> holds any error type that implements Error, and ? boxes each error automatically.
+  - type: bug
+    pre: |
+      use std::num::{ParseFloatError, ParseIntError};
+
+      #[derive(Debug)]
+      enum RowError {
+          BadId(ParseIntError),
+          BadPrice(ParseFloatError),
+      }
+
+      impl From<ParseIntError> for RowError {
+          fn from(e: ParseIntError) -> Self {
+              RowError::BadId(e)
+          }
+      }
+
+      impl From<ParseFloatError> for RowError {
+          fn from(e: ParseFloatError) -> Self {
+              RowError::BadId(e) // BUG
+          }
+      }
+    body: |
+      let r: Result<f64, RowError> = "x".parse::<f64>().map_err(RowError::from);
+      println!("{r:?}");
+    fix: "RowError::BadPrice(e)"
+    prompt: A bad price should become RowError::BadPrice. Click the line with the bug.
+    why: The ParseFloatError conversion must build the BadPrice variant; BadId holds a ParseIntError, so the types don't even match.
+  - type: bug
+    pre: |
+      use std::fmt;
+
+      struct Shortfall {
+          balance: u32,
+          requested: u32,
+      }
+
+      impl fmt::Display for Shortfall {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "requested {} but balance is {}", self.balance, self.requested) // BUG
+          }
+      }
+    body: |
+      println!("{}", Shortfall { balance: 40, requested: 100 });
+    fix: 'write!(f, "requested {} but balance is {}", self.requested, self.balance)'
+    why: The values fill the {} placeholders in order, so they must be passed as requested, then balance.
+  - type: bug
+    pre: |
+      use std::error::Error;
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      struct ConfigError {
+          cause: ParseIntError,
+      }
+
+      impl fmt::Display for ConfigError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "bad config")
+          }
+      }
+
+      impl Error for ConfigError {
+          fn source(&self) -> Option<&(dyn Error + 'static)> {
+              None // BUG
+          }
+      }
+    body: |
+      let e = ConfigError { cause: "x".parse::<u8>().unwrap_err() };
+      match e.source() {
+          Some(c) => println!("{e}: {c}"),
+          None => println!("{e}"),
+      }
+    fix: "Some(&self.cause)"
+    prompt: "This should print the error and its cause: bad config: invalid digit found in string. Click the line with the bug."
+    why: An error that wraps another should return it from source(); returning None hides the real cause from reports.
+  - type: compiles
+    answer: no
+    pre: |
+      #[derive(Debug)]
+      struct EmptyLine;
+
+      impl std::error::Error for EmptyLine {}
+    why: The Error trait requires Display (and Debug). EmptyLine only derives Debug, so the impl is rejected.
+  - type: compiles
+    answer: no
+    pre: |
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum AppError {
+          Parse(ParseIntError),
+      }
+
+      fn read(s: &str) -> Result<u8, AppError> {
+          let n = s.parse::<u8>()?;
+          Ok(n)
+      }
+    body: |
+      println!("{:?}", read("5"));
+    why: "Having a variant that holds a ParseIntError isn't enough: ? needs impl From<ParseIntError> for AppError (or a map_err) to convert."
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::error::Error;
+
+      fn parse_both(a: &str, b: &str) -> Result<(i32, f64), Box<dyn Error>> {
+          let x: i32 = a.parse()?;
+          let y: f64 = b.parse()?;
+          Ok((x, y))
+      }
+    body: |
+      println!("{:?}", parse_both("1", "2.5").ok());
+    why: ParseIntError and ParseFloatError both implement Error, so ? can box either into a Box<dyn Error>.
+  - type: choice
+    prompt: You're writing a library that parses invoices. Callers need to react differently to a missing field and to a bad amount. What should its functions return?
+    choices: ["anyhow::Result with good context messages", "A Result with an error enum, for example written with thiserror", "The value, panicking with a clear message on bad input", "An Option, with None for any problem"]
+    answer: 2
+    why: An error enum lets callers match on the variant they care about. anyhow is for applications that report errors, panicking on input is wrong for a library, and None loses the reason.
+  - type: choice
+    prompt: When should a function panic instead of returning a Result?
+    choices: ["When the user typed something invalid", "When a file it needs doesn't exist", "When its own code reached a state that should be impossible", "When a network request times out"]
+    answer: 3
+    why: Panics are for bugs, like a broken invariant. Bad input, missing files and timeouts happen in correct programs and deserve a Result.
+  - type: boss
+    prompt: |
+      A warehouse adjusts stock with lines like `SKU-1:+5` or `SKU-2:-3`. Write the error type and the parser:
+
+      - `StockError` (derive `Debug` and `PartialEq`) with variants `MissingColon`, `EmptySku` and `BadAmount(ParseIntError)`
+      - Display messages: `expected SKU:AMOUNT`, `missing SKU`, and `bad amount: <parse error>`
+      - `impl std::error::Error for StockError {}` and `From<ParseIntError>`
+      - `fn parse_adjustment(line: &str) -> Result<(String, i32), StockError>`: split at the first `:`, trim both parts, reject an empty SKU, parse the amount as `i32` with `?`
+    seed: |
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      fn parse_adjustment(line: &str) -> Result<(String, i32), StockError> {
+          todo!()
+      }
+    solution: |
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug, PartialEq)]
+      enum StockError {
+          MissingColon,
+          EmptySku,
+          BadAmount(ParseIntError),
+      }
+
+      impl fmt::Display for StockError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  StockError::MissingColon => write!(f, "expected SKU:AMOUNT"),
+                  StockError::EmptySku => write!(f, "missing SKU"),
+                  StockError::BadAmount(e) => write!(f, "bad amount: {e}"),
+              }
+          }
+      }
+
+      impl std::error::Error for StockError {}
+
+      impl From<ParseIntError> for StockError {
+          fn from(e: ParseIntError) -> Self {
+              StockError::BadAmount(e)
+          }
+      }
+
+      fn parse_adjustment(line: &str) -> Result<(String, i32), StockError> {
+          let (sku, amount) = line.split_once(':').ok_or(StockError::MissingColon)?;
+          let sku = sku.trim();
+          if sku.is_empty() {
+              return Err(StockError::EmptySku);
+          }
+          let amount: i32 = amount.trim().parse()?;
+          Ok((sku.to_string(), amount))
+      }
+    harness: |
+      #[test]
+      fn parses_additions_and_removals() {
+          assert_eq!(parse_adjustment("SKU-1:+5"), Ok((String::from("SKU-1"), 5)), "parse_adjustment(\"SKU-1:+5\")");
+          assert_eq!(parse_adjustment(" SKU-2 : -3 "), Ok((String::from("SKU-2"), -3)), "parse_adjustment(\" SKU-2 : -3 \")");
+      }
+
+      #[test]
+      fn rejects_a_missing_colon() {
+          assert_eq!(parse_adjustment("SKU-1 +5"), Err(StockError::MissingColon), "parse_adjustment(\"SKU-1 +5\")");
+      }
+
+      #[test]
+      fn rejects_an_empty_sku() {
+          assert_eq!(parse_adjustment(" :4"), Err(StockError::EmptySku), "parse_adjustment(\" :4\")");
+      }
+
+      #[test]
+      fn wraps_a_bad_amount() {
+          let result = parse_adjustment("SKU-9:lots");
+          assert!(matches!(result, Err(StockError::BadAmount(_))), "parse_adjustment(\"SKU-9:lots\") should be Err(BadAmount(..)), got {result:?}");
+      }
+
+      #[test]
+      fn has_readable_messages() {
+          assert_eq!(StockError::MissingColon.to_string(), "expected SKU:AMOUNT", "MissingColon.to_string()");
+          assert_eq!(StockError::EmptySku.to_string(), "missing SKU", "EmptySku.to_string()");
+          let e = parse_adjustment("A:x").unwrap_err();
+          assert_eq!(e.to_string(), "bad amount: invalid digit found in string", "parse_adjustment(\"A:x\") error message");
+      }
+    hints:
+      - "Start with the enum and its Display impl, one `write!` per variant."
+      - "`impl From<ParseIntError> for StockError` lets `amount.trim().parse()?` convert the error."
+      - "`line.split_once(':').ok_or(StockError::MissingColon)?` gives both parts."
+    why: An error enum with Display, Error and From is the hand-written version of what thiserror generates.

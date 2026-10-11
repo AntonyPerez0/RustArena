@@ -3,12 +3,15 @@ import { marked } from "marked";
 import { highlightHtml } from "./highlight";
 
 marked.setOptions({ gfm: true, breaks: false });
-// C and C++ code blocks get the same colors as the rest of the site.
+// Rust code blocks get the same colors as the rest of the site. ```rust-error marks an example that
+// doesn't compile (on purpose), and ```compiler holds rustc's message about it.
 marked.use({
   renderer: {
     code({ text, lang }) {
+      if (lang === "rust-error") return `<div class="code-fail"><span class="code-fail-tag">does not compile</span><pre><code class="language-rust">${highlightHtml(text)}</code></pre></div>\n`;
+      if (lang === "compiler") return `<pre class="compiler-msg"><code>${text.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</code></pre>\n`;
       if (lang !== "rust" && lang !== "rs") return false;
-      return `<pre><code class="language-${lang}">${highlightHtml(text)}</code></pre>\n`;
+      return `<pre><code class="language-rust">${highlightHtml(text)}</code></pre>\n`;
     },
   },
 });

@@ -1,0 +1,2295 @@
+id: custom-errors
+title: Custom Error Types
+phase: "Errors and abstraction"
+summary: Design error types callers can act on. Error enums, Display messages, the Error trait, Box<dyn Error>, From conversions that let ? do the work, error chains, when to panic, and a first look at the thiserror and anyhow crates.
+roadmap: [Custom Error Types and Traits, Error Handling]
+steps:
+  - title: An enum for everything that can go wrong
+    id: custom-errors-1
+    text: |
+      In the last module, errors were `String` messages. That's quick, but the caller can only *read* a string, not *react* to it. Suppose a banking app wants to offer a smaller amount when the balance is too low, but show "contact support" when the account is frozen. With string errors it would have to compare message text, and the day someone fixes a typo in a message, that code silently breaks.
+
+      The Rust way is an **error enum**: one variant per way the operation can fail, each carrying the data that describes it.
+
+      ```rust run
+      #[derive(Debug, PartialEq)]
+      enum WithdrawError {
+          InvalidAmount,
+          InsufficientFunds { balance: u64, requested: u64 },
+          AccountFrozen,
+      }
+
+      struct Account {
+          balance: u64,
+          frozen: bool,
+      }
+
+      fn withdraw(account: &mut Account, amount: u64) -> Result<u64, WithdrawError> {
+          if account.frozen {
+              return Err(WithdrawError::AccountFrozen);
+          }
+          if amount == 0 {
+              return Err(WithdrawError::InvalidAmount);
+          }
+          if amount > account.balance {
+              return Err(WithdrawError::InsufficientFunds { balance: account.balance, requested: amount });
+          }
+          account.balance -= amount;
+          Ok(account.balance)
+      }
+
+      fn main() {
+          let mut acct = Account { balance: 100, frozen: false };
+          for amount in [30, 0, 500] {
+              match withdraw(&mut acct, amount) {
+                  Ok(left) => println!("withdrew {amount}, {left} left"),
+                  Err(WithdrawError::InsufficientFunds { balance, requested }) => {
+                      println!("short by {}, you can take up to {balance}", requested - balance);
+                  }
+                  Err(e) => println!("declined: {e:?}"),
+              }
+          }
+          acct.frozen = true;
+          println!("{:?}", withdraw(&mut acct, 10));
+      }
+      ```
+
+      ```output
+      withdrew 30, 70 left
+      declined: InvalidAmount
+      short by 430, you can take up to 70
+      Err(AccountFrozen)
+      ```
+
+      What the enum buys you:
+
+      - **Callers can match on the variant.** `main` handles `InsufficientFunds` specially and everything else generically, with no string comparisons.
+      - **Structured data.** `InsufficientFunds` carries the numbers, so the caller can compute "short by 430" instead of digging numbers out of a message.
+      - **The compiler keeps track.** Add a variant later, and every `match` without a catch-all arm becomes a compile error pointing at code that needs updating.
+      - **`#[derive(Debug, PartialEq)]`**: `Debug` lets you print the error with `{:?}` (and `main` returning `Result` needs it). `PartialEq` lets tests write `assert_eq!(result, Err(WithdrawError::AccountFrozen))`.
+
+      **Naming:** call the type after the operation (`WithdrawError`, `ParseConfigError`) and don't repeat "Error" in every variant: `WithdrawError::AccountFrozen`, not `WithdrawError::AccountFrozenError`. Clippy's `enum_variant_names` lint warns when all variants end with the same word.
+
+      ### Common mistakes
+
+      - **Forgetting the enum name.** Variants live inside their enum, so they need the `WithdrawError::` prefix:
+
+      ```rust compile_fail
+      #[derive(Debug)]
+      enum WithdrawError {
+          AccountFrozen,
+          InvalidAmount,
+      }
+
+      fn withdraw(frozen: bool) -> Result<u32, WithdrawError> {
+          if frozen {
+              return Err(AccountFrozen);
+          }
+          Err(WithdrawError::InvalidAmount)
+      }
+
+      fn main() {
+          println!("{:?}", withdraw(true));
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find value `AccountFrozen` in this scope
+      ```
+
+      - **One `Other(String)` variant for everything.** It's the string error again in disguise. A catch-all can be useful for rare cases, but anything callers might handle differently deserves its own variant.
+      - **Too many variants.** Variants are for failures the caller can tell apart and act on. Five kinds of "the number was invalid" that every caller treats the same way can be one variant with data.
+
+      **Your turn:** a username must be 1 to 16 characters long and contain only ASCII letters, digits and `_`. Write `validate_username` using the `UsernameError` enum in the starter. Check in this order:
+
+      1. empty: `Err(UsernameError::Empty)`
+      2. more than 16 characters (count with `.chars().count()`): `Err(UsernameError::TooLong(length))`
+      3. the first character that's not allowed (`c.is_ascii_alphanumeric() || c == '_'` tells you if it is): `Err(UsernameError::InvalidChar(c))`
+
+      A valid name returns `Ok(())`.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      enum UsernameError {
+          Empty,
+          TooLong(usize),
+          InvalidChar(char),
+      }
+
+      fn validate_username(name: &str) -> Result<(), UsernameError> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      enum UsernameError {
+          Empty,
+          TooLong(usize),
+          InvalidChar(char),
+      }
+
+      fn validate_username(name: &str) -> Result<(), UsernameError> {
+          if name.is_empty() {
+              return Err(UsernameError::Empty);
+          }
+          let length = name.chars().count();
+          if length > 16 {
+              return Err(UsernameError::TooLong(length));
+          }
+          for c in name.chars() {
+              if !(c.is_ascii_alphanumeric() || c == '_') {
+                  return Err(UsernameError::InvalidChar(c));
+              }
+          }
+          Ok(())
+      }
+    hints:
+      - "Each check is an `if` that does `return Err(UsernameError::...)`."
+      - "For the characters, loop with `for c in name.chars()` and return the first one that fails the test."
+      - "If every check passes, the last line is `Ok(())`."
+    harness: |
+      #[test]
+      fn accepts_a_valid_name() {
+          assert_eq!(validate_username("ferris_42"), Ok(()), "validate_username(\"ferris_42\")");
+      }
+
+      #[test]
+      fn rejects_an_empty_name() {
+          assert_eq!(validate_username(""), Err(UsernameError::Empty), "validate_username(\"\")");
+      }
+
+      #[test]
+      fn rejects_a_long_name_with_its_length() {
+          let name = "a".repeat(20);
+          assert_eq!(validate_username(&name), Err(UsernameError::TooLong(20)), "validate_username(<20 letters>)");
+          assert_eq!(validate_username(&"b".repeat(16)), Ok(()), "validate_username(<16 letters>)");
+      }
+
+      #[test]
+      fn reports_the_first_bad_character() {
+          assert_eq!(validate_username("bad name"), Err(UsernameError::InvalidChar(' ')), "validate_username(\"bad name\")");
+          assert_eq!(validate_username("crab!?"), Err(UsernameError::InvalidChar('!')), "validate_username(\"crab!?\")");
+      }
+
+      #[test]
+      fn rejects_non_ascii_letters() {
+          assert_eq!(validate_username("zoë"), Err(UsernameError::InvalidChar('ë')), "validate_username(\"zoë\")");
+      }
+    more:
+      - task: |
+          A concert sells at most 6 tickets per order. Write the enum `BookingError` with these variants (derive `Debug` and `PartialEq`):
+
+          - `ZeroTickets`
+          - `OverLimit { requested: u32, limit: u32 }`
+          - `SoldOut { available: u32 }`
+
+          Then write `fn book(available: u32, requested: u32) -> Result<u32, BookingError>` that returns the number of tickets left after the order. Check in this order: 0 requested gives `ZeroTickets`, more than 6 gives `OverLimit` (with `limit: 6`), more than `available` gives `SoldOut`.
+        seed: |
+          // Write the BookingError enum here.
+
+          fn book(available: u32, requested: u32) -> Result<u32, BookingError> {
+              todo!()
+          }
+        solution: |
+          // Write the BookingError enum here.
+          #[derive(Debug, PartialEq)]
+          enum BookingError {
+              ZeroTickets,
+              OverLimit { requested: u32, limit: u32 },
+              SoldOut { available: u32 },
+          }
+
+          fn book(available: u32, requested: u32) -> Result<u32, BookingError> {
+              if requested == 0 {
+                  return Err(BookingError::ZeroTickets);
+              }
+              if requested > 6 {
+                  return Err(BookingError::OverLimit { requested, limit: 6 });
+              }
+              if requested > available {
+                  return Err(BookingError::SoldOut { available });
+              }
+              Ok(available - requested)
+          }
+        hints:
+          - "A variant with named fields looks like a struct: `OverLimit { requested: u32, limit: u32 },`."
+          - "Field init shorthand works: `BookingError::SoldOut { available }`."
+        harness: |
+          #[test]
+          fn books_tickets() {
+              assert_eq!(book(100, 4), Ok(96), "book(100, 4)");
+              assert_eq!(book(6, 6), Ok(0), "book(6, 6)");
+          }
+
+          #[test]
+          fn rejects_zero_tickets() {
+              assert_eq!(book(100, 0), Err(BookingError::ZeroTickets), "book(100, 0)");
+          }
+
+          #[test]
+          fn enforces_the_limit_of_6() {
+              assert_eq!(book(100, 9), Err(BookingError::OverLimit { requested: 9, limit: 6 }), "book(100, 9)");
+          }
+
+          #[test]
+          fn reports_how_many_are_left_when_sold_out() {
+              assert_eq!(book(3, 5), Err(BookingError::SoldOut { available: 3 }), "book(3, 5)");
+              assert_eq!(book(0, 1), Err(BookingError::SoldOut { available: 0 }), "book(0, 1)");
+          }
+      - task: |
+          Write a password checker from scratch. Define `PasswordError` (derive `Debug` and `PartialEq`) with the variants `TooShort(usize)`, `NoDigit`, `NoUppercase` and `ContainsUsername`, and write `fn check_password(password: &str, username: &str) -> Result<(), PasswordError>`. Check in this order:
+
+          1. fewer than 8 characters: `TooShort(<number of characters>)`
+          2. no ASCII digit (`c.is_ascii_digit()`): `NoDigit`
+          3. no uppercase letter (`c.is_uppercase()`): `NoUppercase`
+          4. the password contains the username, ignoring case: `ContainsUsername`
+        seed: |
+          fn check_password(password: &str, username: &str) -> Result<(), PasswordError> {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          enum PasswordError {
+              TooShort(usize),
+              NoDigit,
+              NoUppercase,
+              ContainsUsername,
+          }
+
+          fn check_password(password: &str, username: &str) -> Result<(), PasswordError> {
+              let length = password.chars().count();
+              if length < 8 {
+                  return Err(PasswordError::TooShort(length));
+              }
+              let mut has_digit = false;
+              let mut has_upper = false;
+              for c in password.chars() {
+                  if c.is_ascii_digit() {
+                      has_digit = true;
+                  }
+                  if c.is_uppercase() {
+                      has_upper = true;
+                  }
+              }
+              if !has_digit {
+                  return Err(PasswordError::NoDigit);
+              }
+              if !has_upper {
+                  return Err(PasswordError::NoUppercase);
+              }
+              if password.to_lowercase().contains(&username.to_lowercase()) {
+                  return Err(PasswordError::ContainsUsername);
+              }
+              Ok(())
+          }
+        hints:
+          - "Loop over `password.chars()` once and set two `bool` flags: `has_digit` and `has_upper`."
+          - "For the username check, lowercase both: `password.to_lowercase().contains(&username.to_lowercase())`."
+        harness: |
+          #[test]
+          fn accepts_a_strong_password() {
+              assert_eq!(check_password("Crab2024!", "ferris"), Ok(()), "check_password(\"Crab2024!\", \"ferris\")");
+          }
+
+          #[test]
+          fn rejects_a_short_password_with_its_length() {
+              assert_eq!(check_password("Ab1", "ferris"), Err(PasswordError::TooShort(3)), "check_password(\"Ab1\", \"ferris\")");
+          }
+
+          #[test]
+          fn needs_a_digit() {
+              assert_eq!(check_password("NoDigitsHere", "ferris"), Err(PasswordError::NoDigit), "check_password(\"NoDigitsHere\", \"ferris\")");
+          }
+
+          #[test]
+          fn needs_an_uppercase_letter() {
+              assert_eq!(check_password("lowercase99", "ferris"), Err(PasswordError::NoUppercase), "check_password(\"lowercase99\", \"ferris\")");
+          }
+
+          #[test]
+          fn rejects_the_username_in_any_case() {
+              assert_eq!(check_password("FERRIS2000x", "ferris"), Err(PasswordError::ContainsUsername), "check_password(\"FERRIS2000x\", \"ferris\")");
+          }
+
+  - title: "Display: messages for people"
+    id: custom-errors-2
+    text: |
+      `{:?}` prints `InsufficientFunds { balance: 70, requested: 500 }`. That's useful in a log for developers, but a customer should see `insufficient funds: balance 70, requested 500`. The `{}` placeholder uses a different format, called **Display**, and for your own types you write it yourself.
+
+      Display is a **trait**: a named set of methods that a type promises to have (module 22 covers traits properly). You make `{}` work for your type by **implementing** the Display trait for it. The recipe always has the same shape:
+
+      ```rust run
+      use std::fmt;
+
+      #[derive(Debug)]
+      enum WithdrawError {
+          InvalidAmount,
+          InsufficientFunds { balance: u64, requested: u64 },
+          AccountFrozen,
+      }
+
+      impl fmt::Display for WithdrawError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  WithdrawError::InvalidAmount => write!(f, "amount must be greater than zero"),
+                  WithdrawError::InsufficientFunds { balance, requested } => {
+                      write!(f, "insufficient funds: balance {balance}, requested {requested}")
+                  }
+                  WithdrawError::AccountFrozen => write!(f, "account is frozen"),
+              }
+          }
+      }
+
+      fn main() {
+          let errors = [
+              WithdrawError::InvalidAmount,
+              WithdrawError::InsufficientFunds { balance: 70, requested: 500 },
+              WithdrawError::AccountFrozen,
+          ];
+          for e in &errors {
+              println!("declined: {e}");
+          }
+          let message = errors[2].to_string();
+          println!("{message:?} has {} characters", message.len());
+          println!("{:?}", errors[0]);
+      }
+      ```
+
+      ```output
+      declined: amount must be greater than zero
+      declined: insufficient funds: balance 70, requested 500
+      declined: account is frozen
+      "account is frozen" has 17 characters
+      InvalidAmount
+      ```
+
+      Piece by piece:
+
+      - `use std::fmt;` brings the formatting module into scope, so you can write `fmt::Display` instead of `std::fmt::Display`.
+      - `impl fmt::Display for WithdrawError { ... }` reads "here's how a `WithdrawError` is displayed".
+      - `fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result` is the one method Display requires. The signature is fixed by the trait: copy it exactly. (In the standard docs you'll see `fmt::Formatter<'_>`; that's the same thing written with a lifetime, which module 24 explains.)
+      - `write!(f, ...)` works like `format!`, but writes the text into the formatter `f`. It returns a `fmt::Result`, so it's the value of each `match` arm, and of the whole method.
+      - Once Display exists, `{}`, `format!` and `.to_string()` all work. `{:?}` still uses the derived Debug.
+
+      **Workplace note:** the Rust API guidelines say error messages should be lowercase without a trailing period, like the standard library's own `invalid digit found in string`. Messages often get embedded in longer ones (`error: could not load config: invalid digit found in string`), and that reads well only if each piece is a lowercase fragment.
+
+      ### Common mistakes
+
+      - **Printing with `{}` before implementing Display:**
+
+      ```rust compile_fail
+      #[derive(Debug)]
+      enum WithdrawError {
+          AccountFrozen,
+      }
+
+      fn main() {
+          let e = WithdrawError::AccountFrozen;
+          println!("declined: {e}");
+      }
+      ```
+
+      ```error
+      error[E0277]: `WithdrawError` doesn't implement `std::fmt::Display`
+      ```
+
+      - **A `;` after `write!` in a match arm.** The arm must *return* the `fmt::Result`; with a semicolon it returns `()` and you get `mismatched types`.
+      - **Using `println!` inside `fmt`.** That prints to the screen right away instead of producing the text. Always `write!(f, ...)`.
+      - **Forgetting `use std::fmt;`** gives ``cannot find module or crate `fmt` ``. Either add the `use` or write the full path `std::fmt::Display`.
+
+      **Your turn:** implement Display for `TicketError` so that:
+
+      - `SoldOut` displays as `the event is sold out`
+      - `TooMany { requested: 9, max: 6 }` displays as `cannot buy 9 tickets, the limit is 6`
+      - `UnknownEvent("Rust Fest")` displays as `no event called 'Rust Fest'`
+    seed: |
+      use std::fmt;
+
+      #[derive(Debug, PartialEq)]
+      enum TicketError {
+          SoldOut,
+          TooMany { requested: u32, max: u32 },
+          UnknownEvent(String),
+      }
+
+      impl fmt::Display for TicketError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              todo!()
+          }
+      }
+    solution: |
+      use std::fmt;
+
+      #[derive(Debug, PartialEq)]
+      enum TicketError {
+          SoldOut,
+          TooMany { requested: u32, max: u32 },
+          UnknownEvent(String),
+      }
+
+      impl fmt::Display for TicketError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  TicketError::SoldOut => write!(f, "the event is sold out"),
+                  TicketError::TooMany { requested, max } => {
+                      write!(f, "cannot buy {requested} tickets, the limit is {max}")
+                  }
+                  TicketError::UnknownEvent(name) => write!(f, "no event called '{name}'"),
+              }
+          }
+      }
+    require:
+      - pattern: 'write!\('
+        message: Write the text into the formatter with `write!(f, ...)`.
+    hints:
+      - "`match self { ... }` with one arm per variant."
+      - "Each arm is a `write!(f, \"...\")` without a semicolon, for example `TicketError::SoldOut => write!(f, \"the event is sold out\"),`."
+      - "Bind the fields in the pattern: `TicketError::TooMany { requested, max } => write!(f, \"cannot buy {requested} tickets, the limit is {max}\")`."
+    harness: |
+      #[test]
+      fn displays_sold_out() {
+          assert_eq!(TicketError::SoldOut.to_string(), "the event is sold out", "TicketError::SoldOut.to_string()");
+      }
+
+      #[test]
+      fn displays_too_many_with_the_numbers() {
+          let e = TicketError::TooMany { requested: 9, max: 6 };
+          assert_eq!(e.to_string(), "cannot buy 9 tickets, the limit is 6", "TooMany {{ requested: 9, max: 6 }}.to_string()");
+      }
+
+      #[test]
+      fn displays_the_unknown_event_name() {
+          let e = TicketError::UnknownEvent(String::from("Rust Fest"));
+          assert_eq!(e.to_string(), "no event called 'Rust Fest'", "UnknownEvent(\"Rust Fest\").to_string()");
+      }
+
+      #[test]
+      fn works_inside_format() {
+          let msg = format!("error: {}", TicketError::SoldOut);
+          assert_eq!(msg, "error: the event is sold out", "format!(\"error: {{}}\", TicketError::SoldOut)");
+      }
+    more:
+      - task: |
+          Give `UsernameError` (from the last step) a Display implementation:
+
+          - `Empty`: `username cannot be empty`
+          - `TooLong(20)`: `username has 20 characters, the maximum is 16`
+          - `InvalidChar(' ')`: `username cannot contain ' '`
+        seed: |
+          use std::fmt;
+
+          #[derive(Debug, PartialEq)]
+          enum UsernameError {
+              Empty,
+              TooLong(usize),
+              InvalidChar(char),
+          }
+
+          // impl fmt::Display for UsernameError { ... }
+        solution: |
+          use std::fmt;
+
+          #[derive(Debug, PartialEq)]
+          enum UsernameError {
+              Empty,
+              TooLong(usize),
+              InvalidChar(char),
+          }
+
+          impl fmt::Display for UsernameError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      UsernameError::Empty => write!(f, "username cannot be empty"),
+                      UsernameError::TooLong(n) => write!(f, "username has {n} characters, the maximum is 16"),
+                      UsernameError::InvalidChar(c) => write!(f, "username cannot contain '{c}'"),
+                  }
+              }
+          }
+        hints:
+          - "Start with `impl fmt::Display for UsernameError {` and the method `fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {`."
+          - "Inside, `match self` and give each variant a `write!(f, ...)`."
+        harness: |
+          #[test]
+          fn displays_empty() {
+              assert_eq!(UsernameError::Empty.to_string(), "username cannot be empty", "UsernameError::Empty.to_string()");
+          }
+
+          #[test]
+          fn displays_the_length() {
+              assert_eq!(UsernameError::TooLong(20).to_string(), "username has 20 characters, the maximum is 16", "UsernameError::TooLong(20).to_string()");
+          }
+
+          #[test]
+          fn displays_the_bad_character() {
+              assert_eq!(UsernameError::InvalidChar(' ').to_string(), "username cannot contain ' '", "UsernameError::InvalidChar(' ').to_string()");
+              assert_eq!(UsernameError::InvalidChar('!').to_string(), "username cannot contain '!'", "UsernameError::InvalidChar('!').to_string()");
+          }
+      - task: |
+          Write a grading function with its own error type, from scratch.
+
+          - `GradeError` (derive `Debug` and `PartialEq`) has the variants `Negative(i32)` and `AboveMax(i32)`. Its Display messages are `score cannot be negative: -5` and `score 105 is above the maximum of 100`.
+          - `fn letter_grade(score: i32) -> Result<char, GradeError>`: a score below 0 or above 100 is an error; otherwise 90 and up is `'A'`, 80 and up `'B'`, 70 and up `'C'`, 60 and up `'D'`, anything lower `'F'`.
+        seed: |
+          use std::fmt;
+
+          fn letter_grade(score: i32) -> Result<char, GradeError> {
+              todo!()
+          }
+        solution: |
+          use std::fmt;
+
+          #[derive(Debug, PartialEq)]
+          enum GradeError {
+              Negative(i32),
+              AboveMax(i32),
+          }
+
+          impl fmt::Display for GradeError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      GradeError::Negative(s) => write!(f, "score cannot be negative: {s}"),
+                      GradeError::AboveMax(s) => write!(f, "score {s} is above the maximum of 100"),
+                  }
+              }
+          }
+
+          fn letter_grade(score: i32) -> Result<char, GradeError> {
+              if score < 0 {
+                  return Err(GradeError::Negative(score));
+              }
+              if score > 100 {
+                  return Err(GradeError::AboveMax(score));
+              }
+              let grade = match score {
+                  90.. => 'A',
+                  80.. => 'B',
+                  70.. => 'C',
+                  60.. => 'D',
+                  _ => 'F',
+              };
+              Ok(grade)
+          }
+        hints:
+          - "Define the enum and its Display impl first, like `TicketError` above."
+          - "After the two error checks, a `match` with range patterns (`90.. => 'A'`) or an `if`/`else if` chain picks the letter."
+        harness: |
+          #[test]
+          fn gives_letter_grades() {
+              assert_eq!(letter_grade(95), Ok('A'), "letter_grade(95)");
+              assert_eq!(letter_grade(80), Ok('B'), "letter_grade(80)");
+              assert_eq!(letter_grade(79), Ok('C'), "letter_grade(79)");
+              assert_eq!(letter_grade(60), Ok('D'), "letter_grade(60)");
+              assert_eq!(letter_grade(0), Ok('F'), "letter_grade(0)");
+              assert_eq!(letter_grade(100), Ok('A'), "letter_grade(100)");
+          }
+
+          #[test]
+          fn rejects_negative_scores() {
+              assert_eq!(letter_grade(-5), Err(GradeError::Negative(-5)), "letter_grade(-5)");
+          }
+
+          #[test]
+          fn rejects_scores_above_100() {
+              assert_eq!(letter_grade(105), Err(GradeError::AboveMax(105)), "letter_grade(105)");
+          }
+
+          #[test]
+          fn errors_have_readable_messages() {
+              assert_eq!(GradeError::Negative(-5).to_string(), "score cannot be negative: -5", "GradeError::Negative(-5).to_string()");
+              assert_eq!(GradeError::AboveMax(105).to_string(), "score 105 is above the maximum of 100", "GradeError::AboveMax(105).to_string()");
+          }
+
+  - title: The Error trait and Box<dyn Error>
+    id: custom-errors-3
+    text: |
+      The standard library has a trait that marks a type as "an error": `std::error::Error`. Implementing it is one line, because all of its methods have default versions:
+
+      ```rust
+      impl std::error::Error for WithdrawError {}
+      ```
+
+      There's one requirement: the type must already implement `Debug` and `Display`. That's the contract of an error in Rust: it can be shown to developers (`{:?}`) and to users (`{}`).
+
+      Why bother? Because code that works with *any* error, from the standard library, from crates like `anyhow`, and from your own programs, works through this trait. `ParseIntError`, `ParseFloatError` and `std::io::Error` all implement it.
+
+      ### Box<dyn Error>: "some error"
+
+      A function that can fail in several different ways, with different error types, needs one return type that fits them all. The standard answer is `Box<dyn Error>`:
+
+      - `dyn Error` means "a value of some type that implements `Error`; which one is decided at run time". Module 25 covers these **trait objects**.
+      - `Box<...>` puts that value on the heap, because different error types have different sizes. Module 29 covers `Box`.
+
+      Together: `Result<T, Box<dyn Error>>` means "a `T`, or any kind of error". And `?` converts any error type that implements `Error` into a `Box<dyn Error>` for you. Even a plain `&str` or `String` message converts.
+
+      ```rust run
+      use std::error::Error;
+      use std::fmt;
+
+      #[derive(Debug)]
+      struct EmptyLine;
+
+      impl fmt::Display for EmptyLine {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "line is empty")
+          }
+      }
+
+      impl Error for EmptyLine {}
+
+      fn parse_order(line: &str) -> Result<(String, u32), Box<dyn Error>> {
+          let line = line.trim();
+          if line.is_empty() {
+              return Err(Box::new(EmptyLine));
+          }
+          let (item, qty) = line.split_once(',').ok_or("expected ITEM,QTY")?;
+          let qty: u32 = qty.trim().parse()?;
+          Ok((item.to_string(), qty))
+      }
+
+      fn main() {
+          for line in ["apples, 3", "pears,many", "", "plums"] {
+              match parse_order(line) {
+                  Ok((item, qty)) => println!("{qty} x {item}"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      3 x apples
+      error: invalid digit found in string
+      error: line is empty
+      error: expected ITEM,QTY
+      ```
+
+      Three different error types flow through one return type:
+
+      - `EmptyLine`, your own (a **unit struct**: an error with no data), boxed by hand with `Box::new`.
+      - A `&str` message: `ok_or("expected ITEM,QTY")` makes a `Result<_, &str>`, and `?` boxes the message.
+      - `ParseIntError` from `parse`, boxed by `?`.
+
+      The caller prints each with `{}`; the box forwards to the real error's Display.
+
+      ### main returning Box<dyn Error>
+
+      This fixes the problem from the last module: `read_line` fails with `io::Error`, `parse` with `ParseIntError`, and a `main` returning `Result<(), Box<dyn Error>>` accepts both:
+
+      ```rust run
+      use std::error::Error;
+      use std::io::BufRead;
+
+      fn main() -> Result<(), Box<dyn Error>> {
+          let mut total: i64 = 0;
+          for line in std::io::stdin().lock().lines() {
+              let line = line?;
+              let amount: i64 = line.trim().parse()?;
+              total += amount;
+          }
+          println!("total: {total}");
+          Ok(())
+      }
+      ```
+
+      ```input
+      120
+      -45
+      30
+      ```
+
+      ```output
+      total: 105
+      ```
+
+      `fn main() -> Result<(), Box<dyn Error>>` is the standard signature for small programs, scripts and examples.
+
+      ### The trade-off
+
+      A `Box<dyn Error>` has forgotten its concrete type. The caller can print it, but can't `match` on your variants (getting the type back needs downcasting, module 25). So:
+
+      - **Applications** (a `main`, a script, a command-line tool) mostly just report errors: `Box<dyn Error>` (or `anyhow`, step 7) is great.
+      - **Libraries** and modules whose callers need to react to specific failures should return a concrete error enum.
+
+      ### Common mistakes
+
+      - **Implementing Error without Display:**
+
+      ```rust compile_fail
+      #[derive(Debug)]
+      struct EmptyLine;
+
+      impl std::error::Error for EmptyLine {}
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0277]: `EmptyLine` doesn't implement `std::fmt::Display`
+      ```
+
+      - **Returning your error unboxed.** `return Err(EmptyLine);` in a function returning `Box<dyn Error>` is a `mismatched types` error: ``expected `Box<dyn Error>`, found `EmptyLine` ``. Write `Err(Box::new(EmptyLine))` or `Err(EmptyLine.into())`. Only `?` boxes automatically.
+      - **Comparing `Box<dyn Error>` results with `assert_eq!`.** They don't implement `PartialEq`. In tests, compare the message: `assert_eq!(err.to_string(), "line is empty")`.
+
+      **Your turn:** the starter has a `TooMany` error with Display already written.
+
+      1. Make it a real error type by implementing `Error` for it.
+      2. Write `parse_ticket_count`: trim the input, parse it as a `u32` with `?`, and if the count is above 10, return a boxed `TooMany { requested: <count>, max: 10 }`. Otherwise return the count.
+    seed: |
+      use std::error::Error;
+      use std::fmt;
+
+      #[derive(Debug)]
+      struct TooMany {
+          requested: u32,
+          max: u32,
+      }
+
+      impl fmt::Display for TooMany {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "requested {} but the limit is {}", self.requested, self.max)
+          }
+      }
+
+      // 1. impl Error for TooMany
+
+      fn parse_ticket_count(input: &str) -> Result<u32, Box<dyn Error>> {
+          todo!()
+      }
+    solution: |
+      use std::error::Error;
+      use std::fmt;
+
+      #[derive(Debug)]
+      struct TooMany {
+          requested: u32,
+          max: u32,
+      }
+
+      impl fmt::Display for TooMany {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "requested {} but the limit is {}", self.requested, self.max)
+          }
+      }
+
+      // 1. impl Error for TooMany
+      impl Error for TooMany {}
+
+      fn parse_ticket_count(input: &str) -> Result<u32, Box<dyn Error>> {
+          let count: u32 = input.trim().parse()?;
+          if count > 10 {
+              return Err(Box::new(TooMany { requested: count, max: 10 }));
+          }
+          Ok(count)
+      }
+    require:
+      - pattern: 'impl\s+(std::error::)?Error\s+for\s+TooMany'
+        message: Implement the `Error` trait for `TooMany`.
+    hints:
+      - "`impl Error for TooMany {}` is all step 1 needs: the methods have defaults."
+      - "`let count: u32 = input.trim().parse()?;` boxes a `ParseIntError` automatically."
+      - "Your own error needs boxing by hand: `return Err(Box::new(TooMany { requested: count, max: 10 }));`"
+    harness: |
+      #[test]
+      fn accepts_small_counts() {
+          assert_eq!(parse_ticket_count("4").unwrap(), 4, "parse_ticket_count(\"4\")");
+          assert_eq!(parse_ticket_count(" 10\n").unwrap(), 10, "parse_ticket_count(\" 10\\n\")");
+      }
+
+      #[test]
+      fn rejects_more_than_10() {
+          let err = parse_ticket_count("11").unwrap_err();
+          assert_eq!(err.to_string(), "requested 11 but the limit is 10", "error message of parse_ticket_count(\"11\")");
+      }
+
+      #[test]
+      fn passes_on_parse_errors() {
+          let err = parse_ticket_count("four").unwrap_err();
+          assert_eq!(err.to_string(), "invalid digit found in string", "error message of parse_ticket_count(\"four\")");
+      }
+
+      #[test]
+      fn rejects_empty_input() {
+          let err = parse_ticket_count("").unwrap_err();
+          assert_eq!(err.to_string(), "cannot parse integer from empty string", "error message of parse_ticket_count(\"\")");
+      }
+    more:
+      - task: |
+          A thermostat log has one temperature (`f64`) per line. Make `main` return `Result<(), Box<dyn Error>>` and:
+
+          - for each line, use `?` on the line itself (`line?`) and on the parse, then print `reading <n>: <temperature>` (counting from 1)
+          - at the end print `max: <highest>`. If there were no readings, fail instead with the message `no readings`: `max.ok_or("no readings")?` turns the `Option` into an error that `?` boxes.
+
+          For input `21.5`, `19`, `23.25` the output is:
+
+          ```
+          reading 1: 21.5
+          reading 2: 19
+          reading 3: 23.25
+          max: 23.25
+          ```
+
+          A line that isn't a number, or empty input, ends the program with exit code 1.
+        seed: |
+          use std::error::Error;
+          use std::io::BufRead;
+
+          fn main() {
+              let mut count = 0;
+              let mut max: Option<f64> = None;
+              for line in std::io::stdin().lock().lines() {
+              }
+          }
+        solution: |
+          use std::error::Error;
+          use std::io::BufRead;
+
+          fn main() -> Result<(), Box<dyn Error>> {
+              let mut count = 0;
+              let mut max: Option<f64> = None;
+              for line in std::io::stdin().lock().lines() {
+                  let temp: f64 = line?.trim().parse()?;
+                  count += 1;
+                  println!("reading {count}: {temp}");
+                  match max {
+                      Some(m) if m >= temp => {}
+                      _ => max = Some(temp),
+                  }
+              }
+              let max = max.ok_or("no readings")?;
+              println!("max: {max}");
+              Ok(())
+          }
+        require:
+          - pattern: 'fn\s+main\s*\(\s*\)\s*->\s*Result<\(\),\s*Box<dyn\s+(std::error::)?Error>>'
+            message: "`main` should return `Result<(), Box<dyn Error>>`."
+        hints:
+          - "`let temp: f64 = line?.trim().parse()?;` uses `?` twice: once for the read, once for the parse."
+          - "To track the maximum, replace `max` with `Some(temp)` when it's `None` or smaller than `temp`."
+          - "End with `let max = max.ok_or(\"no readings\")?;`, print it, then `Ok(())`."
+        tests:
+          - stdin: "21.5\n19\n23.25\n"
+            expect: "reading 1: 21.5\nreading 2: 19\nreading 3: 23.25\nmax: 23.25"
+          - stdin: "-3\n-7.5\n"
+            hidden: true
+          - stdin: "20\nwarm\n22\n"
+            exit: 1
+            expect: "reading 1: 20"
+            hidden: true
+          - stdin: ""
+            exit: 1
+            allowEmpty: true
+            hidden: true
+      - task: |
+          A map app reads coordinates as `LAT,LON`, like `52.52,13.40`. Write `fn parse_coordinates(text: &str) -> Result<(f64, f64), Box<dyn Error>>`:
+
+          - no comma: the error message is `expected LAT,LON`
+          - either number invalid: pass on the `ParseFloatError` (its message is `invalid float literal`)
+          - latitude outside -90 to 90: `latitude <lat> is out of range` (build it with `format!` and `.into()`)
+
+          Trim the parts around the comma.
+        seed: |
+          use std::error::Error;
+
+          fn parse_coordinates(text: &str) -> Result<(f64, f64), Box<dyn Error>> {
+              todo!()
+          }
+        solution: |
+          use std::error::Error;
+
+          fn parse_coordinates(text: &str) -> Result<(f64, f64), Box<dyn Error>> {
+              let (lat, lon) = text.split_once(',').ok_or("expected LAT,LON")?;
+              let lat: f64 = lat.trim().parse()?;
+              let lon: f64 = lon.trim().parse()?;
+              if !(-90.0..=90.0).contains(&lat) {
+                  return Err(format!("latitude {lat} is out of range").into());
+              }
+              Ok((lat, lon))
+          }
+        hints:
+          - "`text.split_once(',').ok_or(\"expected LAT,LON\")?` gives the two parts or returns the message as a boxed error."
+          - "`let lat: f64 = lat.trim().parse()?;` and the same for `lon`."
+          - "`return Err(format!(\"latitude {lat} is out of range\").into());` boxes a `String` message."
+        harness: |
+          #[test]
+          fn parses_valid_coordinates() {
+              assert_eq!(parse_coordinates("52.52,13.40").unwrap(), (52.52, 13.4), "parse_coordinates(\"52.52,13.40\")");
+              assert_eq!(parse_coordinates(" -33.9 , 151.2 ").unwrap(), (-33.9, 151.2), "parse_coordinates(\" -33.9 , 151.2 \")");
+          }
+
+          #[test]
+          fn needs_a_comma() {
+              let err = parse_coordinates("52.52 13.40").unwrap_err();
+              assert_eq!(err.to_string(), "expected LAT,LON", "error message of parse_coordinates(\"52.52 13.40\")");
+          }
+
+          #[test]
+          fn passes_on_bad_numbers() {
+              let err = parse_coordinates("north,13.4").unwrap_err();
+              assert_eq!(err.to_string(), "invalid float literal", "error message of parse_coordinates(\"north,13.4\")");
+              let err = parse_coordinates("52.5,").unwrap_err();
+              assert_eq!(err.to_string(), "cannot parse float from empty string", "error message of parse_coordinates(\"52.5,\")");
+          }
+
+          #[test]
+          fn rejects_a_latitude_out_of_range() {
+              let err = parse_coordinates("95,10").unwrap_err();
+              assert_eq!(err.to_string(), "latitude 95 is out of range", "error message of parse_coordinates(\"95,10\")");
+          }
+
+  - title: "From: teaching ? to convert errors"
+    id: custom-errors-4
+    text: |
+      `Box<dyn Error>` accepts every error, but it forgets which one it was. For an error type that callers can match on, you want an enum that **wraps** the lower-level errors:
+
+      ```rust
+      enum ConfigError {
+          MissingEquals(String),       // the bad line
+          BadNumber(ParseIntError),    // the parse error, kept inside
+      }
+      ```
+
+      Now try to use `?` on a `parse()` in a function returning `Result<_, ConfigError>`:
+
+      ```rust compile_fail
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum ConfigError {
+          BadNumber(ParseIntError),
+      }
+
+      fn parse_value(text: &str) -> Result<u32, ConfigError> {
+          let n = text.trim().parse::<u32>()?;
+          Ok(n)
+      }
+
+      fn main() {
+          println!("{:?}", parse_value("12"));
+      }
+      ```
+
+      ```error
+      error[E0277]: `?` couldn't convert the error to `ConfigError`
+        |                         --------------^ the trait `From<ParseIntError>` is not implemented for `ConfigError`
+        = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+      ```
+
+      The note tells the whole story. Here's what `?` really does on an error:
+
+      ```rust
+      match expression {
+          Ok(value) => value,
+          Err(e) => return Err(From::from(e)),   // convert, then return
+      }
+      ```
+
+      `From` is the standard trait for "make one type out of another". When you call `?`, Rust looks for a way to make the function's error type from the error it got. `String` has `From<&str>`, and `Box<dyn Error>` has `From` for every error type: that's why those conversions worked in the last step. For your own enum, you write the conversion:
+
+      ```rust run
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum ConfigError {
+          MissingEquals(String),
+          BadNumber(ParseIntError),
+      }
+
+      impl fmt::Display for ConfigError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ConfigError::MissingEquals(line) => write!(f, "missing '=' in {line:?}"),
+                  ConfigError::BadNumber(e) => write!(f, "bad number: {e}"),
+              }
+          }
+      }
+
+      impl From<ParseIntError> for ConfigError {
+          fn from(e: ParseIntError) -> Self {
+              ConfigError::BadNumber(e)
+          }
+      }
+
+      fn parse_line(line: &str) -> Result<(String, u32), ConfigError> {
+          let (key, value) = line
+              .split_once('=')
+              .ok_or_else(|| ConfigError::MissingEquals(line.to_string()))?;
+          let value: u32 = value.trim().parse()?;
+          Ok((key.trim().to_string(), value))
+      }
+
+      fn main() {
+          for line in ["timeout = 30", "retries = lots", "verbose"] {
+              match parse_line(line) {
+                  Ok((key, value)) => println!("{key} = {value}"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      timeout = 30
+      error: bad number: invalid digit found in string
+      error: missing '=' in "verbose"
+      ```
+
+      - `impl From<ParseIntError> for ConfigError` reads "here's how to make a `ConfigError` from a `ParseIntError`". The one method, `from`, takes the error and returns `Self` (the type being implemented, `ConfigError`).
+      - In `parse_line`, `value.trim().parse()?` now compiles: on error, `?` calls `ConfigError::from(e)`, which wraps it in `BadNumber`.
+      - The original `ParseIntError` is kept inside, not turned into text, so nothing is lost.
+      - A `From` implementation also gives you `.into()` for free: `let e: ConfigError = parse_error.into();`.
+
+      ### The quick alternative: map_err with a variant
+
+      For a one-off conversion, `map_err` works too, and a tuple variant can be passed as if it were a function:
+
+      ```rust
+      let value: u32 = value.trim().parse().map_err(ConfigError::BadNumber)?;
+      ```
+
+      Use `From` when the same conversion happens in many places (it's then automatic everywhere), and `map_err` when it's a single spot or when the same source error should become different variants in different places.
+
+      ### Common mistakes
+
+      - **Two variants wrapping the same error type.** You can only write one `From<ParseIntError> for ConfigError`, so `?` can't know whether a parse error is a bad port or a bad timeout. Use `map_err` to pick the variant at each call site, or keep the context in the variant: `BadNumber { key: String, source: ParseIntError }`.
+      - **Writing `From` in the wrong direction.** `impl From<ConfigError> for ParseIntError` would convert the other way. The type after `for` is the one being created.
+      - **Converting the error to a String too early.** `BadNumber(String)` with `e.to_string()` loses the original error and its type. Keep the error value; the next step shows why that matters.
+
+      **Your turn:** a scoreboard reads lines like `ferris:120`. Implement `From<ParseIntError>` for `ScoreError`, then write `parse_score`: split at the first `:` (no colon is `ScoreError::MissingColon`), trim both parts, and parse the points with `?` so a bad number becomes `ScoreError::BadPoints` automatically.
+    seed: |
+      use std::num::ParseIntError;
+
+      #[derive(Debug, PartialEq)]
+      enum ScoreError {
+          MissingColon,
+          BadPoints(ParseIntError),
+      }
+
+      // 1. impl From<ParseIntError> for ScoreError
+
+      // 2. Parse "name:points", using ? on the parse.
+      fn parse_score(line: &str) -> Result<(String, u32), ScoreError> {
+          todo!()
+      }
+    solution: |
+      use std::num::ParseIntError;
+
+      #[derive(Debug, PartialEq)]
+      enum ScoreError {
+          MissingColon,
+          BadPoints(ParseIntError),
+      }
+
+      // 1. impl From<ParseIntError> for ScoreError
+      impl From<ParseIntError> for ScoreError {
+          fn from(e: ParseIntError) -> Self {
+              ScoreError::BadPoints(e)
+          }
+      }
+
+      // 2. Parse "name:points", using ? on the parse.
+      fn parse_score(line: &str) -> Result<(String, u32), ScoreError> {
+          let (name, points) = line.split_once(':').ok_or(ScoreError::MissingColon)?;
+          let points: u32 = points.trim().parse()?;
+          Ok((name.trim().to_string(), points))
+      }
+    require:
+      - pattern: 'impl\s+From<ParseIntError>\s+for\s+ScoreError'
+        message: "Write `impl From<ParseIntError> for ScoreError`."
+    forbid:
+      - pattern: '\.map_err\('
+        message: Let `?` convert the error through your `From` implementation, without `map_err`.
+    hints:
+      - "`impl From<ParseIntError> for ScoreError { fn from(e: ParseIntError) -> Self { ScoreError::BadPoints(e) } }`"
+      - "`line.split_once(':').ok_or(ScoreError::MissingColon)?` gives the two parts."
+      - "`let points: u32 = points.trim().parse()?;` then `Ok((name.trim().to_string(), points))`."
+    harness: |
+      #[test]
+      fn parses_a_score() {
+          assert_eq!(parse_score("ferris:120"), Ok((String::from("ferris"), 120)), "parse_score(\"ferris:120\")");
+      }
+
+      #[test]
+      fn trims_both_parts() {
+          assert_eq!(parse_score(" ana : 7 "), Ok((String::from("ana"), 7)), "parse_score(\" ana : 7 \")");
+      }
+
+      #[test]
+      fn reports_a_missing_colon() {
+          assert_eq!(parse_score("ferris 120"), Err(ScoreError::MissingColon), "parse_score(\"ferris 120\")");
+      }
+
+      #[test]
+      fn wraps_the_parse_error() {
+          let result = parse_score("ferris:lots");
+          assert!(matches!(result, Err(ScoreError::BadPoints(_))), "parse_score(\"ferris:lots\") should be Err(BadPoints(..)), got {result:?}");
+      }
+
+      #[test]
+      fn from_converts_a_parse_error() {
+          let parse_error = "x".parse::<u32>().unwrap_err();
+          let converted: ScoreError = parse_error.clone().into();
+          assert_eq!(converted, ScoreError::BadPoints(parse_error), "ScoreError::from(<parse error>)");
+      }
+    more:
+      - task: |
+          A product import reads rows like `42;19.99` (an id and a price). Implement **two** `From` conversions for `ImportError`, one from `ParseIntError` (to `BadId`) and one from `ParseFloatError` (to `BadPrice`), then write `parse_row` using `?` for both parses. A row without `;` is `ImportError::MissingField`. Trim the parts.
+        seed: |
+          use std::num::{ParseFloatError, ParseIntError};
+
+          #[derive(Debug, PartialEq)]
+          enum ImportError {
+              MissingField,
+              BadId(ParseIntError),
+              BadPrice(ParseFloatError),
+          }
+
+          fn parse_row(line: &str) -> Result<(u32, f64), ImportError> {
+              todo!()
+          }
+        solution: |
+          use std::num::{ParseFloatError, ParseIntError};
+
+          #[derive(Debug, PartialEq)]
+          enum ImportError {
+              MissingField,
+              BadId(ParseIntError),
+              BadPrice(ParseFloatError),
+          }
+
+          impl From<ParseIntError> for ImportError {
+              fn from(e: ParseIntError) -> Self {
+                  ImportError::BadId(e)
+              }
+          }
+
+          impl From<ParseFloatError> for ImportError {
+              fn from(e: ParseFloatError) -> Self {
+                  ImportError::BadPrice(e)
+              }
+          }
+
+          fn parse_row(line: &str) -> Result<(u32, f64), ImportError> {
+              let (id, price) = line.split_once(';').ok_or(ImportError::MissingField)?;
+              let id: u32 = id.trim().parse()?;
+              let price: f64 = price.trim().parse()?;
+              Ok((id, price))
+          }
+        forbid:
+          - pattern: '\.map_err\('
+            message: Use `From` implementations so `?` converts both errors.
+        hints:
+          - "Write two impl blocks: `impl From<ParseIntError> for ImportError` and `impl From<ParseFloatError> for ImportError`."
+          - "With both in place, `let id: u32 = id.trim().parse()?;` and `let price: f64 = price.trim().parse()?;` pick the right conversion by type."
+        harness: |
+          #[test]
+          fn parses_a_row() {
+              assert_eq!(parse_row("42;19.99"), Ok((42, 19.99)), "parse_row(\"42;19.99\")");
+              assert_eq!(parse_row(" 7 ; 3 "), Ok((7, 3.0)), "parse_row(\" 7 ; 3 \")");
+          }
+
+          #[test]
+          fn reports_a_missing_field() {
+              assert_eq!(parse_row("42"), Err(ImportError::MissingField), "parse_row(\"42\")");
+          }
+
+          #[test]
+          fn a_bad_id_becomes_bad_id() {
+              let result = parse_row("x;1.0");
+              assert!(matches!(result, Err(ImportError::BadId(_))), "parse_row(\"x;1.0\") should be Err(BadId(..)), got {result:?}");
+          }
+
+          #[test]
+          fn a_bad_price_becomes_bad_price() {
+              let result = parse_row("5;cheap");
+              assert!(matches!(result, Err(ImportError::BadPrice(_))), "parse_row(\"5;cheap\") should be Err(BadPrice(..)), got {result:?}");
+          }
+      - task: |
+          Errors come in layers. A shop's checkout calls `pay` from a payment module, which has its own `PaymentError`. Write the shop's error type and use `?` across both layers:
+
+          - `ShopError` (derive `Debug` and `PartialEq`) with variants `BadQuantity(ParseIntError)` and `Payment(PaymentError)`
+          - a `From` implementation for each of those two error types
+          - `fn checkout(qty_text: &str, unit_price: u32, balance: u32) -> Result<u32, ShopError>`: parse the trimmed quantity with `?`, then call `pay(balance, qty * unit_price)?` and return the remaining balance
+        seed: |
+          use std::num::ParseIntError;
+
+          #[derive(Debug, PartialEq)]
+          enum PaymentError {
+              Declined { balance: u32, amount: u32 },
+          }
+
+          fn pay(balance: u32, amount: u32) -> Result<u32, PaymentError> {
+              if amount > balance {
+                  return Err(PaymentError::Declined { balance, amount });
+              }
+              Ok(balance - amount)
+          }
+
+          // Write ShopError, two From impls, and checkout.
+        solution: |
+          use std::num::ParseIntError;
+
+          #[derive(Debug, PartialEq)]
+          enum PaymentError {
+              Declined { balance: u32, amount: u32 },
+          }
+
+          fn pay(balance: u32, amount: u32) -> Result<u32, PaymentError> {
+              if amount > balance {
+                  return Err(PaymentError::Declined { balance, amount });
+              }
+              Ok(balance - amount)
+          }
+
+          // Write ShopError, two From impls, and checkout.
+          #[derive(Debug, PartialEq)]
+          enum ShopError {
+              BadQuantity(ParseIntError),
+              Payment(PaymentError),
+          }
+
+          impl From<ParseIntError> for ShopError {
+              fn from(e: ParseIntError) -> Self {
+                  ShopError::BadQuantity(e)
+              }
+          }
+
+          impl From<PaymentError> for ShopError {
+              fn from(e: PaymentError) -> Self {
+                  ShopError::Payment(e)
+              }
+          }
+
+          fn checkout(qty_text: &str, unit_price: u32, balance: u32) -> Result<u32, ShopError> {
+              let qty: u32 = qty_text.trim().parse()?;
+              let left = pay(balance, qty * unit_price)?;
+              Ok(left)
+          }
+        hints:
+          - "`impl From<PaymentError> for ShopError { fn from(e: PaymentError) -> Self { ShopError::Payment(e) } }`, and the same idea for `ParseIntError`."
+          - "In `checkout`, both `parse()?` and `pay(...)?` convert their errors into `ShopError` through your `From` impls."
+        harness: |
+          #[test]
+          fn returns_the_remaining_balance() {
+              assert_eq!(checkout("3", 250, 1000), Ok(250), "checkout(\"3\", 250, 1000)");
+              assert_eq!(checkout(" 4 ", 250, 1000), Ok(0), "checkout(\" 4 \", 250, 1000)");
+          }
+
+          #[test]
+          fn wraps_a_declined_payment() {
+              let expected = ShopError::Payment(PaymentError::Declined { balance: 1000, amount: 1250 });
+              assert_eq!(checkout("5", 250, 1000), Err(expected), "checkout(\"5\", 250, 1000)");
+          }
+
+          #[test]
+          fn wraps_a_bad_quantity() {
+              let result = checkout("five", 250, 1000);
+              assert!(matches!(result, Err(ShopError::BadQuantity(_))), "checkout(\"five\", 250, 1000) should be Err(BadQuantity(..)), got {result:?}");
+          }
+
+  - title: "Source chains: errors with causes"
+    id: custom-errors-5
+    text: |
+      When an error wraps another one, there are two messages: the high-level one ("could not read the port setting") and the low-level cause ("invalid digit found in string"). Users need the first, and whoever fixes the problem often needs both. The `Error` trait has a method for this, `source()`, which returns the error that caused this one, if any.
+
+      ```rust run
+      use std::error::Error;
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum ConfigError {
+          MissingKey(String),
+          BadNumber { key: String, source: ParseIntError },
+      }
+
+      impl fmt::Display for ConfigError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ConfigError::MissingKey(key) => write!(f, "missing key {key}"),
+                  ConfigError::BadNumber { key, .. } => write!(f, "invalid value for {key}"),
+              }
+          }
+      }
+
+      impl Error for ConfigError {
+          fn source(&self) -> Option<&(dyn Error + 'static)> {
+              match self {
+                  ConfigError::MissingKey(_) => None,
+                  ConfigError::BadNumber { source, .. } => Some(source),
+              }
+          }
+      }
+
+      fn read_port(text: &str) -> Result<u16, ConfigError> {
+          let value = text
+              .strip_prefix("port=")
+              .ok_or_else(|| ConfigError::MissingKey(String::from("port")))?;
+          value.parse().map_err(|e| ConfigError::BadNumber { key: String::from("port"), source: e })
+      }
+
+      fn report(err: &dyn Error) {
+          println!("error: {err}");
+          let mut cause = err.source();
+          while let Some(c) = cause {
+              println!("  caused by: {c}");
+              cause = c.source();
+          }
+      }
+
+      fn main() {
+          if let Err(e) = read_port("port=80a") {
+              report(&e);
+          }
+          if let Err(e) = read_port("host=example.com") {
+              report(&e);
+          }
+      }
+      ```
+
+      ```output
+      error: invalid value for port
+        caused by: invalid digit found in string
+      error: missing key port
+      ```
+
+      Piece by piece:
+
+      - `fn source(&self) -> Option<&(dyn Error + 'static)>` overrides the default `source` (which returns `None`). Copy the signature as it is: `&(dyn Error + 'static)` means "a reference to some error"; the `'static` is a lifetime saying the error doesn't borrow short-lived data (module 24).
+      - `Some(source)` hands out a reference to the wrapped `ParseIntError`. Rust turns `&ParseIntError` into `&dyn Error` automatically.
+      - `report` takes `&dyn Error`, so it works with *any* error. It prints the error, then follows `source()` link by link with `while let` until there's no further cause. This list is the **error chain**.
+      - The variant names its field `source`, which is a common convention (and what thiserror, step 7, looks for).
+
+      ### Display or source, not both
+
+      If `BadNumber` displayed as `invalid value for port: invalid digit found in string` *and* returned the parse error from `source()`, every report would print the cause twice. The guideline: an error either includes the inner message in its Display, or returns it from `source()`. When you wrap an error and keep it, prefer `source()`. Tools like `anyhow` print the whole chain for you, joined by `: `.
+
+      ### Common mistakes
+
+      - **Forgetting `source()` when wrapping.** The default returns `None`, so the chain stops at your error and the real cause is invisible in reports.
+      - **Writing the signature differently.** `fn source(&self) -> Option<&dyn Error>` without `+ 'static` doesn't match the trait and won't compile. Copy it exactly.
+      - **Calling `.source()` without the trait in scope.** It's a method of the `Error` trait, so you need `use std::error::Error;`, like you need `use std::fmt;` for Display.
+
+      **Your turn:** the starter's `LoadError` has Display and an empty-ish `Error` implementation. Write its `source` method: `MissingKey` has no cause, and `BadPort` returns its `source` field.
+    seed: |
+      use std::error::Error;
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum LoadError {
+          MissingKey(String),
+          BadPort { source: ParseIntError },
+      }
+
+      impl fmt::Display for LoadError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  LoadError::MissingKey(key) => write!(f, "missing key: {key}"),
+                  LoadError::BadPort { .. } => write!(f, "port is not a valid number"),
+              }
+          }
+      }
+
+      impl Error for LoadError {
+          fn source(&self) -> Option<&(dyn Error + 'static)> {
+              todo!()
+          }
+      }
+    solution: |
+      use std::error::Error;
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum LoadError {
+          MissingKey(String),
+          BadPort { source: ParseIntError },
+      }
+
+      impl fmt::Display for LoadError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  LoadError::MissingKey(key) => write!(f, "missing key: {key}"),
+                  LoadError::BadPort { .. } => write!(f, "port is not a valid number"),
+              }
+          }
+      }
+
+      impl Error for LoadError {
+          fn source(&self) -> Option<&(dyn Error + 'static)> {
+              match self {
+                  LoadError::MissingKey(_) => None,
+                  LoadError::BadPort { source } => Some(source),
+              }
+          }
+      }
+    hints:
+      - "`match self` with one arm per variant."
+      - "`LoadError::MissingKey(_) => None,` and `LoadError::BadPort { source } => Some(source),`"
+    harness: |
+      use std::error::Error;
+
+      fn bad_port() -> LoadError {
+          LoadError::BadPort { source: "80a".parse::<u16>().unwrap_err() }
+      }
+
+      #[test]
+      fn missing_key_has_no_source() {
+          let e = LoadError::MissingKey(String::from("port"));
+          assert!(e.source().is_none(), "LoadError::MissingKey(..).source() should be None");
+      }
+
+      #[test]
+      fn bad_port_returns_the_parse_error() {
+          let e = bad_port();
+          let cause = e.source().map(|s| s.to_string());
+          assert_eq!(cause, Some(String::from("invalid digit found in string")), "bad_port().source() message");
+      }
+
+      #[test]
+      fn the_chain_ends_after_the_parse_error() {
+          let e = bad_port();
+          let cause = e.source().expect("BadPort should have a source");
+          assert!(cause.source().is_none(), "ParseIntError has no further source");
+      }
+
+      #[test]
+      fn display_is_unchanged() {
+          assert_eq!(bad_port().to_string(), "port is not a valid number", "bad_port().to_string()");
+      }
+    more:
+      - task: |
+          Write `fn error_chain(err: &dyn Error) -> String` that joins the messages of an error and all its sources with `": "`, outermost first. For a `BadPort` error that's `port is not a valid number: invalid digit found in string`. This is exactly what `anyhow` prints with `{:#}`.
+
+          The starter has two complete error types to test with: `LoadError` and `StartupError` (which wraps a `LoadError`).
+        seed: |
+          use std::error::Error;
+          use std::fmt;
+          use std::num::ParseIntError;
+
+          #[derive(Debug)]
+          enum LoadError {
+              MissingKey(String),
+              BadPort { source: ParseIntError },
+          }
+
+          impl fmt::Display for LoadError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      LoadError::MissingKey(key) => write!(f, "missing key: {key}"),
+                      LoadError::BadPort { .. } => write!(f, "port is not a valid number"),
+                  }
+              }
+          }
+
+          impl Error for LoadError {
+              fn source(&self) -> Option<&(dyn Error + 'static)> {
+                  match self {
+                      LoadError::MissingKey(_) => None,
+                      LoadError::BadPort { source } => Some(source),
+                  }
+              }
+          }
+
+          #[derive(Debug)]
+          struct StartupError {
+              source: LoadError,
+          }
+
+          impl fmt::Display for StartupError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  write!(f, "startup failed")
+              }
+          }
+
+          impl Error for StartupError {
+              fn source(&self) -> Option<&(dyn Error + 'static)> {
+                  Some(&self.source)
+              }
+          }
+
+          fn error_chain(err: &dyn Error) -> String {
+              todo!()
+          }
+        solution: |
+          use std::error::Error;
+          use std::fmt;
+          use std::num::ParseIntError;
+
+          #[derive(Debug)]
+          enum LoadError {
+              MissingKey(String),
+              BadPort { source: ParseIntError },
+          }
+
+          impl fmt::Display for LoadError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      LoadError::MissingKey(key) => write!(f, "missing key: {key}"),
+                      LoadError::BadPort { .. } => write!(f, "port is not a valid number"),
+                  }
+              }
+          }
+
+          impl Error for LoadError {
+              fn source(&self) -> Option<&(dyn Error + 'static)> {
+                  match self {
+                      LoadError::MissingKey(_) => None,
+                      LoadError::BadPort { source } => Some(source),
+                  }
+              }
+          }
+
+          #[derive(Debug)]
+          struct StartupError {
+              source: LoadError,
+          }
+
+          impl fmt::Display for StartupError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  write!(f, "startup failed")
+              }
+          }
+
+          impl Error for StartupError {
+              fn source(&self) -> Option<&(dyn Error + 'static)> {
+                  Some(&self.source)
+              }
+          }
+
+          fn error_chain(err: &dyn Error) -> String {
+              let mut text = err.to_string();
+              let mut cause = err.source();
+              while let Some(c) = cause {
+                  text.push_str(": ");
+                  text.push_str(&c.to_string());
+                  cause = c.source();
+              }
+              text
+          }
+        hints:
+          - "Start with `let mut text = err.to_string();` and `let mut cause = err.source();`."
+          - "`while let Some(c) = cause { ... cause = c.source(); }` walks the chain; append `\": \"` and `c.to_string()` each time."
+        harness: |
+          fn bad_port() -> LoadError {
+              LoadError::BadPort { source: "80a".parse::<u16>().unwrap_err() }
+          }
+
+          #[test]
+          fn an_error_without_source_is_just_its_message() {
+              let e = LoadError::MissingKey(String::from("port"));
+              assert_eq!(error_chain(&e), "missing key: port", "error_chain(&MissingKey(\"port\"))");
+          }
+
+          #[test]
+          fn joins_two_levels() {
+              assert_eq!(error_chain(&bad_port()), "port is not a valid number: invalid digit found in string", "error_chain(&bad_port())");
+          }
+
+          #[test]
+          fn joins_three_levels() {
+              let e = StartupError { source: bad_port() };
+              assert_eq!(error_chain(&e), "startup failed: port is not a valid number: invalid digit found in string", "error_chain(&StartupError {{ source: bad_port() }})");
+          }
+
+          #[test]
+          fn works_with_standard_errors() {
+              let e = "".parse::<i32>().unwrap_err();
+              assert_eq!(error_chain(&e), "cannot parse integer from empty string", "error_chain(&<empty parse error>)");
+          }
+      - task: |
+          Build a two-layer error yourself. The starter has `LoadError` and `fn load_port(text: &str) -> Result<u16, LoadError>`. Write:
+
+          - `AppError` (derive `Debug`) with one variant, `Config(LoadError)`
+          - Display for `AppError`: `could not start the server`
+          - `Error` for `AppError`, with `source()` returning the inner `LoadError`
+          - `From<LoadError> for AppError`
+          - `fn start(port_text: &str) -> Result<u16, AppError>` that calls `load_port(port_text)?` and returns the port
+
+          The tests print the whole chain with the starter's `error_chain`.
+        seed: |
+          use std::error::Error;
+          use std::fmt;
+          use std::num::ParseIntError;
+
+          #[derive(Debug)]
+          enum LoadError {
+              BadPort { source: ParseIntError },
+          }
+
+          impl fmt::Display for LoadError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      LoadError::BadPort { .. } => write!(f, "port is not a valid number"),
+                  }
+              }
+          }
+
+          impl Error for LoadError {
+              fn source(&self) -> Option<&(dyn Error + 'static)> {
+                  match self {
+                      LoadError::BadPort { source } => Some(source),
+                  }
+              }
+          }
+
+          fn load_port(text: &str) -> Result<u16, LoadError> {
+              text.trim().parse().map_err(|e| LoadError::BadPort { source: e })
+          }
+
+          fn error_chain(err: &dyn Error) -> String {
+              let mut text = err.to_string();
+              let mut cause = err.source();
+              while let Some(c) = cause {
+                  text.push_str(": ");
+                  text.push_str(&c.to_string());
+                  cause = c.source();
+              }
+              text
+          }
+
+          // Write AppError, its Display, Error and From impls, and start.
+        solution: |
+          use std::error::Error;
+          use std::fmt;
+          use std::num::ParseIntError;
+
+          #[derive(Debug)]
+          enum LoadError {
+              BadPort { source: ParseIntError },
+          }
+
+          impl fmt::Display for LoadError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      LoadError::BadPort { .. } => write!(f, "port is not a valid number"),
+                  }
+              }
+          }
+
+          impl Error for LoadError {
+              fn source(&self) -> Option<&(dyn Error + 'static)> {
+                  match self {
+                      LoadError::BadPort { source } => Some(source),
+                  }
+              }
+          }
+
+          fn load_port(text: &str) -> Result<u16, LoadError> {
+              text.trim().parse().map_err(|e| LoadError::BadPort { source: e })
+          }
+
+          fn error_chain(err: &dyn Error) -> String {
+              let mut text = err.to_string();
+              let mut cause = err.source();
+              while let Some(c) = cause {
+                  text.push_str(": ");
+                  text.push_str(&c.to_string());
+                  cause = c.source();
+              }
+              text
+          }
+
+          // Write AppError, its Display, Error and From impls, and start.
+          #[derive(Debug)]
+          enum AppError {
+              Config(LoadError),
+          }
+
+          impl fmt::Display for AppError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      AppError::Config(_) => write!(f, "could not start the server"),
+                  }
+              }
+          }
+
+          impl Error for AppError {
+              fn source(&self) -> Option<&(dyn Error + 'static)> {
+                  match self {
+                      AppError::Config(e) => Some(e),
+                  }
+              }
+          }
+
+          impl From<LoadError> for AppError {
+              fn from(e: LoadError) -> Self {
+                  AppError::Config(e)
+              }
+          }
+
+          fn start(port_text: &str) -> Result<u16, AppError> {
+              let port = load_port(port_text)?;
+              Ok(port)
+          }
+        hints:
+          - "Display: `match self { AppError::Config(_) => write!(f, \"could not start the server\") }`."
+          - "`source()` returns `Some(e)` for `AppError::Config(e)`."
+          - "With `From<LoadError> for AppError` in place, `let port = load_port(port_text)?;` converts the error."
+        harness: |
+          #[test]
+          fn starts_with_a_valid_port() {
+              assert_eq!(start("8080").unwrap(), 8080, "start(\"8080\")");
+          }
+
+          #[test]
+          fn reports_the_whole_chain() {
+              let err = start("eighty").unwrap_err();
+              assert_eq!(error_chain(&err), "could not start the server: port is not a valid number: invalid digit found in string", "error_chain(&start(\"eighty\").unwrap_err())");
+          }
+
+          #[test]
+          fn the_top_level_message_is_short() {
+              let err = start("").unwrap_err();
+              assert_eq!(err.to_string(), "could not start the server", "start(\"\").unwrap_err().to_string()");
+          }
+
+  - title: panic or Result? The guidelines
+    id: custom-errors-6
+    text: |
+      You now have every tool. The hard part at work is choosing. These are the guidelines most Rust teams follow (they come from the Rust book and the Rust API guidelines):
+
+      | Situation | Use |
+      |---|---|
+      | Bad user input, missing file, network timeout, invalid data | `Result` |
+      | A business rule says no (insufficient funds, sold out) | `Result` |
+      | A bug: a broken invariant, a state the code assumes is impossible | `panic!` (often through `expect`, `assert!` or `unreachable!`) |
+      | Tests, examples, quick prototypes | `unwrap`/`expect` are fine |
+      | Library functions | `Result`, and panic only when the *caller* broke a documented rule |
+
+      The key question: **can this happen when the program is correct?** A user typing `abc` happens in a correct program, so it's a `Result`. An index that your own code computed being out of range only happens if your code is wrong, so a panic (which points straight at the bug) is right.
+
+      ### Offer both, like the standard library
+
+      The standard library often provides a panicking version and a checking version, so the caller picks:
+
+      | Panics on failure | Returns `Option` |
+      |---|---|
+      | `v[i]` | `v.get(i)` |
+      | `a / b` (b is 0) | `a.checked_div(b)` |
+      | `a + b` (overflow, debug build) | `a.checked_add(b)` |
+
+      If a function can panic, its documentation says so under a `# Panics` heading, so callers know the rule they must follow:
+
+      ```rust
+      /// Returns the average of the scores.
+      ///
+      /// # Panics
+      ///
+      /// Panics if `scores` is empty.
+      fn average(scores: &[u32]) -> u32 {
+          assert!(!scores.is_empty(), "average of no scores");
+          let mut total = 0;
+          for score in scores {
+              total += score;
+          }
+          total / scores.len() as u32
+      }
+      ```
+
+      `assert!(condition, "message")` panics with the message when the condition is false. It's the usual way to check a rule the caller must follow.
+
+      ### Validate once, then trust the type
+
+      A useful pattern: check a value once, when it's created, and wrap it in a type that can only hold valid values. After that, the rest of the code needs no checks and no `Result`s.
+
+      ```rust run
+      #[derive(Debug, PartialEq)]
+      enum PercentError {
+          TooLarge(u32),
+      }
+
+      struct Percent(u32);
+
+      impl Percent {
+          fn new(value: u32) -> Result<Percent, PercentError> {
+              if value > 100 {
+                  return Err(PercentError::TooLarge(value));
+              }
+              Ok(Percent(value))
+          }
+
+          fn of(&self, amount: u32) -> u32 {
+              amount * self.0 / 100
+          }
+      }
+
+      fn main() {
+          let discount = Percent::new(25).expect("25 is a valid percentage");
+          println!("25% of 80 is {}", discount.of(80));
+          match Percent::new(150) {
+              Ok(_) => println!("accepted"),
+              Err(e) => println!("rejected: {e:?}"),
+          }
+      }
+      ```
+
+      ```output
+      25% of 80 is 20
+      rejected: TooLarge(150)
+      ```
+
+      `Percent::new` returns a `Result`, because the number might come from a user. But `of` can't fail: a `Percent` can only be built through `new`, so its value is always 0 to 100. And the `expect` on `Percent::new(25)` is fine: 25 is a constant, so failure would be a bug, and the message says what was assumed. (To make sure nobody builds a `Percent` without `new`, the field would be made private; module 28 shows how.)
+
+      ### Common mistakes
+
+      - **Panicking in a library on bad input.** A web server using your parsing library would crash on one bad request. Return a `Result`.
+      - **Returning `Result` for bugs.** If the only way to get an `Err` is a programming mistake, callers end up writing `.unwrap()` everywhere anyway. Panic (with a clear message) and document it.
+      - **`unwrap` with no explanation.** When failure would be a bug, `expect("why this can't fail")` documents the invariant for the next reader.
+
+      **Your turn:** `apply_discount` is part of a pricing library, but it panics on an unknown discount code, which can come straight from a customer's input. Change it to return `Result<u32, DiscountError>`: an unknown code (codes are case-sensitive) returns `Err(DiscountError::UnknownCode(<the code>))`, and a known code returns the discounted price in `Ok`.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      enum DiscountError {
+          UnknownCode(String),
+      }
+
+      fn apply_discount(price_cents: u32, code: &str) -> u32 {
+          let percent = match code {
+              "SAVE10" => 10,
+              "SAVE25" => 25,
+              "HALF" => 50,
+              _ => panic!("unknown discount code {code}"),
+          };
+          price_cents - price_cents * percent / 100
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      enum DiscountError {
+          UnknownCode(String),
+      }
+
+      fn apply_discount(price_cents: u32, code: &str) -> Result<u32, DiscountError> {
+          let percent = match code {
+              "SAVE10" => 10,
+              "SAVE25" => 25,
+              "HALF" => 50,
+              _ => return Err(DiscountError::UnknownCode(code.to_string())),
+          };
+          Ok(price_cents - price_cents * percent / 100)
+      }
+    forbid:
+      - pattern: '\bpanic!'
+        message: The point is to stop panicking on customer input. Return an `Err` instead.
+    hints:
+      - "Change the return type to `Result<u32, DiscountError>`."
+      - "In the catch-all arm, `return Err(DiscountError::UnknownCode(code.to_string()))` leaves the function early."
+      - "Wrap the final price in `Ok(...)`."
+    harness: |
+      #[test]
+      fn applies_known_codes() {
+          assert_eq!(apply_discount(1000, "SAVE10"), Ok(900), "apply_discount(1000, \"SAVE10\")");
+          assert_eq!(apply_discount(2000, "SAVE25"), Ok(1500), "apply_discount(2000, \"SAVE25\")");
+          assert_eq!(apply_discount(999, "HALF"), Ok(500), "apply_discount(999, \"HALF\")");
+      }
+
+      #[test]
+      fn rejects_an_unknown_code() {
+          assert_eq!(apply_discount(1000, "FREE"), Err(DiscountError::UnknownCode(String::from("FREE"))), "apply_discount(1000, \"FREE\")");
+      }
+
+      #[test]
+      fn codes_are_case_sensitive() {
+          assert_eq!(apply_discount(1000, "save10"), Err(DiscountError::UnknownCode(String::from("save10"))), "apply_discount(1000, \"save10\")");
+      }
+
+      #[test]
+      fn rejects_an_empty_code() {
+          assert_eq!(apply_discount(500, ""), Err(DiscountError::UnknownCode(String::new())), "apply_discount(500, \"\")");
+      }
+    more:
+      - task: |
+          `nth_score` panics when `n` is out of range, because indexing panics. The index comes from a user's request, so return a `Result` instead: use `scores.get(n)` and turn `None` into `Err(ScoreError::OutOfRange { index: n, len: scores.len() })`. Don't use `[n]` indexing.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          enum ScoreError {
+              OutOfRange { index: usize, len: usize },
+          }
+
+          fn nth_score(scores: &[u32], n: usize) -> u32 {
+              scores[n]
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          enum ScoreError {
+              OutOfRange { index: usize, len: usize },
+          }
+
+          fn nth_score(scores: &[u32], n: usize) -> Result<u32, ScoreError> {
+              scores
+                  .get(n)
+                  .copied()
+                  .ok_or(ScoreError::OutOfRange { index: n, len: scores.len() })
+          }
+        forbid:
+          - pattern: 'scores\s*\['
+            message: Indexing panics when out of range. Use `.get(n)`.
+        hints:
+          - "`scores.get(n)` gives an `Option<&u32>`. `match` on it, or add `.copied()` to get an `Option<u32>`."
+          - "`.ok_or(ScoreError::OutOfRange { index: n, len: scores.len() })` turns the `Option` into the `Result`."
+        harness: |
+          #[test]
+          fn returns_a_score_in_range() {
+              assert_eq!(nth_score(&[10, 20, 30], 1), Ok(20), "nth_score(&[10, 20, 30], 1)");
+              assert_eq!(nth_score(&[10, 20, 30], 2), Ok(30), "nth_score(&[10, 20, 30], 2)");
+          }
+
+          #[test]
+          fn reports_an_index_past_the_end() {
+              assert_eq!(nth_score(&[10, 20, 30], 3), Err(ScoreError::OutOfRange { index: 3, len: 3 }), "nth_score(&[10, 20, 30], 3)");
+          }
+
+          #[test]
+          fn handles_an_empty_list() {
+              assert_eq!(nth_score(&[], 0), Err(ScoreError::OutOfRange { index: 0, len: 0 }), "nth_score(&[], 0)");
+          }
+      - task: |
+          Write a validated type from scratch: a network port that's always usable.
+
+          - `PortError` (derive `Debug` and `PartialEq`) with variants `NotANumber(ParseIntError)`, `Zero` and `Reserved(u16)`
+          - `struct Port(u16);`
+          - `impl Port` with `fn parse(text: &str) -> Result<Port, PortError>`: trim and parse as `u16` (a parse error becomes `NotANumber`), then reject `0` (`Zero`) and anything below 1024 (`Reserved(port)`), and `fn number(&self) -> u16`, which returns the port number
+        seed: |
+          use std::num::ParseIntError;
+
+          // PortError, Port, and impl Port { parse, number }
+        solution: |
+          use std::num::ParseIntError;
+
+          // PortError, Port, and impl Port { parse, number }
+          #[derive(Debug, PartialEq)]
+          enum PortError {
+              NotANumber(ParseIntError),
+              Zero,
+              Reserved(u16),
+          }
+
+          struct Port(u16);
+
+          impl Port {
+              fn parse(text: &str) -> Result<Port, PortError> {
+                  let n: u16 = text.trim().parse().map_err(PortError::NotANumber)?;
+                  if n == 0 {
+                      return Err(PortError::Zero);
+                  }
+                  if n < 1024 {
+                      return Err(PortError::Reserved(n));
+                  }
+                  Ok(Port(n))
+              }
+
+              fn number(&self) -> u16 {
+                  self.0
+              }
+          }
+        hints:
+          - "`text.trim().parse::<u16>().map_err(PortError::NotANumber)?` wraps the parse error in the variant."
+          - "Check `n == 0` before `n < 1024`, so 0 gets its own error."
+          - "`number` is just `self.0`."
+        harness: |
+          #[test]
+          fn accepts_a_normal_port() {
+              assert_eq!(Port::parse("8080").map(|p| p.number()), Ok(8080), "Port::parse(\"8080\")");
+              assert_eq!(Port::parse(" 1024\n").map(|p| p.number()), Ok(1024), "Port::parse(\" 1024\\n\")");
+          }
+
+          #[test]
+          fn rejects_zero() {
+              assert_eq!(Port::parse("0").map(|p| p.number()), Err(PortError::Zero), "Port::parse(\"0\")");
+          }
+
+          #[test]
+          fn rejects_reserved_ports() {
+              assert_eq!(Port::parse("80").map(|p| p.number()), Err(PortError::Reserved(80)), "Port::parse(\"80\")");
+          }
+
+          #[test]
+          fn rejects_text() {
+              let result = Port::parse("http").map(|p| p.number());
+              assert!(matches!(result, Err(PortError::NotANumber(_))), "Port::parse(\"http\") should be Err(NotANumber(..)), got {result:?}");
+          }
+
+  - title: A first look at thiserror and anyhow
+    id: custom-errors-7
+    text: |
+      Writing Display, Error, `source` and `From` by hand is a lot of repetitive code. Two crates (Rust libraries) remove almost all of it, and you'll find them in most Rust codebases at work. Add them to a project's `Cargo.toml`:
+
+      ```toml
+      [dependencies]
+      thiserror = "2"
+      anyhow = "1"
+      ```
+
+      ### thiserror: error enums without the boilerplate
+
+      `thiserror` provides a **derive macro**, like `#[derive(Debug)]`, that writes the Display, Error and From implementations for you:
+
+      ```rust run
+      use std::num::ParseIntError;
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum ConfigError {
+          #[error("missing '=' in line {0:?}")]
+          MissingEquals(String),
+          #[error("invalid number")]
+          BadNumber(#[from] ParseIntError),
+      }
+
+      fn parse_line(line: &str) -> Result<(String, u32), ConfigError> {
+          let (key, value) = line
+              .split_once('=')
+              .ok_or_else(|| ConfigError::MissingEquals(line.to_string()))?;
+          let value: u32 = value.trim().parse()?;
+          Ok((key.trim().to_string(), value))
+      }
+
+      fn main() {
+          for line in ["timeout = 30", "retries = lots", "verbose"] {
+              match parse_line(line) {
+                  Ok((key, value)) => println!("{key} = {value}"),
+                  Err(ConfigError::BadNumber(cause)) => println!("invalid number ({cause})"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      timeout = 30
+      invalid number (invalid digit found in string)
+      error: missing '=' in line "verbose"
+      ```
+
+      - `#[derive(Debug, Error)]`: `Error` here is thiserror's derive (brought in by `use thiserror::Error;`). It implements `std::error::Error` for the enum.
+      - `#[error("...")]` on each variant is its Display message. `{0}` refers to the first field of a tuple variant; named fields are used by name, like `#[error("cannot buy {requested} tickets")]`. Format specs like `{0:?}` work too.
+      - `#[from]` on a field writes `impl From<ParseIntError> for ConfigError`, so `?` converts, *and* makes `source()` return that field.
+
+      It's still an ordinary enum: callers match on it exactly as before. That's why thiserror is the usual choice for **libraries** and for any module whose callers need to tell errors apart.
+
+      ### anyhow: one error type for applications
+
+      In application code you often don't match on errors at all: you add context and report them. `anyhow` gives you one type, `anyhow::Error`, that holds any error (like `Box<dyn Error>`, but with more features), and the alias `anyhow::Result<T>` for `Result<T, anyhow::Error>`.
+
+      ```rust run
+      use anyhow::{bail, Context, Result};
+
+      fn parse_port(text: &str) -> Result<u16> {
+          let port: u16 = text
+              .trim()
+              .parse()
+              .with_context(|| format!("invalid port {text:?}"))?;
+          if port < 1024 {
+              bail!("port {port} is reserved");
+          }
+          Ok(port)
+      }
+
+      fn main() {
+          for text in ["8080", "80", "http"] {
+              match parse_port(text) {
+                  Ok(port) => println!("listening on {port}"),
+                  Err(e) => println!("error: {e:#}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      listening on 8080
+      error: port 80 is reserved
+      error: invalid port "http": invalid digit found in string
+      ```
+
+      - `use anyhow::Result;` replaces the standard `Result` in this file with anyhow's one-parameter version. `Result<u16>` means `Result<u16, anyhow::Error>`.
+      - `.with_context(|| ...)` (from the `Context` trait) wraps the error with a message saying what you were doing. The original error becomes its source. `.context("fixed text")` does the same with a fixed message.
+      - `bail!("...")` returns an error with that message right away: short for `return Err(anyhow!("..."))`.
+      - `{:#}` prints the whole chain joined by `: `. Plain `{}` prints only the outermost message (`invalid port "http"`).
+      - `fn main() -> anyhow::Result<()>` is a very common signature: an error at the end prints its full chain.
+
+      ### Which one?
+
+      - **Library, or callers need to match on errors:** thiserror. Your error enum is part of your API.
+      - **Application code, where errors are reported rather than handled:** anyhow, with plenty of `context`.
+      - Many projects use both: thiserror inside their library modules, anyhow in `main` and the command handlers.
+
+      Module 39 goes deep into both crates (`ensure!`, error chains in `main`, mixing them, designing error types for a real service).
+
+      ### Common mistakes
+
+      - **A thiserror variant without `#[error(...)]`.** Then no Display gets written and the enum doesn't compile as an error. Every variant needs a message.
+      - **anyhow in a library's public API.** Callers can't match on an `anyhow::Error`, so they can't react to specific failures. Use it in applications.
+      - **Context that repeats the cause.** `.context("parse error")` adds nothing to `invalid digit found in string`. Say what you were doing: `.context("reading the port from config.toml")`.
+
+      **Your turn:** rewrite `TicketError` with thiserror. Add an `#[error(...)]` attribute to each variant so that:
+
+      - `SoldOut` displays as `the event is sold out`
+      - `TooMany { requested: 9, max: 6 }` displays as `cannot buy 9 tickets, the limit is 6`
+      - `UnknownEvent("Rust Fest")` displays as `no event called 'Rust Fest'`
+    seed: |
+      use thiserror::Error;
+
+      #[derive(Debug, Error, PartialEq)]
+      enum TicketError {
+          // Add #[error("...")] above each variant.
+          SoldOut,
+          TooMany { requested: u32, max: u32 },
+          UnknownEvent(String),
+      }
+    solution: |
+      use thiserror::Error;
+
+      #[derive(Debug, Error, PartialEq)]
+      enum TicketError {
+          // Add #[error("...")] above each variant.
+          #[error("the event is sold out")]
+          SoldOut,
+          #[error("cannot buy {requested} tickets, the limit is {max}")]
+          TooMany { requested: u32, max: u32 },
+          #[error("no event called '{0}'")]
+          UnknownEvent(String),
+      }
+    forbid:
+      - pattern: 'impl\s+(std::)?(fmt::)?Display'
+        message: Let thiserror write Display from the `#[error(...)]` attributes.
+    hints:
+      - "Put the attribute on the line above the variant: `#[error(\"the event is sold out\")]`."
+      - "Named fields go in braces by name: `#[error(\"cannot buy {requested} tickets, the limit is {max}\")]`."
+      - "A tuple variant's first field is `{0}`: `#[error(\"no event called '{0}'\")]`."
+    harness: |
+      #[test]
+      fn displays_sold_out() {
+          assert_eq!(TicketError::SoldOut.to_string(), "the event is sold out", "TicketError::SoldOut.to_string()");
+      }
+
+      #[test]
+      fn displays_too_many_with_the_numbers() {
+          let e = TicketError::TooMany { requested: 9, max: 6 };
+          assert_eq!(e.to_string(), "cannot buy 9 tickets, the limit is 6", "TooMany {{ requested: 9, max: 6 }}.to_string()");
+      }
+
+      #[test]
+      fn displays_the_unknown_event_name() {
+          let e = TicketError::UnknownEvent(String::from("Rust Fest"));
+          assert_eq!(e.to_string(), "no event called 'Rust Fest'", "UnknownEvent(\"Rust Fest\").to_string()");
+      }
+
+      #[test]
+      fn is_a_standard_error() {
+          let boxed: Box<dyn std::error::Error> = Box::new(TicketError::SoldOut);
+          assert_eq!(boxed.to_string(), "the event is sold out", "Box<dyn Error> holding SoldOut");
+      }
+    more:
+      - task: |
+          Write `ScoreError` with thiserror (derive `Debug` and `Error`):
+
+          - `MissingColon`, displayed as `expected NAME:POINTS`
+          - `BadPoints`, wrapping a `ParseIntError` with `#[from]`, displayed as `points are not a number`
+
+          Then write `fn parse_score(line: &str) -> Result<(String, u32), ScoreError>` for lines like `ferris:120` (trim both parts), using `?` for the parse.
+        seed: |
+          use std::num::ParseIntError;
+          use thiserror::Error;
+
+          fn parse_score(line: &str) -> Result<(String, u32), ScoreError> {
+              todo!()
+          }
+        solution: |
+          use std::num::ParseIntError;
+          use thiserror::Error;
+
+          #[derive(Debug, Error)]
+          enum ScoreError {
+              #[error("expected NAME:POINTS")]
+              MissingColon,
+              #[error("points are not a number")]
+              BadPoints(#[from] ParseIntError),
+          }
+
+          fn parse_score(line: &str) -> Result<(String, u32), ScoreError> {
+              let (name, points) = line.split_once(':').ok_or(ScoreError::MissingColon)?;
+              let points: u32 = points.trim().parse()?;
+              Ok((name.trim().to_string(), points))
+          }
+        forbid:
+          - pattern: 'impl\s+From'
+            message: Let `#[from]` write the `From` implementation.
+        hints:
+          - "`BadPoints(#[from] ParseIntError),` with `#[error(\"points are not a number\")]` above it."
+          - "`line.split_once(':').ok_or(ScoreError::MissingColon)?`, then `points.trim().parse()?`."
+        harness: |
+          use std::error::Error as _;
+
+          #[test]
+          fn parses_a_score() {
+              let (name, points) = parse_score(" ferris : 120 ").expect("a valid line");
+              assert_eq!((name.as_str(), points), ("ferris", 120), "parse_score(\" ferris : 120 \")");
+          }
+
+          #[test]
+          fn reports_a_missing_colon() {
+              let err = parse_score("ferris 120").unwrap_err();
+              assert_eq!(err.to_string(), "expected NAME:POINTS", "parse_score(\"ferris 120\") error message");
+          }
+
+          #[test]
+          fn wraps_the_parse_error() {
+              let err = parse_score("ferris:lots").unwrap_err();
+              assert_eq!(err.to_string(), "points are not a number", "parse_score(\"ferris:lots\") error message");
+              let cause = err.source().map(|c| c.to_string());
+              assert_eq!(cause, Some(String::from("invalid digit found in string")), "its source");
+          }
+      - task: |
+          Use anyhow. Write `fn load_limit(text: &str) -> anyhow::Result<u32>` that reads a rate limit:
+
+          - parse the trimmed text as a `u32`; on failure add context with `with_context` so that the full chain (`{:#}`) is `limit "abc" is not a number: invalid digit found in string` (the original text, in quotes, via `{text:?}`)
+          - a limit of `0` fails with `bail!` and the message `limit must be at least 1`
+        seed: |
+          use anyhow::{bail, Context};
+
+          fn load_limit(text: &str) -> anyhow::Result<u32> {
+              todo!()
+          }
+        solution: |
+          use anyhow::{bail, Context};
+
+          fn load_limit(text: &str) -> anyhow::Result<u32> {
+              let limit: u32 = text
+                  .trim()
+                  .parse()
+                  .with_context(|| format!("limit {text:?} is not a number"))?;
+              if limit == 0 {
+                  bail!("limit must be at least 1");
+              }
+              Ok(limit)
+          }
+        require:
+          - pattern: '\.(with_)?context\('
+            message: Add context to the parse error with `with_context` (or `context`).
+          - pattern: 'bail!'
+            message: Use `bail!` for the zero limit.
+        hints:
+          - "`.with_context(|| format!(\"limit {text:?} is not a number\"))?` wraps the parse error."
+          - "`if limit == 0 { bail!(\"limit must be at least 1\"); }`"
+        harness: |
+          #[test]
+          fn reads_a_limit() {
+              assert_eq!(load_limit(" 25 ").unwrap(), 25, "load_limit(\" 25 \")");
+          }
+
+          #[test]
+          fn explains_a_bad_number() {
+              let err = load_limit("abc").unwrap_err();
+              assert_eq!(format!("{err:#}"), "limit \"abc\" is not a number: invalid digit found in string", "format!(\"{{:#}}\", load_limit(\"abc\").unwrap_err())");
+          }
+
+          #[test]
+          fn rejects_zero() {
+              let err = load_limit("0").unwrap_err();
+              assert_eq!(format!("{err:#}"), "limit must be at least 1", "format!(\"{{:#}}\", load_limit(\"0\").unwrap_err())");
+          }
+
+          #[test]
+          fn keeps_the_original_text_in_the_message() {
+              let err = load_limit("").unwrap_err();
+              assert_eq!(err.to_string(), "limit \"\" is not a number", "load_limit(\"\").unwrap_err().to_string()");
+          }

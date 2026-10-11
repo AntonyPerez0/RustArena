@@ -31,7 +31,7 @@ export default function Daily() {
     return { key, state: key in daily ? (daily[key] ? "right" : "wrong") : "none", label: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) };
   });
   // The answer text is only kept for this visit; the result (right or wrong) is saved.
-  const givenKey = `cpp-arena-daily-${day}`;
+  const givenKey = `rustarena-daily-${day}`;
   let given = "";
   try {
     given = sessionStorage.getItem(givenKey) ?? "";

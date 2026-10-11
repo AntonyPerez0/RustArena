@@ -1,0 +1,1359 @@
+id: ownership
+title: Ownership
+phase: "Ownership"
+summary: Where your data lives (stack and heap), who is responsible for freeing it, and why assigning a String moves it. The rules that make Rust memory-safe without a garbage collector.
+roadmap: [Ownership Rules & Memory Safety, "Deep Dive: Stack vs Heap"]
+steps:
+  - title: "Stack and heap: where values live"
+    id: ownership-1
+    text: |
+      Every value your program works with is stored somewhere in the computer's memory. To understand Rust's most famous feature, **ownership**, you first need a picture of the two places a running program keeps its data: the **stack** and the **heap**.
+
+      ### The stack
+
+      The **stack** holds the local variables of the functions that are running right now. Each function call gets its own block of space, a **stack frame**, big enough for all of its variables. When the function returns, its whole frame is thrown away in one go. Making and removing frames is just moving a pointer up and down, so the stack is extremely fast.
+
+      The catch: everything on the stack must have a **size known at compile time**. An `i32` is always 4 bytes, an `f64` 8 bytes, an array `[i32; 3]` 12 bytes. The compiler lays out each frame before the program ever runs.
+
+      ### The heap
+
+      What about text the user types in, or a list that grows while the program runs? Their size isn't known until run time, and it can change. That data goes on the **heap**: a big pool of memory where the program can ask for a block of any size while it runs. Asking for a block is called **allocating**. The **allocator** finds free space and hands back its address, a **pointer**. When the program is done with the block, it must give it back (**free** it) so the space can be reused.
+
+      A `String` uses both. The text lives on the heap. The `String` value itself is a small, fixed-size **handle** on the stack holding three numbers: a pointer to the text, its **length** (bytes in use) and its **capacity** (bytes reserved).
+
+      ```text
+      fn main() {
+          let lives = 3;
+          let name = String::from("Ferris");
+      }
+
+            STACK (main's frame)                     HEAP
+           ┌───────┬──────────────────┐
+           │ lives │ 3                │
+           ├───────┼──────────────────┤          ┌───┬───┬───┬───┬───┬───┐
+           │ name  │ ptr  ────────────┼────────► │ F │ e │ r │ r │ i │ s │
+           │       │ len       6      │          └───┴───┴───┴───┴───┴───┘
+           │       │ capacity  6      │
+           └───────┴──────────────────┘
+      ```
+
+      A `Vec` is built the same way: pointer, length and capacity on the stack, the elements on the heap. That's why both can grow: when they run out of capacity, they allocate a bigger block on the heap and move their contents there, while the handle on the stack keeps the same size.
+
+      You can check sizes with `std::mem::size_of::<T>()`, which tells you how many bytes a value of type `T` takes on the stack. The `::<T>` part names the type you're asking about, and `use std::mem::size_of;` at the top lets you write `size_of` instead of the full path.
+
+      ```rust run
+      use std::mem::size_of;
+
+      fn main() {
+          let short = String::from("hi");
+          let long = String::from("a much longer piece of text");
+          println!("i32: {} bytes", size_of::<i32>());
+          println!("[i32; 3]: {} bytes", size_of::<[i32; 3]>());
+          println!("String handle: {} bytes", size_of::<String>());
+          println!("text on the heap: {} and {} bytes", short.len(), long.len());
+      }
+      ```
+
+      ```output
+      i32: 4 bytes
+      [i32; 3]: 12 bytes
+      String handle: 24 bytes
+      text on the heap: 2 and 27 bytes
+      ```
+
+      The handle is 24 bytes (three 8-byte numbers on a 64-bit machine) whether the text is 2 bytes or 2 gigabytes. The text itself is somewhere else.
+
+      ### Who cleans up the heap?
+
+      Stack memory cleans itself up when a function returns. Heap memory doesn't: something has to free each block, **exactly once**, **after** the last time it's used. Programming languages answer this in three ways:
+
+      | Approach | Languages | The catch |
+      |---|---|---|
+      | You free memory by hand | C, C++ (`malloc`/`free`, `new`/`delete`) | Forget it: a **memory leak**. Free twice: a **double free**. Use the memory after freeing it: a **use-after-free**. These bugs crash programs and are the classic source of security holes. |
+      | A **garbage collector** finds unused memory while the program runs | Java, Python, Go, JavaScript, C# | Safe, but it costs CPU time and memory, and can pause the program at moments you don't control. |
+      | **Ownership**: the compiler works out where to free, using rules it checks at compile time | Rust | You have to follow the rules. That's what this module teaches. |
+
+      Microsoft and Google's Chrome team have both reported that around 70% of their serious security bugs are memory-safety bugs like these. Rust's ownership rules make use-after-free and double free impossible in normal (safe) Rust, with no garbage collector and no run-time cost: the compiler inserts the code that frees memory exactly where it belongs.
+
+      ### Common mistakes
+
+      - **Thinking a `String` holds its text inline.** It holds a *pointer* to the text. Copying the handle doesn't copy the text, which is exactly why the next steps matter.
+      - **Thinking string literals live on the heap.** `"hi"` is stored in the program's binary, read-only. `String::from("hi")` copies those bytes into a new heap block that the `String` is responsible for.
+      - **Mixing up length and capacity.** `.len()` is how many bytes are in use. The capacity is how many are reserved, so that pushing more text doesn't have to allocate every time.
+
+      **Your turn:** fill in the blanks so the program prints the size of the `String` handle (the type name goes inside `::<>`) and the number of bytes the city's text takes on the heap. It should print:
+
+      ```
+      handle: 24 bytes
+      city text: 4 bytes
+      motto text: 17 bytes
+      ```
+    fill: |
+      fn main() {
+          let city = String::from("Oslo");
+          let motto = String::from("Rust never sleeps");
+          // The handle on the stack: always the same size.
+          println!("handle: {} bytes", std::mem::size_of::<[[String]]>());
+          // The text on the heap: .len() counts its bytes.
+          println!("city text: {} bytes", city.[[len()]]);
+          println!("motto text: {} bytes", motto.len());
+      }
+    hints:
+      - The first blank is a type name, the type of `city` and `motto`.
+      - "The second blank is the method that counts bytes in use, with its parentheses: the same one used on the next line."
+    tests:
+      - expect: "handle: 24 bytes\ncity text: 4 bytes\nmotto text: 17 bytes"
+    more:
+      - task: |
+          A `Vec` is a handle too. Fill in the type on the second line (a vector of `i32`) and the method that counts the vector's elements, so the program prints:
+
+          ```
+          array: 16 bytes
+          Vec handle: 24 bytes
+          8 readings, still a 24-byte handle
+          ```
+
+          Notice the difference: the array's numbers are all on the stack (4 × 4 bytes), while the Vec's numbers are on the heap.
+        fill: |
+          fn main() {
+              // An array lives entirely on the stack: 4 numbers of 4 bytes each.
+              println!("array: {} bytes", std::mem::size_of::<[i32; 4]>());
+              // A Vec is a handle (pointer, length, capacity); its elements are on the heap.
+              println!("Vec handle: {} bytes", std::mem::size_of::<[[Vec<i32>]]>());
+              let readings = vec![12, 15, 11, 14, 13, 16, 12, 10];
+              println!("{} readings, still a {}-byte handle", readings.[[len()]], std::mem::size_of::<Vec<i32>>());
+          }
+        hints:
+          - "A vector of `i32` is written `Vec<i32>`: it's the same type as on the last line."
+          - "Vectors count their elements with `.len()`, like strings."
+        tests:
+          - expect: "array: 16 bytes\nVec handle: 24 bytes\n8 readings, still a 24-byte handle"
+      - task: |
+          A `String` can grow because its text is on the heap. Starting from the empty `String` in the starter code, write a `for` loop that runs 4 times. Each time, push `"=="` onto `bar` with `push_str` and print `bar`. After the loop, print its length. The output should be:
+
+          ```
+          ==
+          ====
+          ======
+          ========
+          bar: 8 bytes
+          ```
+        seed: |
+          fn main() {
+              let mut bar = String::new();
+              // Your loop here, then print the length.
+          }
+        solution: |
+          fn main() {
+              let mut bar = String::new();
+              // Your loop here, then print the length.
+              for _ in 0..4 {
+                  bar.push_str("==");
+                  println!("{}", bar);
+              }
+              println!("bar: {} bytes", bar.len());
+          }
+        require:
+          - pattern: '\.push_str\('
+            message: Grow the String with `push_str`.
+          - pattern: '\bfor\b'
+            message: Use a `for` loop to push four times.
+        hints:
+          - "`for _ in 0..4 { ... }` runs the body 4 times; `_` means you don't need the loop counter."
+          - "Inside the loop: `bar.push_str(\"==\");` then `println!(\"{}\", bar);`. After it: `println!(\"bar: {} bytes\", bar.len());`"
+        tests:
+          - expect: "==\n====\n======\n========\nbar: 8 bytes"
+
+  - title: Owners and scope
+    id: ownership-2
+    text: |
+      Rust's answer to "who frees the heap memory, and when?" is a short set of rules. Learn them by heart: everything in this module and the next two follows from them.
+
+      > **The ownership rules**
+      >
+      > 1. Each value in Rust has an **owner**: the variable that holds it.
+      > 2. There can only be **one owner at a time**.
+      > 3. When the owner goes **out of scope**, the value is **dropped**: Rust frees its memory.
+
+      A variable's **scope** is the stretch of code where it can be used: from its `let` to the `}` that closes the block it was declared in. A **block** is any `{ ... }`: a function body, an `if` branch, a loop body, or a bare pair of braces.
+
+      ```rust run
+      fn main() {
+          let arena = String::from("Crab Arena");     // arena is valid from here...
+          {
+              let fighter = String::from("Ferris");   // fighter is valid from here...
+              println!("{} enters {}", fighter, arena);
+          }                                           // ...to here: fighter is dropped
+          println!("{} is empty again", arena);
+      }                                               // ...to here: arena is dropped
+      ```
+
+      ```output
+      Ferris enters Crab Arena
+      Crab Arena is empty again
+      ```
+
+      At each closing brace, Rust **drops** the variables declared in that block, newest first. Dropping a `String` frees its heap text. You never write that code: the compiler adds it at exactly the place where the owner's scope ends. So memory is freed **deterministically** (you can point at the line where it happens), not "at some point later" as with a garbage collector.
+
+      This idea of tying a resource to a scope works for more than memory: files close themselves, network connections hang up and locks unlock when their owner goes out of scope. C++ programmers call it **RAII** ("resource acquisition is initialization"). In Rust it's simply how every value works.
+
+      ### Using a variable outside its scope
+
+      ```rust compile_fail
+      fn main() {
+          {
+              let ticket = String::from("T-100");
+              println!("{}", ticket);
+          }
+          println!("{}", ticket);
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find value `ticket` in this scope
+       --> src/main.rs:6:20
+        |
+      6 |     println!("{}", ticket);
+        |                    ^^^^^^
+        |
+      help: the binding `ticket` is available in a different scope in the same function
+      ```
+
+      After the inner block ends, `ticket` and its text are gone. If you need a value after a block, declare it **before** the block, in the outer scope. Or let the block hand the value out as its result, like an `if` expression does:
+
+      ```rust run
+      fn main() {
+          let points = 72;
+          let rank = if points >= 50 {
+              String::from("silver")
+          } else {
+              String::from("bronze")
+          };
+          println!("{} points: {}", points, rank);
+      }
+      ```
+
+      ```output
+      72 points: silver
+      ```
+
+      The `String` is created inside a branch, but the branch hands it to `rank`, which lives in the outer scope, so it isn't dropped at the branch's `}`. Handing a value from one owner to another is called a **move**: the next step.
+
+      ### Common mistakes
+
+      - **Declaring inside a loop or `if`, using it after.** A `let` inside a loop body creates a fresh variable every round and drops it at the end of that round.
+      - **Looking for a way to free memory yourself.** There's no `free` to call. (There is a way to drop a value early, `drop(value)`, which you'll meet in step 5.)
+      - **Thinking scope means "until the function returns".** It ends at the closing brace of the innermost block that contains the `let`.
+
+      **Your turn:** this program doesn't compile because `weapon` is used after its scope has ended. Move its declaration so it lives long enough, and make the program print:
+
+      ```
+      Ferris picks up the claw
+      Ferris still holds the claw
+      ```
+    seed: |
+      fn main() {
+          let player = String::from("Ferris");
+          {
+              let weapon = String::from("claw");
+              println!("{} picks up the {}", player, weapon);
+          }
+          println!("{} still holds the {}", player, weapon);
+      }
+    solution: |
+      fn main() {
+          let player = String::from("Ferris");
+          let weapon = String::from("claw");
+          {
+              println!("{} picks up the {}", player, weapon);
+          }
+          println!("{} still holds the {}", player, weapon);
+      }
+    hints:
+      - "Read the error: `weapon` only exists inside the inner `{ }` block."
+      - "Move the line `let weapon = String::from(\"claw\");` up, next to `let player`, so it's in `main`'s scope."
+    tests:
+      - expect: "Ferris picks up the claw\nFerris still holds the claw"
+    more:
+      - task: |
+          This program should build a shopping list in one `String` and print it after the loop, but `list` is created inside the loop body: it's a new, empty `String` every round, dropped at the end of each round, and it doesn't exist after the loop at all. Fix it so the program prints:
+
+          ```
+          list: apples;bread;milk;
+          ```
+        seed: |
+          fn main() {
+              for item in ["apples", "bread", "milk"] {
+                  let mut list = String::new();
+                  list.push_str(item);
+                  list.push_str(";");
+              }
+              println!("list: {}", list);
+          }
+        solution: |
+          fn main() {
+              let mut list = String::new();
+              for item in ["apples", "bread", "milk"] {
+                  list.push_str(item);
+                  list.push_str(";");
+              }
+              println!("list: {}", list);
+          }
+        hints:
+          - The list has to exist before the loop starts and still exist after it ends.
+          - "Move `let mut list = String::new();` above the `for` line."
+        tests:
+          - expect: "list: apples;bread;milk;"
+      - task: |
+          The program reads a number of points and should print a rank: `gold` for 100 or more, `silver` for 50 or more, `bronze` otherwise. It doesn't compile: each `rank` only lives inside its own branch. Rewrite it so the `if` expression **hands the String out** to one `rank` variable in `main`'s scope. For the input `120` it prints:
+
+          ```
+          rank: gold
+          ```
+        seed: |
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              let points: u32 = line.trim().parse().expect("not a number");
+              if points >= 100 {
+                  let rank = String::from("gold");
+              } else if points >= 50 {
+                  let rank = String::from("silver");
+              } else {
+                  let rank = String::from("bronze");
+              }
+              println!("rank: {}", rank);
+          }
+        solution: |
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              let points: u32 = line.trim().parse().expect("not a number");
+              let rank = if points >= 100 {
+                  String::from("gold")
+              } else if points >= 50 {
+                  String::from("silver")
+              } else {
+                  String::from("bronze")
+              };
+              println!("rank: {}", rank);
+          }
+        require:
+          - pattern: 'let\s+rank\s*=\s*if\b'
+            message: "Write it as one `let rank = if ... { ... } else { ... };` expression."
+        hints:
+          - "An `if` is an expression: `let rank = if cond { a } else { b };` gives `rank` the value of the branch that ran."
+          - "Inside each branch, write just `String::from(\"gold\")` (no `let`, no semicolon), and put a `;` after the final `}`."
+        tests:
+          - stdin: "120\n"
+          - stdin: "75\n"
+            hidden: true
+          - stdin: "50\n"
+            hidden: true
+          - stdin: "10\n"
+            hidden: true
+
+  - title: "Moves: one owner at a time"
+    id: ownership-3
+    text: |
+      Copying an integer is easy:
+
+      ```rust run
+      fn main() {
+          let a = 5;
+          let b = a;
+          println!("a = {}, b = {}", a, b);
+      }
+      ```
+
+      ```output
+      a = 5, b = 5
+      ```
+
+      `b` gets its own copy of the 4 bytes, and both variables can be used. Now try the same with a `String`:
+
+      ```rust compile_fail
+      fn main() {
+          let s1 = String::from("hello");
+          let s2 = s1;
+          println!("{} {}", s1, s2);
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `s1`
+       --> src/main.rs:4:23
+        |
+      2 |     let s1 = String::from("hello");
+        |         -- move occurs because `s1` has type `String`, which does not implement the `Copy` trait
+      3 |     let s2 = s1;
+        |              -- value moved here
+      4 |     println!("{} {}", s1, s2);
+        |                       ^^ value borrowed here after move
+      ```
+
+      What happened? `let s2 = s1;` copies the **handle** (pointer, length, capacity), not the heap text. If Rust stopped there, two variables would point at the same text:
+
+      ```text
+           s1                     s2
+          ┌────────────┐         ┌────────────┐
+          │ ptr ───────┼──┐   ┌──┼──── ptr    │
+          │ len 5      │  │   │  │ len 5      │
+          │ cap 5      │  │   │  │ cap 5      │
+          └────────────┘  ▼   ▼  └────────────┘
+                        ┌───┬───┬───┬───┬───┐
+                  HEAP  │ h │ e │ l │ l │ o │
+                        └───┴───┴───┴───┴───┘
+      ```
+
+      At the end of `main` both would be dropped, and the same heap block would be freed **twice**: a double free, one of the bugs that corrupt memory in C programs. Rule 2 forbids it: a value has one owner at a time. So `let s2 = s1;` **moves** ownership from `s1` to `s2`, and `s1` can't be used any more. Only `s2` will free the text.
+
+      ```text
+           s1  (moved out: unusable)        s2
+          ┌────────────┐                   ┌────────────┐
+          │ ░░░░░░░░░░ │                   │ ptr ───────┼──┐
+          │ ░░░░░░░░░░ │                   │ len 5      │  │
+          │ ░░░░░░░░░░ │                   │ cap 5      │  │
+          └────────────┘                   └────────────┘  ▼
+                                         ┌───┬───┬───┬───┬───┐
+                                   HEAP  │ h │ e │ l │ l │ o │
+                                         └───┴───┴───┴───┴───┘
+      ```
+
+      Read the error message again with that picture in mind. It names the type (`String`, which "does not implement the `Copy` trait": next step), the line where the value moved, and the line where you used it afterwards. It says "borrow" because `println!` *borrows* its arguments to print them; borrowing is the next module. The full message also suggests `.clone()`, which is one fix; step 4 covers when it's the right one.
+
+      A move is cheap: only the 24-byte handle is copied, however long the text is. Nothing on the heap is touched.
+
+      ### Use the new owner
+
+      Usually the fix is to keep using the value through its new owner, or to finish with the old name before the move:
+
+      ```rust run
+      fn main() {
+          let draft = String::from("Patch notes v1.2");
+          println!("draft: {}", draft);       // use it before the move...
+          let published = draft;              // ...ownership moves here
+          println!("published: {}", published);
+      }
+      ```
+
+      ```output
+      draft: Patch notes v1.2
+      published: Patch notes v1.2
+      ```
+
+      ### Where moves happen
+
+      Any time a value that isn't `Copy` (like `String` and `Vec`, and most types you'll write) is handed to something else:
+
+      - assigning it: `let b = a;`
+      - passing it to a function (step 5)
+      - pushing it into a vector: `names.push(name);`
+      - looping over a vector with `for x in v`: the loop takes ownership of `v` and hands out its elements one by one. After the loop, `v` is gone.
+
+      ```rust compile_fail
+      fn main() {
+          let names = vec![String::from("Ana"), String::from("Ben")];
+          for name in names {
+              println!("{}", name);
+          }
+          println!("{} names", names.len());
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `names`
+       --> src/main.rs:6:26
+        |
+      3 |     for name in names {
+        |                 ----- `names` moved due to this implicit call to `.into_iter()`
+      ...
+      6 |     println!("{} names", names.len());
+        |                          ^^^^^ value borrowed here after move
+      ```
+
+      Fix it by finishing with `names` before the loop (`let count = names.len();`), or by looping over a reference with `for name in &names`, which the compiler suggests and which you'll learn in the next module.
+
+      ### Reusing a moved-from variable
+
+      Moving out of a variable leaves it empty, not destroyed. If it's `mut`, you can give it a new value and use it again:
+
+      ```rust run
+      fn main() {
+          let mut current = String::from("level 1");
+          let finished = current;
+          current = String::from("level 2");
+          println!("finished {}, now playing {}", finished, current);
+      }
+      ```
+
+      ```output
+      finished level 1, now playing level 2
+      ```
+
+      ### Common mistakes
+
+      - **Using a value after moving it** (E0382). Find the "value moved here" line in the error, then use the new owner, or reorder so the old name is used first.
+      - **Moving inside a loop.** `let bag = item;` inside a loop moves `item` in the first round, so the next round fails with ``use of moved value: `item` `` and the note `value moved here, in previous iteration of loop`.
+      - **Thinking a move is expensive.** It copies three numbers. The text stays where it is.
+
+      **Your turn:** the program uses `item` after it moved into `backpack`. Fix it **without** `.clone()` and without creating a second `String`: reorder the lines or use the new owner, so it prints:
+
+      ```
+      Picked up: health potion
+      Backpack holds: health potion
+      ```
+    seed: |
+      fn main() {
+          let item = String::from("health potion");
+          let backpack = item;
+          println!("Picked up: {}", item);
+          println!("Backpack holds: {}", backpack);
+      }
+    solution: |
+      fn main() {
+          let item = String::from("health potion");
+          println!("Picked up: {}", item);
+          let backpack = item;
+          println!("Backpack holds: {}", backpack);
+      }
+    forbid:
+      - pattern: '\.clone\(\)'
+        message: "No `.clone()` needed: use the value before it moves, or use the new owner."
+      - pattern: 'String::from[\s\S]*String::from|to_string|to_owned'
+        message: "Don't create a second String: there's one value with one owner at a time."
+    hints:
+      - "After `let backpack = item;` the text belongs to `backpack`, and `item` can't be used."
+      - "Move the `println!(\"Picked up: ...\")` line above `let backpack = item;`, or print `backpack` instead of `item`."
+    tests:
+      - expect: "Picked up: health potion\nBackpack holds: health potion"
+    more:
+      - task: |
+          The `for` loop takes ownership of `orders`, so `orders.len()` after the loop doesn't compile. Without `.clone()`, fix it by counting the orders **before** the loop, so the program prints:
+
+          ```
+          Cooking #101 pizza
+          Cooking #102 soup
+          Cooking #103 salad
+          3 orders done
+          ```
+        seed: |
+          fn main() {
+              let orders = vec![
+                  String::from("#101 pizza"),
+                  String::from("#102 soup"),
+                  String::from("#103 salad"),
+              ];
+              for order in orders {
+                  println!("Cooking {}", order);
+              }
+              println!("{} orders done", orders.len());
+          }
+        solution: |
+          fn main() {
+              let orders = vec![
+                  String::from("#101 pizza"),
+                  String::from("#102 soup"),
+                  String::from("#103 salad"),
+              ];
+              let count = orders.len();
+              for order in orders {
+                  println!("Cooking {}", order);
+              }
+              println!("{} orders done", count);
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "Don't clone the whole vector: just save its length before the loop."
+        hints:
+          - "`orders.len()` returns a `usize`, a plain number that you can keep in a variable."
+          - "Add `let count = orders.len();` before the `for`, and print `count` at the end."
+        tests:
+          - expect: "Cooking #101 pizza\nCooking #102 soup\nCooking #103 salad\n3 orders done"
+      - task: |
+          Swap what the two hands hold, using **moves only**: no `.clone()`, no new strings. You'll need a third variable to hold one of the values for a moment (moving out of `left` leaves it empty, and since it's `mut`, you can move a new value into it). The program should print:
+
+          ```
+          left hand: shield, right hand: sword
+          ```
+        seed: |
+          fn main() {
+              let mut left = String::from("sword");
+              let mut right = String::from("shield");
+              // Swap them here, using moves only.
+
+              println!("left hand: {}, right hand: {}", left, right);
+          }
+        solution: |
+          fn main() {
+              let mut left = String::from("sword");
+              let mut right = String::from("shield");
+              // Swap them here, using moves only.
+              let held = left;
+              left = right;
+              right = held;
+              println!("left hand: {}, right hand: {}", left, right);
+          }
+        forbid:
+          - pattern: '\.clone\(\)|to_string|to_owned|swap'
+            message: "Do it with three moves (`let held = left;` and two assignments), no clones or swap helpers."
+          - pattern: 'String::from[\s\S]*String::from[\s\S]*String::from'
+            message: "Don't create new strings: move the two you have."
+        hints:
+          - "Step one: move `left` into a new variable, `let held = left;`. Now `left` is empty."
+          - "Then `left = right;` (now `right` is empty) and `right = held;`."
+        tests:
+          - expect: "left hand: shield, right hand: sword"
+
+  - title: Copy types and clone
+    id: ownership-4
+    text: |
+      Why did `let b = a;` leave `a` usable when `a` was an integer? Because `i32` is a **`Copy` type**. Its value lives entirely on the stack and copying it is as cheap as moving it, so Rust simply copies it and both variables stay valid. There's no heap block that could be freed twice.
+
+      These types are `Copy`:
+
+      - all integers (`i32`, `u8`, `usize`, ...) and floats (`f64`, `f32`)
+      - `bool` and `char`
+      - tuples and arrays made only of `Copy` types: `(i32, bool)`, `[f64; 3]`
+      - string literals (`&str`): copying one copies a pointer to text stored in the program, never the text itself
+
+      These are **not** `Copy`: `String`, `Vec<T>`, and anything that contains one, like `(String, i32)` or `[String; 2]`. The rule of thumb: **if a type owns heap memory, it isn't `Copy`**, because copying its handle would create two owners.
+
+      ```rust run
+      fn main() {
+          let score = 1200;          // i32 is Copy
+          let pos = (3, 4);          // a tuple of Copy types is Copy
+          let best = score;
+          let start = pos;
+          println!("{} {}", score, best);
+          println!("{:?} {:?}", pos, start);
+      }
+      ```
+
+      ```output
+      1200 1200
+      (3, 4) (3, 4)
+      ```
+
+      One `String` inside a tuple is enough to make the whole tuple move:
+
+      ```rust compile_fail
+      fn main() {
+          let player = (String::from("Ferris"), 100);
+          let backup = player;
+          println!("{:?} {:?}", player, backup);
+      }
+      ```
+
+      ```error
+      error[E0382]: borrow of moved value: `player`
+        |
+      2 |     let player = (String::from("Ferris"), 100);
+        |         ------ move occurs because `player` has type `(String, i32)`, which does not implement the `Copy` trait
+      ```
+
+      ### clone: an explicit deep copy
+
+      When you really need two independent `String`s or `Vec`s, ask for one with `.clone()`. It allocates a **new** heap block and copies every byte into it:
+
+      ```text
+      let a = String::from("hi");
+      let b = a.clone();
+
+           a                              b
+          ┌────────────┐                 ┌────────────┐
+          │ ptr ───────┼──┐              │ ptr ───────┼──┐
+          │ len 2      │  │              │ len 2      │  │
+          │ cap 2      │  │              │ cap 2      │  │
+          └────────────┘  ▼              └────────────┘  ▼
+                        ┌───┬───┐                      ┌───┬───┐
+                  HEAP  │ h │ i │                      │ h │ i │
+                        └───┴───┘                      └───┴───┘
+      ```
+
+      Two owners, two heap blocks: each is freed once, by its own owner. Changing one doesn't affect the other:
+
+      ```rust run
+      fn main() {
+          let defaults = vec![String::from("sound: on"), String::from("music: on")];
+          let mut custom = defaults.clone();
+          custom.push(String::from("subtitles: on"));
+          println!("defaults: {:?}", defaults);
+          println!("custom: {:?}", custom);
+      }
+      ```
+
+      ```output
+      defaults: ["sound: on", "music: on"]
+      custom: ["sound: on", "music: on", "subtitles: on"]
+      ```
+
+      ### What clone costs
+
+      Cloning a `String` means one allocation plus copying all of its bytes. Cloning a `Vec<String>` clones the vector **and every string in it**: here, three allocations. For a few short strings, nobody will notice. Inside a loop that runs a million times, or on the contents of a 50 MB file, you will. A move, by contrast, always copies just the 24-byte handle.
+
+      **Workplace note:** `.clone()` is the quickest way to make an ownership error go away, which is why reviewers ask "do we really need a copy here?" when they see one. Often the better answer is borrowing (next module). Clone when you truly need two independent values, for example when you'll change one and must keep the other as it was. Cloning a small string once is fine; don't feel bad about it. And `cargo clippy` warns about `.clone()` on a `Copy` type (the `clone_on_copy` lint): just write `x`.
+
+      ### Common mistakes
+
+      - **Cloning to silence every error.** It compiles, but it hides a design question and costs memory and time.
+      - **Expecting a tuple or array with a `String` inside to be `Copy`.** It's only `Copy` if every part is.
+      - **Calling `.clone()` on an `i32` or `bool`.** It works, but it's noise: `Copy` types copy themselves.
+
+      **Your turn:** `template` must stay unchanged while `letter` gets extra text. Right now `template` moves into `letter`, so it can't be printed afterwards. Add **one** `.clone()` in the right place so the program prints:
+
+      ```
+      Dear customer,
+      Dear customer, your order has shipped.
+      ```
+    seed: |
+      fn main() {
+          let template = String::from("Dear customer,");
+          let mut letter = template;
+          letter.push_str(" your order has shipped.");
+          println!("{}", template);
+          println!("{}", letter);
+      }
+    solution: |
+      fn main() {
+          let template = String::from("Dear customer,");
+          let mut letter = template.clone();
+          letter.push_str(" your order has shipped.");
+          println!("{}", template);
+          println!("{}", letter);
+      }
+    require:
+      - pattern: 'template\.clone\(\)'
+        message: "Give `letter` its own copy with `template.clone()`."
+    hints:
+      - Both strings have to exist at the same time with different text, so they need separate heap blocks.
+      - "Change the second line to `let mut letter = template.clone();`."
+    tests:
+      - expect: "Dear customer,\nDear customer, your order has shipped."
+    more:
+      - task: |
+          The program saves the old high score, champion and lineup, then changes the current ones. It doesn't compile: two of the three "saves" are moves. Add `.clone()` **only where it's needed**: `high_score` is an `i32`, which is `Copy`, so it must not be cloned. The program should print:
+
+          ```
+          was: 9500 by Ferris (2 players)
+          now: 9800 by Ferris II (3 players)
+          ```
+        seed: |
+          fn main() {
+              let mut high_score = 9500;
+              let mut champion = String::from("Ferris");
+              let mut lineup = vec![String::from("Ferris"), String::from("Corro")];
+
+              let old_score = high_score;
+              let old_champion = champion;
+              let old_lineup = lineup;
+
+              high_score = 9800;
+              champion.push_str(" II");
+              lineup.push(String::from("Sunny"));
+
+              println!("was: {} by {} ({} players)", old_score, old_champion, old_lineup.len());
+              println!("now: {} by {} ({} players)", high_score, champion, lineup.len());
+          }
+        solution: |
+          fn main() {
+              let mut high_score = 9500;
+              let mut champion = String::from("Ferris");
+              let mut lineup = vec![String::from("Ferris"), String::from("Corro")];
+
+              let old_score = high_score;
+              let old_champion = champion.clone();
+              let old_lineup = lineup.clone();
+
+              high_score = 9800;
+              champion.push_str(" II");
+              lineup.push(String::from("Sunny"));
+
+              println!("was: {} by {} ({} players)", old_score, old_champion, old_lineup.len());
+              println!("now: {} by {} ({} players)", high_score, champion, lineup.len());
+          }
+        require:
+          - pattern: 'champion\.clone\(\)'
+            message: "`champion` is a String: the saved copy needs `.clone()`."
+          - pattern: 'lineup\.clone\(\)'
+            message: "`lineup` is a Vec: the saved copy needs `.clone()`."
+        forbid:
+          - pattern: 'high_score\.clone\(\)'
+            message: "`high_score` is an i32, which is Copy: plain assignment already copies it."
+        hints:
+          - "Look at the types: which of the three own heap memory?"
+          - "`let old_champion = champion.clone();` and `let old_lineup = lineup.clone();`. Leave `old_score` as it is."
+        tests:
+          - expect: "was: 9500 by Ferris (2 players)\nnow: 9800 by Ferris II (3 players)"
+      - task: |
+          The program reads player names, one per line. Each `name` should be **moved** into `players`, and a **copy** should be kept in `longest` whenever the name is longer than the longest so far (the first one wins a tie). Fill in the loop body. For the input:
+
+          ```
+          Ana
+          Bartholomew
+          Cy
+          ```
+
+          it prints:
+
+          ```
+          3 players
+          longest name: Bartholomew
+          ```
+
+          (`std::io::stdin().lines()` gives you each input line as an owned `String`, wrapped in a `Result`, which is why each line needs `.expect(...)`.)
+        seed: |
+          fn main() {
+              let mut players: Vec<String> = Vec::new();
+              let mut longest = String::new();
+              for line in std::io::stdin().lines() {
+                  let name = line.expect("could not read a line");
+                  // Keep a copy in `longest` if this name is longer,
+                  // then move `name` into `players`.
+              }
+              println!("{} players", players.len());
+              println!("longest name: {}", longest);
+          }
+        solution: |
+          fn main() {
+              let mut players: Vec<String> = Vec::new();
+              let mut longest = String::new();
+              for line in std::io::stdin().lines() {
+                  let name = line.expect("could not read a line");
+                  // Keep a copy in `longest` if this name is longer,
+                  // then move `name` into `players`.
+                  if name.len() > longest.len() {
+                      longest = name.clone();
+                  }
+                  players.push(name);
+              }
+              println!("{} players", players.len());
+              println!("longest name: {}", longest);
+          }
+        require:
+          - pattern: '\.clone\(\)'
+            message: "`longest` and `players` both need the name, so one of them gets a `.clone()`."
+          - pattern: '\.push\(\s*name\s*\)'
+            message: "Move the name itself into the vector with `players.push(name)`."
+        hints:
+          - "Compare with `if name.len() > longest.len() { ... }`."
+          - "Inside the `if`: `longest = name.clone();`. After the `if`: `players.push(name);`. The order matters: after the push, `name` has moved."
+        tests:
+          - stdin: "Ana\nBartholomew\nCy\n"
+          - stdin: "Zed\nIvy\n"
+            hidden: true
+          - stdin: "Mo\nLeonardo\nRaphael\nDonatello\n"
+            hidden: true
+
+  - title: Ownership and functions
+    id: ownership-5
+    text: |
+      Passing a value to a function works exactly like assigning it to a variable: a `String` argument **moves** into the parameter, and an `i32` argument is **copied**. The parameter is the new owner, and its scope is the function's body.
+
+      ```rust run
+      fn print_ticket(ticket: String) {   // ticket takes ownership
+          println!("Ticket: {}", ticket);
+      }                                   // ticket goes out of scope: the String is dropped
+
+      fn print_seat(seat: u32) {          // seat gets a copy
+          println!("Seat: {}", seat);
+      }
+
+      fn main() {
+          let t = String::from("T-42");
+          let s = 17;
+          print_ticket(t);                // t moves into the function
+          print_seat(s);                  // s is copied
+          println!("seat {} is still usable here", s);
+          // println!("{}", t);           // error: t was moved
+      }
+      ```
+
+      ```output
+      Ticket: T-42
+      Seat: 17
+      seat 17 is still usable here
+      ```
+
+      Call `print_ticket(t)` twice and the second call fails:
+
+      ```rust compile_fail
+      fn print_ticket(ticket: String) {
+          println!("Ticket: {}", ticket);
+      }
+
+      fn main() {
+          let t = String::from("T-42");
+          print_ticket(t);
+          print_ticket(t);
+      }
+      ```
+
+      ```error
+      error[E0382]: use of moved value: `t`
+        |
+      6 |     let t = String::from("T-42");
+        |         - move occurs because `t` has type `String`, which does not implement the `Copy` trait
+      7 |     print_ticket(t);
+        |                  - value moved here
+      8 |     print_ticket(t);
+        |                  ^ value used here after move
+        |
+      note: consider changing this parameter type in function `print_ticket` to borrow instead if owning the value isn't necessary
+      ```
+
+      The note is the compiler pointing at the next module: a function that only *reads* a value usually shouldn't take ownership of it.
+
+      ### Giving ownership back
+
+      A function can also **return** a value, which moves it out to the caller. Creating a value inside a function and returning it is completely normal: it isn't dropped at the function's `}` because it has already moved out.
+
+      ```rust run
+      fn new_ticket(number: u32) -> String {
+          let ticket = format!("T-{}", number);
+          ticket                              // moves out to the caller
+      }
+
+      fn add_vip(mut ticket: String) -> String {
+          ticket.push_str(" (VIP)");
+          ticket                              // given back
+      }
+
+      fn main() {
+          let t = new_ticket(7);
+          let t = add_vip(t);                 // move in, get it back
+          println!("{}", t);
+      }
+      ```
+
+      ```output
+      T-7 (VIP)
+      ```
+
+      Two details:
+
+      - `mut ticket: String`: the function owns its parameter, so it may change it, but like any variable it has to be declared `mut`. Forget it and you get ``error[E0596]: cannot borrow `ticket` as mutable, as it is not declared as mutable``.
+      - `let t = add_vip(t);` moves the `String` in and binds what comes back. Shadowing keeps the same name.
+
+      ### Returning several values
+
+      If a function needs to look at a `String` *and* return a result, it has to give the `String` back as well, for example in a tuple:
+
+      ```rust run
+      fn measure(text: String) -> (String, usize) {
+          let n = text.chars().count();
+          (text, n)
+      }
+
+      fn main() {
+          let msg = String::from("good game");
+          let (msg, n) = measure(msg);
+          println!("'{}' has {} characters", msg, n);
+      }
+      ```
+
+      ```output
+      'good game' has 9 characters
+      ```
+
+      It works, but it's clumsy: every function that just wants to *look* at a value has to hand it back. That's exactly the problem **borrowing**, the next module, solves.
+
+      ### drop is just a function
+
+      You can drop a value early by passing it to `drop`, a function from the standard library that's always available:
+
+      ```rust run
+      fn main() {
+          let report = String::from("imagine 50 MB of text here");
+          println!("report has {} bytes", report.len());
+          drop(report);                  // freed now, not at the end of main
+          println!("memory released");
+      }
+      ```
+
+      ```output
+      report has 26 bytes
+      memory released
+      ```
+
+      There's no magic in it. Its whole definition is `pub fn drop<T>(_x: T) {}`, with an empty body. The value moves into the parameter `_x`, the function ends, `_x` goes out of scope, and the value is dropped. Ownership does the rest. (The `<T>` means "a value of any type"; you'll learn that syntax in the generics module.)
+
+      ### Common mistakes
+
+      - **Using an argument after passing it** (E0382 `use of moved value`). Either give it back, or (next module) let the function borrow it.
+      - **Forgetting to return the value**: a function that takes a `String` and doesn't return it drops it at its `}`.
+      - **Forgetting `mut` on a parameter you change** (E0596).
+
+      **Your turn:** write `mark_paid`. It takes ownership of an order description, appends ` [PAID]` (with a leading space) and gives the `String` back. For example, `mark_paid(String::from("#17 2x tacos"))` returns `"#17 2x tacos [PAID]"`.
+    seed: |
+      // Takes ownership of `order`, appends " [PAID]" and gives it back.
+      fn mark_paid(order: String) -> String {
+          todo!()
+      }
+    solution: |
+      // Takes ownership of `order`, appends " [PAID]" and gives it back.
+      fn mark_paid(mut order: String) -> String {
+          order.push_str(" [PAID]");
+          order
+      }
+    harness: |
+      #[test]
+      fn appends_the_paid_tag() {
+          let order = String::from("#17 2x tacos");
+          assert_eq!(mark_paid(order), "#17 2x tacos [PAID]", "mark_paid(\"#17 2x tacos\")");
+      }
+
+      #[test]
+      fn works_on_an_empty_order() {
+          assert_eq!(mark_paid(String::new()), " [PAID]", "mark_paid(\"\")");
+      }
+
+      #[test]
+      fn gives_ownership_back_so_it_can_be_called_again() {
+          let order = String::from("#18 soup");
+          let order = mark_paid(order);
+          let order = mark_paid(order);
+          assert_eq!(order, "#18 soup [PAID] [PAID]", "mark_paid(mark_paid(\"#18 soup\"))");
+      }
+    hints:
+      - "To change `order` inside the function, the parameter must be declared `mut order: String`."
+      - "`order.push_str(\" [PAID]\");` then end the function with just `order` (no semicolon) to give it back."
+    more:
+      - task: |
+          `char_count` takes ownership of the message and never gives it back, so `main` can't print it afterwards. Without `.clone()`, change `char_count` to return the message **and** the count as a tuple `(String, usize)`, and destructure it in `main` with `let (message, n) = char_count(message);`. The program should print:
+
+          ```
+          gg wp has 5 characters
+          ```
+        seed: |
+          // Counts the characters of a chat message.
+          fn char_count(message: String) -> usize {
+              message.chars().count()
+          }
+
+          fn main() {
+              let message = String::from("gg wp");
+              let n = char_count(message);
+              println!("{} has {} characters", message, n);
+          }
+        solution: |
+          // Counts the characters of a chat message.
+          fn char_count(message: String) -> (String, usize) {
+              let n = message.chars().count();
+              (message, n)
+          }
+
+          fn main() {
+              let message = String::from("gg wp");
+              let (message, n) = char_count(message);
+              println!("{} has {} characters", message, n);
+          }
+        require:
+          - pattern: '->\s*\(\s*String\s*,\s*usize\s*\)'
+            message: "Make `char_count` return `(String, usize)`."
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: Give the message back from the function instead of cloning it.
+        hints:
+          - "Count first, `let n = message.chars().count();`, then return both: `(message, n)`."
+          - "In `main`: `let (message, n) = char_count(message);` takes both values back out of the tuple."
+        tests:
+          - expect: "gg wp has 5 characters"
+      - task: |
+          Write `longer`, which takes ownership of two `String`s and returns the longer one (by `.len()`); if they're the same length, return `a`. The other one is simply dropped when the function ends: nothing else to do.
+        seed: |
+          fn longer(a: String, b: String) -> String {
+              todo!()
+          }
+        solution: |
+          fn longer(a: String, b: String) -> String {
+              if b.len() > a.len() { b } else { a }
+          }
+        harness: |
+          #[test]
+          fn returns_the_second_when_it_is_longer() {
+              assert_eq!(longer(String::from("crab"), String::from("lobster")), "lobster", "longer(\"crab\", \"lobster\")");
+          }
+
+          #[test]
+          fn returns_the_first_when_it_is_longer() {
+              assert_eq!(longer(String::from("octopus"), String::from("squid")), "octopus", "longer(\"octopus\", \"squid\")");
+          }
+
+          #[test]
+          fn returns_the_first_on_a_tie() {
+              assert_eq!(longer(String::from("left"), String::from("righ")), "left", "longer(\"left\", \"righ\")");
+          }
+
+          #[test]
+          fn handles_empty_strings() {
+              assert_eq!(longer(String::new(), String::from("x")), "x", "longer(\"\", \"x\")");
+              assert_eq!(longer(String::new(), String::new()), "", "longer(\"\", \"\")");
+          }
+        hints:
+          - "An `if`/`else` expression can return either parameter: whichever one you return moves out to the caller."
+          - "`if b.len() > a.len() { b } else { a }` as the function's last expression."
+
+  - title: Ownership and collections
+    id: ownership-6
+    text: |
+      A `Vec` owns its elements. Pushing a `String` moves it into the vector, and when the vector is dropped, it drops every element first. Ownership forms a tree: `main` owns `roster`, `roster` owns its strings, and each string owns its text.
+
+      ```text
+        STACK              HEAP: roster's buffer             HEAP: each string's text
+        roster            ┌──────────────────────┐
+       ┌────────────┐     │ [0] ptr ─────────────┼─────────► "Ana"
+       │ ptr ───────┼───► │     len 3   cap 3    │
+       │ len 2      │     ├──────────────────────┤
+       │ cap 4      │     │ [1] ptr ─────────────┼─────────► "Bartholomew"
+       └────────────┘     │     len 11  cap 11   │
+                          └──────────────────────┘
+      ```
+
+      When `roster` goes out of scope, the whole tree is freed, each block exactly once, without a line of code from you.
+
+      ```rust run
+      fn main() {
+          let mut roster: Vec<String> = Vec::new();
+          let name = String::from("Ana");
+          roster.push(name);                          // name moves into the Vec
+          roster.push(String::from("Bartholomew"));
+          println!("{} players: {:?}", roster.len(), roster);
+      }
+      ```
+
+      ```output
+      2 players: ["Ana", "Bartholomew"]
+      ```
+
+      `Vec::new()` creates an empty vector, like `String::new()` does for text. The annotation `Vec<String>` says what it will hold (Rust could also work that out from the first `push`).
+
+      ### You can't move out of an index
+
+      Taking an element by index is fine for `Copy` types: `let first = scores[0];` copies the number. With `String`s it doesn't compile:
+
+      ```rust compile_fail
+      fn main() {
+          let names = vec![String::from("Ana"), String::from("Ben")];
+          let first = names[0];
+          println!("{} {}", first, names.len());
+      }
+      ```
+
+      ```error
+      error[E0507]: cannot move out of index of `Vec<String>`
+       --> src/main.rs:3:17
+        |
+      3 |     let first = names[0];
+        |                 ^^^^^^^^ move occurs because value has type `String`, which does not implement the `Copy` trait
+        |
+      help: consider borrowing here
+        |
+      3 |     let first = &names[0];
+        |                 +
+      help: consider cloning the value if the performance cost is acceptable
+        |
+      3 |     let first = names[0].clone();
+        |                         ++++++++
+      ```
+
+      Why? Moving `names[0]` out would leave a hole: the vector would still believe it owns a string in slot 0 and would free it again when it's dropped. Rust refuses. The compiler's two suggestions are the real options:
+
+      - `names[0].clone()`: make your own copy; the vector keeps its string.
+      - `&names[0]`: borrow it without copying (next module).
+
+      And if you're done with the whole vector, a `for` loop moves every element out of it, one by one. That's allowed because the vector is used up as a whole:
+
+      ```rust run
+      fn main() {
+          let names = vec![String::from("Ana"), String::from("Ben")];
+          let captain = names[0].clone();     // our own copy
+          for name in names {                 // moves each String out; names is gone after
+              println!("player: {}", name);
+          }
+          println!("captain: {}", captain);
+      }
+      ```
+
+      ```output
+      player: Ana
+      player: Ben
+      captain: Ana
+      ```
+
+      ### Move, copy or clone?
+
+      | Situation | What to do |
+      |---|---|
+      | The value is a small `Copy` type (numbers, `bool`, `char`) | Nothing: it's copied automatically |
+      | You're done with the value and something else should own it now | **Move** it |
+      | You need two independent values that will change separately | **Clone** |
+      | Something only needs to read the value for a moment | **Borrow** it (next module) |
+
+      ### Why this is worth it
+
+      Look at what these rules rule out, with no garbage collector and no run-time checks:
+
+      - **Double free**: a value has one owner, so its memory is freed once.
+      - **Use after free**: memory is freed only when its owner's scope ends, and using a moved-from variable doesn't compile.
+      - **Forgotten frees**: every value is dropped when its owner goes out of scope, so you can't leak memory by forgetting a `free`.
+      - **Data races** (two threads changing the same data at once): the one-owner idea, extended by the borrowing rules of the next module, stops them at compile time. You'll see it in the threads module.
+
+      C++ has the same idea in `std::unique_ptr` and move semantics, but its compiler lets you keep using a moved-from object. Rust checks it.
+
+      ### Common mistakes
+
+      - **`let x = v[i];` with a `Vec<String>`** (E0507): clone it, or borrow it.
+      - **Using a `String` after pushing it into a vector** (E0382): use it before the push, or reach it through the vector afterwards (`println!("{}", v[0])` only borrows it, which is fine).
+      - **Looping with `for x in v` and then using `v`** (E0382).
+
+      **Your turn:** the program reads player names (one per line), adds each to a roster, and names the first player captain. It has two ownership errors. Fix the first by **reordering** (print the name before it moves), and the second with **one** `.clone()`. For the input `Ana`, `Bartholomew`, `Cy` (one per line) it prints:
+
+      ```
+      added Ana
+      added Bartholomew
+      added Cy
+      captain: Ana
+      - Ana
+      - Bartholomew
+      - Cy
+      ```
+    seed: |
+      fn main() {
+          let mut roster: Vec<String> = Vec::new();
+          for line in std::io::stdin().lines() {
+              let name = line.expect("could not read a line");
+              roster.push(name);
+              println!("added {}", name);
+          }
+          let captain = roster[0];
+          println!("captain: {}", captain);
+          for name in roster {
+              println!("- {}", name);
+          }
+      }
+    solution: |
+      fn main() {
+          let mut roster: Vec<String> = Vec::new();
+          for line in std::io::stdin().lines() {
+              let name = line.expect("could not read a line");
+              println!("added {}", name);
+              roster.push(name);
+          }
+          let captain = roster[0].clone();
+          println!("captain: {}", captain);
+          for name in roster {
+              println!("- {}", name);
+          }
+      }
+    require:
+      - pattern: 'roster\[0\]\.clone\(\)|&roster\[0\]'
+        message: "The captain can't be moved out of the roster: use `roster[0].clone()`."
+    forbid:
+      - pattern: '\.clone\(\)[\s\S]*\.clone\(\)'
+        message: "Use only one `.clone()`: fix the first error by printing the name before pushing it."
+    hints:
+      - "Error 1: after `roster.push(name);` the name belongs to the vector. Swap those two lines."
+      - "Error 2 is E0507: you can't move `roster[0]` out of the vector. Write `let captain = roster[0].clone();`."
+    tests:
+      - stdin: "Ana\nBartholomew\nCy\n"
+      - stdin: "Zoe\nMax\n"
+        hidden: true
+      - stdin: "Solo\n"
+        hidden: true
+    more:
+      - task: |
+          The program finds the most expensive product. `prices` holds `u32`s (`Copy`), so `prices[best]` is fine, but `products[best]` tries to move a `String` out of the vector. Fix that line with `.clone()` (and don't clone the price: it's `Copy`). The program should print:
+
+          ```
+          most expensive: monitor at $189
+          in stock: keyboard
+          in stock: monitor
+          in stock: mouse
+          ```
+        seed: |
+          fn main() {
+              let products = vec![String::from("keyboard"), String::from("monitor"), String::from("mouse")];
+              let prices = vec![49, 189, 25];
+
+              let mut best = 0;
+              for i in 0..prices.len() {
+                  if prices[i] > prices[best] {
+                      best = i;
+                  }
+              }
+              let top_price = prices[best];
+              let top_product = products[best];
+              println!("most expensive: {} at ${}", top_product, top_price);
+              for product in products {
+                  println!("in stock: {}", product);
+              }
+          }
+        solution: |
+          fn main() {
+              let products = vec![String::from("keyboard"), String::from("monitor"), String::from("mouse")];
+              let prices = vec![49, 189, 25];
+
+              let mut best = 0;
+              for i in 0..prices.len() {
+                  if prices[i] > prices[best] {
+                      best = i;
+                  }
+              }
+              let top_price = prices[best];
+              let top_product = products[best].clone();
+              println!("most expensive: {} at ${}", top_product, top_price);
+              for product in products {
+                  println!("in stock: {}", product);
+              }
+          }
+        forbid:
+          - pattern: 'prices\[best\]\.clone\(\)'
+            message: "Prices are u32, which is Copy: `prices[best]` already copies the number."
+        hints:
+          - "The error is E0507, cannot move out of index of `Vec<String>`."
+          - "`let top_product = products[best].clone();`"
+        tests:
+          - expect: "most expensive: monitor at $189\nin stock: keyboard\nin stock: monitor\nin stock: mouse"
+      - task: |
+          Write `build_roster`. It takes ownership of the captain and of a vector of other players, and returns a **new** vector with the captain first, followed by the others in order. Everything can be moved, so don't use `.clone()`.
+
+          For example, `build_roster(String::from("Ana"), vec![String::from("Ben"), String::from("Cy")])` returns `["Ana", "Ben", "Cy"]`.
+        seed: |
+          fn build_roster(captain: String, others: Vec<String>) -> Vec<String> {
+              todo!()
+          }
+        solution: |
+          fn build_roster(captain: String, others: Vec<String>) -> Vec<String> {
+              let mut roster = Vec::new();
+              roster.push(captain);
+              for name in others {
+                  roster.push(name);
+              }
+              roster
+          }
+        harness: |
+          #[test]
+          fn puts_the_captain_first() {
+              let roster = build_roster(String::from("Ana"), vec![String::from("Ben"), String::from("Cy")]);
+              assert_eq!(roster, vec!["Ana", "Ben", "Cy"], "build_roster(\"Ana\", [\"Ben\", \"Cy\"])");
+          }
+
+          #[test]
+          fn works_with_no_other_players() {
+              let roster = build_roster(String::from("Solo"), Vec::new());
+              assert_eq!(roster, vec!["Solo"], "build_roster(\"Solo\", [])");
+          }
+
+          #[test]
+          fn keeps_the_others_in_order() {
+              let others = vec![String::from("Zed"), String::from("Amy"), String::from("Max")];
+              let roster = build_roster(String::from("Kim"), others);
+              assert_eq!(roster, vec!["Kim", "Zed", "Amy", "Max"], "build_roster(\"Kim\", [\"Zed\", \"Amy\", \"Max\"])");
+          }
+        forbid:
+          - pattern: '\.clone\(\)'
+            message: "No clones needed: the function owns everything it was given, so it can move it all."
+        hints:
+          - "Start with `let mut roster = Vec::new();` and push the captain."
+          - "`for name in others { roster.push(name); }` moves each player out of `others`. Return `roster` at the end."

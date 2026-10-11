@@ -1,0 +1,186 @@
+topic: types
+drills:
+  - type: predict
+    after: types-2
+    body: |
+      println!("{} {}", 17 / 5, 17 % 5);
+    why: Integer division drops the fraction (17 / 5 is 3) and `%` gives the remainder (17 - 15 = 2).
+
+  - type: predict
+    after: types-5
+    body: |
+      let total = 7;
+      let count = 2;
+      println!("{} {}", total / count, total as f64 / count as f64);
+    why: With two integers, `/` truncates to 3. Converting both to `f64` first gives the exact 3.5.
+
+  - type: predict
+    after: types-5
+    body: |
+      println!("{} {}", 3.99_f64 as i32, 300_i32 as u8);
+    why: Float to integer drops the fraction (3). An integer that doesn't fit in `u8` keeps only its low bits, so 300 wraps to 44.
+
+  - type: predict
+    after: types-3
+    body: |
+      let hp: u8 = 250;
+      println!("{} {:?}", hp.saturating_add(10), hp.checked_add(10));
+    why: "`saturating_add` stops at `u8::MAX` (255); `checked_add` returns `None` because 260 doesn't fit in a `u8`."
+
+  - type: predict
+    after: types-6
+    body: |
+      let a = true;
+      let b = false;
+      println!("{}", !a || (a && !b));
+    why: "`!a` is false, and `a && !b` is true && true, which is true. false || true is true."
+
+  - type: predict
+    after: types-7
+    body: |
+      let c = 'A';
+      println!("{} {}", c as u32 + 1, c.to_ascii_lowercase());
+    why: "`'A'` has code point 65, so the sum is 66. `to_ascii_lowercase` gives `a`."
+
+  - type: fill
+    after: types-1
+    prompt: Print the largest value an i32 can hold.
+    body: |
+      let biggest = i32::[[MAX]];
+      println!("{biggest}");
+    why: Every integer type has `MIN` and `MAX` constants; `i32::MAX` is 2147483647.
+
+  - type: fill
+    after: types-5
+    prompt: Convert the integer so the division keeps its fraction.
+    body: |
+      let total = 10;
+      let average = total [[as]] f64 / 4.0;
+      println!("{average}");
+    why: "`as f64` turns the integer into a float, so the division gives 2.5 instead of failing to compile."
+
+  - type: fill
+    after: types-3
+    prompt: Subtract without going below zero.
+    body: |
+      let stock: u32 = 3;
+      println!("{}", stock.[[saturating_sub]](5));
+    why: "`saturating_sub` stops at the type's minimum, 0 for unsigned types, instead of panicking."
+
+  - type: bug
+    after: types-5
+    body: |
+      let total = 7;
+      let count = 2;
+      let average = total / count; // BUG
+      println!("{average}");
+    fix: let average = total as f64 / count as f64;
+    prompt: "This should print the exact average, 3.5. Click the line with the bug."
+    why: Integer division drops the fraction. Convert both sides to `f64` before dividing.
+
+  - type: bug
+    after: types-7
+    body: |
+      let initial: char = "R"; // BUG
+      println!("{}", initial.is_uppercase());
+    fix: "let initial: char = 'R';"
+    prompt: "This should print `true`. Click the line with the bug."
+    why: A `char` is written in single quotes. `"R"` is a `&str`, so the types don't match.
+
+  - type: bug
+    after: types-5
+    body: |
+      let a: u8 = 200;
+      let b: u8 = 100;
+      let sum = a + b; // BUG
+      println!("{sum}");
+    fix: let sum = a as u16 + b as u16;
+    prompt: "This should print 300. Click the line with the bug."
+    why: 300 doesn't fit in a `u8` (max 255), so the addition overflows. Widen both values to `u16` before adding.
+
+  - type: compiles
+    answer: no
+    after: types-1
+    body: |
+      let level: u8 = 256;
+      println!("{level}");
+    why: A `u8` holds 0 to 255, so the literal 256 is out of range.
+
+  - type: compiles
+    answer: no
+    after: types-4
+    body: |
+      let total = 5 + 2.5;
+      println!("{total}");
+    why: Rust never mixes integers and floats in arithmetic. Write `5.0 + 2.5`.
+
+  - type: compiles
+    answer: yes
+    after: types-7
+    body: |
+      let crab: char = '🦀';
+      println!("{crab}");
+    why: A `char` is a Unicode scalar value, so emoji and letters from any language fit.
+
+  - type: choice
+    after: types-4
+    prompt: Why do payment systems usually store money as whole cents in an integer, not as an f64?
+    choices:
+      - Floats are slower to print
+      - Floats can't store most decimal fractions like 0.10 exactly, so sums drift
+      - Integers can hold bigger numbers than f64
+      - Rust doesn't allow multiplying floats
+    answer: 2
+    why: Floats are binary approximations (0.1 + 0.2 is 0.30000000000000004). Integer cents are exact.
+
+  - type: choice
+    after: types-3
+    prompt: A u8 variable holds 255, and the program adds 1 to it at run time. What happens in a debug build?
+    choices:
+      - It becomes 256
+      - It wraps around to 0
+      - The program panics with "attempt to add with overflow"
+      - It stays at 255
+    answer: 3
+    why: Debug builds check for overflow and panic. Release builds wrap to 0. Use `wrapping_add` or `saturating_add` to choose explicitly.
+
+  - type: boss
+    after: types-5
+    prompt: |
+      A delivery app stores prices in cents as `u32`. An order has 3 items at `1299` cents each, plus a delivery fee of `499` cents. Compute the total in cents, then print it two ways:
+
+      ```
+      Total: $43.96
+      That's 43 dollars and 96 cents
+      ```
+
+      For the first line, convert to `f64` and divide by `100.0`, with two decimals. For the second, use integer `/` and `%` on the cents. Let Rust do all the arithmetic.
+    seed: |
+      fn main() {
+          let item_price: u32 = 1299;
+          let quantity: u32 = 3;
+          let delivery_fee: u32 = 499;
+      }
+    solution: |
+      fn main() {
+          let item_price: u32 = 1299;
+          let quantity: u32 = 3;
+          let delivery_fee: u32 = 499;
+          let total_cents = item_price * quantity + delivery_fee;
+          let dollars = total_cents as f64 / 100.0;
+          println!("Total: ${dollars:.2}");
+          println!("That's {} dollars and {} cents", total_cents / 100, total_cents % 100);
+      }
+    require:
+      - pattern: 'as\s+f64'
+        message: "Convert the cents with `as f64` for the first line."
+      - pattern: '%\s*100'
+        message: "Get the leftover cents with `% 100`."
+    forbid:
+      - pattern: '4396|43\.96|\b43\b|\b96\b'
+        strings: true
+        message: Compute the amounts instead of typing them.
+    hints:
+      - "`let total_cents = item_price * quantity + delivery_fee;` is 4396."
+      - "`total_cents as f64 / 100.0` printed with `{:.2}`, then `total_cents / 100` and `total_cents % 100`."
+    why: Storing cents as integers keeps money exact; floats with `{:.2}` are only for display, and `/` and `%` split the cents into dollars and cents.

@@ -1,0 +1,276 @@
+topic: structs
+drills:
+  - type: predict
+    pre: |
+      struct Counter {
+          hits: u32,
+      }
+
+      fn hit(c: &mut Counter) {
+          c.hits += 1;
+      }
+    body: |
+      let mut c = Counter { hits: 0 };
+      hit(&mut c);
+      hit(&mut c);
+      c.hits += 10;
+      println!("{}", c.hits);
+    why: Each call to hit changes the same Counter through a mutable reference, then main adds 10 directly. 1 + 1 + 10 = 12.
+
+  - type: predict
+    pre: |
+      struct Settings {
+          volume: u8,
+          music: bool,
+      }
+    body: |
+      let a = Settings { volume: 50, music: true };
+      let b = Settings { volume: 80, ..a };
+      println!("{} {} {}", a.volume, b.volume, b.music);
+    why: "b sets its own volume and takes music from a. Both fields are Copy, so a is still complete and usable afterwards."
+
+  - type: predict
+    pre: |
+      #[derive(Debug)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+    body: |
+      let p = Point { x: 1, y: -2 };
+      println!("{:?}", p);
+    why: "The derived Debug format prints the struct name, then each field as name: value inside braces."
+
+  - type: predict
+    pre: |
+      struct Rgb(u8, u8, u8);
+    body: |
+      let c = Rgb(10, 20, 30);
+      println!("{}", c.0 + c.2);
+    why: Tuple struct fields are numbered from 0, so c.0 is 10 and c.2 is 30.
+
+  - type: predict
+    pre: |
+      struct Address {
+          city: String,
+      }
+
+      struct Customer {
+          name: String,
+          address: Address,
+      }
+    body: |
+      let mut c = Customer {
+          name: String::from("Ada"),
+          address: Address { city: String::from("London") },
+      };
+      c.address.city = String::from("Paris");
+      println!("{} lives in {}", c.name, c.address.city);
+    why: c.address.city reaches into the nested struct. Because c is mut, the nested field can be replaced too.
+
+  - type: fill
+    prompt: Use the field init shorthand for the second field.
+    pre: |
+      struct Player {
+          name: String,
+          level: u32,
+      }
+
+      fn new_player(name: String, level: u32) -> Player {
+          Player { name, [[level‖level: level]] }
+      }
+    body: |
+      let p = new_player(String::from("Ferris"), 3);
+      println!("{} {}", p.name, p.level);
+    why: When a variable has the same name as the field, writing it once (level) fills the field with that variable.
+
+  - type: fill
+    prompt: Derive the trait that {:?} needs.
+    pre: |
+      #[derive([[Debug]])]
+      struct Ticket {
+          id: u32,
+          open: bool,
+      }
+    body: |
+      let t = Ticket { id: 7, open: false };
+      println!("{:?}", t);
+    why: "{:?} uses the Debug trait, and #[derive(Debug)] makes the compiler write it for you."
+
+  - type: fill
+    prompt: Take the remaining fields from base.
+    pre: |
+      struct Order {
+          id: u32,
+          express: bool,
+          quantity: u32,
+      }
+    body: |
+      let base = Order { id: 1, express: false, quantity: 3 };
+      let rush = Order { id: 2, express: true, [[..base]] };
+      println!("{} {} {}", rush.id, rush.express, rush.quantity);
+    why: Struct update syntax ..base fills every field not listed from base. It must come last.
+
+  - type: bug
+    pre: |
+      struct Player {
+          name: String,
+          score: u32,
+      }
+    body: |
+      let p = Player { name: String::from("Ferris"), score: 10 }; // BUG
+      p.score += 5;
+      println!("{} {}", p.name, p.score);
+    fix: 'let mut p = Player { name: String::from("Ferris"), score: 10 };'
+    prompt: "This should print `Ferris 15`. Click the line with the bug."
+    why: Changing a field needs a mutable instance. Without mut, the compiler rejects p.score += 5 (error E0594).
+
+  - type: bug
+    pre: |
+      struct Size(u32, u32);
+    body: |
+      let s = Size(3, 4);
+      let width = s.1; // BUG
+      let height = s.1;
+      println!("{}x{}", width, height);
+    fix: let width = s.0;
+    prompt: "This should print `3x4` (the width is the first field). Click the line with the bug."
+    why: Tuple struct fields are numbered from 0, so the first field (the width) is s.0.
+
+  - type: bug
+    pre: |
+      struct Settings {
+          volume: u8,
+          music: bool,
+      }
+    body: |
+      let a = Settings { volume: 50, music: true };
+      let b = Settings { ..a, volume: 80 }; // BUG
+      println!("{} {}", b.volume, b.music);
+    fix: 'let b = Settings { volume: 80, ..a };'
+    why: The ..base part of struct update syntax must come last, after the fields you set yourself.
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Item {
+          name: String,
+          price: u32,
+      }
+    body: |
+      let item = Item { name: String::from("tea") };
+      println!("{}", item.name);
+    why: Every field needs a value when you create an instance. price is missing (error E0063).
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Player {
+          name: String,
+          score: u32,
+      }
+    body: |
+      let a = Player { name: String::from("Ferris"), score: 1 };
+      let b = Player { score: 2, ..a };
+      println!("{} {}", a.name, b.name);
+    why: "..a moves the String in a.name into b, so a.name can't be used afterwards (borrow of moved value)."
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Meters(f64);
+      struct Feet(f64);
+
+      fn climb(h: Meters) -> f64 {
+          h.0
+      }
+    body: |
+      let wall = Feet(30.0);
+      println!("{}", climb(wall));
+    why: Meters and Feet are different types even though both hold an f64. That is the point of a newtype.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+    body: |
+      let p = Point { y: 2, x: 1 };
+      println!("{} {}", p.x, p.y);
+    why: Fields can be given in any order when you create an instance; they're matched by name.
+
+  - type: choice
+    prompt: Why do structs in this course use String for text fields instead of &str?
+    choices: ["String is faster to read than &str", "The struct then owns its text; a &str field borrows text from elsewhere and needs lifetimes", "&str can't hold more than 255 characters", "Struct fields can't be references"]
+    answer: 2
+    why: An owned String lives as long as the struct. A &str field is allowed, but it borrows from something else, so the compiler needs lifetime annotations to know that the text outlives the struct.
+
+  - type: choice
+    prompt: "What does assert_eq!(a, b) need from the type of a and b?"
+    choices: ["Nothing, it works on any type", "Only Debug", "PartialEq to compare them and Debug to print them when they differ", "Only PartialEq"]
+    answer: 3
+    why: assert_eq! compares with == (PartialEq) and, when the values differ, prints both with {:?} (Debug). That's why test code usually derives both.
+
+  - type: boss
+    prompt: |
+      Write `fn leader(scores: &[Score]) -> String` that returns the name of the player with the most points. If two players tie, the one that comes first wins. For an empty slice, return `"nobody"`.
+    seed: |
+      struct Score {
+          player: String,
+          points: u32,
+      }
+
+      fn leader(scores: &[Score]) -> String {
+          todo!()
+      }
+    solution: |
+      struct Score {
+          player: String,
+          points: u32,
+      }
+
+      fn leader(scores: &[Score]) -> String {
+          if scores.is_empty() {
+              return String::from("nobody");
+          }
+          let mut best = &scores[0];
+          for s in scores {
+              if s.points > best.points {
+                  best = s;
+              }
+          }
+          best.player.clone()
+      }
+    harness: |
+      fn s(player: &str, points: u32) -> Score {
+          Score { player: player.to_string(), points }
+      }
+
+      #[test]
+      fn finds_the_highest_score() {
+          let scores = [s("Ferris", 40), s("Corro", 55), s("Ayla", 12)];
+          assert_eq!(leader(&scores), "Corro", "Ferris 40, Corro 55, Ayla 12");
+      }
+
+      #[test]
+      fn first_player_wins_a_tie() {
+          let scores = [s("Ferris", 70), s("Corro", 70)];
+          assert_eq!(leader(&scores), "Ferris", "Ferris 70, Corro 70");
+      }
+
+      #[test]
+      fn a_single_player_leads() {
+          assert_eq!(leader(&[s("Ayla", 0)]), "Ayla", "only Ayla with 0 points");
+      }
+
+      #[test]
+      fn nobody_leads_an_empty_board() {
+          assert_eq!(leader(&[]), "nobody", "leader(&[])");
+      }
+    hints:
+      - "Handle the empty slice first with an early return."
+      - "Keep a reference to the best Score so far (`let mut best = &scores[0];`) and replace it only when a later score is strictly higher."
+      - "Return an owned copy of the name: `best.player.clone()`."
+    why: Keeping a reference to the best element avoids copying structs while you search; you clone only the one String you return.

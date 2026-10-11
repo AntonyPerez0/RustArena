@@ -1,0 +1,1597 @@
+id: input
+title: Reading Input
+phase: "Foundations"
+summary: Make programs react to data. Read lines from standard input, turn text into numbers with parse, process input line by line or all at once, split lines into values, and handle bad input without crashing.
+roadmap: [Language Basics]
+steps:
+  - title: Reading a line with read_line
+    id: input-1
+    text: |
+      Until now your programs did the same thing every time they ran. Real programs react to **input**: what a user types, or data fed in from a file or another program. The simplest source is **standard input**, or **stdin**: the text typed into the terminal, or piped in with `my_program < orders.txt`. On this site, each test feeds your program its stdin; you'll see it in the **Input** box next to the expected output.
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          println!("What's your name?");
+          let mut name = String::new();
+          io::stdin().read_line(&mut name).expect("failed to read a line");
+          let name = name.trim();
+          println!("Hello, {name}!");
+      }
+      ```
+
+      ```input
+      Ferris
+      ```
+
+      ```output
+      What's your name?
+      Hello, Ferris!
+      ```
+
+      (The typed name isn't part of the program's output. In a terminal you'd see it because the terminal shows what you type, not because the program prints it.)
+
+      Line by line:
+
+      - `use std::io;` brings the standard library's `io` (input/output) module into scope, so you can write `io::stdin()` instead of `std::io::stdin()`. `use` lines go at the top of the file.
+      - `let mut name = String::new();` makes an empty `String` to read into. It must be `mut`, because reading changes it.
+      - `io::stdin()` gives you a handle to standard input.
+      - `.read_line(&mut name)` waits for one line, then **appends** it to `name`, including the newline from the Enter key. `&mut name` lends the `String` to `read_line` with permission to change it. Module 10 explains `&mut` (a **mutable reference**); for now it's the fixed way to say "read into this String".
+      - `.expect("failed to read a line")` deals with failure. Reading can fail (rarely: the input might not be valid text), so `read_line` returns a **Result**, a value that is either a success or an error. `.expect(msg)` means: "if it failed, stop the program with this message; otherwise carry on". Module 19 covers errors properly.
+      - `let name = name.trim();` removes the newline (and any stray spaces). Shadowing gives the clean version the same name.
+
+      ### Seeing the newline
+
+      The debug format `{:?}` shows a string in quotes with special characters escaped, which makes the newline visible:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          println!("{:?}", line);
+          println!("{:?}", line.trim());
+          println!("{} bytes", line.len());
+      }
+      ```
+
+      ```input
+      Ferris
+      ```
+
+      ```output
+      "Ferris\n"
+      "Ferris"
+      7 bytes
+      ```
+
+      On Windows, lines end with `\r\n`; `trim()` removes that too. Trimming input is a habit worth having everywhere.
+
+      ### Common mistakes
+
+      - **Forgetting `mut`:**
+
+      ```rust compile_fail
+      use std::io;
+
+      fn main() {
+          let line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          println!("{line}");
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `line` as mutable, as it is not declared as mutable
+      ```
+
+      - **Forgetting `&mut`**: `read_line(line)` gives error E0308, ``expected `&mut String`, found `String` ``, and the help line shows where to add `&mut`.
+      - **Forgetting `use std::io;`**: error E0433 says it can't find `io`, and suggests the import.
+      - **Dropping `.expect(...)`**: it compiles, with a warning: ``unused `Result` that must be used``. Rust doesn't let you silently ignore a possible failure.
+      - **Forgetting to trim**: `println!("Hello, {name}!")` with the untrimmed name prints the `!` on the next line, because the newline is still inside `name`.
+
+      **Your turn:** fill in the blanks so the program reads a city name and prints `Welcome to <city>!`.
+    fill: |
+      use std::io;
+
+      fn main() {
+          let mut city = String::new();
+          io::stdin().[[read_line]](&mut city).expect("failed to read a line");
+          println!("Welcome to {}!", city.[[trim()]]);
+      }
+    hints:
+      - "The method that reads one line is `read_line`."
+      - "The line ends with a newline. `trim()` removes it."
+    tests:
+      - stdin: "Lisbon\n"
+        expect: "Welcome to Lisbon!"
+      - stdin: "New York\n"
+        hidden: true
+      - stdin: "  Tokyo  \n"
+        hidden: true
+    more:
+      - task: |
+          Fill the blanks to get the stdin handle and to lend `line` to `read_line` so it can write into it. The program prints the line in capital letters.
+        fill: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::[[stdin]]().read_line([[&mut line]]).expect("failed to read a line");
+              println!("{}", line.trim().to_uppercase());
+          }
+        hints:
+          - "`io::stdin()` is the handle to standard input."
+          - "`read_line` needs a mutable reference to the String: `&mut line`."
+        tests:
+          - stdin: "rust\n"
+            expect: "RUST"
+          - stdin: "Hello, World\n"
+            hidden: true
+      - task: |
+          Write the whole program: read a username, then print it (trimmed) and its length in **characters**:
+
+          ```
+          user: ferris
+          length: 6
+          ```
+
+          Some tests use names with accents, where bytes and characters differ.
+        seed: |
+          use std::io;
+
+          fn main() {
+              // read a line, then print "user: ..." and "length: ..."
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              // read a line, then print "user: ..." and "length: ..."
+              let mut name = String::new();
+              io::stdin().read_line(&mut name).expect("failed to read a line");
+              let name = name.trim();
+              println!("user: {name}");
+              println!("length: {}", name.chars().count());
+          }
+        hints:
+          - "Start with `let mut name = String::new();` and `io::stdin().read_line(&mut name).expect(\"failed to read a line\");`"
+          - "Trim it (`let name = name.trim();`), then count characters with `name.chars().count()`, not `len()`."
+        tests:
+          - stdin: "ferris\n"
+            expect: "user: ferris\nlength: 6"
+          - stdin: "José\n"
+            hidden: true
+          - stdin: "  ana  \n"
+            hidden: true
+
+  - title: "From text to numbers: parse"
+    id: input-2
+    text: |
+      Input always arrives as **text**. When a user types `41`, your program receives the characters `'4'` and `'1'` (and a newline), not the number 41. To do math, convert the text with **`parse`**:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          let age: u32 = line.trim().parse().expect("please type a whole number");
+          println!("Next year you'll be {}", age + 1);
+      }
+      ```
+
+      ```input
+      41
+      ```
+
+      ```output
+      Next year you'll be 42
+      ```
+
+      - `.parse()` turns text into a value. It can produce many types (`i32`, `u8`, `f64`, even `bool`), so it needs to know which one you want. Here the annotation on `let age: u32` tells it.
+      - You can also name the type on the method itself with the **turbofish** `::<>`: `line.trim().parse::<u32>()`. It's handy when there's no variable annotation to go by.
+      - Parsing can fail (`abc`, `4 2`, or `-5` for a `u32`), so `parse` returns a `Result` too, and `.expect(...)` stops the program with your message if the text isn't a valid number.
+      - **`trim()` is essential**: `"41\n"` is not a number, `"41"` is.
+
+      Here's what happens without `trim`:
+
+      ```rust panics
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          println!("read {:?}", line);
+          let n: i32 = line.parse().expect("not a number");
+          println!("{n}");
+      }
+      ```
+
+      ```input
+      41
+      ```
+
+      ```output
+      read "41\n"
+      ```
+
+      The program panics, and the message starts with your text, followed by the reason:
+
+      ```text
+      not a number: ParseIntError { kind: InvalidDigit }
+      ```
+
+      The newline counts as an invalid digit. That's why `expect` messages should say what was expected: it's the first thing you (or a teammate reading a crash report) will see.
+
+      ### The shadowing idiom
+
+      Reading into a `String` and then parsing into a variable with the same name is very common Rust. It's how the official Rust book's guessing game does it:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut guess = String::new();
+          io::stdin().read_line(&mut guess).expect("failed to read a line");
+          let guess: u32 = guess.trim().parse().expect("please type a number");
+          println!("You guessed {guess}, doubled that's {}", guess * 2);
+      }
+      ```
+
+      ```input
+      21
+      ```
+
+      ```output
+      You guessed 21, doubled that's 42
+      ```
+
+      The text version isn't needed after parsing, so the number takes over its name.
+
+      ### Decimals
+
+      Parse into `f64` for numbers with a fractional part: `"3.5"` works, and so does `"7"`. The decimal separator must be a point: `"3,5"` fails. Parsing `"3.5"` into an integer type fails too.
+
+      ### Common mistakes
+
+      - **Not saying which type to produce:**
+
+      ```rust compile_fail
+      fn main() {
+          let n = "42".trim().parse().expect("not a number");
+          println!("{n}");
+      }
+      ```
+
+      ```error
+      error[E0284]: type annotations needed
+      ```
+
+      Fix: `let n: i32 = ...` or `.parse::<i32>()`.
+      - **Forgetting `.expect`**: `let n: i32 = line.trim().parse();` gives ``expected `i32`, found `Result<_, _>` ``. The `Result` must be unwrapped first, and the help line suggests `.expect(...)`.
+      - **A type that doesn't fit the data.** `"-3"` doesn't parse as `u32` (no minus sign allowed), and `"300"` doesn't fit in a `u8` (`number too large to fit in target type`). Use `i32` or `i64` when values can be negative, `f64` for decimals.
+
+      **Your turn:** the program reads a temperature in Celsius (it may have decimals and may be negative). Parse it as an `f64`, convert it to Fahrenheit with F = C × 9 / 5 + 32, and print it with one decimal:
+
+      ```
+      21.5 C = 70.7 F
+      ```
+    seed: |
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          // parse the line into an f64, convert, and print: 21.5 C = 70.7 F
+      }
+    solution: |
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          // parse the line into an f64, convert, and print: 21.5 C = 70.7 F
+          let celsius: f64 = line.trim().parse().expect("not a number");
+          let fahrenheit = celsius * 9.0 / 5.0 + 32.0;
+          println!("{celsius} C = {fahrenheit:.1} F");
+      }
+    require:
+      - pattern: '\.parse'
+        message: "Convert the text with `.parse()`."
+    hints:
+      - "`let celsius: f64 = line.trim().parse().expect(\"not a number\");`"
+      - "Use float literals in the formula: `celsius * 9.0 / 5.0 + 32.0`."
+      - "Print with `println!(\"{celsius} C = {fahrenheit:.1} F\");`"
+    tests:
+      - stdin: "21.5\n"
+        expect: "21.5 C = 70.7 F"
+      - stdin: "0\n"
+      - stdin: "-40\n"
+        hidden: true
+      - stdin: "36.6\n"
+        hidden: true
+    more:
+      - task: |
+          Read a number of minutes (a whole number) and print it as hours and minutes:
+
+          ```
+          135 minutes = 2 h 15 min
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("failed to read a line");
+              let minutes: u32 = line.trim().parse().expect("not a whole number");
+              println!("{minutes} minutes = {} h {} min", minutes / 60, minutes % 60);
+          }
+        hints:
+          - "Read the line, then `let minutes: u32 = line.trim().parse().expect(\"not a whole number\");`"
+          - "Hours are `minutes / 60`, the rest is `minutes % 60`."
+        tests:
+          - stdin: "135\n"
+            expect: "135 minutes = 2 h 15 min"
+          - stdin: "59\n"
+          - stdin: "60\n"
+            hidden: true
+          - stdin: "0\n"
+            hidden: true
+      - task: |
+          Read a year and say whether it's a leap year. A year is a leap year if it's divisible by 4, except years divisible by 100, which are leap years only if they're also divisible by 400. Print a line like `2024 is a leap year` or `1900 is not a leap year`, with the year that was read.
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("failed to read a line");
+              let year: u32 = line.trim().parse().expect("not a year");
+              let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+              if leap {
+                  println!("{year} is a leap year");
+              } else {
+                  println!("{year} is not a leap year");
+              }
+          }
+        hints:
+          - "Read and parse the year as a whole number first."
+          - "The rule as one bool: `(year % 4 == 0 && year % 100 != 0) || year % 400 == 0`."
+        tests:
+          - stdin: "2024\n"
+            expect: "2024 is a leap year"
+          - stdin: "1900\n"
+            expect: "1900 is not a leap year"
+          - stdin: "2000\n"
+            hidden: true
+          - stdin: "2023\n"
+            hidden: true
+
+  - title: Reading several lines
+    id: input-3
+    text: |
+      Each call to `read_line` reads the **next** line. To read two values, call it twice:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut name = String::new();
+          io::stdin().read_line(&mut name).expect("failed to read a line");
+
+          let mut age = String::new();
+          io::stdin().read_line(&mut age).expect("failed to read a line");
+          let age: u32 = age.trim().parse().expect("age must be a whole number");
+
+          println!("{} is {} years old", name.trim(), age);
+      }
+      ```
+
+      ```input
+      Ana
+      29
+      ```
+
+      ```output
+      Ana is 29 years old
+      ```
+
+      ### read_line appends
+
+      You might try to reuse one `String` for every line. Remember that `read_line` **adds** to what's already in the `String`:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          println!("{:?}", line);
+
+          line.clear();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          println!("{:?}", line);
+      }
+      ```
+
+      ```input
+      3
+      4
+      5
+      ```
+
+      ```output
+      "3\n4\n"
+      "5\n"
+      ```
+
+      After two reads the `String` holds both lines, and parsing `"3\n4"` fails. **`line.clear()`** empties the `String` (keeping its memory for reuse) so the next read starts fresh.
+
+      ### A helper function
+
+      Reading one number takes three lines. When you need it several times, put them in a function:
+
+      ```rust run
+      use std::io;
+
+      fn read_number() -> i64 {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          line.trim().parse().expect("not a whole number")
+      }
+
+      fn main() {
+          let a = read_number();
+          let b = read_number();
+          println!("{a} + {b} = {}", a + b);
+      }
+      ```
+
+      ```input
+      7
+      35
+      ```
+
+      ```output
+      7 + 35 = 42
+      ```
+
+      - There's no type annotation on `parse` here: the function's return type `i64` tells it what to produce.
+      - Each call creates a fresh `String`, so there's nothing to clear.
+      - Small helpers like this keep `main` readable. That's what teams expect in code review: name the repeated thing once.
+
+      ### A count, then that many lines
+
+      A very common input format puts the number of items on the first line:
+
+      ```rust run
+      use std::io;
+
+      fn read_number() -> i64 {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          line.trim().parse().expect("not a whole number")
+      }
+
+      fn main() {
+          let n = read_number();
+          let mut total = 0;
+          for _ in 0..n {
+              total += read_number();
+          }
+          println!("total of {n} numbers: {total}");
+      }
+      ```
+
+      ```input
+      3
+      10
+      20
+      12
+      ```
+
+      ```output
+      total of 3 numbers: 42
+      ```
+
+      ### Common mistakes
+
+      - **Reusing a `String` without `clear()`**: the second value is glued to the first.
+      - **Reading past the end of the input.** When there are no more lines, `read_line` reads nothing and leaves the `String` empty, so parsing fails with `cannot parse integer from empty string`.
+      - **Reading in the wrong order.** Lines come in the order they were typed; read them in the same order the input format describes.
+
+      **Your turn:** read two whole numbers, one per line (they may be negative), and print their sum, difference (first minus second) and product:
+
+      ```
+      sum: 12
+      difference: 4
+      product: 32
+      ```
+    seed: |
+      use std::io;
+
+      fn main() {
+          // read two whole numbers, one per line
+      }
+    solution: |
+      use std::io;
+
+      fn read_number() -> i64 {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          line.trim().parse().expect("not a whole number")
+      }
+
+      fn main() {
+          // read two whole numbers, one per line
+          let a = read_number();
+          let b = read_number();
+          println!("sum: {}", a + b);
+          println!("difference: {}", a - b);
+          println!("product: {}", a * b);
+      }
+    hints:
+      - "Read two lines into two separate Strings (or clear one between reads), and parse each with `.trim().parse()`."
+      - "Use `i64` so negative numbers work. A `read_number()` helper function saves repeating yourself."
+    tests:
+      - stdin: "8\n4\n"
+        expect: "sum: 12\ndifference: 4\nproduct: 32"
+      - stdin: "-3\n10\n"
+        hidden: true
+      - stdin: "0\n0\n"
+        hidden: true
+    more:
+      - task: |
+          The first line says how many scores follow; then come the scores, one per line (they may be negative). Print the highest one:
+
+          ```
+          best: 97
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn read_number() -> i64 {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("failed to read a line");
+              line.trim().parse().expect("not a whole number")
+          }
+
+          fn main() {
+              let n = read_number();
+              let mut best = read_number();
+              for _ in 1..n {
+                  let score = read_number();
+                  if score > best {
+                      best = score;
+                  }
+              }
+              println!("best: {best}");
+          }
+        hints:
+          - "Read the count first. Then start `best` with the first score, and read the remaining `n - 1` scores in a loop."
+          - "Don't start `best` at 0: all the scores might be negative."
+        tests:
+          - stdin: "3\n70\n97\n85\n"
+            expect: "best: 97"
+          - stdin: "1\n-5\n"
+            hidden: true
+          - stdin: "4\n10\n10\n9\n10\n"
+            hidden: true
+          - stdin: "3\n-8\n-2\n-4\n"
+            hidden: true
+      - task: |
+          Read a word on the first line and a number `n` on the second, then print the word `n` times on one line, separated by single spaces:
+
+          ```
+          go go go
+          ```
+
+          `n` is at least 1.
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut word = String::new();
+              io::stdin().read_line(&mut word).expect("failed to read a line");
+              let word = word.trim();
+
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("failed to read a line");
+              let n: u32 = line.trim().parse().expect("not a whole number");
+
+              let mut out = String::new();
+              for i in 0..n {
+                  if i > 0 {
+                      out.push(' ');
+                  }
+                  out.push_str(word);
+              }
+              println!("{out}");
+          }
+        hints:
+          - "Read and trim the word, then read and parse the number."
+          - "Build the result in a String: push a space before every word except the first (`if i > 0`), then `push_str(word)`."
+        tests:
+          - stdin: "go\n3\n"
+            expect: "go go go"
+          - stdin: "crab\n1\n"
+            hidden: true
+          - stdin: "hey\n5\n"
+            hidden: true
+
+  - title: Reading every line until the end
+    id: input-4
+    text: |
+      Often you don't know how many lines are coming: a log file, a list of orders, a CSV export. Then you read until the input **ends**. When the input comes from a file, that's the end of the file (often called **EOF**). When you type into a terminal, you signal the end with Ctrl+D (Linux and macOS) or Ctrl+Z then Enter (Windows).
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut count = 0;
+          for line in io::stdin().lines() {
+              let line = line.expect("failed to read a line");
+              count += 1;
+              println!("{count}: {line}");
+          }
+          println!("{count} lines");
+      }
+      ```
+
+      ```input
+      apples
+      pears
+      plums
+      ```
+
+      ```output
+      1: apples
+      2: pears
+      3: plums
+      3 lines
+      ```
+
+      - `io::stdin().lines()` hands out the input one line at a time, as `String`s **without** the newline.
+      - Each line comes wrapped in a `Result`, because reading can fail. `let line = line.expect(...)` unwraps it (shadowing again).
+      - The loop ends by itself when the input runs out.
+
+      ### The classic form: lock() and BufRead
+
+      In existing code and older answers online you'll see this form. It does the same thing:
+
+      ```rust run
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let mut total = 0;
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("failed to read a line");
+              let n: i32 = line.trim().parse().expect("not a number");
+              total += n;
+          }
+          println!("total: {total}");
+      }
+      ```
+
+      ```input
+      10
+      20
+      12
+      ```
+
+      ```output
+      total: 42
+      ```
+
+      - `use std::io::{self, BufRead};` imports `io` itself (`self`) and **`BufRead`**, a **trait**: a named set of methods that several types share (module 22). `lines()` on a locked stdin comes from `BufRead`, and a trait's methods can only be called when the trait is imported. Without the import, you get error E0599: ``no method named `lines` found for struct `StdinLock` ``, with a help line suggesting `use std::io::BufRead;`.
+      - `.lock()` takes hold of stdin once for the whole loop instead of on every read, which is faster for big inputs. `io::stdin().lines()`, added in Rust 1.62, does that for you.
+
+      ### Skipping blank lines
+
+      Real input often has empty lines (a trailing blank line at the end of a file is very common). Skip them with `continue`:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut names = 0;
+          for line in io::stdin().lines() {
+              let line = line.expect("failed to read a line");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              names += 1;
+              println!("{names}. {}", line.trim());
+          }
+      }
+      ```
+
+      ```input
+      Ana
+
+      Ben
+      ```
+
+      ```output
+      1. Ana
+      2. Ben
+      ```
+
+      ### With read_line
+
+      `read_line` also tells you when the input has ended: it returns the number of bytes it read, and **0** means there was nothing left.
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          let mut longest = 0;
+          loop {
+              line.clear();
+              let bytes = io::stdin().read_line(&mut line).expect("failed to read a line");
+              if bytes == 0 {
+                  break;
+              }
+              let length = line.trim().chars().count();
+              if length > longest {
+                  longest = length;
+              }
+          }
+          println!("longest line: {longest} characters");
+      }
+      ```
+
+      ```input
+      short
+      a bit longer
+      mid
+      ```
+
+      ```output
+      longest line: 12 characters
+      ```
+
+      ### Common mistakes
+
+      - **Using the line before unwrapping it.** `line.trim()` straight on the loop variable gives E0599, ``no method named `trim` found for enum `Result` ``: unwrap it first with `.expect(...)`.
+      - **Forgetting the `BufRead` import** with `lock().lines()` (see above).
+      - **The program "hangs" in a terminal.** It's waiting for more input: the loop only ends at the end of input, so press Ctrl+D (or Ctrl+Z, Enter on Windows).
+
+      **Your turn:** numbers arrive one per line, as many as there are. Skip blank lines. Print how many numbers there were and their total:
+
+      ```
+      count: 4, total: 46
+      ```
+    seed: |
+      use std::io;
+
+      fn main() {
+      }
+    solution: |
+      use std::io;
+
+      fn main() {
+          let mut count = 0;
+          let mut total = 0;
+          for line in io::stdin().lines() {
+              let line = line.expect("failed to read a line");
+              if line.trim().is_empty() {
+                  continue;
+              }
+              let n: i64 = line.trim().parse().expect("not a number");
+              count += 1;
+              total += n;
+          }
+          println!("count: {count}, total: {total}");
+      }
+    hints:
+      - "Loop with `for line in io::stdin().lines()` and unwrap each line with `let line = line.expect(\"failed to read a line\");`"
+      - "`if line.trim().is_empty() { continue; }` skips blank lines. Then parse with `line.trim().parse()` and update two counters."
+    tests:
+      - stdin: "10\n20\n7\n9\n"
+        expect: "count: 4, total: 46"
+      - stdin: "5\n"
+      - stdin: ""
+        hidden: true
+      - stdin: "-3\n3\n100\n"
+        hidden: true
+      - stdin: "1\n\n2\n   \n"
+        hidden: true
+    more:
+      - task: |
+          Read log lines until the end of the input. Count all lines, and the lines that contain `ERROR` (in capitals, exactly). Print:
+
+          ```
+          2 errors in 5 lines
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut lines = 0;
+              let mut errors = 0;
+              for line in io::stdin().lines() {
+                  let line = line.expect("failed to read a line");
+                  lines += 1;
+                  if line.contains("ERROR") {
+                      errors += 1;
+                  }
+              }
+              println!("{errors} errors in {lines} lines");
+          }
+        hints:
+          - "Loop over `io::stdin().lines()`, unwrap each line, and keep two counters."
+          - "`line.contains(\"ERROR\")` tells you whether to count it as an error."
+        tests:
+          - stdin: "INFO start\nERROR disk full\nINFO retry\nERROR disk full\nINFO stop\n"
+            expect: "2 errors in 5 lines"
+          - stdin: "all good\n"
+          - stdin: "ERROR a\nERROR b\nERROR c\n"
+            hidden: true
+          - stdin: ""
+            hidden: true
+      - task: |
+          Read a list of names, one per line, until the end of input. Skip blank lines, trim each name, make it uppercase, and number the names from 1:
+
+          ```
+          1. ANA
+          2. BEN
+          3. CY
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut number = 0;
+              for line in io::stdin().lines() {
+                  let line = line.expect("failed to read a line");
+                  let name = line.trim();
+                  if name.is_empty() {
+                      continue;
+                  }
+                  number += 1;
+                  println!("{number}. {}", name.to_uppercase());
+              }
+          }
+        hints:
+          - "Trim the line first, then skip it with `continue` if it's empty."
+          - "Only count the names you print, so blank lines don't use up a number."
+        tests:
+          - stdin: "Ana\nBen\nCy\n"
+            expect: "1. ANA\n2. BEN\n3. CY"
+          - stdin: "  ana  \n\n\nben\n   \ncy\n"
+            hidden: true
+          - stdin: "\nsolo\n"
+            hidden: true
+
+  - title: "Several values on one line: split_whitespace"
+    id: input-5
+    text: |
+      Input often packs several values on one line: `3 4`, `ana 92`, `move 10 -5`. **`split_whitespace()`** cuts a string into pieces wherever there's whitespace:
+
+      ```rust run
+      fn main() {
+          let line = "  move   10 -5\n";
+          for part in line.split_whitespace() {
+              println!("[{part}]");
+          }
+          println!("{} parts", line.split_whitespace().count());
+      }
+      ```
+
+      ```output
+      [move]
+      [10]
+      [-5]
+      3 parts
+      ```
+
+      - Any run of spaces, tabs or newlines separates two pieces, and whitespace at the ends is ignored. So there's no need to trim first.
+      - Each piece is a `&str` view into the line: nothing is copied.
+      - `.count()` counts the pieces, just as `.chars().count()` counts characters.
+
+      ### Numbers from one line
+
+      Parse each piece and collect the numbers in a `Vec`:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          let mut nums = Vec::new();
+          for part in line.split_whitespace() {
+              let n: i32 = part.parse().expect("not a number");
+              nums.push(n);
+          }
+          println!("{} numbers: {:?}", nums.len(), nums);
+          println!("first + last = {}", nums[0] + nums[nums.len() - 1]);
+      }
+      ```
+
+      ```input
+      4 8 15 16 23 42
+      ```
+
+      ```output
+      6 numbers: [4, 8, 15, 16, 23, 42]
+      first + last = 46
+      ```
+
+      When the format says there are exactly two values (like `width height`), read them as `nums[0]` and `nums[1]`. If a line has fewer values than expected, the index is out of bounds and the program panics; that's acceptable for input you trust, and step 7 shows how to handle input you don't.
+
+      You'll often see the loop above written in **iterator style**, which you'll learn in modules 26 and 27:
+
+      ```rust
+      let nums: Vec<i32> = line.split_whitespace().map(|p| p.parse().expect("not a number")).collect();
+      ```
+
+      ### Why not split(' ')?
+
+      `split(' ')` cuts at **every single** space. Two spaces in a row produce an empty piece `""` between them, and parsing `""` fails:
+
+      ```rust panics
+      fn main() {
+          let line = "3  4";
+          for part in line.split(' ') {
+              println!("[{part}]");
+              let n: i32 = part.parse().expect("not a number");
+              println!("{n}");
+          }
+      }
+      ```
+
+      ```output
+      [3]
+      3
+      []
+      ```
+
+      The panic message: `not a number: ParseIntError { kind: Empty }`. For values separated by whitespace, `split_whitespace` is the right tool. (`split(',')` is right for comma-separated values; module 18 covers splitting in depth.)
+
+      ### Common mistakes
+
+      - **Using `split(' ')`** on input that might have double spaces, tabs or a trailing newline.
+      - **Parsing the whole line** when it holds several values: `"3 4".parse::<i32>()` fails with `invalid digit found in string` (the space is the invalid digit).
+      - **Assuming the number of values.** `nums[1]` panics on a line with one value. Check `nums.len()` when it matters.
+
+      **Your turn:** one line holds a rectangle's width and height, separated by whitespace. Print its area and perimeter:
+
+      ```
+      area: 12
+      perimeter: 14
+      ```
+    seed: |
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+      }
+    solution: |
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read a line");
+          let mut nums = Vec::new();
+          for part in line.split_whitespace() {
+              let n: u32 = part.parse().expect("not a number");
+              nums.push(n);
+          }
+          let width = nums[0];
+          let height = nums[1];
+          println!("area: {}", width * height);
+          println!("perimeter: {}", 2 * (width + height));
+      }
+    require:
+      - pattern: '\.split_whitespace\(\)'
+        message: "Split the line with `.split_whitespace()`."
+    hints:
+      - "Loop over `line.split_whitespace()`, parse each part and push it into a `Vec`."
+      - "Then `nums[0]` is the width and `nums[1]` the height."
+    tests:
+      - stdin: "3 4\n"
+        expect: "area: 12\nperimeter: 14"
+      - stdin: "  10   2 \n"
+        hidden: true
+      - stdin: "7 7\n"
+        hidden: true
+    more:
+      - task: |
+          One line holds one or more whole numbers (possibly negative). Print how many there are, the smallest and the largest:
+
+          ```
+          count: 5, min: -2, max: 9
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("failed to read a line");
+              let mut nums = Vec::new();
+              for part in line.split_whitespace() {
+                  let n: i64 = part.parse().expect("not a number");
+                  nums.push(n);
+              }
+              let mut min = nums[0];
+              let mut max = nums[0];
+              for i in 0..nums.len() {
+                  if nums[i] < min {
+                      min = nums[i];
+                  }
+                  if nums[i] > max {
+                      max = nums[i];
+                  }
+              }
+              println!("count: {}, min: {min}, max: {max}", nums.len());
+          }
+        require:
+          - pattern: '\.split_whitespace\(\)'
+            message: "Split the line with `.split_whitespace()`."
+        hints:
+          - "Parse every piece into a `Vec` first, as in the example."
+          - "Start `min` and `max` at `nums[0]`, then loop over the indexes and update them."
+        tests:
+          - stdin: "3 9 -2 7 0\n"
+            expect: "count: 5, min: -2, max: 9"
+          - stdin: "42\n"
+            hidden: true
+          - stdin: "-5 -1 -9\n"
+            hidden: true
+      - task: |
+          Each line holds a player's name and score, like `ana 92`. Read lines until the end of the input and print the best player. If two players tie, keep the one that came first:
+
+          ```
+          best: cy with 95
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+              let mut best_name = String::new();
+              let mut best_score = i64::MIN;
+              // read every line, split it into name and score, and keep the best
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut best_name = String::new();
+              let mut best_score = i64::MIN;
+              // read every line, split it into name and score, and keep the best
+              for line in io::stdin().lines() {
+                  let line = line.expect("failed to read a line");
+                  let mut parts = Vec::new();
+                  for part in line.split_whitespace() {
+                      parts.push(part);
+                  }
+                  let score: i64 = parts[1].parse().expect("not a score");
+                  if score > best_score {
+                      best_score = score;
+                      best_name = parts[0].to_string();
+                  }
+              }
+              println!("best: {best_name} with {best_score}");
+          }
+        hints:
+          - "For each line, push the pieces from `split_whitespace()` into a `Vec`: `parts[0]` is the name, `parts[1]` the score."
+          - "Parse the score. When it's strictly greater than `best_score`, update both. Use `parts[0].to_string()` to keep a String copy of the name."
+        tests:
+          - stdin: "ana 92\nben 87\ncy 95\n"
+            expect: "best: cy with 95"
+          - stdin: "solo 10\n"
+            hidden: true
+          - stdin: "a 5\nb 5\n"
+            hidden: true
+          - stdin: "x -3\ny -1\nz -7\n"
+            hidden: true
+
+  - title: Reading all the input at once
+    id: input-6
+    text: |
+      Sometimes it's simplest to read the **whole** input into one `String` first, then take it apart. `io::read_to_string` does that:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let input = io::read_to_string(io::stdin()).expect("failed to read input");
+          let mut total = 0;
+          let mut count = 0;
+          for word in input.split_whitespace() {
+              let n: i32 = word.parse().expect("not a number");
+              total += n;
+              count += 1;
+          }
+          println!("{count} numbers, total {total}");
+      }
+      ```
+
+      ```input
+      3 4
+      5
+        6 7
+      ```
+
+      ```output
+      5 numbers, total 25
+      ```
+
+      - `io::read_to_string(io::stdin())` reads everything up to the end of the input, newlines included, and returns it as a `String` (wrapped in a `Result`, so `.expect` again).
+      - `split_whitespace` on the whole input treats newlines like spaces, so you get every value no matter how the lines are laid out. Perfect when only the values matter.
+      - When the lines matter, **`input.lines()`** splits the `String` into lines (without the newlines), just like `io::stdin().lines()` but with no `Result` to unwrap:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let input = io::read_to_string(io::stdin()).expect("failed to read input");
+          for line in input.lines() {
+              println!("{} -> {} words", line, line.split_whitespace().count());
+          }
+      }
+      ```
+
+      ```input
+      the quick brown fox
+      jumps
+      over the dog
+      ```
+
+      ```output
+      the quick brown fox -> 4 words
+      jumps -> 1 words
+      over the dog -> 3 words
+      ```
+
+      You may also meet the older form `io::stdin().read_to_string(&mut input)`, which needs `use std::io::Read;` (another trait, like `BufRead`).
+
+      ### Which way to read?
+
+      | Style | Good for |
+      |---|---|
+      | `read_line` | interactive programs that ask a question and wait for the answer |
+      | `io::stdin().lines()` | processing input line by line, however big (logs, streams) |
+      | `io::read_to_string` | inputs you want to see as a whole (puzzles, small files, tests) |
+
+      `read_to_string` keeps the whole input in memory. That's fine for kilobytes or megabytes; for a 10 GB log file, go line by line.
+
+      ### Common mistakes
+
+      - **Parsing the whole input as one number.** The input ends with a newline (and may hold several values), so `input.parse()` fails. Use `input.trim()` for a single value, or `split_whitespace()` for many.
+      - **Forgetting that the input might be empty.** With no input, `read_to_string` gives an empty `String`; a loop over it simply runs zero times. Make sure your program still prints something sensible.
+
+      **Your turn:** read the whole input: whole numbers spread over any number of lines. Print their average with two decimals, or `no numbers` if there are none:
+
+      ```
+      average: 5.00
+      ```
+    seed: |
+      use std::io;
+
+      fn main() {
+      }
+    solution: |
+      use std::io;
+
+      fn main() {
+          let input = io::read_to_string(io::stdin()).expect("failed to read input");
+          let mut total = 0;
+          let mut count = 0;
+          for word in input.split_whitespace() {
+              let n: i64 = word.parse().expect("not a number");
+              total += n;
+              count += 1;
+          }
+          if count == 0 {
+              println!("no numbers");
+          } else {
+              println!("average: {:.2}", total as f64 / count as f64);
+          }
+      }
+    require:
+      - pattern: 'read_to_string'
+        message: "Read everything at once with `io::read_to_string(io::stdin())`."
+    hints:
+      - "`let input = io::read_to_string(io::stdin()).expect(\"failed to read input\");`, then loop over `input.split_whitespace()`."
+      - "Keep a total and a count. If the count is 0 print `no numbers`; otherwise divide as `f64` and print with `{:.2}`."
+    tests:
+      - stdin: "3 4\n5\n6 7\n"
+        expect: "average: 5.00"
+      - stdin: ""
+        expect: "no numbers"
+      - stdin: "1 2\n"
+        hidden: true
+      - stdin: "-10\n\n  4  \n"
+        hidden: true
+    more:
+      - task: |
+          Write a tiny version of the Unix `wc` tool: read the whole input and print the number of lines, words and characters (count every character of the input, including the newlines):
+
+          ```
+          lines: 2
+          words: 6
+          characters: 29
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let input = io::read_to_string(io::stdin()).expect("failed to read input");
+              println!("lines: {}", input.lines().count());
+              println!("words: {}", input.split_whitespace().count());
+              println!("characters: {}", input.chars().count());
+          }
+        hints:
+          - "Read everything with `io::read_to_string(io::stdin())`."
+          - "Then `input.lines().count()`, `input.split_whitespace().count()` and `input.chars().count()`. Use `chars()`, not `len()`: one test has accented letters."
+        tests:
+          - stdin: "hello crab world\nrust is fun\n"
+            expect: "lines: 2\nwords: 6\ncharacters: 29"
+          - stdin: "café crème\n"
+            hidden: true
+          - stdin: ""
+            hidden: true
+      - task: |
+          Read the whole input and print its lines in **reverse** order (last line first):
+
+          ```
+          third
+          second
+          first
+          ```
+        seed: |
+          use std::io;
+
+          fn main() {
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let input = io::read_to_string(io::stdin()).expect("failed to read input");
+              let mut lines = Vec::new();
+              for line in input.lines() {
+                  lines.push(line);
+              }
+              for i in (0..lines.len()).rev() {
+                  println!("{}", lines[i]);
+              }
+          }
+        hints:
+          - "Push every line from `input.lines()` into a `Vec`."
+          - "Then walk the indexes backwards with `for i in (0..lines.len()).rev()` and print `lines[i]`."
+        tests:
+          - stdin: "first\nsecond\nthird\n"
+            expect: "third\nsecond\nfirst"
+          - stdin: "only\n"
+            hidden: true
+          - stdin: "a b\nc d\ne f\n"
+            hidden: true
+
+  - title: Handling bad input with match
+    id: input-7
+    text: |
+      `.expect` is fine when bad input means something is badly wrong. But people type the wrong thing all the time: `abc`, an empty line, `4.5` where a whole number was expected. A good program reacts to that instead of crashing.
+
+      `parse` returns a **`Result`**: either **`Ok(value)`**, holding the number, or **`Err(error)`**, describing what went wrong. `.expect` takes the value out of `Ok` and crashes on `Err`. To decide for yourself what happens, use **`match`**:
+
+      ```rust run
+      fn main() {
+          let inputs = ["42", "-7", "abc", "", "99999999999"];
+          for text in inputs {
+              match text.parse::<i32>() {
+                  Ok(n) => println!("{text:?} -> number {n}"),
+                  Err(e) => println!("{text:?} -> error: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      "42" -> number 42
+      "-7" -> number -7
+      "abc" -> error: invalid digit found in string
+      "" -> error: cannot parse integer from empty string
+      "99999999999" -> error: number too large to fit in target type
+      ```
+
+      - `match value { pattern => code, ... }` compares the value with each **pattern** in turn and runs the first **arm** that fits. Module 14 covers `match` in full; here you only need these two patterns.
+      - `Ok(n)` matches a successful parse and names the number `n` inside that arm.
+      - `Err(e)` matches a failure; `e` is the error, which prints a readable reason with `{}`. Write `Err(_)` when you don't need it.
+      - There's no variable annotation here, so the turbofish `parse::<i32>()` says which type to parse into.
+
+      The compiler checks that you handle **both** cases. Leave out the `Err` arm and the program doesn't compile:
+
+      ```rust compile_fail
+      fn main() {
+          let text = "42";
+          match text.parse::<i32>() {
+              Ok(n) => println!("{n}"),
+          }
+      }
+      ```
+
+      ```error
+      error[E0004]: non-exhaustive patterns: `Err(_)` not covered
+      ```
+
+      ### match produces a value
+
+      Like `if`, `match` is an expression. Each arm can give a value, and an arm can also jump away with `continue`, `break` or `return`:
+
+      ```rust run
+      fn main() {
+          let lines = ["5", "ten", "7", ""];
+          let mut total = 0;
+          for text in lines {
+              let qty: i32 = match text.trim().parse() {
+                  Ok(n) => n,
+                  Err(_) => {
+                      println!("skipping {text:?}");
+                      continue;
+                  }
+              };
+              total += qty;
+          }
+          println!("total: {total}");
+      }
+      ```
+
+      ```output
+      skipping "ten"
+      skipping ""
+      total: 12
+      ```
+
+      `Ok(n) => n` makes the whole `match` evaluate to the number, which lands in `qty`. The `Err` arm never produces a value: it prints a note and moves on to the next line with `continue`. This "use it or skip it" shape is very common.
+
+      ### Asking again
+
+      For interactive programs, combine `match` with `loop` and `break value` (from the control module) to ask until the answer makes sense:
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let age: u32 = loop {
+              println!("How old are you?");
+              let mut line = String::new();
+              let bytes = io::stdin().read_line(&mut line).expect("failed to read a line");
+              if bytes == 0 {
+                  println!("No answer, giving up.");
+                  return;
+              }
+              match line.trim().parse() {
+                  Ok(n) => break n,
+                  Err(_) => println!("'{}' isn't a whole number, try again.", line.trim()),
+              }
+          };
+          println!("Got it: {age}");
+      }
+      ```
+
+      ```input
+      twelve
+      12.5
+      12
+      ```
+
+      ```output
+      How old are you?
+      'twelve' isn't a whole number, try again.
+      How old are you?
+      '12.5' isn't a whole number, try again.
+      How old are you?
+      Got it: 12
+      ```
+
+      Note the `bytes == 0` check: without it, a program that runs out of input would read empty lines forever, failing to parse each one. Always ask "what happens at the end of the input?".
+
+      **At work:** larger programs rarely `match` on every parse inside `main`. They pass errors up to one place that reports them, using `Result` return types and the `?` operator (modules 19 and 39). `match` on `Ok`/`Err` is the building block underneath all of that.
+
+      ### Common mistakes
+
+      - **Leaving out an arm**: error E0004, as shown above.
+      - **Arms that give different types.** `Ok(n) => n, Err(_) => "bad"` gives ``error[E0308]: `match` arms have incompatible types``: one arm is a number, the other a `&str`. Every arm that produces a value must produce the same type.
+      - **No type for `parse`**: `match text.parse() { Ok(n) => println!("{n}"), ... }` doesn't say what to parse into (E0284, `type annotations needed`). Use `parse::<i32>()` or a typed `let`.
+
+      **Your turn:** read lines until the end of the input. Each line should be a whole number (an order quantity), but some lines are garbage. Add up the valid numbers, count every other line as skipped (blank lines too), and print:
+
+      ```
+      total: 15
+      skipped: 2
+      ```
+    seed: |
+      use std::io;
+
+      fn main() {
+          let mut total = 0;
+          let mut skipped = 0;
+          for line in io::stdin().lines() {
+              let line = line.expect("failed to read a line");
+              // parse with match: add valid numbers to total, count the rest in skipped
+          }
+          println!("total: {total}");
+          println!("skipped: {skipped}");
+      }
+    solution: |
+      use std::io;
+
+      fn main() {
+          let mut total = 0;
+          let mut skipped = 0;
+          for line in io::stdin().lines() {
+              let line = line.expect("failed to read a line");
+              // parse with match: add valid numbers to total, count the rest in skipped
+              match line.trim().parse::<i64>() {
+                  Ok(n) => total += n,
+                  Err(_) => skipped += 1,
+              }
+          }
+          println!("total: {total}");
+          println!("skipped: {skipped}");
+      }
+    require:
+      - pattern: '\bmatch\b'
+        message: "Handle the result of `parse` with `match`, so bad lines don't crash the program."
+      - pattern: 'Err\s*\('
+        message: "Handle the `Err` case: count the line as skipped."
+    hints:
+      - "`match line.trim().parse::<i64>() { ... }` with two arms."
+      - "`Ok(n) => total += n,` and `Err(_) => skipped += 1,`"
+    tests:
+      - stdin: "5\nten\n7\n\n3\n"
+        expect: "total: 15\nskipped: 2"
+      - stdin: "1\n2\n3\n"
+        hidden: true
+      - stdin: ""
+        hidden: true
+      - stdin: "4.5\n-2\nabc\n"
+        hidden: true
+    more:
+      - task: |
+          Read one line: an age (a whole number, never negative). If it's valid, print the age next year, like `next year: 31`. Otherwise print what was typed (trimmed), like `invalid age: abc`.
+        seed: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("failed to read a line");
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let mut line = String::new();
+              io::stdin().read_line(&mut line).expect("failed to read a line");
+              let text = line.trim();
+              match text.parse::<u32>() {
+                  Ok(age) => println!("next year: {}", age + 1),
+                  Err(_) => println!("invalid age: {text}"),
+              }
+          }
+        require:
+          - pattern: '\bmatch\b'
+            message: "Use `match` on the result of `parse`."
+        hints:
+          - "Trim the line first and keep it in a variable, so you can print it in the error case."
+          - "Parse as `u32` (a negative age is then invalid automatically): `match text.parse::<u32>() { Ok(age) => ..., Err(_) => ... }`"
+        tests:
+          - stdin: "30\n"
+            expect: "next year: 31"
+          - stdin: "abc\n"
+            expect: "invalid age: abc"
+          - stdin: "-3\n"
+            hidden: true
+          - stdin: " 7 \n"
+            hidden: true
+      - task: |
+          A guessing game with a fixed secret number, 7. Read guesses one per line until the end of the input. For each line:
+
+          - not a whole number → `not a number: <the trimmed text>` (it doesn't count as a guess)
+          - too small → `too low`, too big → `too high`
+          - correct → `correct! guesses: <number of valid guesses>`, then stop reading
+
+          If the input ends without a correct guess, print `out of guesses`.
+        seed: |
+          use std::io;
+
+          fn main() {
+              let secret = 7;
+          }
+        solution: |
+          use std::io;
+
+          fn main() {
+              let secret = 7;
+              let mut guesses = 0;
+              let mut won = false;
+              for line in io::stdin().lines() {
+                  let line = line.expect("failed to read a line");
+                  let text = line.trim();
+                  let guess: i32 = match text.parse() {
+                      Ok(n) => n,
+                      Err(_) => {
+                          println!("not a number: {text}");
+                          continue;
+                      }
+                  };
+                  guesses += 1;
+                  if guess < secret {
+                      println!("too low");
+                  } else if guess > secret {
+                      println!("too high");
+                  } else {
+                      println!("correct! guesses: {guesses}");
+                      won = true;
+                      break;
+                  }
+              }
+              if !won {
+                  println!("out of guesses");
+              }
+          }
+        require:
+          - pattern: '\bmatch\b'
+            message: "Use `match` on the result of `parse` so that bad lines don't crash the game."
+        hints:
+          - "Loop over `io::stdin().lines()`. Use `let guess: i32 = match text.parse() { Ok(n) => n, Err(_) => { ...; continue; } };`"
+          - "Count only valid guesses. On a correct guess, print and `break`."
+          - "Remember whether the player won (`let mut won = false;`) so you know whether to print `out of guesses` after the loop."
+        tests:
+          - stdin: "3\nabc\n9\n7\n"
+            expect: "too low\nnot a number: abc\ntoo high\ncorrect! guesses: 3"
+          - stdin: "7\n5\n"
+            hidden: true
+          - stdin: "1\n2\n"
+            hidden: true
+          - stdin: "\n7\n"
+            hidden: true

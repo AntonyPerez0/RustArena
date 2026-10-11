@@ -1,0 +1,299 @@
+topic: lifetimes
+drills:
+  - type: predict
+    pre: |
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+    body: |
+      let x = String::from("crab");
+      let y = String::from("ferris");
+      println!("{}", longest(&x, &y));
+      println!("{}", longest("abc", "xyz"));
+    why: longest returns the longer string, and the first one on a tie. The annotations only describe lifetimes; they don't change what the function does.
+
+  - type: predict
+    pre: |
+      struct Words<'a> {
+          rest: &'a str,
+      }
+
+      impl<'a> Words<'a> {
+          fn next_word(&mut self) -> Option<&'a str> {
+              let t = self.rest.trim_start();
+              if t.is_empty() {
+                  return None;
+              }
+              let end = t.find(' ').unwrap_or(t.len());
+              self.rest = &t[end..];
+              Some(&t[..end])
+          }
+      }
+    body: |
+      let mut w = Words { rest: "  go   north " };
+      let a = w.next_word();
+      let b = w.next_word();
+      let c = w.next_word();
+      println!("{:?} {:?} {:?}", a, b, c);
+    why: Each call skips spaces, returns the next word and moves rest past it. After two words nothing is left, so the third call returns None.
+
+  - type: predict
+    pre: |
+      fn kind(code: u8) -> &'static str {
+          match code {
+              0 => "ok",
+              1 => "warn",
+              _ => "fail",
+          }
+      }
+    body: |
+      let label;
+      {
+          let code = 1;
+          label = kind(code);
+      }
+      println!("{label} {}", kind(9));
+    why: "String literals are &'static str, so the result can be kept after code is gone. 9 hits the _ arm."
+
+  - type: fill
+    prompt: The result lives as long as both inputs.
+    pre: |
+      fn longer<'a>(a: &'a str, b: &'a str) -> &[['a]] str {
+          if b.len() > a.len() { b } else { a }
+      }
+    body: |
+      println!("{}", longer("hi", "hello"));
+    why: The output gets the same lifetime name as the inputs it may come from.
+
+  - type: fill
+    prompt: A struct holding a reference needs a lifetime on the field.
+    pre: |
+      struct Excerpt<'a> {
+          part: &[['a]] str,
+      }
+    body: |
+      let text = String::from("Call me Ishmael. Some years ago...");
+      let first = text.split('.').next().unwrap();
+      let e = Excerpt { part: first };
+      println!("{}", e.part);
+    why: "Every reference field must name a lifetime, here the struct's own 'a: the Excerpt can't outlive text."
+
+  - type: fill
+    prompt: Declare the lifetime for the impl block.
+    pre: |
+      struct Cursor<'a> {
+          text: &'a str,
+          pos: usize,
+      }
+
+      impl[[<'a>]] Cursor<'a> {
+          fn rest(&self) -> &'a str {
+              &self.text[self.pos..]
+          }
+      }
+    body: |
+      let c = Cursor { text: "hello world", pos: 6 };
+      println!("{}", c.rest());
+    why: "Like impl<T> for generic types, impl<'a> declares the lifetime before Cursor<'a> uses it."
+
+  - type: bug
+    pre: |
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+    body: |
+      let a = String::from("short");
+      let winner;
+      {
+          let b = String::from("much longer");
+          winner = longest(&a, &b); // BUG
+      }
+      println!("{winner}");
+    fix: "winner = longest(&a, &b).to_string();"
+    prompt: "This should print `much longer`, but it doesn't compile. Click the line to fix."
+    why: winner may borrow from b, which is dropped at the end of the block. Turning the result into an owned String (or moving b out of the block) fixes it.
+
+  - type: bug
+    pre: |
+      fn tag(name: &str) -> &str { &format!("#{name}") } // BUG
+    body: |
+      println!("{}", tag("rust"));
+    fix: 'fn tag(name: &str) -> String { format!("#{name}") }'
+    why: The String made by format! is dropped when tag returns, so a reference to it would dangle (E0515). Return the String itself.
+
+  - type: bug
+    pre: |
+      fn after<'a>(line: &'a str, prefix: &'a str) -> &'a str { // BUG
+          line.strip_prefix(prefix).unwrap_or(line)
+      }
+    body: |
+      let line = String::from("WARN: low battery");
+      let msg;
+      {
+          let prefix = String::from("WARN: ");
+          msg = after(&line, &prefix);
+      }
+      println!("{msg}");
+    fix: "fn after<'a>(line: &'a str, prefix: &str) -> &'a str {"
+    prompt: "This should print `low battery`. Click the line to fix."
+    why: The result only borrows from line, but the signature ties it to prefix too, so prefix would have to outlive msg. Give prefix its own lifetime.
+
+  - type: compiles
+    answer: no
+    body: |
+      let r;
+      {
+          let s = String::from("gone");
+          r = &s;
+      }
+      println!("{r}");
+    why: s is dropped at the end of the block while r still refers to it and is used later (E0597).
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn longest(a: &str, b: &str) -> &str {
+          if a.len() >= b.len() { a } else { b }
+      }
+    body: |
+      println!("{}", longest("x", "yy"));
+    why: Two input references and no self, so elision can't tell which one the result borrows from (E0106).
+
+  - type: compiles
+    answer: yes
+    pre: |
+      fn first_word(s: &str) -> &str {
+          s.split(' ').next().unwrap_or("")
+      }
+    body: |
+      let text = String::from("hello world");
+      println!("{}", first_word(&text));
+    why: With exactly one input reference, elision gives the result its lifetime, so no annotation is needed.
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn make() -> &'static str {
+          let s = String::from("built at run time");
+          &s
+      }
+    body: |
+      println!("{}", make());
+    why: "'static can't make a local String live longer. It's dropped when make returns (E0515); return the String instead."
+
+  - type: compiles
+    answer: no
+    pre: |
+      struct Player {
+          name: &str,
+      }
+    body: |
+      let p = Player { name: "ana" };
+      println!("{}", p.name);
+    why: "A reference field needs a lifetime (E0106): struct Player<'a> { name: &'a str }, or own the data with String."
+
+  - type: compiles
+    answer: yes
+    pre: |
+      fn after_prefix<'a>(line: &'a str, prefix: &str) -> &'a str {
+          line.strip_prefix(prefix).unwrap_or(line)
+      }
+    body: |
+      let line = String::from("INFO: ready");
+      let msg;
+      {
+          let p = String::from("INFO: ");
+          msg = after_prefix(&line, &p);
+      }
+      println!("{msg}");
+    why: The result is tied only to line, so p may be dropped before msg is used.
+
+  - type: compiles
+    answer: no
+    body: |
+      let s = format!("id-{}", 7).as_str();
+      println!("{s}");
+    why: The String from format! is a temporary that's dropped at the end of the statement, while s still borrows it (E0716). Store it in a variable first.
+
+  - type: choice
+    prompt: "A function builds a brand-new string with format! and gives it to the caller. What should it return?"
+    choices:
+      - "&str, annotated with 'a"
+      - "&'static str"
+      - "String"
+      - "&String"
+    answer: 3
+    why: The new string is owned by the function and would be dropped at its end, so any reference to it would dangle. Returning the String gives ownership to the caller.
+
+  - type: boss
+    prompt: |
+      Parse URL query strings like `name=ana&lang=rust` without copying any text.
+
+      - `fn parse_query(q: &str) -> Vec<(&str, &str)>` splits on `&`, then each pair at the first `=`. Pairs without `=` are skipped.
+      - `fn get<'a>(pairs: &[(&'a str, &'a str)], key: &str) -> Option<&'a str>` returns the value of the first pair with that key.
+
+      The results must borrow from the original query text: a hidden test drops the `Vec` of pairs and keeps using a value.
+    seed: |
+      fn parse_query(q: &str) -> Vec<(&str, &str)> {
+          todo!()
+      }
+
+      fn get<'a>(pairs: &[(&'a str, &'a str)], key: &str) -> Option<&'a str> {
+          todo!()
+      }
+    solution: |
+      fn parse_query(q: &str) -> Vec<(&str, &str)> {
+          let mut out = Vec::new();
+          for part in q.split('&') {
+              if let Some((k, v)) = part.split_once('=') {
+                  out.push((k, v));
+              }
+          }
+          out
+      }
+
+      fn get<'a>(pairs: &[(&'a str, &'a str)], key: &str) -> Option<&'a str> {
+          for &(k, v) in pairs {
+              if k == key {
+                  return Some(v);
+              }
+          }
+          None
+      }
+    harness: |
+      #[test]
+      fn splits_into_pairs() {
+          assert_eq!(parse_query("name=ana&lang=rust"), vec![("name", "ana"), ("lang", "rust")], "parse_query(\"name=ana&lang=rust\")");
+      }
+
+      #[test]
+      fn skips_pairs_without_equals() {
+          assert_eq!(parse_query("debug&page=2"), vec![("page", "2")], "parse_query(\"debug&page=2\")");
+      }
+
+      #[test]
+      fn an_empty_value_is_kept() {
+          assert_eq!(parse_query("q="), vec![("q", "")], "parse_query(\"q=\")");
+      }
+
+      #[test]
+      fn get_finds_the_first_match() {
+          let pairs = parse_query("a=1&b=2&a=3");
+          assert_eq!(get(&pairs, "a"), Some("1"), "get(a)");
+          assert_eq!(get(&pairs, "z"), None, "get(z)");
+      }
+
+      #[test]
+      fn the_value_outlives_the_pairs() {
+          let query = String::from("user=ferris&id=7");
+          let id;
+          {
+              let pairs = parse_query(&query);
+              id = get(&pairs, "id");
+          }
+          assert_eq!(id, Some("7"), "value used after the pairs were dropped");
+      }
+    hints:
+      - "`parse_query`: loop over `q.split('&')` and push `(k, v)` from `part.split_once('=')`. Elision ties the slices to `q`."
+      - "`get`: loop `for &(k, v) in pairs` and return `Some(v)` when `k == key`. The `'a` on the inner `&str`s lets the value outlive the slice of pairs."
+    why: Borrowed slices make parsing fast, and putting 'a on the inner &str (not on the slice) lets values outlive the temporary list of pairs.

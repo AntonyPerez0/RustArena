@@ -1,0 +1,1705 @@
+id: lifetimes
+title: Lifetimes
+phase: "Errors and abstraction"
+summary: How Rust proves every reference points at something still alive. Read lifetime errors calmly, annotate functions and structs that hand out references, know the elision rules, and know when returning owned data is the better answer.
+roadmap: [Lifetimes & Borrow Checker, Explicit Lifetime Annotations, Lifetime Elision Rules, Covariant & Contravariant Lifetimes]
+steps:
+  - title: "Why lifetimes exist: scopes and dangling references"
+    id: lifetimes-1
+    text: |
+      A reference points at a value that someone else owns. If the owner is dropped while the reference is still in use, the reference points at freed memory: a **dangling reference**. In C and C++ that's one of the most common causes of crashes and security holes. Rust rules it out completely, at compile time, with the **borrow checker**.
+
+      The borrow checker compares two stretches of code:
+
+      1. **How long the value lives**: from where it's created to where it's dropped (the end of its scope, or where it's moved away).
+      2. **How long the reference is used**: from where it's created to its **last use**.
+
+      The second must fit inside the first. That stretch where a reference must stay valid is its **lifetime**. Here's the classic failure:
+
+      ```rust compile_fail
+      fn main() {
+          let r;
+          {
+              let s = String::from("crab");
+              r = &s;
+          }
+          println!("{r}");
+      }
+      ```
+
+      ```error
+      error[E0597]: `s` does not live long enough
+       --> src/main.rs:5:13
+        |
+      4 |         let s = String::from("crab");
+        |             - binding `s` declared here
+      5 |         r = &s;
+        |             ^^ borrowed value does not live long enough
+      6 |     }
+        |     - `s` dropped here while still borrowed
+      7 |     println!("{r}");
+        |                - borrow later used here
+      ```
+
+      Draw the two stretches next to the code and the problem is plain:
+
+      ```text
+      let r;                              r's use ----------------+
+      {                                                           |
+          let s = String::from("crab");   s lives --+             |
+          r = &s;                                   |             |
+      }                                   s dropped +             |
+      println!("{r}");                    last use of r ----------+
+      ```
+
+      `s` is gone at the `}`, but `r` is still used after it. The error's four labels tell exactly this story: where `s` was declared, where it was borrowed, where it was dropped, and where the borrow was used too late. **Read every label**, not just the first line: they point at the three places you might change.
+
+      ### Three ways to fix it
+
+      1. **Make the value live longer**: move `let s` out to the outer scope.
+      2. **Use the reference sooner**: move the `println!` inside the block, before `s` is dropped.
+      3. **Don't borrow; own**: make `r` a `String` (`r = s;` moves it out, or `r = s.clone();`).
+
+      ```rust run
+      fn main() {
+          let s = String::from("crab");
+          let r;
+          {
+              r = &s;
+              println!("inside: {r}");
+          }
+          println!("outside: {r}");
+      }
+      ```
+
+      ```output
+      inside: crab
+      outside: crab
+      ```
+
+      ### Lifetimes are checked, not chosen
+
+      A lifetime is not something you set, and nothing you write changes when a value is dropped. Values are dropped where the ownership rules say. Lifetimes are the compiler's way of **checking** that references respect that. Most of the time it works them out on its own, just like it infers most types. In the next steps you'll see the few places where it needs you to *describe* how references relate.
+
+      Remember from the borrowing module that a reference's lifetime ends at its **last use**, not at the end of its scope. That's why this is fine: `first` isn't used after the `push`.
+
+      ```rust run
+      fn main() {
+          let mut scores = vec![10, 20];
+          let first = &scores[0];
+          println!("first: {first}");
+          scores.push(30);
+          println!("{:?}", scores);
+      }
+      ```
+
+      ```output
+      first: 10
+      [10, 20, 30]
+      ```
+
+      **Your turn:** this program doesn't compile: `longest_name` borrows from `names`, which is dropped at the end of the inner block. Fix it by making `names` live long enough (don't copy the string). It should print `Longest: Corro the Unsafe`.
+    seed: |
+      fn main() {
+          let longest_name: &str;
+          {
+              let names = vec![
+                  String::from("Ferris"),
+                  String::from("Corro the Unsafe"),
+                  String::from("Ana"),
+              ];
+              let mut best: &str = &names[0];
+              for n in &names {
+                  if n.len() > best.len() {
+                      best = n;
+                  }
+              }
+              longest_name = best;
+          }
+          println!("Longest: {longest_name}");
+      }
+    solution: |
+      fn main() {
+          let names = vec![
+              String::from("Ferris"),
+              String::from("Corro the Unsafe"),
+              String::from("Ana"),
+          ];
+          let longest_name: &str;
+          {
+              let mut best: &str = &names[0];
+              for n in &names {
+                  if n.len() > best.len() {
+                      best = n;
+                  }
+              }
+              longest_name = best;
+          }
+          println!("Longest: {longest_name}");
+      }
+    forbid:
+      - pattern: '\.clone\(\)|\.to_string\(\)|\.to_owned\(\)|String::from\(\s*(best|longest_name)'
+        message: "Fix it by making `names` live long enough, not by copying the string."
+    hints:
+      - "Read the error's labels: `names` is dropped at the `}` of the inner block, but `longest_name` is used after it."
+      - "Move the whole `let names = vec![...];` statement above the inner block, into `main`'s own scope."
+    tests:
+      - expect: "Longest: Corro the Unsafe"
+    more:
+      - task: |
+          This program tries to keep references to labels that are created inside the loop, so each `label` is dropped at the end of its round. Fix it the third way, by **owning** the data: make `picks` a `Vec<String>` and push the labels themselves. It should print `["round 1", "round 2", "round 3"]`.
+        seed: |
+          fn main() {
+              let mut picks: Vec<&str> = Vec::new();
+              for round in 1..=3 {
+                  let label = format!("round {round}");
+                  picks.push(&label);
+              }
+              println!("{:?}", picks);
+          }
+        solution: |
+          fn main() {
+              let mut picks: Vec<String> = Vec::new();
+              for round in 1..=3 {
+                  let label = format!("round {round}");
+                  picks.push(label);
+              }
+              println!("{:?}", picks);
+          }
+        require:
+          - pattern: 'Vec<String>'
+            message: "Make `picks` a `Vec<String>` so it owns the labels."
+        hints:
+          - "Each `label` lives for one round of the loop only, so a `&label` can't be kept."
+          - "Change the type to `Vec<String>` and push `label` itself (moving it into the vector)."
+        tests:
+          - expect: "[\"round 1\", \"round 2\", \"round 3\"]"
+      - task: |
+          Borrowing works great when the data lives long enough. Read **all** of stdin into one `String`, then find the longest line as a `&str` that borrows from that `String` (no copying). Count length in characters (`.chars().count()`); on a tie, keep the first. Print:
+
+          ```
+          longest: <line> (<n> chars)
+          ```
+
+          For empty input, print `longest:  (0 chars)` (an empty line between the two spaces).
+        seed: |
+          use std::io::Read;
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              // Find the longest line as a &str borrowed from input
+          }
+        solution: |
+          use std::io::Read;
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              let mut longest: &str = "";
+              for line in input.lines() {
+                  if line.chars().count() > longest.chars().count() {
+                      longest = line;
+                  }
+              }
+              println!("longest: {} ({} chars)", longest, longest.chars().count());
+          }
+        forbid:
+          - pattern: '\.clone\(\)|\.to_string\(\)|\.to_owned\(\)|String::from'
+            message: "Keep the longest line as a `&str` that borrows from `input`; no copies needed."
+        hints:
+          - "Start with `let mut longest: &str = \"\";` and loop over `input.lines()`: each line is a `&str` borrowed from `input`."
+          - "`input` lives until the end of `main`, so `longest` can borrow from it for as long as you need."
+        tests:
+          - stdin: "short\na much longer line\nmid\n"
+            expect: "longest: a much longer line (18 chars)"
+          - stdin: "héllo\nabcd\n"
+          - stdin: "tie1\ntie2\nab\n"
+            hidden: true
+          - stdin: ""
+            hidden: true
+
+  - title: Lifetime annotations on functions
+    id: lifetimes-2
+    text: |
+      Inside one function, the borrow checker sees everything and needs no help. Between functions it's different: when it checks a call, it looks only at the called function's **signature**, never its body. So when a function returns a reference, the signature has to say **which input the result borrows from**.
+
+      ```rust compile_fail
+      fn longest(a: &str, b: &str) -> &str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn main() {
+          println!("{}", longest("ferris", "crab"));
+      }
+      ```
+
+      ```error
+      error[E0106]: missing lifetime specifier
+       --> src/main.rs:1:33
+        |
+      1 | fn longest(a: &str, b: &str) -> &str {
+        |               ----     ----     ^ expected named lifetime parameter
+        |
+        = help: this function's return type contains a borrowed value, but the signature does not say whether it is borrowed from `a` or `b`
+      help: consider introducing a named lifetime parameter
+        |
+      1 | fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+      ```
+
+      The help line already has the answer. A **lifetime annotation** is a name that starts with an apostrophe, usually `'a`. You declare it in `<>` after the function name, like a generic type parameter, and write it after the `&`:
+
+      ```rust run
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn main() {
+          let title = String::from("Rustacean Station");
+          {
+              let other = String::from("Crab Talk");
+              let result = longest(&title, &other);
+              println!("{result}");
+          }
+      }
+      ```
+
+      ```output
+      Rustacean Station
+      ```
+
+      Read `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str` as: "there's some stretch of code `'a` during which both `a` and `b` are valid; the result is valid during that stretch too". At a call, the compiler picks `'a` as the **overlap** of the two arguments' lifetimes. So the result may be used only while **both** inputs are alive.
+
+      That's why this doesn't compile, even though the result would actually be `title`:
+
+      ```rust compile_fail
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn main() {
+          let title = String::from("Rustacean Station");
+          let result;
+          {
+              let other = String::from("Crab Talk");
+              result = longest(&title, &other);
+          }
+          println!("{result}");
+      }
+      ```
+
+      ```error
+      error[E0597]: `other` does not live long enough
+      ```
+
+      The compiler goes by the signature, not by which branch runs: the result **might** be `other`, and `other` is dropped at the `}`.
+
+      ### Tie the result only to what it really borrows from
+
+      If the result comes from just one parameter, put `'a` only on that one. The other parameter gets its own, separate lifetime (you can leave it unwritten):
+
+      ```rust run
+      fn after_prefix<'a>(line: &'a str, prefix: &str) -> &'a str {
+          if line.starts_with(prefix) {
+              &line[prefix.len()..]
+          } else {
+              line
+          }
+      }
+
+      fn main() {
+          let log = String::from("ERROR: disk full");
+          let msg;
+          {
+              let prefix = String::from("ERROR: ");
+              msg = after_prefix(&log, &prefix);
+          }
+          println!("{msg}");
+      }
+      ```
+
+      ```output
+      disk full
+      ```
+
+      Here `prefix` may be dropped early, because the signature promises the result borrows from `line` only. If the body then tried to return `prefix`, the compiler would refuse with ``error[E0621]: explicit lifetime required in the type of `prefix` ``: the body must keep the signature's promise.
+
+      ### Common mistakes
+
+      - **Thinking `'a` makes something live longer.** Annotations only *describe* relationships so the compiler can check them. If the data really is dropped too early, no annotation fixes it; move the data or own it.
+      - **Tying every parameter to `'a` out of habit.** It works inside the function but makes callers' lives harder (like `longest` above). Tie the output only to the inputs it can come from.
+      - **Annotating a function that doesn't return a reference.** `fn count(a: &str, b: &str) -> usize` needs no lifetimes at all; there's nothing to describe.
+
+      **Your turn:** two players finish a game. Make `winner` compile by adding lifetime annotations, and write its body: it returns the name with the higher score (on a tie, `name_a`). The result can come from either name.
+    seed: |
+      fn winner(name_a: &str, score_a: u32, name_b: &str, score_b: u32) -> &str {
+          todo!()
+      }
+    solution: |
+      fn winner<'a>(name_a: &'a str, score_a: u32, name_b: &'a str, score_b: u32) -> &'a str {
+          if score_b > score_a { name_b } else { name_a }
+      }
+    harness: |
+      #[test]
+      fn the_higher_score_wins() {
+          assert_eq!(winner("ana", 10, "bo", 25), "bo", "winner(\"ana\", 10, \"bo\", 25)");
+          assert_eq!(winner("ana", 30, "bo", 25), "ana", "winner(\"ana\", 30, \"bo\", 25)");
+      }
+
+      #[test]
+      fn a_tie_goes_to_the_first_player() {
+          assert_eq!(winner("ana", 7, "bo", 7), "ana", "winner(\"ana\", 7, \"bo\", 7)");
+      }
+
+      #[test]
+      fn works_with_borrowed_strings() {
+          let a = String::from("Ferris");
+          let b = String::from("Corro");
+          let w = winner(&a, 1, &b, 2);
+          assert_eq!(w, "Corro", "winner(Ferris 1, Corro 2)");
+      }
+    hints:
+      - "Declare the lifetime after the name: `fn winner<'a>(...)`."
+      - "Both names can be returned, so both get `'a`, and so does the result: `name_a: &'a str`, `name_b: &'a str`, `-> &'a str`."
+    more:
+      - task: |
+          Write `pick` with lifetime annotations: it returns the item at `index` as a `&str`, or `fallback` if the index is out of range. Both `items` and `fallback` can end up as the result.
+        seed: |
+          fn pick(items: &[String], index: usize, fallback: &str) -> &str {
+              todo!()
+          }
+        solution: |
+          fn pick<'a>(items: &'a [String], index: usize, fallback: &'a str) -> &'a str {
+              match items.get(index) {
+                  Some(item) => item,
+                  None => fallback,
+              }
+          }
+        harness: |
+          fn menu() -> Vec<String> {
+              vec![String::from("soup"), String::from("salad"), String::from("pie")]
+          }
+
+          #[test]
+          fn picks_an_item_in_range() {
+              let m = menu();
+              assert_eq!(pick(&m, 1, "nothing"), "salad", "pick(menu, 1)");
+          }
+
+          #[test]
+          fn uses_the_fallback_out_of_range() {
+              let m = menu();
+              assert_eq!(pick(&m, 3, "nothing"), "nothing", "pick(menu, 3)");
+          }
+
+          #[test]
+          fn an_empty_list_gives_the_fallback() {
+              assert_eq!(pick(&[], 0, "empty"), "empty", "pick(&[], 0)");
+          }
+        hints:
+          - "Both `items` and `fallback` can be returned, so both get `'a`: `items: &'a [String]`, `fallback: &'a str`."
+          - "`match items.get(index) { Some(item) => item, None => fallback }`: a `&String` turns into a `&str` automatically."
+      - task: |
+          Write `trim_comment`: it returns the part of `line` before the first `marker`, with trailing spaces removed, or the whole `line` if there's no marker. For example, `trim_comment("x = 5 # set x", "#")` is `"x = 5"`.
+
+          The result only ever borrows from `line`, so tie it **only** to `line`. One hidden test drops the `marker` string before using the result, which compiles only if the signature says the result doesn't depend on `marker`.
+        seed: |
+          fn trim_comment(line: &str, marker: &str) -> &str {
+              todo!()
+          }
+        solution: |
+          fn trim_comment<'a>(line: &'a str, marker: &str) -> &'a str {
+              match line.find(marker) {
+                  Some(i) => line[..i].trim_end(),
+                  None => line,
+              }
+          }
+        harness: |
+          #[test]
+          fn removes_a_hash_comment() {
+              assert_eq!(trim_comment("x = 5 # set x", "#"), "x = 5", "trim_comment(\"x = 5 # set x\", \"#\")");
+          }
+
+          #[test]
+          fn keeps_a_line_without_a_comment() {
+              assert_eq!(trim_comment("y = 2", "//"), "y = 2", "trim_comment(\"y = 2\", \"//\")");
+          }
+
+          #[test]
+          fn a_whole_line_comment_leaves_nothing() {
+              assert_eq!(trim_comment("// todo", "//"), "", "trim_comment(\"// todo\", \"//\")");
+          }
+
+          #[test]
+          fn the_marker_can_be_dropped_early() {
+              let line = String::from("speed = 9 ; fast");
+              let code;
+              {
+                  let marker = String::from(";");
+                  code = trim_comment(&line, &marker);
+              }
+              assert_eq!(code, "speed = 9", "result used after the marker was dropped");
+          }
+        hints:
+          - "Only `line` gets the lifetime: `fn trim_comment<'a>(line: &'a str, marker: &str) -> &'a str`."
+          - "`line.find(marker)` gives `Some(index)` of the marker; return `line[..i].trim_end()` in that case, else `line`."
+
+  - title: The elision rules
+    id: lifetimes-3
+    text: |
+      You've written functions like `fn first_word(s: &str) -> &str` since the slices module, with no `'a` anywhere. That works because of **lifetime elision**: a few rules the compiler applies to fill in lifetimes for the common cases. Only when the rules don't settle the question do you get `E0106` and have to write them yourself.
+
+      **Rule 1.** Each reference parameter gets its own lifetime.
+      `fn f(a: &str, b: &str)` means `fn f<'a, 'b>(a: &'a str, b: &'b str)`.
+
+      **Rule 2.** If there is exactly **one** input lifetime, every reference in the output gets it.
+      `fn first_word(s: &str) -> &str` means `fn first_word<'a>(s: &'a str) -> &'a str`.
+
+      **Rule 3.** If there's `&self` or `&mut self`, every reference in the output gets **self's** lifetime.
+      `fn name(&self) -> &str` means `fn name<'a>(&'a self) -> &'a str`.
+
+      | You write | After elision | |
+      |---|---|---|
+      | `fn len(s: &str) -> usize` | `fn len<'a>(s: &'a str) -> usize` | no output reference: nothing to decide |
+      | `fn first(v: &[i32]) -> &i32` | `fn first<'a>(v: &'a [i32]) -> &'a i32` | rule 2 |
+      | `fn get(&self, key: &str) -> &str` | output borrows from `self` | rule 3 |
+      | `fn longest(a: &str, b: &str) -> &str` | two inputs, no `self` | E0106: you decide |
+      | `fn make() -> &str` | no inputs at all | E0106: return owned data (or `'static`, step 5) |
+
+      Rule 3 is what makes getters work:
+
+      ```rust run
+      struct Inventory {
+          items: Vec<String>,
+      }
+
+      impl Inventory {
+          fn find(&self, prefix: &str) -> Option<&str> {
+              for item in &self.items {
+                  if item.starts_with(prefix) {
+                      return Some(item);
+                  }
+              }
+              None
+          }
+      }
+
+      fn main() {
+          let inv = Inventory { items: vec![String::from("sword"), String::from("shield")] };
+          println!("{:?}", inv.find("sh"));
+          println!("{:?}", inv.find("bow"));
+      }
+      ```
+
+      ```output
+      Some("shield")
+      None
+      ```
+
+      `find` has two references in (`self` and `prefix`), but rule 3 gives the result `self`'s lifetime, which is exactly right: the item comes from the inventory, and `prefix` can be a short-lived string.
+
+      ### When rule 3 guesses wrong
+
+      Rule 3 assumes a method's result borrows from `self`. If it can come from another argument, the guess is wrong and the compiler tells you:
+
+      ```rust compile_fail
+      struct Config {
+          default_label: String,
+      }
+
+      impl Config {
+          fn label_for(&self, custom: &str) -> &str {
+              if custom.is_empty() { &self.default_label } else { custom }
+          }
+      }
+
+      fn main() {
+          let c = Config { default_label: String::from("untitled") };
+          println!("{}", c.label_for(""));
+      }
+      ```
+
+      ```error
+      error: lifetime may not live long enough
+       --> src/main.rs:7:61
+        |
+      6 |     fn label_for(&self, custom: &str) -> &str {
+        |                  -              - let's call the lifetime of this reference `'1`
+        |                  |
+        |                  let's call the lifetime of this reference `'2`
+      7 |         if custom.is_empty() { &self.default_label } else { custom }
+        |                                                             ^^^^^^ method was supposed to return data with lifetime `'2` but it is returning data with lifetime `'1`
+      ```
+
+      The compiler names the two elided lifetimes `'1` and `'2` to explain: the signature (via rule 3) promised data living as long as `self` (`'2`), but `custom` lives for `'1`. Since this result can come from either, both need the same name: `fn label_for<'a>(&'a self, custom: &'a str) -> &'a str`.
+
+      ### The anonymous lifetime `'_`
+
+      Sometimes a type has a lifetime parameter but you don't need to name it. Write `'_`, "some lifetime, figured out by elision". You've seen it in `fmt::Formatter<'_>`, and you'll use it for structs with references in the next step.
+
+      ### Workplace note
+
+      Don't write lifetimes the rules already cover. Clippy's `needless_lifetimes` lint flags `fn first<'a>(v: &'a [i32]) -> &'a i32` and suggests the shorter form. Real Rust code has far fewer `'a`s than beginners expect.
+
+      **Your turn:** this file has four functions and only some of them need lifetime annotations. Add annotations **only** where elision can't decide (the compiler's E0106 errors tell you which), and leave the others unannotated.
+    seed: |
+      struct Catalog {
+          titles: Vec<String>,
+      }
+
+      impl Catalog {
+          fn title_of(&self, id: usize) -> &str {
+              &self.titles[id]
+          }
+      }
+
+      fn file_extension(path: &str) -> &str {
+          match path.rfind('.') {
+              Some(i) => &path[i + 1..],
+              None => "",
+          }
+      }
+
+      fn shorter(a: &str, b: &str) -> &str {
+          if b.len() < a.len() { b } else { a }
+      }
+
+      fn non_empty_or(value: &str, fallback: &str) -> &str {
+          if value.is_empty() { fallback } else { value }
+      }
+    solution: |
+      struct Catalog {
+          titles: Vec<String>,
+      }
+
+      impl Catalog {
+          fn title_of(&self, id: usize) -> &str {
+              &self.titles[id]
+          }
+      }
+
+      fn file_extension(path: &str) -> &str {
+          match path.rfind('.') {
+              Some(i) => &path[i + 1..],
+              None => "",
+          }
+      }
+
+      fn shorter<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if b.len() < a.len() { b } else { a }
+      }
+
+      fn non_empty_or<'a>(value: &'a str, fallback: &'a str) -> &'a str {
+          if value.is_empty() { fallback } else { value }
+      }
+    forbid:
+      - pattern: 'fn\s+(title_of|file_extension)\s*<'
+        message: "Elision already handles `title_of` (rule 3) and `file_extension` (rule 2): leave them unannotated."
+      - pattern: "'static"
+        message: "`'static` would be wrong here: the results borrow from the arguments."
+    harness: |
+      #[test]
+      fn title_of_borrows_from_the_catalog() {
+          let c = Catalog { titles: vec![String::from("Dune"), String::from("Emma")] };
+          assert_eq!(c.title_of(1), "Emma", "title_of(1)");
+      }
+
+      #[test]
+      fn file_extension_finds_the_last_dot() {
+          assert_eq!(file_extension("photo.jpeg"), "jpeg", "file_extension(\"photo.jpeg\")");
+          assert_eq!(file_extension("backup.tar.gz"), "gz", "file_extension(\"backup.tar.gz\")");
+          assert_eq!(file_extension("README"), "", "file_extension(\"README\")");
+      }
+
+      #[test]
+      fn shorter_returns_the_shorter_string() {
+          assert_eq!(shorter("abc", "de"), "de", "shorter(\"abc\", \"de\")");
+          assert_eq!(shorter("ab", "cd"), "ab", "shorter(\"ab\", \"cd\")");
+      }
+
+      #[test]
+      fn non_empty_or_falls_back() {
+          assert_eq!(non_empty_or("", "guest"), "guest", "non_empty_or(\"\", \"guest\")");
+          assert_eq!(non_empty_or("ana", "guest"), "ana", "non_empty_or(\"ana\", \"guest\")");
+      }
+    hints:
+      - "`title_of` has `&self` (rule 3) and `file_extension` has one input (rule 2): those are fine as they are."
+      - "`shorter` and `non_empty_or` take two references and can return either one: give both parameters and the result the same `'a`."
+    more:
+      - task: |
+          Fill in the blanks to write out, by hand, the lifetimes that elision fills in for you (use `'a`). The program prints `Ferris`. In real code you'd leave these out: clippy would call them needless.
+        fill: |
+          struct Player {
+              name: String,
+          }
+
+          impl Player {
+              fn name<'a>(&[['a]] self) -> &'a str {
+                  &self.name
+              }
+          }
+
+          fn first_word<[['a]]>(s: &'a str) -> &[['a]] str {
+              s.split(' ').next().unwrap_or("")
+          }
+
+          fn main() {
+              let p = Player { name: String::from("Ferris the Crab") };
+              println!("{}", first_word(p.name()));
+          }
+        hints:
+          - "Rule 3: the result of a method borrows from `self`, so `self` gets the same `'a` as the result."
+          - "Rule 2: one input, so the input and the output share `'a`, declared in `<'a>` after the name."
+        tests:
+          - expect: "Ferris"
+      - task: |
+          Write the method `label_for` on `Config`: it returns `custom` unless it's empty, in which case it returns the config's `default_label`. Rule 3 alone gets this wrong (it assumes the result always comes from `self`), so annotate it yourself.
+        seed: |
+          struct Config {
+              default_label: String,
+          }
+
+          impl Config {
+              fn label_for(&self, custom: &str) -> &str {
+                  todo!()
+              }
+          }
+        solution: |
+          struct Config {
+              default_label: String,
+          }
+
+          impl Config {
+              fn label_for<'a>(&'a self, custom: &'a str) -> &'a str {
+                  if custom.is_empty() { &self.default_label } else { custom }
+              }
+          }
+        harness: |
+          fn config() -> Config {
+              Config { default_label: String::from("untitled") }
+          }
+
+          #[test]
+          fn uses_the_custom_label() {
+              assert_eq!(config().label_for("Q3 report"), "Q3 report", "label_for(\"Q3 report\")");
+          }
+
+          #[test]
+          fn falls_back_to_the_default() {
+              assert_eq!(config().label_for(""), "untitled", "label_for(\"\")");
+          }
+
+          #[test]
+          fn works_with_an_owned_custom_label() {
+              let c = config();
+              let custom = String::from("draft");
+              assert_eq!(c.label_for(&custom), "draft", "label_for(&String)");
+          }
+        hints:
+          - "The result can come from `self` or from `custom`, so both need the same lifetime as the output."
+          - "`fn label_for<'a>(&'a self, custom: &'a str) -> &'a str`"
+
+  - title: Structs that hold references
+    id: lifetimes-4
+    text: |
+      A struct can hold a reference instead of owning its data. That's how fast parsers work: instead of copying every piece of the input into new `String`s, they hand out slices of the original text. But a struct holding a reference must not outlive the data it points at, so the struct gets a **lifetime parameter**:
+
+      ```rust compile_fail
+      struct Tokenizer {
+          rest: &str,
+      }
+
+      fn main() {}
+      ```
+
+      ```error
+      error[E0106]: missing lifetime specifier
+      ```
+
+      With the lifetime declared, here's a small tokenizer that splits a command into words, without copying a single byte:
+
+      ```rust run
+      struct Tokenizer<'a> {
+          rest: &'a str,
+      }
+
+      impl<'a> Tokenizer<'a> {
+          fn new(input: &'a str) -> Self {
+              Tokenizer { rest: input }
+          }
+
+          fn next_token(&mut self) -> Option<&'a str> {
+              let trimmed = self.rest.trim_start();
+              if trimmed.is_empty() {
+                  return None;
+              }
+              let end = trimmed.find(' ').unwrap_or(trimmed.len());
+              let (token, rest) = trimmed.split_at(end);
+              self.rest = rest;
+              Some(token)
+          }
+      }
+
+      fn main() {
+          let command = String::from("move  north 3");
+          let mut t = Tokenizer::new(&command);
+          let mut tokens = Vec::new();
+          while let Some(tok) = t.next_token() {
+              tokens.push(tok);
+          }
+          println!("{:?}", tokens);
+      }
+      ```
+
+      ```output
+      ["move", "north", "3"]
+      ```
+
+      Piece by piece:
+
+      - `struct Tokenizer<'a> { rest: &'a str }`: "a Tokenizer borrows a string for some lifetime `'a`, and can't outlive it".
+      - `impl<'a> Tokenizer<'a>`: the impl block declares `'a` before using it, exactly like `impl<T> Wrapper<T>` for generics.
+      - `fn new(input: &'a str) -> Self` ties the tokenizer to its input.
+      - `fn next_token(&mut self) -> Option<&'a str>` is the important one. The tokens borrow from **the input** (`'a`), not from the tokenizer.
+
+      ### Why `&'a str` and not just `&str`?
+
+      With `-> Option<&str>`, elision rule 3 would tie each token to `&mut self`: the tokenizer would stay mutably borrowed for as long as the token is used. Collecting tokens in a loop would then fail, because the next call needs `&mut t` again while the earlier tokens (in `tokens`) still hold the borrow:
+
+      ```error
+      error[E0499]: cannot borrow `t` as mutable more than once at a time
+         |
+         |     while let Some(tok) = t.next_token() {
+         |                           ^ `t` was mutably borrowed here in the previous iteration of the loop
+         |         tokens.push(tok);
+         |         ------ first borrow used here, in later iteration of loop
+      ```
+
+      Writing `'a` says the truth: a token is a slice of the original command, and stays valid as long as the command does, no matter what happens to the tokenizer.
+
+      ### The struct can't outlive its data
+
+      ```rust compile_fail
+      struct Tokenizer<'a> {
+          rest: &'a str,
+      }
+
+      fn main() {
+          let t;
+          {
+              let cmd = String::from("go north");
+              t = Tokenizer { rest: &cmd };
+          }
+          println!("{}", t.rest);
+      }
+      ```
+
+      ```error
+      error[E0597]: `cmd` does not live long enough
+      ```
+
+      Same error as in step 1, same fixes.
+
+      ### Returning a struct with a lifetime
+
+      A function that returns a borrowing struct can use elision, but write `'_` so the reader sees that something is borrowed. Since Rust 1.89 the compiler warns if you hide it (`fn parse(line: &str) -> Entry` gives `warning: hiding a lifetime that's elided elsewhere is confusing`):
+
+      ```rust
+      fn parse(line: &str) -> Entry<'_> { ... }          // elided, but visible
+      fn parse<'a>(line: &'a str) -> Entry<'a> { ... }   // the same thing, spelled out
+      ```
+
+      ### Workplace note
+
+      Borrowing structs are fast, but their lifetime spreads: anything that holds an `Entry<'a>` needs a `'a` too. Teams typically use them for short-lived **views** (parsers, iterators, a function that analyzes a buffer) and use owned `String` fields for data that's stored, returned through many layers, or sent to other threads. The last steps of this module come back to that choice.
+
+      **Your turn:** log lines look like `[WARN] disk almost full`. Give `LogLine` a lifetime so its fields can borrow from the line, and write `parse_log`: it returns `Some(LogLine)` with the text between the brackets as `level` and the rest (trimmed) as `message`, or `None` if the line doesn't start with `[` or has no `]`.
+
+      `line.strip_prefix('[')` returns the rest of the line after the `[`, or `None` if it doesn't start with one. Inside a function returning `Option`, `?` on an `Option` returns `None` early.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct LogLine {
+          level: &str,
+          message: &str,
+      }
+
+      fn parse_log(line: &str) -> Option<LogLine> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct LogLine<'a> {
+          level: &'a str,
+          message: &'a str,
+      }
+
+      fn parse_log(line: &str) -> Option<LogLine<'_>> {
+          let rest = line.strip_prefix('[')?;
+          let (level, message) = rest.split_once(']')?;
+          Some(LogLine { level, message: message.trim() })
+      }
+    harness: |
+      #[test]
+      fn parses_level_and_message() {
+          assert_eq!(parse_log("[WARN] disk almost full"), Some(LogLine { level: "WARN", message: "disk almost full" }), "parse_log(\"[WARN] disk almost full\")");
+      }
+
+      #[test]
+      fn trims_the_message() {
+          assert_eq!(parse_log("[INFO]   started  "), Some(LogLine { level: "INFO", message: "started" }), "parse_log(\"[INFO]   started  \")");
+      }
+
+      #[test]
+      fn rejects_a_line_without_brackets() {
+          assert_eq!(parse_log("no level here"), None, "parse_log(\"no level here\")");
+      }
+
+      #[test]
+      fn rejects_a_missing_closing_bracket() {
+          assert_eq!(parse_log("[ERROR disk"), None, "parse_log(\"[ERROR disk\")");
+      }
+
+      #[test]
+      fn borrows_from_an_owned_line() {
+          let line = String::from("[DEBUG] x=1");
+          let parsed = parse_log(&line).unwrap();
+          assert_eq!(parsed.level, "DEBUG", "level of \"[DEBUG] x=1\"");
+          assert_eq!(parsed.message, "x=1", "message of \"[DEBUG] x=1\"");
+      }
+    hints:
+      - "The struct becomes `struct LogLine<'a> { level: &'a str, message: &'a str }`, and the return type `Option<LogLine<'_>>`."
+      - "`let rest = line.strip_prefix('[')?;` then `let (level, message) = rest.split_once(']')?;`"
+      - "Finish with `Some(LogLine { level, message: message.trim() })`."
+    more:
+      - task: |
+          Settings come as one string like `"host=example.com; port=8080"`. Write the method `get` on `KeyValues`: it splits the input on `;`, splits each pair at `=`, and returns the trimmed value for `key` (comparing the trimmed key), or `None`.
+
+          The value must borrow from **the input** (`'a`), not from the `KeyValues`: a hidden test drops the `KeyValues` and keeps using the value. Change the return type accordingly.
+        seed: |
+          struct KeyValues<'a> {
+              input: &'a str,
+          }
+
+          impl<'a> KeyValues<'a> {
+              fn get(&self, key: &str) -> Option<&str> {
+                  todo!()
+              }
+          }
+        solution: |
+          struct KeyValues<'a> {
+              input: &'a str,
+          }
+
+          impl<'a> KeyValues<'a> {
+              fn get(&self, key: &str) -> Option<&'a str> {
+                  for pair in self.input.split(';') {
+                      if let Some((k, v)) = pair.split_once('=') {
+                          if k.trim() == key {
+                              return Some(v.trim());
+                          }
+                      }
+                  }
+                  None
+              }
+          }
+        harness: |
+          #[test]
+          fn finds_a_value() {
+              let kv = KeyValues { input: "host=example.com; port=8080" };
+              assert_eq!(kv.get("port"), Some("8080"), "get(\"port\")");
+              assert_eq!(kv.get("host"), Some("example.com"), "get(\"host\")");
+          }
+
+          #[test]
+          fn a_missing_key_is_none() {
+              let kv = KeyValues { input: "a=1;b=2" };
+              assert_eq!(kv.get("c"), None, "get(\"c\")");
+          }
+
+          #[test]
+          fn ignores_pairs_without_an_equals_sign() {
+              let kv = KeyValues { input: "junk; mode = dark" };
+              assert_eq!(kv.get("mode"), Some("dark"), "get(\"mode\")");
+          }
+
+          #[test]
+          fn the_value_outlives_the_key_values() {
+              let input = String::from("user=ana;lang=rust");
+              let lang;
+              {
+                  let kv = KeyValues { input: &input };
+                  lang = kv.get("lang");
+              }
+              assert_eq!(lang, Some("rust"), "value used after KeyValues was dropped");
+          }
+        hints:
+          - "Change the return type to `Option<&'a str>`: the value is a slice of `self.input`, which has lifetime `'a`."
+          - "`for pair in self.input.split(';')`, then `if let Some((k, v)) = pair.split_once('=')` and compare `k.trim() == key`."
+      - task: |
+          Write a whole program. The first line of stdin is a city; every following line is `name,city`. Read all of stdin into one `String`, parse the lines into a `Vec<Person>` where `struct Person<'a> { name: &'a str, city: &'a str }` borrows (trimmed) slices of the input, and print the name of everyone in that city, one per line, followed by `<n> found`. Don't copy any names or cities into new `String`s.
+        seed: |
+          use std::io::Read;
+
+          // struct Person<'a> { ... }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+          }
+        solution: |
+          use std::io::Read;
+
+          struct Person<'a> {
+              name: &'a str,
+              city: &'a str,
+          }
+
+          fn parse_people(text: &str) -> Vec<Person<'_>> {
+              let mut people = Vec::new();
+              for line in text.lines() {
+                  if let Some((name, city)) = line.split_once(',') {
+                      people.push(Person { name: name.trim(), city: city.trim() });
+                  }
+              }
+              people
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).unwrap();
+              let (wanted, rest) = input.split_once('\n').unwrap_or((input.as_str(), ""));
+              let people = parse_people(rest);
+              let mut found = 0;
+              for p in &people {
+                  if p.city == wanted.trim() {
+                      println!("{}", p.name);
+                      found += 1;
+                  }
+              }
+              println!("{found} found");
+          }
+        forbid:
+          - pattern: '\.clone\(\)|\.to_string\(\)|\.to_owned\(\)|String::from'
+            message: "Borrow slices of the input instead of making new `String`s."
+        hints:
+          - "`let (wanted, rest) = input.split_once('\\n').unwrap_or((input.as_str(), \"\"));` separates the first line."
+          - "For each line of `rest`, `line.split_once(',')` gives the name and city; push `Person { name: name.trim(), city: city.trim() }`."
+          - "A helper `fn parse_people(text: &str) -> Vec<Person<'_>>` keeps `main` short."
+        tests:
+          - stdin: "Lisbon\nana,Lisbon\nbo,Porto\ncy, Lisbon\n"
+            expect: "ana\ncy\n2 found"
+          - stdin: "Oslo\nana,Lisbon\n"
+            expect: "0 found"
+          - stdin: "Porto\nzed,Porto\namy,Porto\nmax,Faro\n"
+            hidden: true
+
+  - title: "'static: references that live forever"
+    id: lifetimes-5
+    text: |
+      One lifetime name is built in: `'static`, meaning "valid for the entire run of the program". Every string literal is a `&'static str`. Its bytes are stored inside the compiled program itself, so they're never freed.
+
+      ```rust run
+      fn level_name(code: u8) -> &'static str {
+          match code {
+              0 => "debug",
+              1 => "info",
+              2 => "warn",
+              _ => "error",
+          }
+      }
+
+      const APP: &str = "RustArena";
+
+      fn main() {
+          let name;
+          {
+              let code = 2;
+              name = level_name(code);
+          }
+          println!("{APP}: {name}");
+      }
+      ```
+
+      ```output
+      RustArena: warn
+      ```
+
+      - `level_name` takes no references, so elision has nothing to borrow from: `-> &str` alone would be E0106. The result is always a literal, so `&'static str` is the honest answer, and the caller can keep it as long as it likes.
+      - Constants and statics are always `'static`, so `const APP: &str` doesn't need the annotation.
+      - A struct field can also be `&'static str` with no lifetime parameter on the struct: `struct HttpError { code: u16, reason: &'static str }`. That's common for fixed messages and lookup tables.
+
+      ### `'static` doesn't fix lifetime errors
+
+      When the compiler complains about lifetimes, adding `'static` is tempting. It never works for data created while the program runs, because that data really is dropped:
+
+      ```rust compile_fail
+      fn make_label(id: u32) -> &'static str {
+          let s = format!("ticket-{id}");
+          &s
+      }
+
+      fn main() {
+          println!("{}", make_label(7));
+      }
+      ```
+
+      ```error
+      error[E0515]: cannot return reference to local variable `s`
+      ```
+
+      `s` is a `String` built at run time and dropped at the end of `make_label`. The real fix, returning a `String`, is the next step. Read the help on E0106 carefully too: it suggests `'static`, but adds "this is uncommon unless you're returning a borrowed value from a `const` or a `static`".
+
+      ### `T: 'static` as a bound
+
+      You'll also meet `'static` as a **bound** on a type, for example in `std::thread::spawn`. `T: 'static` doesn't mean "lives forever"; it means "contains no borrowed references that could expire". Every owned type qualifies: `String`, `Vec<u32>`, `i32`, your structs without references. The threads module explains why spawn needs it.
+
+      **Your turn:** write `status_text`, which turns an HTTP status code into its reason phrase: `200` is `OK`, `404` is `Not Found`, `500` is `Internal Server Error`, anything else `Unknown`. Fix the return type so it compiles.
+    seed: |
+      fn status_text(code: u16) -> &str {
+          todo!()
+      }
+    solution: |
+      fn status_text(code: u16) -> &'static str {
+          match code {
+              200 => "OK",
+              404 => "Not Found",
+              500 => "Internal Server Error",
+              _ => "Unknown",
+          }
+      }
+    harness: |
+      #[test]
+      fn ok_for_200() {
+          assert_eq!(status_text(200), "OK", "status_text(200)");
+      }
+
+      #[test]
+      fn not_found_for_404() {
+          assert_eq!(status_text(404), "Not Found", "status_text(404)");
+      }
+
+      #[test]
+      fn server_error_for_500() {
+          assert_eq!(status_text(500), "Internal Server Error", "status_text(500)");
+      }
+
+      #[test]
+      fn unknown_otherwise() {
+          assert_eq!(status_text(418), "Unknown", "status_text(418)");
+      }
+
+      #[test]
+      fn the_text_can_be_kept_anywhere() {
+          let kept: &'static str = status_text(404);
+          assert_eq!(kept, "Not Found", "a 'static result");
+      }
+    hints:
+      - "Every result is a string literal, so the return type is `&'static str`."
+      - "Use `match code { 200 => \"OK\", ... , _ => \"Unknown\" }`."
+    more:
+      - task: |
+          Fill in the blank so `HttpError` can hold a fixed message without a lifetime parameter. The program prints `404 Not Found`.
+        fill: |
+          struct HttpError {
+              code: u16,
+              reason: &[['static]] str,
+          }
+
+          fn main() {
+              let e = HttpError { code: 404, reason: "Not Found" };
+              println!("{} {}", e.code, e.reason);
+          }
+        hints:
+          - The reason is always a string literal, which lives for the whole program.
+        tests:
+          - expect: "404 Not Found"
+      - task: |
+          Leaderboards print places as `1st`, `2nd`, `3rd`, `4th`... Write `fn suffix(n: u32) -> &'static str` and `fn ordinal(n: u32) -> String`.
+
+          The rule: numbers ending in 11, 12 or 13 always use `th` (`11th`, `112th`). Otherwise a last digit of 1 is `st`, 2 is `nd`, 3 is `rd`, and everything else is `th`.
+        seed: |
+          fn suffix(n: u32) -> &'static str {
+              todo!()
+          }
+
+          fn ordinal(n: u32) -> String {
+              todo!()
+          }
+        solution: |
+          fn suffix(n: u32) -> &'static str {
+              if (11..=13).contains(&(n % 100)) {
+                  return "th";
+              }
+              match n % 10 {
+                  1 => "st",
+                  2 => "nd",
+                  3 => "rd",
+                  _ => "th",
+              }
+          }
+
+          fn ordinal(n: u32) -> String {
+              format!("{}{}", n, suffix(n))
+          }
+        harness: |
+          #[test]
+          fn the_first_three_places() {
+              assert_eq!(ordinal(1), "1st", "ordinal(1)");
+              assert_eq!(ordinal(2), "2nd", "ordinal(2)");
+              assert_eq!(ordinal(3), "3rd", "ordinal(3)");
+          }
+
+          #[test]
+          fn most_numbers_use_th() {
+              assert_eq!(ordinal(4), "4th", "ordinal(4)");
+              assert_eq!(ordinal(10), "10th", "ordinal(10)");
+          }
+
+          #[test]
+          fn the_teens_always_use_th() {
+              assert_eq!(ordinal(11), "11th", "ordinal(11)");
+              assert_eq!(ordinal(12), "12th", "ordinal(12)");
+              assert_eq!(ordinal(113), "113th", "ordinal(113)");
+          }
+
+          #[test]
+          fn larger_numbers() {
+              assert_eq!(ordinal(21), "21st", "ordinal(21)");
+              assert_eq!(ordinal(102), "102nd", "ordinal(102)");
+          }
+
+          #[test]
+          fn suffix_alone() {
+              assert_eq!(suffix(23), "rd", "suffix(23)");
+          }
+        hints:
+          - "Check the teens first: `if (11..=13).contains(&(n % 100)) { return \"th\"; }`."
+          - "Then `match n % 10` for st, nd, rd and th. `ordinal` is `format!(\"{}{}\", n, suffix(n))`."
+
+  - title: When to return owned data instead
+    id: lifetimes-6
+    text: |
+      Some lifetime errors have no lifetime fix at all. The most common one:
+
+      ```rust compile_fail
+      fn make_greeting(name: &str) -> &str {
+          let greeting = format!("Hello, {name}!");
+          &greeting
+      }
+
+      fn main() {
+          println!("{}", make_greeting("Ferris"));
+      }
+      ```
+
+      ```error
+      error[E0515]: cannot return reference to local variable `greeting`
+       --> src/main.rs:3:5
+        |
+      3 |     &greeting
+        |     ^^^^^^^^^ returns a reference to data owned by the current function
+      ```
+
+      The signature is fine as far as elision goes (one input, so rule 2 says the result borrows from `name`). The body breaks that promise: `greeting` is a new `String` owned by `make_greeting`, and it's dropped when the function returns. Any reference to it would dangle. Writing `<'a>` everywhere changes nothing, and neither does `'static`: the data simply doesn't exist after the function ends. (Returning `greeting.as_str()` gives the same error in another wording: "returns a value referencing data owned by the current function".)
+
+      **The fix is to return the owned value**: give ownership of the `String` to the caller.
+
+      ```rust run
+      fn make_greeting(name: &str) -> String {
+          format!("Hello, {name}!")
+      }
+
+      fn first_name(full: &str) -> &str {
+          full.split(' ').next().unwrap_or(full)
+      }
+
+      fn main() {
+          let full = String::from("Ana Lovelace");
+          println!("{}", make_greeting(first_name(&full)));
+      }
+      ```
+
+      ```output
+      Hello, Ana!
+      ```
+
+      Moving a `String` out of a function is cheap: only the pointer, length and capacity are copied, never the text.
+
+      ### Borrow or own? A rule of thumb
+
+      - The function **builds new data** (`format!`, `to_uppercase`, `replace`, `join`, collecting into a `Vec`): return the owned type, `String` or `Vec<T>`.
+      - The function **selects part of its input** (`trim`, slicing, `split_once`, finding an item): return a reference into the input, like `first_name`.
+      - A struct that's **stored** (in a collection, a cache, app state), returned through several layers or sent to another thread: give it owned fields. Use borrowing structs (`Tokenizer<'a>`) for short-lived views.
+      - If lifetimes start spreading through half your code to save copying a few small strings, owning is fine. A `clone()` of a short `String` costs nanoseconds; a week fighting `'a`s costs a week. Profile first, optimize where it matters (the performance module shows `Cow<str>` for "borrowed when possible, owned when needed").
+
+      Experienced Rust developers return owned data far more often than beginners expect. It's not giving up; it's choosing the simplest correct design.
+
+      ### Common mistakes
+
+      - **Returning a reference to a local variable or a temporary.** `&format!(...)`, `&s` where `s` was made in the function, `vec.iter().collect::<Vec<_>>().as_slice()`: all E0515. Return the owned value.
+      - **Reaching for `'static`.** As the previous step showed, it doesn't apply to data created at run time.
+      - **Over-cloning the other way.** Taking `name: String` when you only read it forces callers to give up or copy their string. Take `&str` in, return `String` out when you create something new.
+
+      **Your turn:** fix the three functions. `make_greeting` and `initials` build new strings, so they must return owned data. `last_name` only selects part of its input: keep it returning a `&str`. Results: `make_greeting("Ana")` is `Hello, Ana!`, `initials("Ada Lovelace")` is `A.L.`, `last_name("Ada Lovelace")` is `Lovelace`.
+    seed: |
+      fn make_greeting(name: &str) -> &str {
+          let greeting = format!("Hello, {name}!");
+          &greeting
+      }
+
+      fn initials(full_name: &str) -> &str {
+          let mut out = String::new();
+          for word in full_name.split_whitespace() {
+              if let Some(c) = word.chars().next() {
+                  out.push(c);
+                  out.push('.');
+              }
+          }
+          &out
+      }
+
+      fn last_name(full_name: &str) -> &str {
+          full_name.split_whitespace().last().unwrap_or("")
+      }
+    solution: |
+      fn make_greeting(name: &str) -> String {
+          format!("Hello, {name}!")
+      }
+
+      fn initials(full_name: &str) -> String {
+          let mut out = String::new();
+          for word in full_name.split_whitespace() {
+              if let Some(c) = word.chars().next() {
+                  out.push(c);
+                  out.push('.');
+              }
+          }
+          out
+      }
+
+      fn last_name(full_name: &str) -> &str {
+          full_name.split_whitespace().last().unwrap_or("")
+      }
+    forbid:
+      - pattern: "'static|Box::leak"
+        message: "Don't fake a long lifetime: return the owned `String` instead."
+      - pattern: 'fn\s+last_name[^{]*->\s*String'
+        message: "`last_name` only selects part of its input; keep returning a `&str`."
+    harness: |
+      #[test]
+      fn greets_by_name() {
+          assert_eq!(make_greeting("Ana"), "Hello, Ana!", "make_greeting(\"Ana\")");
+      }
+
+      #[test]
+      fn builds_initials() {
+          assert_eq!(initials("Ada Lovelace"), "A.L.", "initials(\"Ada Lovelace\")");
+          assert_eq!(initials("Grace Brewster Hopper"), "G.B.H.", "initials(\"Grace Brewster Hopper\")");
+      }
+
+      #[test]
+      fn initials_of_nothing_is_empty() {
+          assert_eq!(initials(""), "", "initials(\"\")");
+      }
+
+      #[test]
+      fn last_name_is_the_last_word() {
+          assert_eq!(last_name("Ada Lovelace"), "Lovelace", "last_name(\"Ada Lovelace\")");
+          assert_eq!(last_name("Cher"), "Cher", "last_name(\"Cher\")");
+      }
+
+      #[test]
+      fn last_name_borrows_from_the_input() {
+          let full = String::from("Linus Torvalds");
+          let last: &str = last_name(&full);
+          assert_eq!(last, "Torvalds", "last_name(&String)");
+      }
+    hints:
+      - "Change the return types of `make_greeting` and `initials` to `String`."
+      - "Then return the `String` itself: `format!(\"Hello, {name}!\")` with no `&`, and `out` instead of `&out`."
+    more:
+      - task: |
+          `Report` borrows its title, but `build_report` creates the title with `format!`, so there's nothing long-lived to borrow from. Change `Report` to **own** its title (and drop the lifetime parameter), so `build_report("sales", &[3, 4])` returns a report with title `Report: sales` and total `7`.
+        seed: |
+          struct Report<'a> {
+              title: &'a str,
+              total: u32,
+          }
+
+          fn build_report(name: &str, values: &[u32]) -> Report<'_> {
+              let title = format!("Report: {name}");
+              let mut total = 0;
+              for v in values {
+                  total += v;
+              }
+              Report { title: &title, total }
+          }
+        solution: |
+          struct Report {
+              title: String,
+              total: u32,
+          }
+
+          fn build_report(name: &str, values: &[u32]) -> Report {
+              let title = format!("Report: {name}");
+              let mut total = 0;
+              for v in values {
+                  total += v;
+              }
+              Report { title, total }
+          }
+        harness: |
+          #[test]
+          fn builds_the_title() {
+              assert_eq!(build_report("sales", &[3, 4]).title, "Report: sales", "title of build_report(\"sales\", ..)");
+          }
+
+          #[test]
+          fn adds_the_values() {
+              assert_eq!(build_report("sales", &[3, 4]).total, 7, "total of [3, 4]");
+          }
+
+          #[test]
+          fn an_empty_report() {
+              let r = build_report("q4", &[]);
+              assert_eq!(r.title, "Report: q4", "title");
+              assert_eq!(r.total, 0, "total of []");
+          }
+
+          #[test]
+          fn the_report_outlives_the_name() {
+              let r;
+              {
+                  let name = String::from("temp");
+                  r = build_report(&name, &[1]);
+              }
+              assert_eq!(r.title, "Report: temp", "report used after its name was dropped");
+          }
+        hints:
+          - "Make the field `title: String` and remove `<'a>` from the struct (and `<'_>` from the return type)."
+          - "Move the `String` into the struct: `Report { title, total }`."
+      - task: |
+          Write two functions over a list of words:
+
+          - `fn shout_all(words: &[&str]) -> Vec<String>` returns every word in upper case with `!` added (`"hi"` becomes `"HI!"`). These are new strings: return owned data.
+          - `fn longest_word<'a>(words: &[&'a str]) -> Option<&'a str>` returns the longest word (the first one on a tie), or `None` for an empty list. It returns one of the words themselves, borrowed from the original text.
+
+          Notice the signature of `longest_word`: the result is tied to the **words** (`&'a str`), not to the slice holding them. A hidden test throws the slice away and keeps the word.
+        seed: |
+          fn shout_all(words: &[&str]) -> Vec<String> {
+              todo!()
+          }
+
+          fn longest_word<'a>(words: &[&'a str]) -> Option<&'a str> {
+              todo!()
+          }
+        solution: |
+          fn shout_all(words: &[&str]) -> Vec<String> {
+              let mut out = Vec::new();
+              for w in words {
+                  out.push(format!("{}!", w.to_uppercase()));
+              }
+              out
+          }
+
+          fn longest_word<'a>(words: &[&'a str]) -> Option<&'a str> {
+              let mut best: Option<&'a str> = None;
+              for &w in words {
+                  match best {
+                      Some(b) if b.len() >= w.len() => {}
+                      _ => best = Some(w),
+                  }
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn shouts_every_word() {
+              assert_eq!(shout_all(&["hi", "crab"]), vec!["HI!", "CRAB!"], "shout_all([\"hi\", \"crab\"])");
+          }
+
+          #[test]
+          fn shouting_nothing_gives_nothing() {
+              assert_eq!(shout_all(&[]), Vec::<String>::new(), "shout_all([])");
+          }
+
+          #[test]
+          fn finds_the_longest_word() {
+              assert_eq!(longest_word(&["tiny", "enormous", "mid"]), Some("enormous"), "longest_word(tiny, enormous, mid)");
+          }
+
+          #[test]
+          fn a_tie_keeps_the_first() {
+              assert_eq!(longest_word(&["abc", "xyz"]), Some("abc"), "longest_word(abc, xyz)");
+          }
+
+          #[test]
+          fn no_words_is_none() {
+              assert_eq!(longest_word(&[]), None, "longest_word([])");
+          }
+
+          #[test]
+          fn the_word_outlives_the_list() {
+              let text = String::from("small gigantic medium");
+              let best;
+              {
+                  let words: Vec<&str> = text.split(' ').collect();
+                  best = longest_word(&words);
+              }
+              assert_eq!(best, Some("gigantic"), "result used after the Vec of words was dropped");
+          }
+        hints:
+          - "`shout_all`: loop over the words and push `format!(\"{}!\", w.to_uppercase())` into a new `Vec`."
+          - "`longest_word`: keep `let mut best: Option<&'a str> = None;` and replace it when a word is strictly longer (or `best` is still `None`)."
+
+  - title: Reading lifetime errors
+    id: lifetimes-7
+    text: |
+      Lifetime errors look scary but come in a handful of shapes, and each shape has a short list of fixes. Here's the field guide.
+
+      | Error | What it means | Usual fixes |
+      |---|---|---|
+      | `E0106` missing lifetime specifier | A signature or struct returns/holds a reference, and elision can't tell where from. | Add `'a` to tie the output to the right inputs; or return owned data; or `'static` for literals. |
+      | `E0597` `x` does not live long enough | A value is dropped while a reference to it is still used later. | Move the value to an outer scope; use the reference earlier; own the data. |
+      | `E0515` cannot return reference to local variable | A function returns a reference to something it created. | Return the owned value (`String`, `Vec`). |
+      | `E0716` temporary value dropped while borrowed | You borrowed from a value that was never stored in a variable. | Store it in a `let` first. |
+      | lifetime may not live long enough | A function's body returns a reference with a different lifetime than its signature promised. | Fix the signature (often rule 3 guessed `self`), or return what it promises. |
+      | `E0499` / `E0502` borrow conflicts | Two borrows overlap (borrowing module). With methods: often a result tied to `&mut self` that should be tied to `'a`. | Shorter borrows; return `&'a T` from the data, not from `self`. |
+
+      The temporary one deserves an example, because it surprises everyone once:
+
+      ```rust compile_fail
+      fn main() {
+          let label = format!("v{}", 2).as_str();
+          println!("{label}");
+      }
+      ```
+
+      ```error
+      error[E0716]: temporary value dropped while borrowed
+       --> src/main.rs:2:17
+        |
+      2 |     let label = format!("v{}", 2).as_str();
+        |                 ^^^^^^^^^^^^^^^^^         - temporary value is freed at the end of this statement
+        |                 |
+        |                 creates a temporary value which is freed while still in use
+      3 |     println!("{label}");
+        |                ----- borrow later used here
+        |
+        = note: consider using a `let` binding to create a longer lived value
+      ```
+
+      The `String` from `format!` has no owner variable, so it's dropped at the `;`. The fix is in the note: `let owned = format!("v{}", 2); let label = owned.as_str();` (or just use the `String`).
+
+      ### A method for any lifetime error
+
+      1. **Find the value** the error is about (the name in backticks).
+      2. **Find where it's dropped**: the label `dropped here while still borrowed`, or the end of a function for E0515.
+      3. **Find the late use**: `borrow later used here`.
+      4. **Pick a fix**: make the owner live longer, end the use sooner, own the data, or (for signatures) describe the real relationship with `'a`.
+
+      Resist adding annotations at random until it compiles. Each error describes a real dangling reference that would have crashed or corrupted data in C. Once you see *which* value would dangle, the fix is usually one line.
+
+      **Your turn:** this program has three different lifetime errors (compile it to see them all). Fix each one in the way you think is best. The program must print:
+
+      ```
+      winner: lifetimes
+      tag: #rust
+      version: v1.85
+      ```
+    seed: |
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn hashtag(word: &str) -> &str {
+          let tag = format!("#{}", word.to_lowercase());
+          &tag
+      }
+
+      fn main() {
+          let first = String::from("borrowck");
+          let winner;
+          {
+              let second = String::from("lifetimes");
+              winner = longest(&first, &second);
+          }
+          println!("winner: {winner}");
+
+          let tag = hashtag("Rust");
+          println!("tag: {tag}");
+
+          let version = format!("v{}.{}", 1, 85).as_str();
+          println!("version: {version}");
+      }
+    solution: |
+      fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+          if a.len() >= b.len() { a } else { b }
+      }
+
+      fn hashtag(word: &str) -> String {
+          format!("#{}", word.to_lowercase())
+      }
+
+      fn main() {
+          let first = String::from("borrowck");
+          let second = String::from("lifetimes");
+          let winner = longest(&first, &second);
+          println!("winner: {winner}");
+
+          let tag = hashtag("Rust");
+          println!("tag: {tag}");
+
+          let owned = format!("v{}.{}", 1, 85);
+          let version = owned.as_str();
+          println!("version: {version}");
+      }
+    hints:
+      - "E0597: `second` is dropped at the end of the inner block, but `winner` (which may point at it) is used after. Move `second` out of the block."
+      - "E0515: `hashtag` builds a new string, so it should return `String` (and `format!(...)` without `&`)."
+      - "E0716: store the `format!` result in its own `let` before calling `.as_str()`, or just print the `String`."
+    tests:
+      - expect: "winner: lifetimes\ntag: #rust\nversion: v1.85"
+    more:
+      - task: |
+          `Highlight` marks a word inside a longer text without copying the text. The code is almost right, but the struct is missing its lifetime. Add the lifetime parameter to the struct and the `impl` block (and wherever else the compiler asks) so it prints:
+
+          ```
+          the borrow [checker] is your friend
+          checker
+          ```
+        seed: |
+          struct Highlight {
+              text: &str,
+              start: usize,
+              end: usize,
+          }
+
+          impl Highlight {
+              fn new(text: &str, word: &str) -> Option<Highlight> {
+                  let start = text.find(word)?;
+                  Some(Highlight { text, start, end: start + word.len() })
+              }
+
+              fn marked(&self) -> String {
+                  format!("{}[{}]{}", &self.text[..self.start], &self.text[self.start..self.end], &self.text[self.end..])
+              }
+
+              fn word(&self) -> &str {
+                  &self.text[self.start..self.end]
+              }
+          }
+
+          fn main() {
+              let review = String::from("the borrow checker is your friend");
+              let h = Highlight::new(&review, "checker").unwrap();
+              println!("{}", h.marked());
+              println!("{}", h.word());
+          }
+        solution: |
+          struct Highlight<'a> {
+              text: &'a str,
+              start: usize,
+              end: usize,
+          }
+
+          impl<'a> Highlight<'a> {
+              fn new(text: &'a str, word: &str) -> Option<Highlight<'a>> {
+                  let start = text.find(word)?;
+                  Some(Highlight { text, start, end: start + word.len() })
+              }
+
+              fn marked(&self) -> String {
+                  format!("{}[{}]{}", &self.text[..self.start], &self.text[self.start..self.end], &self.text[self.end..])
+              }
+
+              fn word(&self) -> &'a str {
+                  &self.text[self.start..self.end]
+              }
+          }
+
+          fn main() {
+              let review = String::from("the borrow checker is your friend");
+              let h = Highlight::new(&review, "checker").unwrap();
+              println!("{}", h.marked());
+              println!("{}", h.word());
+          }
+        hints:
+          - "`struct Highlight<'a> { text: &'a str, ... }` and `impl<'a> Highlight<'a>`."
+          - "`new` must tie the result to `text` only: `fn new(text: &'a str, word: &str) -> Option<Highlight<'a>>`."
+        tests:
+          - expect: "the borrow [checker] is your friend\nchecker"
+      - task: |
+          Starting from nothing, write a `Sentences` splitter in the style of the tokenizer from step 4:
+
+          - `struct Sentences<'a>` that keeps the rest of the text still to be read,
+          - `fn new(text: &'a str) -> Self`,
+          - `fn next_sentence(&mut self) -> Option<&'a str>` that returns the next piece of text up to a `.` (without the `.`), trimmed, skipping empty pieces, and `None` at the end.
+
+          For `"Hi. How are you.  Fine."` the sentences are `Hi`, `How are you` and `Fine`. Text after the last `.` counts as a sentence too. The hidden tests collect every sentence into a `Vec` while calling `next_sentence` again, which only compiles if the sentences borrow from the text (`'a`), not from the splitter.
+        seed: |
+          // struct Sentences<'a> { ... }
+
+          // impl<'a> Sentences<'a> {
+          //     fn new(text: &'a str) -> Self
+          //     fn next_sentence(&mut self) -> Option<&'a str>
+          // }
+        solution: |
+          struct Sentences<'a> {
+              rest: &'a str,
+          }
+
+          impl<'a> Sentences<'a> {
+              fn new(text: &'a str) -> Self {
+                  Sentences { rest: text }
+              }
+
+              fn next_sentence(&mut self) -> Option<&'a str> {
+                  while !self.rest.is_empty() {
+                      let (piece, rest) = match self.rest.find('.') {
+                          Some(i) => (&self.rest[..i], &self.rest[i + 1..]),
+                          None => (self.rest, ""),
+                      };
+                      self.rest = rest;
+                      let piece = piece.trim();
+                      if !piece.is_empty() {
+                          return Some(piece);
+                      }
+                  }
+                  None
+              }
+          }
+        harness: |
+          fn all(text: &str) -> Vec<&str> {
+              let mut s = Sentences::new(text);
+              let mut out = Vec::new();
+              while let Some(x) = s.next_sentence() {
+                  out.push(x);
+              }
+              out
+          }
+
+          #[test]
+          fn splits_three_sentences() {
+              assert_eq!(all("Hi. How are you.  Fine."), vec!["Hi", "How are you", "Fine"], "all(\"Hi. How are you.  Fine.\")");
+          }
+
+          #[test]
+          fn text_after_the_last_dot_counts() {
+              assert_eq!(all("One. Two"), vec!["One", "Two"], "all(\"One. Two\")");
+          }
+
+          #[test]
+          fn skips_empty_pieces() {
+              assert_eq!(all("...Wait... what."), vec!["Wait", "what"], "all(\"...Wait... what.\")");
+          }
+
+          #[test]
+          fn empty_text_has_no_sentences() {
+              let mut s = Sentences::new("");
+              assert_eq!(s.next_sentence(), None, "next_sentence() on \"\"");
+          }
+        hints:
+          - "Keep one field, `rest: &'a str`. Each call finds the next `.` with `self.rest.find('.')` and moves `rest` past it."
+          - "Loop until you find a non-empty trimmed piece or `rest` is empty: `while !self.rest.is_empty() { ... }` then `None`."
+          - "Split with `(&self.rest[..i], &self.rest[i + 1..])` when there's a dot, or `(self.rest, \"\")` when there isn't."

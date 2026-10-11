@@ -30,7 +30,7 @@ export default function Placement() {
         <div className="page-head">
           <h1>Placement quiz</h1>
           <p>
-            Already know some C or C++? Answer {placement.length} quick questions, from printing and loops up to smart pointers and algorithms. The first one
+            Already know some Rust? Answer {placement.length} quick questions, from variables and loops up to traits, async and algorithms. The first one
             you miss shows where to start, and you can skip the modules before it.
           </p>
           <p className="muted small">

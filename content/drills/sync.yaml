@@ -1,0 +1,306 @@
+topic: sync
+drills:
+  - type: predict
+    pre: |
+      use std::sync::mpsc;
+      use std::thread;
+    body: |
+      let (tx, rx) = mpsc::channel();
+      thread::spawn(move || {
+          for n in [3, 1, 2] {
+              tx.send(n).unwrap();
+          }
+      });
+      let got: Vec<i32> = rx.iter().collect();
+      println!("{got:?}");
+    why: Messages from a single sender arrive in the order they were sent. The loop ends when the thread finishes and its Sender is dropped.
+
+  - type: predict
+    pre: |
+      use std::sync::mpsc;
+    body: |
+      let (tx, rx) = mpsc::channel::<i32>();
+      tx.send(7).unwrap();
+      drop(tx);
+      println!("{:?}", rx.recv());
+      println!("{}", rx.recv().is_err());
+    why: The message already in the channel is still delivered. After that the channel is empty and every Sender is gone, so recv returns Err.
+
+  - type: predict
+    pre: |
+      use std::sync::Mutex;
+      use std::thread;
+    body: |
+      let hits = Mutex::new(0);
+      thread::scope(|s| {
+          for _ in 0..4 {
+              s.spawn(|| {
+                  for _ in 0..250 {
+                      *hits.lock().unwrap() += 1;
+                  }
+              });
+          }
+      });
+      println!("{}", hits.into_inner().unwrap());
+    why: Every increment happens while holding the lock, so none are lost; 4 x 250 is 1000 on every run.
+
+  - type: predict
+    pre: |
+      use std::sync::Arc;
+    body: |
+      let a = Arc::new(String::from("menu"));
+      let b = Arc::clone(&a);
+      let c = Arc::clone(&b);
+      println!("{}", Arc::strong_count(&a));
+      drop(c);
+      println!("{}", Arc::strong_count(&b));
+    why: All three Arcs point at the same String, so the count is 3. Dropping one brings it to 2. The String itself is never copied.
+
+  - type: predict
+    pre: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+    body: |
+      let n = AtomicUsize::new(5);
+      let old = n.fetch_add(3, Ordering::Relaxed);
+      println!("{} {}", old, n.load(Ordering::Relaxed));
+    why: fetch_add returns the value from before the addition (5) and stores the new one (8).
+
+  - type: predict
+    pre: |
+      use std::sync::OnceLock;
+
+      static LIMIT: OnceLock<u32> = OnceLock::new();
+    body: |
+      let a = *LIMIT.get_or_init(|| 10);
+      let b = *LIMIT.get_or_init(|| 20);
+      println!("{a} {b}");
+    why: The first get_or_init fills the OnceLock with 10. The second finds it full and returns 10 without running its closure.
+
+  - type: fill
+    prompt: Give the second producer its own Sender.
+    pre: |
+      use std::sync::mpsc;
+      use std::thread;
+    body: |
+      let (tx, rx) = mpsc::channel();
+      let tx2 = tx.[[clone]]();
+      thread::spawn(move || tx.send(1).unwrap());
+      thread::spawn(move || tx2.send(2).unwrap());
+      let mut got: Vec<i32> = rx.iter().collect();
+      got.sort();
+      println!("{got:?}");
+    why: Cloning a Sender makes another handle to the same channel. Both threads' Senders are dropped when they finish, which ends the loop.
+
+  - type: fill
+    prompt: Take the lock to change the shared list.
+    pre: |
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+    body: |
+      let names = Arc::new(Mutex::new(vec!["ana"]));
+      let shared = Arc::clone(&names);
+      thread::spawn(move || {
+          let mut list = shared.[[lock]]().unwrap();
+          list.push("bo");
+      })
+      .join()
+      .unwrap();
+      println!("{:?}", names.lock().unwrap());
+    why: lock() waits for the mutex and returns a guard that gives &mut access; the lock is released when the guard is dropped.
+
+  - type: fill
+    prompt: Take a shared read lock (other readers may hold one at the same time).
+    pre: |
+      use std::sync::RwLock;
+    body: |
+      let config = RwLock::new(String::from("eu-west"));
+      let region = config.[[read]]().unwrap();
+      println!("region: {region}");
+    why: RwLock::read gives shared access that many threads can hold at once; write() would be exclusive.
+
+  - type: bug
+    pre: |
+      use std::sync::mpsc;
+      use std::thread;
+    body: |
+      let (tx, rx) = mpsc::channel();
+      let worker_tx = tx.clone(); // BUG
+      thread::spawn(move || {
+          worker_tx.send(5).unwrap();
+      });
+      let total: i32 = rx.iter().sum();
+      println!("{total}");
+    fix: "let worker_tx = tx;"
+    prompt: "This should print 5, but it waits forever. Click the line with the bug."
+    why: The original tx stays alive in main, so rx.iter() never ends. Moving tx into the worker (instead of cloning it) means every Sender is dropped once the worker finishes.
+
+  - type: bug
+    pre: |
+      use std::sync::Mutex;
+    body: |
+      let items = Mutex::new(vec![1, 2]);
+      let mut guard = items.lock().unwrap();
+      guard.push(3);
+      let len = items.lock().unwrap().len(); // BUG
+      println!("{len}");
+    fix: "let len = guard.len();"
+    prompt: "This should print 3, but it freezes. Click the line with the bug."
+    why: The guard still holds the lock, and std's Mutex isn't reentrant, so locking it again in the same thread deadlocks. Use the guard you already have.
+
+  - type: bug
+    pre: |
+      use std::sync::RwLock;
+    body: |
+      let max_players = RwLock::new(8);
+      let before = max_players.read().unwrap(); // BUG
+      *max_players.write().unwrap() = 16;
+      println!("{before} -> {}", max_players.read().unwrap());
+    fix: "let before = *max_players.read().unwrap();"
+    prompt: "This should print 8 -> 16, but it never finishes. Click the line with the bug."
+    why: The read guard in before is still alive when write() is called, so the writer waits for a reader that never leaves. Copying the value out drops the guard at the end of the statement.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::sync::Mutex;
+      use std::thread;
+    body: |
+      let counter = Mutex::new(0);
+      let mut handles = Vec::new();
+      for _ in 0..3 {
+          handles.push(thread::spawn(move || *counter.lock().unwrap() += 1));
+      }
+      for h in handles {
+          h.join().unwrap();
+      }
+    why: The first thread's move closure takes the Mutex, so the second turn of the loop uses a moved value (E0382). Spawned threads share a Mutex through Arc<Mutex<T>>.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::sync::Arc;
+      use std::thread;
+    body: |
+      let stock = Arc::new(vec![1, 2, 3]);
+      let s2 = Arc::clone(&stock);
+      thread::spawn(move || s2.push(4)).join().unwrap();
+      println!("{:?}", stock);
+    why: Arc only gives shared (&) access, so you can't push through it (E0596). Put a Mutex inside to change shared data.
+
+  - type: compiles
+    answer: yes
+    pre: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+
+      static VISITS: AtomicUsize = AtomicUsize::new(0);
+    body: |
+      VISITS.fetch_add(1, Ordering::Relaxed);
+      println!("{}", VISITS.load(Ordering::Relaxed));
+    why: Atomics can be created in a static and changed through &self, so a global counter needs no unsafe and no lock.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::cell::RefCell;
+      use std::sync::Arc;
+      use std::thread;
+    body: |
+      let score = Arc::new(RefCell::new(0));
+      let s2 = Arc::clone(&score);
+      thread::spawn(move || *s2.borrow_mut() += 1).join().unwrap();
+    why: Arc<T> is only Send when T is Sync, and RefCell isn't Sync (E0277). Use Arc<Mutex<T>> for shared mutable data across threads.
+
+  - type: choice
+    prompt: Many threads need to bump one shared request counter. What's the lightest correct tool?
+    choices: ["A static mut u64", "An AtomicU64 with fetch_add", "An RwLock<u64>, using read()", "Rc<Cell<u64>>"]
+    answer: 2
+    why: An atomic does the increment in one indivisible step with no lock. static mut needs unsafe and races, read() can't change the value, and Rc and Cell can't cross threads.
+
+  - type: boss
+    prompt: |
+      Build a small **worker pool**. Write `fn process_jobs(jobs: Vec<u64>, workers: usize) -> Vec<u64>` that returns the square of every job, in job order, computed by `workers` threads:
+
+      1. Make a job channel. The workers share its `Receiver` through `Arc<Mutex<Receiver<(usize, u64)>>>` (a `Receiver` can't be cloned).
+      2. Make a results channel; each worker gets a clone of its `Sender`.
+      3. Each worker loops: lock the receiver, take one job with `recv()`, **let the lock go**, and send `(index, job * job)` back. When `recv()` returns `Err` (no more jobs), it stops.
+      4. Send every job with its index, drop both original senders, collect the results, sort them by index, and return the values.
+    seed: |
+      use std::sync::mpsc;
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      fn process_jobs(jobs: Vec<u64>, workers: usize) -> Vec<u64> {
+          todo!()
+      }
+    solution: |
+      use std::sync::mpsc;
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      fn process_jobs(jobs: Vec<u64>, workers: usize) -> Vec<u64> {
+          let (job_tx, job_rx) = mpsc::channel::<(usize, u64)>();
+          let job_rx = Arc::new(Mutex::new(job_rx));
+          let (result_tx, result_rx) = mpsc::channel();
+          let mut handles = Vec::new();
+          for _ in 0..workers {
+              let job_rx = Arc::clone(&job_rx);
+              let result_tx = result_tx.clone();
+              handles.push(thread::spawn(move || {
+                  loop {
+                      let next = job_rx.lock().unwrap().recv();
+                      match next {
+                          Ok((i, n)) => result_tx.send((i, n * n)).unwrap(),
+                          Err(_) => break,
+                      }
+                  }
+              }));
+          }
+          drop(result_tx);
+          for job in jobs.into_iter().enumerate() {
+              job_tx.send(job).unwrap();
+          }
+          drop(job_tx);
+          let mut results: Vec<(usize, u64)> = result_rx.iter().collect();
+          for handle in handles {
+              handle.join().unwrap();
+          }
+          results.sort();
+          results.into_iter().map(|(_, value)| value).collect()
+      }
+    require:
+      - pattern: 'mpsc::channel[\s\S]*mpsc::channel'
+        message: Use two channels, one for jobs and one for results.
+      - pattern: 'Mutex::new'
+        message: Share the job Receiver between workers with `Arc<Mutex<...>>`.
+    harness: |
+      #[test]
+      fn squares_in_job_order() {
+          assert_eq!(process_jobs(vec![3, 1, 4, 1, 5], 2), vec![9, 1, 16, 1, 25], "process_jobs([3, 1, 4, 1, 5], 2)");
+      }
+
+      #[test]
+      fn one_worker_does_everything() {
+          assert_eq!(process_jobs(vec![2, 10], 1), vec![4, 100], "process_jobs([2, 10], 1)");
+      }
+
+      #[test]
+      fn more_workers_than_jobs() {
+          assert_eq!(process_jobs(vec![7], 8), vec![49], "process_jobs([7], 8)");
+      }
+
+      #[test]
+      fn no_jobs_gives_no_results() {
+          assert_eq!(process_jobs(vec![], 3), Vec::<u64>::new(), "process_jobs([], 3)");
+      }
+
+      #[test]
+      fn many_jobs() {
+          let jobs: Vec<u64> = (0..1000).collect();
+          let expected: Vec<u64> = (0..1000).map(|n| n * n).collect();
+          assert_eq!(process_jobs(jobs, 4), expected, "process_jobs(0..1000, 4)");
+      }
+    hints:
+      - "`let next = job_rx.lock().unwrap().recv();` on its own line: the guard is a temporary, dropped at the end of that statement, so other workers can take jobs while this one works."
+      - "Drop `result_tx` after spawning the workers and `job_tx` after sending the jobs; otherwise the workers or the result loop wait forever."
+      - "`result_rx.iter().collect()` into a `Vec<(usize, u64)>`, sort it, then `.map(|(_, value)| value)`."
+    why: The job Receiver is shared behind Arc<Mutex<...>>, each worker holds the lock only while taking a job, and the results are sorted by index because workers finish in any order.

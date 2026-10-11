@@ -1,30 +1,35 @@
-import { Link, useParams } from "react-router-dom";
-import { ChevronRight, Play } from "lucide-react";
-import { firstStepPath, moduleById, topicBySlug, topics } from "../content";
-import { visualById } from "../content/visuals";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ChevronRight, TerminalSquare } from "lucide-react";
+import { firstStepPath, moduleById, modules, phases, topicBySlug, topics } from "../content";
 import Markdown from "../components/Markdown";
 import { CodeView } from "../components/highlight";
 import { useTitle } from "../lib/title";
 
-const GROUPS: [string, (t: (typeof topics)[number]) => boolean][] = [
-  ["C", (t) => t.lang === "c"],
-  ["C++", (t) => t.lang === "cpp" && !t.modules.some((m) => m.startsWith("dsa-"))],
-  ["Data structures and algorithms", (t) => t.modules.some((m) => m.startsWith("dsa-"))],
-];
+/** The curriculum stage a topic belongs to: the phase of the first module that teaches it. */
+function phaseOf(t: (typeof topics)[number]): string {
+  const m = t.modules.map((id) => moduleById.get(id)).find(Boolean);
+  return m?.phase ?? "More";
+}
+const order = (t: (typeof topics)[number]) => Math.min(...t.modules.map((id) => modules.findIndex((m) => m.id === id)).filter((i) => i >= 0), 999);
+
+const GROUPS: [string, (t: (typeof topics)[number]) => boolean][] = [...phases.map((p) => p.name), "More"].map((name) => [name, (t: (typeof topics)[number]) => phaseOf(t) === name]);
 
 export function TopicIndex() {
-  useTitle("C and C++ topics explained");
+  useTitle("Rust topics explained");
   return (
     <div>
       <div className="page-head">
-        <h1>C and C++ topics</h1>
-        <p className="muted">Short explanations of the core ideas, each with a tested example and a link to the lesson where you practice it.</p>
+        <h1>Rust topics</h1>
+        <p className="muted">Short explanations of the core ideas of Rust, each with a tested example and a link to the lesson where you practice it.</p>
       </div>
-      {GROUPS.map(([name, test]) => (
+      {GROUPS.filter(([, test]) => topics.some(test)).map(([name, test]) => (
         <section key={name} className="phase">
           <h2 className="phase-title">{name}</h2>
           <ul className="topic-list">
-            {topics.filter(test).map((t) => (
+            {topics
+              .filter(test)
+              .sort((a, b) => order(a) - order(b))
+              .map((t) => (
               <li key={t.slug}>
                 <Link to={`/topics/${t.slug}`} className="topic-title">
                   {t.title}
@@ -36,6 +41,28 @@ export function TopicIndex() {
         </section>
       ))}
     </div>
+  );
+}
+
+/** Opens the example in the playground (it replaces what was there, so ask first if that was edited). */
+function TryIt({ code, stdin }: { code: string; stdin: string }) {
+  const nav = useNavigate();
+  return (
+    <p>
+      <button
+        className="btn"
+        onClick={() => {
+          try {
+            localStorage.setItem("rustarena-playground", JSON.stringify({ code, stdin, args: "" }));
+          } catch {
+            /* storage blocked: the playground opens with its default program */
+          }
+          nav("/playground");
+        }}
+      >
+        <TerminalSquare className="icon" aria-hidden="true" /> Edit and run it in the playground
+      </button>
+    </p>
   );
 }
 
@@ -51,12 +78,11 @@ export function TopicPage() {
       </div>
     );
   }
-  const visual = t.visual ? visualById.get(t.visual) : undefined;
   const related = topics.filter((x) => x.slug !== t.slug && x.modules.some((m) => t.modules.includes(m))).slice(0, 4);
   return (
     <article className="topic-page narrow">
       <div className="crumbs">
-        <Link to="/topics">Topics</Link> <ChevronRight className="icon" aria-hidden="true" /> <span>{t.lang === "c" ? "C" : "C++"}</span>
+        <Link to="/topics">Topics</Link> <ChevronRight className="icon" aria-hidden="true" /> <span>{phaseOf(t)}</span>
       </div>
       <h1>{t.title}</h1>
       <p className="lead">{t.description}</p>
@@ -71,20 +97,11 @@ export function TopicPage() {
           </pre>
         </>
       )}
-      <div className="lbl">{t.native ? "output (compiled with GCC and run on Linux: the in-browser compiler has no threads)" : "output"}</div>
+      <div className="lbl">output</div>
       <pre className="console" tabIndex={0}>
         {t.output}
       </pre>
-      {visual && (
-        <Link to={`/visualize/${visual.id}`} className="watch-card">
-          <span className="watch-icon" aria-hidden="true">
-            <Play className="icon" />
-          </span>
-          <span>
-            <b>Watch it run:</b> {visual.title}
-          </span>
-        </Link>
-      )}
+      <TryIt code={t.example} stdin={t.stdin} />
       {t.modules.length > 0 && (
         <section className="card topic-practice">
           <h2 className="h3">Practice it</h2>

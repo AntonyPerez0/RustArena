@@ -5,10 +5,11 @@ import { patchSettings, useStore, type State } from "../state/store";
 import { rankFor } from "../state/derived";
 import ShareButton from "../components/ShareButton";
 import { useTitle } from "../lib/title";
+import { SITE_URL } from "../lib/site";
 
 type Cert = { kind: "course" | "pro"; name: string; date: string; steps: number; clean: number; rank: string; repo?: string };
 
-const TITLES = { course: "C and C++ Programming", pro: "Professional C and C++ (Pro Track)" };
+const TITLES = { course: "Rust Programming", pro: "Professional Rust (Pro Track)" };
 
 function encode(c: Cert) {
   return btoa(unescape(encodeURIComponent(JSON.stringify(c)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -32,14 +33,14 @@ function CertCard({ c }: { c: Cert }) {
   const date = new Date(c.date + "T12:00:00").toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   return (
     <div className="cert" role="img" aria-label={`Certificate: ${c.name} completed ${TITLES[c.kind]} on ${date}`}>
-      <div className="cert-brand">C/C++ Arena</div>
+      <div className="cert-brand">RustArena</div>
       <div className="cert-kicker">Certificate of completion</div>
       <div className="cert-name">{c.name}</div>
       <div className="cert-line">has completed</div>
       <div className="cert-title">{TITLES[c.kind]}</div>
       {c.kind === "course" ? (
         <div className="cert-detail">
-          {c.steps} compiled exercises across {modules.length} modules, from pointers and memory to modern C++, data structures and algorithms · {c.clean} solved with no
+          {c.steps} compiled exercises across {modules.length} modules, from ownership and borrowing to traits, async, testing and production Rust · {c.clean} solved with no
           hints · Deathmatch rank: {c.rank}
         </div>
       ) : (
@@ -50,7 +51,7 @@ function CertCard({ c }: { c: Cert }) {
       )}
       <div className="cert-foot">
         <span>{date}</span>
-        <span>cpparena.com</span>
+        <span>{SITE_URL.replace(/^https?:\/\//, "")}</span>
       </div>
     </div>
   );
@@ -63,11 +64,11 @@ function SharedCert({ c }: { c: Cert }) {
       <h1 className="visually-hidden">Shared certificate</h1>
       <CertCard c={c} />
       <p className="muted small cert-note">
-        This certificate was created in the learner's own browser. C/C++ Arena has no accounts, so it can't be independently verified from this page.
+        This certificate was created in the learner's own browser. RustArena has no accounts, so it can't be independently verified from this page.
         {c.kind === "pro" && c.repo ? " The Pro Track repository linked above shows each project's automated grading results in its GitHub Actions tab." : ""}
       </p>
       <p>
-        <Link to="/">Learn C and C++ on C/C++ Arena</Link>
+        <Link to="/">Learn Rust on RustArena</Link>
       </p>
     </div>
   );
@@ -107,7 +108,7 @@ export default function Certificate() {
         <h2 className="h3">Requirements</h2>
         <ul className="cert-reqs">
           <li className={course.done === course.total ? "ok" : ""}>
-            <b>C and C++ Programming:</b> finish every lesson step ({course.done} of {course.total} done). Modules skipped by the placement quiz still need
+            <b>Rust Programming:</b> finish every lesson step ({course.done} of {course.total} done). Modules skipped by the placement quiz still need
             their steps finished.
           </li>
           <li className={proDone === pro.length ? "ok" : ""}>
@@ -121,7 +122,7 @@ export default function Certificate() {
         <label className="lbl" htmlFor="cert-repo">
           Pro Track repository on GitHub (optional, shown on the Pro Track certificate)
         </label>
-        <input id="cert-repo" className="answer-input" value={s.settings.proRepo} onChange={(e) => patchSettings({ proRepo: e.target.value.slice(0, 100) })} placeholder="github.com/you/cpp-arena-pro" />
+        <input id="cert-repo" className="answer-input" value={s.settings.proRepo} onChange={(e) => patchSettings({ proRepo: e.target.value.slice(0, 100) })} placeholder="github.com/you/rustarena-pro" />
       </section>
       {!s.settings.certName.trim() && (course.done === course.total || proDone === pro.length) && <p>Type your name above to see your certificate.</p>}
       {certs.map((c) => (
@@ -131,7 +132,7 @@ export default function Certificate() {
             <button className="btn btn-primary" onClick={() => window.print()}>
               Print or save as PDF
             </button>
-            <ShareButton card={{ kicker: "Certificate of completion", title: TITLES[c.kind], lines: [c.name], file: `cpparena-certificate-${c.kind}.png` }} text={`I completed ${TITLES[c.kind]} on C/C++ Arena.`} label="Share image" />
+            <ShareButton card={{ kicker: "Certificate of completion", title: TITLES[c.kind], lines: [c.name], file: `rustarena-certificate-${c.kind}.png` }} text={`I completed ${TITLES[c.kind]} on RustArena.`} label="Share image" />
             <button
               className="btn"
               onClick={async () => {

@@ -1,0 +1,2293 @@
+id: enums
+title: Enums and Option
+phase: "Structuring data"
+summary: Model values that are one of several kinds. Define enums with and without data, take them apart with exhaustive match, handle missing values with Option instead of null, and use if let, let...else and matches! to make invalid states unrepresentable.
+roadmap: [Enums, "Pattern Matching & Destructuring", "Option and Result Enumerations"]
+steps:
+  - title: "Enums: one of a fixed set of variants"
+    id: enums-1
+    text: |
+      A struct says "a value has this **and** this **and** this". Lots of data is "this **or** that" instead: a traffic light is red, yellow or green; a direction is north, east, south or west; an order is pending, paid, shipped or delivered. For that, Rust has the **enum** (short for *enumeration*): a type that lists its possible **variants**. A value of the enum is always exactly one of them.
+
+      ```rust run
+      #[derive(Debug, PartialEq)]
+      enum Direction {
+          North,
+          East,
+          South,
+          West,
+      }
+
+      fn main() {
+          let heading = Direction::East;
+          println!("heading: {:?}", heading);
+          println!("going north? {}", heading == Direction::North);
+          let all = [Direction::North, Direction::East, Direction::South, Direction::West];
+          println!("{:?}", all);
+      }
+      ```
+
+      ```output
+      heading: East
+      going north? false
+      [North, East, South, West]
+      ```
+
+      - `enum Direction { ... }` defines a new type with four variants. Variants use UpperCamelCase, like type names.
+      - `Direction::East` creates a value. The variants live inside the enum's name, so you write `Direction::` in front.
+      - `heading` has the type `Direction`. A function can take a `Direction` parameter, a struct can have a `Direction` field.
+      - `#[derive(Debug, PartialEq)]` works just like on structs: `{:?}` prints the variant's name, and `==` compares variants.
+
+      ### Why not a string or a number?
+
+      You could store a direction as `"east"` or as the number `1`. But then nothing stops `"Esat"`, `"up"`, `""` or `7`: they all compile, and the bug shows up at run time (or never, silently doing the wrong thing). With an enum, a typo is a compile error:
+
+      ```rust compile_fail
+      #[derive(Debug, PartialEq)]
+      enum Direction {
+          North,
+          East,
+      }
+
+      fn main() {
+          let d = Direction::Esat;
+          println!("{}", d == Direction::North);
+      }
+      ```
+
+      ```error
+      error[E0599]: no variant, associated function, or constant named `Esat` found for enum `Direction` in the current scope
+      ```
+
+      This is your first taste of a big idea in Rust design: **make invalid states unrepresentable**. Choose types so that wrong values can't even be written down, and whole classes of bugs disappear before the program runs.
+
+      ### A first look at match
+
+      To do something different for each variant, use **`match`**. It compares a value with each **pattern** in turn and runs the code after `=>` for the first one that fits:
+
+      ```rust run
+      enum Direction {
+          North,
+          East,
+          South,
+          West,
+      }
+
+      fn arrow(d: Direction) -> char {
+          match d {
+              Direction::North => '^',
+              Direction::East => '>',
+              Direction::South => 'v',
+              Direction::West => '<',
+          }
+      }
+
+      fn main() {
+          println!("{}{}{}{}", arrow(Direction::North), arrow(Direction::East), arrow(Direction::South), arrow(Direction::West));
+      }
+      ```
+
+      ```output
+      ^>v<
+      ```
+
+      The `match` is the function's last expression, so its value (the arrow) is what `arrow` returns. The next step looks at `match` in depth.
+
+      ### Common mistakes
+
+      - **Leaving out the enum's name**: `let d = North;` gives ``error[E0425]: cannot find value `North` in this scope``. Write `Direction::North`.
+      - **A dot instead of `::`**: `Direction.North` gives ``error[E0423]: expected value, found enum `Direction` ``.
+
+      **Your turn:** fill in the blanks so the program prints `total: 1050`: the variant in the second arm, the arrow that separates a pattern from its value, and the enum's name when creating `order`.
+    fill: |
+      enum Size {
+          Small,
+          Medium,
+          Large,
+      }
+
+      fn price_cents(size: Size) -> u32 {
+          match size {
+              Size::Small => 300,
+              [[Size::Medium]] => 350,
+              Size::Large [[=>]] 400,
+          }
+      }
+
+      fn main() {
+          let order = [[Size]]::Large;
+          let total = price_cents(Size::Small) + price_cents(Size::Medium) + price_cents(order);
+          println!("total: {}", total);
+      }
+    hints:
+      - "Each arm starts with a full variant path like `Size::Small`."
+      - "A pattern and its value are separated by `=>`."
+      - "Variants are created with the enum name, two colons and the variant: `Size::Large`."
+    tests:
+      - expect: "total: 1050"
+    more:
+      - task: |
+          Write `fn is_red(suit: Suit) -> bool` using `match`: hearts and diamonds are red, clubs and spades are not.
+        seed: |
+          enum Suit {
+              Hearts,
+              Diamonds,
+              Clubs,
+              Spades,
+          }
+
+          fn is_red(suit: Suit) -> bool {
+              todo!()
+          }
+        solution: |
+          enum Suit {
+              Hearts,
+              Diamonds,
+              Clubs,
+              Spades,
+          }
+
+          fn is_red(suit: Suit) -> bool {
+              match suit {
+                  Suit::Hearts => true,
+                  Suit::Diamonds => true,
+                  Suit::Clubs => false,
+                  Suit::Spades => false,
+              }
+          }
+        harness: |
+          #[test]
+          fn hearts_are_red() {
+              assert_eq!(is_red(Suit::Hearts), true, "is_red(Suit::Hearts)");
+          }
+
+          #[test]
+          fn diamonds_are_red() {
+              assert_eq!(is_red(Suit::Diamonds), true, "is_red(Suit::Diamonds)");
+          }
+
+          #[test]
+          fn clubs_are_black() {
+              assert_eq!(is_red(Suit::Clubs), false, "is_red(Suit::Clubs)");
+          }
+
+          #[test]
+          fn spades_are_black() {
+              assert_eq!(is_red(Suit::Spades), false, "is_red(Suit::Spades)");
+          }
+        require:
+          - pattern: '\bmatch\b'
+            message: "Use a `match` on the suit."
+        hints:
+          - "One arm per variant: `Suit::Hearts => true,` and so on."
+      - task: |
+          A SaaS product has three plans. Define an enum `Plan` with the variants `Free`, `Pro` and `Team`, and write `fn monthly_cents(plan: Plan, seats: u32) -> u32`:
+
+          - `Free` costs 0,
+          - `Pro` costs a flat 900, however many seats,
+          - `Team` costs 700 **per seat**.
+        seed: |
+          // Define enum Plan here, then fn monthly_cents.
+
+        solution: |
+          // Define enum Plan here, then fn monthly_cents.
+          enum Plan {
+              Free,
+              Pro,
+              Team,
+          }
+
+          fn monthly_cents(plan: Plan, seats: u32) -> u32 {
+              match plan {
+                  Plan::Free => 0,
+                  Plan::Pro => 900,
+                  Plan::Team => 700 * seats,
+              }
+          }
+        harness: |
+          #[test]
+          fn free_costs_nothing() {
+              assert_eq!(monthly_cents(Plan::Free, 5), 0, "monthly_cents(Plan::Free, 5)");
+          }
+
+          #[test]
+          fn pro_is_a_flat_price() {
+              assert_eq!(monthly_cents(Plan::Pro, 1), 900, "monthly_cents(Plan::Pro, 1)");
+              assert_eq!(monthly_cents(Plan::Pro, 12), 900, "monthly_cents(Plan::Pro, 12)");
+          }
+
+          #[test]
+          fn team_is_charged_per_seat() {
+              assert_eq!(monthly_cents(Plan::Team, 4), 2800, "monthly_cents(Plan::Team, 4)");
+          }
+
+          #[test]
+          fn team_with_no_seats_is_free() {
+              assert_eq!(monthly_cents(Plan::Team, 0), 0, "monthly_cents(Plan::Team, 0)");
+          }
+        hints:
+          - "`enum Plan { Free, Pro, Team }`"
+          - "In the `Team` arm, the value can use the other parameter: `Plan::Team => 700 * seats,`"
+
+  - title: "match: exhaustive by design"
+    id: enums-2
+    text: |
+      A **match** expression has the shape `match value { pattern => expression, ... }`. Each `pattern => expression` line is an **arm**. Rust tries the arms from top to bottom and evaluates the first one whose pattern fits. Since `match` is an expression, it has a value, so every arm must produce the same type.
+
+      ```rust run
+      #[derive(Debug)]
+      enum OrderStatus {
+          Pending,
+          Paid,
+          Shipped,
+          Delivered,
+      }
+
+      fn advance(status: OrderStatus) -> OrderStatus {
+          match status {
+              OrderStatus::Pending => OrderStatus::Paid,
+              OrderStatus::Paid => OrderStatus::Shipped,
+              OrderStatus::Shipped => OrderStatus::Delivered,
+              OrderStatus::Delivered => OrderStatus::Delivered,
+          }
+      }
+
+      fn main() {
+          let mut status = OrderStatus::Pending;
+          for _ in 0..4 {
+              print!("{:?} -> ", status);
+              status = advance(status);
+          }
+          println!("{:?}", status);
+      }
+      ```
+
+      ```output
+      Pending -> Paid -> Shipped -> Delivered -> Delivered
+      ```
+
+      This is a tiny **state machine**: a value that is always in exactly one state, plus rules for moving between states. Enums and `match` are the natural way to write one in Rust.
+
+      ### Exhaustiveness
+
+      A `match` must handle **every possible value**. Forget a variant and the program doesn't compile:
+
+      ```rust compile_fail
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+
+      fn seconds(light: Light) -> u32 {
+          match light {
+              Light::Red => 30,
+              Light::Green => 25,
+          }
+      }
+
+      fn main() {
+          println!("{}", seconds(Light::Yellow));
+      }
+      ```
+
+      ```error
+      error[E0004]: non-exhaustive patterns: `Light::Yellow` not covered
+      ```
+
+      This is one of Rust's best features at work. Six months from now someone adds `Light::FlashingRed`, and the compiler lists **every** `match` in the codebase that doesn't handle it yet. In many languages, that change would compile fine and misbehave in production.
+
+      ### The catch-all `_`
+
+      The pattern **`_`** matches anything. Put it last to mean "every other value". You need it when the possible values can't all be listed, like numbers, characters or strings. A plain name instead of `_` also matches anything, and gives you the value:
+
+      ```rust run
+      fn respond(command: &str) -> String {
+          match command {
+              "start" => String::from("starting engine"),
+              "stop" => String::from("stopping"),
+              other => format!("unknown command: {}", other),
+          }
+      }
+
+      fn dice_word(n: u32) -> &'static str {
+          match n {
+              1 => "one",
+              6 => "six!",
+              _ => "something in between",
+          }
+      }
+
+      fn main() {
+          println!("{}", respond("start"));
+          println!("{}", respond("jump"));
+          println!("{} / {}", dice_word(6), dice_word(3));
+      }
+      ```
+
+      ```output
+      starting engine
+      unknown command: jump
+      six! / something in between
+      ```
+
+      (`&'static str` means "a string literal baked into the program". The lifetimes module explains the `'static` part; for now, read it as "returns a literal".)
+
+      For **your own enums**, prefer listing every variant over `_`. A `_` arm silently swallows variants added later, which switches off exactly the help described above.
+
+      ### Common mistakes
+
+      - **Arms with different types**: `1 => "one", 2 => 2` gives ``error[E0308]: `match` arms have incompatible types``.
+      - **`_` too early**: arms are tried in order, so arms after a `_` can never run. The compiler warns: `unreachable pattern`.
+      - **Using `match` for a yes/no question about one value**: `if x == 3` is clearer. `match` shines when there are several cases.
+
+      **Your turn:** write `fn next(light: Light) -> Light` for a traffic light: red turns green, green turns yellow, yellow turns red. List every variant: no `_`.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+
+      fn next(light: Light) -> Light {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+
+      fn next(light: Light) -> Light {
+          match light {
+              Light::Red => Light::Green,
+              Light::Green => Light::Yellow,
+              Light::Yellow => Light::Red,
+          }
+      }
+    harness: |
+      #[test]
+      fn red_turns_green() {
+          assert_eq!(next(Light::Red), Light::Green, "next(Light::Red)");
+      }
+
+      #[test]
+      fn green_turns_yellow() {
+          assert_eq!(next(Light::Green), Light::Yellow, "next(Light::Green)");
+      }
+
+      #[test]
+      fn yellow_turns_red() {
+          assert_eq!(next(Light::Yellow), Light::Red, "next(Light::Yellow)");
+      }
+
+      #[test]
+      fn three_steps_is_a_full_cycle() {
+          assert_eq!(next(next(next(Light::Red))), Light::Red, "next(next(next(Light::Red)))");
+      }
+    require:
+      - pattern: '\bmatch\b'
+        message: "Use a `match` on the light."
+    forbid:
+      - pattern: '\b_\s*=>'
+        message: "List all three colors instead of `_`, so the compiler can warn you if a new one is added."
+    hints:
+      - "`match light { ... }` with one arm per color."
+      - "Each arm returns the next color: `Light::Red => Light::Green,`"
+    more:
+      - task: |
+          Write `fn shortcut(key: char) -> String` for a text editor: `'s'` gives `"save"`, `'o'` gives `"open"`, `'q'` gives `"quit"`, and any other key gives `"no shortcut for X"` with the key in place of X.
+        seed: |
+          fn shortcut(key: char) -> String {
+              todo!()
+          }
+        solution: |
+          fn shortcut(key: char) -> String {
+              match key {
+                  's' => String::from("save"),
+                  'o' => String::from("open"),
+                  'q' => String::from("quit"),
+                  other => format!("no shortcut for {}", other),
+              }
+          }
+        harness: |
+          #[test]
+          fn s_saves() {
+              assert_eq!(shortcut('s'), "save", "shortcut('s')");
+          }
+
+          #[test]
+          fn o_opens_and_q_quits() {
+              assert_eq!(shortcut('o'), "open", "shortcut('o')");
+              assert_eq!(shortcut('q'), "quit", "shortcut('q')");
+          }
+
+          #[test]
+          fn other_keys_have_no_shortcut() {
+              assert_eq!(shortcut('x'), "no shortcut for x", "shortcut('x')");
+          }
+
+          #[test]
+          fn capital_letters_are_different_keys() {
+              assert_eq!(shortcut('S'), "no shortcut for S", "shortcut('S')");
+          }
+        require:
+          - pattern: '\bmatch\b'
+            message: "Use a `match` on the key."
+        hints:
+          - "Character patterns use single quotes: `'s' => ...`"
+          - "A last arm like `other => format!(\"no shortcut for {}\", other)` catches every other key and names it."
+      - task: |
+          Write the state machine of a vending machine: `fn on_event(state: Vend, event: &str) -> Vend`.
+
+          - `Idle` + `"coin"` becomes `HasCoin`
+          - `HasCoin` + `"push"` becomes `Dispensing`
+          - `HasCoin` + `"refund"` becomes `Idle`
+          - `Dispensing` + `"done"` becomes `Idle`
+          - any other event leaves the state as it is.
+
+          Match on the state, and decide on the event inside each arm (with `if` or a second `match`).
+        seed: |
+          #[derive(Debug, PartialEq)]
+          enum Vend {
+              Idle,
+              HasCoin,
+              Dispensing,
+          }
+
+        solution: |
+          #[derive(Debug, PartialEq)]
+          enum Vend {
+              Idle,
+              HasCoin,
+              Dispensing,
+          }
+
+          fn on_event(state: Vend, event: &str) -> Vend {
+              match state {
+                  Vend::Idle => {
+                      if event == "coin" { Vend::HasCoin } else { Vend::Idle }
+                  }
+                  Vend::HasCoin => match event {
+                      "push" => Vend::Dispensing,
+                      "refund" => Vend::Idle,
+                      _ => Vend::HasCoin,
+                  },
+                  Vend::Dispensing => {
+                      if event == "done" { Vend::Idle } else { Vend::Dispensing }
+                  }
+              }
+          }
+        harness: |
+          #[test]
+          fn a_coin_wakes_the_machine() {
+              assert_eq!(on_event(Vend::Idle, "coin"), Vend::HasCoin, "on_event(Idle, \"coin\")");
+          }
+
+          #[test]
+          fn pushing_dispenses() {
+              assert_eq!(on_event(Vend::HasCoin, "push"), Vend::Dispensing, "on_event(HasCoin, \"push\")");
+          }
+
+          #[test]
+          fn refund_goes_back_to_idle() {
+              assert_eq!(on_event(Vend::HasCoin, "refund"), Vend::Idle, "on_event(HasCoin, \"refund\")");
+          }
+
+          #[test]
+          fn done_goes_back_to_idle() {
+              assert_eq!(on_event(Vend::Dispensing, "done"), Vend::Idle, "on_event(Dispensing, \"done\")");
+          }
+
+          #[test]
+          fn other_events_change_nothing() {
+              assert_eq!(on_event(Vend::Idle, "push"), Vend::Idle, "on_event(Idle, \"push\")");
+              assert_eq!(on_event(Vend::HasCoin, "coin"), Vend::HasCoin, "on_event(HasCoin, \"coin\")");
+              assert_eq!(on_event(Vend::Dispensing, "refund"), Vend::Dispensing, "on_event(Dispensing, \"refund\")");
+          }
+
+          #[test]
+          fn a_full_purchase() {
+              let mut s = Vend::Idle;
+              for e in ["coin", "push", "done"] {
+                  s = on_event(s, e);
+              }
+              assert_eq!(s, Vend::Idle, "state after coin, push, done");
+          }
+        hints:
+          - "The outer `match state { ... }` has three arms, one per state."
+          - "Inside an arm, an `if` expression picks the new state: `Vend::Idle => if event == \"coin\" { Vend::HasCoin } else { Vend::Idle },`"
+          - "`HasCoin` has two interesting events, so a `match event { \"push\" => ..., \"refund\" => ..., _ => Vend::HasCoin }` reads well there."
+
+  - title: Variants that carry data
+    id: enums-3
+    text: |
+      Variants can hold data, and **each variant can hold different data**. This is where enums go far beyond what most languages call an "enum".
+
+      ```rust run
+      enum Shape {
+          Circle(f64),
+          Rectangle { width: f64, height: f64 },
+          Square(f64),
+      }
+
+      fn area(shape: &Shape) -> f64 {
+          match shape {
+              Shape::Circle(radius) => std::f64::consts::PI * radius * radius,
+              Shape::Rectangle { width, height } => width * height,
+              Shape::Square(side) => side * side,
+          }
+      }
+
+      fn main() {
+          let shapes = [
+              Shape::Circle(1.0),
+              Shape::Rectangle { width: 3.0, height: 4.0 },
+              Shape::Square(2.5),
+          ];
+          for s in &shapes {
+              println!("{:.2}", area(s));
+          }
+      }
+      ```
+
+      ```output
+      3.14
+      12.00
+      6.25
+      ```
+
+      - `Circle(f64)` is a **tuple-like** variant: its data is unnamed, like a tuple struct. Create one with `Shape::Circle(1.0)`.
+      - `Rectangle { width: f64, height: f64 }` is a **struct-like** variant, with named fields. Create one with `Shape::Rectangle { width: 3.0, height: 4.0 }`.
+      - In a pattern, `Shape::Circle(radius)` matches circles **and** puts the data into a new variable `radius`. `Shape::Rectangle { width, height }` binds both fields to variables of the same name.
+      - All three are the same type, `Shape`, so they fit in one array and one function handles them all.
+
+      Because `area` takes `&Shape`, the bindings are references too (`radius` is a `&f64`). Arithmetic works through them as written, but a comparison needs a `*` to read the number: `*radius > 10.0`. Without it, the compiler says ``expected `&f64`, found floating-point number`` and suggests the `*`.
+
+      ### Make invalid states unrepresentable
+
+      Here's how shapes often look in languages without data-carrying enums:
+
+      ```rust
+      struct Shape {
+          kind: String,   // "circle", "rectangle" or "square"
+          radius: f64,    // only meaningful for circles
+          width: f64,     // only meaningful for rectangles
+          height: f64,    // only meaningful for rectangles
+          side: f64,      // only meaningful for squares
+      }
+      ```
+
+      Every shape carries four fields it doesn't need. Nothing stops `kind: "cirlce"`, or a circle with a width but a radius of 0, and every function has to remember which fields to trust. With the enum, a circle **has** a radius and nothing else; a wrong combination can't be built. When you design types at work, look for "a kind field plus fields that only apply to some kinds": that's an enum waiting to happen.
+
+      ### Common mistakes
+
+      - **A pattern that forgets a field**: `Shape::Rectangle { width }` gives ``error[E0027]: pattern does not mention field `height` ``. Name every field, or write `Shape::Rectangle { width, .. }` to ignore the rest (`..` gets its full story in the patterns module).
+      - **Using a data variant without data**: `let s: Shape = Shape::Circle;` is an error (``expected `Shape`, found enum constructor``). `Shape::Circle` alone is a function that *builds* a circle; call it: `Shape::Circle(1.0)`.
+
+      **Your turn:** write `fn area(shape: &Shape) -> f64` for circles, rectangles and triangles (a triangle's area is base × height / 2). Use `std::f64::consts::PI` for π.
+    seed: |
+      enum Shape {
+          Circle(f64),
+          Rectangle { width: f64, height: f64 },
+          Triangle { base: f64, height: f64 },
+      }
+
+      fn area(shape: &Shape) -> f64 {
+          todo!()
+      }
+    solution: |
+      enum Shape {
+          Circle(f64),
+          Rectangle { width: f64, height: f64 },
+          Triangle { base: f64, height: f64 },
+      }
+
+      fn area(shape: &Shape) -> f64 {
+          match shape {
+              Shape::Circle(r) => std::f64::consts::PI * r * r,
+              Shape::Rectangle { width, height } => width * height,
+              Shape::Triangle { base, height } => base * height / 2.0,
+          }
+      }
+    harness: |
+      #[test]
+      fn unit_circle_has_area_pi() {
+          assert_eq!(area(&Shape::Circle(1.0)), std::f64::consts::PI, "area(&Shape::Circle(1.0))");
+      }
+
+      #[test]
+      fn circle_of_radius_2() {
+          assert_eq!(area(&Shape::Circle(2.0)), 4.0 * std::f64::consts::PI, "area(&Shape::Circle(2.0))");
+      }
+
+      #[test]
+      fn rectangle_is_width_times_height() {
+          assert_eq!(area(&Shape::Rectangle { width: 3.0, height: 4.0 }), 12.0, "area of a 3 x 4 rectangle");
+      }
+
+      #[test]
+      fn triangle_is_half_base_times_height() {
+          assert_eq!(area(&Shape::Triangle { base: 4.0, height: 5.0 }), 10.0, "area of a triangle with base 4, height 5");
+      }
+
+      #[test]
+      fn flat_shapes_have_no_area() {
+          assert_eq!(area(&Shape::Rectangle { width: 0.0, height: 9.0 }), 0.0, "area of a 0 x 9 rectangle");
+      }
+    hints:
+      - "`match shape { ... }` with one arm per variant, binding the data: `Shape::Circle(r) => ...`"
+      - "For struct-like variants, name the fields in the pattern: `Shape::Triangle { base, height } => base * height / 2.0,`"
+    more:
+      - task: |
+          Write `fn perimeter(shape: &Shape) -> f64`: a circle's perimeter is 2 × π × r, a rectangle's is 2 × (width + height), a square's is 4 × side.
+        seed: |
+          enum Shape {
+              Circle(f64),
+              Rectangle { width: f64, height: f64 },
+              Square(f64),
+          }
+
+          fn perimeter(shape: &Shape) -> f64 {
+              todo!()
+          }
+        solution: |
+          enum Shape {
+              Circle(f64),
+              Rectangle { width: f64, height: f64 },
+              Square(f64),
+          }
+
+          fn perimeter(shape: &Shape) -> f64 {
+              match shape {
+                  Shape::Circle(r) => 2.0 * std::f64::consts::PI * r,
+                  Shape::Rectangle { width, height } => 2.0 * (width + height),
+                  Shape::Square(side) => 4.0 * side,
+              }
+          }
+        harness: |
+          #[test]
+          fn circle_perimeter() {
+              assert_eq!(perimeter(&Shape::Circle(1.0)), 2.0 * std::f64::consts::PI, "perimeter(&Shape::Circle(1.0))");
+          }
+
+          #[test]
+          fn rectangle_perimeter() {
+              assert_eq!(perimeter(&Shape::Rectangle { width: 3.0, height: 4.5 }), 15.0, "perimeter of a 3 x 4.5 rectangle");
+          }
+
+          #[test]
+          fn square_perimeter() {
+              assert_eq!(perimeter(&Shape::Square(2.5)), 10.0, "perimeter(&Shape::Square(2.5))");
+          }
+        hints:
+          - "Same shape as `area`: one arm per variant, binding the data."
+          - "`Shape::Rectangle { width, height } => 2.0 * (width + height),`"
+      - task: |
+          Model the ways a customer can pay. Define an enum `Payment` with three variants:
+
+          - `Cash` (no data),
+          - `Card { last4: String }` (the last four digits of the card),
+          - `Voucher(u32)` (the voucher's value in cents).
+
+          Then write `fn describe(p: &Payment) -> String` that returns `"cash"`, `"card ending in 4242"` or `"voucher worth 500 cents"`.
+        seed: |
+          // Define enum Payment, then fn describe.
+
+        solution: |
+          // Define enum Payment, then fn describe.
+          enum Payment {
+              Cash,
+              Card { last4: String },
+              Voucher(u32),
+          }
+
+          fn describe(p: &Payment) -> String {
+              match p {
+                  Payment::Cash => String::from("cash"),
+                  Payment::Card { last4 } => format!("card ending in {}", last4),
+                  Payment::Voucher(cents) => format!("voucher worth {} cents", cents),
+              }
+          }
+        harness: |
+          #[test]
+          fn describes_cash() {
+              assert_eq!(describe(&Payment::Cash), "cash", "describe(&Payment::Cash)");
+          }
+
+          #[test]
+          fn describes_a_card() {
+              let p = Payment::Card { last4: String::from("4242") };
+              assert_eq!(describe(&p), "card ending in 4242", "describe a card with last4 4242");
+          }
+
+          #[test]
+          fn describes_a_voucher() {
+              assert_eq!(describe(&Payment::Voucher(500)), "voucher worth 500 cents", "describe(&Payment::Voucher(500))");
+          }
+
+          #[test]
+          fn describes_another_card() {
+              let p = Payment::Card { last4: String::from("0007") };
+              assert_eq!(describe(&p), "card ending in 0007", "describe a card with last4 0007");
+          }
+        hints:
+          - "`enum Payment { Cash, Card { last4: String }, Voucher(u32) }`"
+          - "In the match, bind the data: `Payment::Card { last4 } => format!(\"card ending in {}\", last4),`"
+
+  - title: "Option: a value that might be missing"
+    id: enums-4
+    text: |
+      Many languages have **null**: a special "nothing here" value that almost any variable can hold. Forget to check for it, and the program crashes (Java's `NullPointerException`, C's segmentation fault) or quietly misbehaves. Tony Hoare, who invented null references in 1965, later called them his "billion-dollar mistake".
+
+      **Rust has no null.** A `String` is always a real string; a `u32` is always a number. When a value might be missing, the **type** says so: `Option<T>`, an ordinary enum from the standard library:
+
+      ```rust
+      enum Option<T> {
+          None,
+          Some(T),
+      }
+      ```
+
+      - `T` is a **type parameter**, a placeholder for any type: `Option<u32>` is "maybe a u32", `Option<String>` is "maybe a String". (The generics module shows how to write your own types like this.)
+      - `Option` and its variants are in the **prelude**, the set of names every Rust file can use without importing, so you write `Some(5)` and `None`, not `Option::Some(5)`.
+      - You've met it already: `checked_add` from the types module returns `Some(sum)`, or `None` when the sum would overflow.
+
+      ### Returning an Option
+
+      The classic use is a lookup that may find nothing:
+
+      ```rust run
+      struct Item {
+          name: String,
+          price_cents: u32,
+      }
+
+      fn find_price(items: &[Item], name: &str) -> Option<u32> {
+          for item in items {
+              if item.name == name {
+                  return Some(item.price_cents);
+              }
+          }
+          None
+      }
+
+      fn main() {
+          let menu = [
+              Item { name: String::from("tea"), price_cents: 300 },
+              Item { name: String::from("cake"), price_cents: 450 },
+          ];
+          for wanted in ["cake", "pizza"] {
+              match find_price(&menu, wanted) {
+                  Some(price) => println!("{}: {} cents", wanted, price),
+                  None => println!("{}: not on the menu", wanted),
+              }
+          }
+          println!("{:?} {:?}", find_price(&menu, "tea"), find_price(&menu, "soup"));
+      }
+      ```
+
+      ```output
+      cake: 450 cents
+      pizza: not on the menu
+      Some(300) None
+      ```
+
+      ### The compiler makes you handle None
+
+      An `Option<u32>` is **not** a `u32`, so you can't use it like one:
+
+      ```rust compile_fail
+      fn main() {
+          let price: Option<u32> = Some(250);
+          let total = price + 50;
+          println!("{}", total);
+      }
+      ```
+
+      ```error
+      error[E0369]: cannot add `{integer}` to `Option<u32>`
+      ```
+
+      That's the whole point. To get at the number you must first say what happens when it's missing, and you can't forget, because the code doesn't compile until you do. With null, the "missing" case is invisible in the type and the check is up to your memory.
+
+      ### Getting the value out
+
+      - **`match`**, as above. It always works and handles both cases explicitly.
+      - **`.unwrap()`** gives the value inside `Some`, and **panics** on `None`. **`.expect("message")`** does the same with your message (you've used it on `parse`). Fine in tests, quick scripts, and when `None` would be a bug in your own code; in normal program logic, handle the `None`.
+      - **`.unwrap_or(default)`** gives the value, or `default` for `None`: `find_price(&menu, "soup").unwrap_or(0)`.
+      - **`.is_some()`** and **`.is_none()`** answer the yes/no question without taking the value out.
+
+      The errors module adds many more helpers (`map`, `and_then`, `?`). Here's what an unlucky `unwrap` does:
+
+      ```rust panics
+      fn main() {
+          let empty: Option<u32> = None;
+          println!("before");
+          let n = empty.unwrap();
+          println!("{}", n);
+      }
+      ```
+
+      ```output
+      before
+      ```
+
+      The program stops with ``called `Option::unwrap()` on a `None` value``. An `unwrap` you didn't think through is the Rust version of a null pointer crash, so reach for `match` (and the next step's `if let` and `let...else`) first.
+
+      A workplace note: Option costs nothing extra in the common cases. `Option<&T>` is the same size as `&T`: the compiler uses the null address internally to mean `None`, and your code can never see or misuse it.
+
+      ### Common mistakes
+
+      - **Printing an Option with `{}`**: ``error[E0277]: `Option<u32>` doesn't implement `std::fmt::Display` ``. Use `{:?}` (which prints `Some(300)` or `None`), or take the value out first.
+      - **Returning the value instead of wrapping it**: in a function returning `Option<u32>`, write `return Some(price);`, not `return price;` (``mismatched types``).
+
+      **Your turn:** write `fn find_user(users: &[User], id: u32) -> Option<&User>` that returns a reference to the user with that `id`, or `None` if there isn't one. Returning `&User` lends the caller the user from the slice, with no copying.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct User {
+          id: u32,
+          name: String,
+      }
+
+      fn find_user(users: &[User], id: u32) -> Option<&User> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct User {
+          id: u32,
+          name: String,
+      }
+
+      fn find_user(users: &[User], id: u32) -> Option<&User> {
+          for user in users {
+              if user.id == id {
+                  return Some(user);
+              }
+          }
+          None
+      }
+    harness: |
+      fn team() -> Vec<User> {
+          vec![
+              User { id: 1, name: String::from("Ada") },
+              User { id: 7, name: String::from("Grace") },
+              User { id: 9, name: String::from("Linus") },
+          ]
+      }
+
+      #[test]
+      fn finds_the_first_user() {
+          let users = team();
+          assert_eq!(find_user(&users, 1), Some(&users[0]), "find_user(&users, 1)");
+      }
+
+      #[test]
+      fn finds_a_user_in_the_middle() {
+          let users = team();
+          assert_eq!(find_user(&users, 7), Some(&users[1]), "find_user(&users, 7)");
+      }
+
+      #[test]
+      fn finds_the_last_user() {
+          let users = team();
+          assert_eq!(find_user(&users, 9), Some(&users[2]), "find_user(&users, 9)");
+      }
+
+      #[test]
+      fn returns_none_for_an_unknown_id() {
+          let users = team();
+          assert_eq!(find_user(&users, 4), None, "find_user(&users, 4)");
+      }
+
+      #[test]
+      fn returns_none_for_no_users() {
+          assert_eq!(find_user(&[], 1), None, "find_user(&[], 1)");
+      }
+    hints:
+      - "Loop with `for user in users`: each `user` is already a `&User`."
+      - "When the ids match, `return Some(user);`. After the loop, nothing matched: return `None`."
+    more:
+      - task: |
+          Write `fn safe_divide(a: i32, b: i32) -> Option<i32>`: `None` when `b` is 0 (dividing by zero would panic), otherwise `Some(a / b)`.
+        seed: |
+          fn safe_divide(a: i32, b: i32) -> Option<i32> {
+              todo!()
+          }
+        solution: |
+          fn safe_divide(a: i32, b: i32) -> Option<i32> {
+              if b == 0 {
+                  return None;
+              }
+              Some(a / b)
+          }
+        harness: |
+          #[test]
+          fn divides_normally() {
+              assert_eq!(safe_divide(10, 2), Some(5), "safe_divide(10, 2)");
+          }
+
+          #[test]
+          fn uses_integer_division() {
+              assert_eq!(safe_divide(7, 2), Some(3), "safe_divide(7, 2)");
+          }
+
+          #[test]
+          fn handles_negative_numbers() {
+              assert_eq!(safe_divide(-9, 3), Some(-3), "safe_divide(-9, 3)");
+          }
+
+          #[test]
+          fn division_by_zero_is_none() {
+              assert_eq!(safe_divide(7, 0), None, "safe_divide(7, 0)");
+          }
+
+          #[test]
+          fn zero_divided_by_something_is_zero() {
+              assert_eq!(safe_divide(0, 5), Some(0), "safe_divide(0, 5)");
+          }
+        hints:
+          - "Check `b == 0` first and return `None`."
+          - "Otherwise wrap the result: `Some(a / b)`."
+      - task: |
+          Write `fn cheapest(items: &[Item]) -> Option<&Item>` from scratch: the item with the lowest `price_cents`. If several share the lowest price, return the first of them. An empty slice has no cheapest item.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          struct Item {
+              name: String,
+              price_cents: u32,
+          }
+
+        solution: |
+          #[derive(Debug, PartialEq)]
+          struct Item {
+              name: String,
+              price_cents: u32,
+          }
+
+          fn cheapest(items: &[Item]) -> Option<&Item> {
+              if items.is_empty() {
+                  return None;
+              }
+              let mut best = &items[0];
+              for item in items {
+                  if item.price_cents < best.price_cents {
+                      best = item;
+                  }
+              }
+              Some(best)
+          }
+        harness: |
+          fn item(name: &str, price_cents: u32) -> Item {
+              Item { name: name.to_string(), price_cents }
+          }
+
+          #[test]
+          fn finds_the_cheapest() {
+              let items = [item("mug", 1200), item("pen", 150), item("tea", 450)];
+              assert_eq!(cheapest(&items), Some(&items[1]), "cheapest of mug 1200, pen 150, tea 450");
+          }
+
+          #[test]
+          fn first_one_wins_a_tie() {
+              let items = [item("tea", 300), item("cake", 300)];
+              assert_eq!(cheapest(&items), Some(&items[0]), "cheapest of tea 300, cake 300");
+          }
+
+          #[test]
+          fn a_single_item_is_the_cheapest() {
+              let items = [item("lamp", 2500)];
+              assert_eq!(cheapest(&items), Some(&items[0]), "cheapest of just a lamp");
+          }
+
+          #[test]
+          fn nothing_is_cheapest_in_an_empty_shop() {
+              assert_eq!(cheapest(&[]), None, "cheapest(&[])");
+          }
+        hints:
+          - "Handle the empty slice first: `if items.is_empty() { return None; }`"
+          - "Keep a reference to the best item so far (`let mut best = &items[0];`) and replace it only when a price is strictly lower."
+          - "At the end, wrap it: `Some(best)`."
+
+  - title: if let and let...else
+    id: enums-5
+    text: |
+      `match` handles every case. Often you only care about **one** pattern, and `match` gets wordy:
+
+      ```rust
+      match find_price(&menu, "cake") {
+          Some(price) => println!("cake costs {}", price),
+          None => {}
+      }
+      ```
+
+      ### if let
+
+      **`if let`** runs a block only when a value matches one pattern, binding the data on the way:
+
+      ```rust run
+      fn main() {
+          let discount: Option<u32> = Some(15);
+          if let Some(percent) = discount {
+              println!("{}% off today", percent);
+          }
+
+          let coupon: Option<u32> = None;
+          if let Some(percent) = coupon {
+              println!("coupon: {}% off", percent);
+          } else {
+              println!("no coupon");
+          }
+      }
+      ```
+
+      ```output
+      15% off today
+      no coupon
+      ```
+
+      Read `if let Some(percent) = discount` as "if `discount` matches `Some(percent)`, then...". It works with any enum, not just Option: `if let Shape::Circle(r) = shape { ... }`. The trade-off: unlike `match`, `if let` doesn't check that you handled everything. That's what you want when the other cases really don't matter.
+
+      ### let...else
+
+      The opposite situation is common too: "get the value out, and if it isn't there, give up". **`let ... else`** binds the value for the **rest of the function**, and runs the `else` block when the pattern doesn't match. That block must **diverge**: leave with `return`, `break`, `continue` or a panic, because there's no value to continue with.
+
+      ```rust run
+      struct Item {
+          name: String,
+          price_cents: u32,
+      }
+
+      fn find_price(items: &[Item], name: &str) -> Option<u32> {
+          for item in items {
+              if item.name == name {
+                  return Some(item.price_cents);
+              }
+          }
+          None
+      }
+
+      fn order_total(items: &[Item], order: &[&str]) -> Option<u32> {
+          let mut total = 0;
+          for name in order {
+              let Some(price) = find_price(items, name) else {
+                  return None;
+              };
+              total += price;
+          }
+          Some(total)
+      }
+
+      fn main() {
+          let menu = [
+              Item { name: String::from("tea"), price_cents: 300 },
+              Item { name: String::from("cake"), price_cents: 450 },
+          ];
+          println!("{:?}", order_total(&menu, &["tea", "cake", "tea"]));
+          println!("{:?}", order_total(&menu, &["tea", "pizza"]));
+      }
+      ```
+
+      ```output
+      Some(1050)
+      None
+      ```
+
+      This is the **guard clause** style teams love: deal with the failure case right away, then carry on with the happy path, unindented. Without `let...else` you'd nest a `match` inside the loop.
+
+      `let...else` works with any pattern that can fail, including the `Ok(...)` of `parse` you met in the input module:
+
+      ```rust run
+      fn double(text: &str) -> Option<i32> {
+          let Ok(n) = text.trim().parse::<i32>() else {
+              return None;
+          };
+          Some(n * 2)
+      }
+
+      fn main() {
+          println!("{:?} {:?}", double(" 21 "), double("twenty"));
+      }
+      ```
+
+      ```output
+      Some(42) None
+      ```
+
+      ### Common mistakes
+
+      - **An `else` block that doesn't leave**:
+
+      ```rust compile_fail
+      fn main() {
+          let input = "42";
+          let Ok(n) = input.parse::<i32>() else {
+              println!("not a number");
+          };
+          println!("{}", n);
+      }
+      ```
+
+      ```error
+      error[E0308]: `else` clause of `let...else` does not diverge
+      ```
+
+      After `println!`, the program would continue without an `n`. Add a `return;` (or `break`, `continue`, `panic!`).
+      - **`if let` when you need the value afterwards**: a variable bound by `if let` only exists inside its block. If the rest of the function needs it, use `let...else`.
+
+      **Your turn:** write `fn price_for(items: &[Item], name: &str, quantity: u32) -> Option<u32>`. It returns the cost of buying `quantity` of the named item, or `None` if the item doesn't exist **or** there isn't enough `stock`. The helper `find` gives you the item's index. Use `let...else` for the lookup.
+
+      (Why does `find` return an index instead of a `&Item`? Returning a reference that could come from either of two reference parameters needs a *lifetime annotation*, which the lifetimes module teaches. An index sidesteps that.)
+    seed: |
+      struct Item {
+          name: String,
+          price_cents: u32,
+          stock: u32,
+      }
+
+      fn find(items: &[Item], name: &str) -> Option<usize> {
+          for i in 0..items.len() {
+              if items[i].name == name {
+                  return Some(i);
+              }
+          }
+          None
+      }
+
+      fn price_for(items: &[Item], name: &str, quantity: u32) -> Option<u32> {
+          todo!()
+      }
+    solution: |
+      struct Item {
+          name: String,
+          price_cents: u32,
+          stock: u32,
+      }
+
+      fn find(items: &[Item], name: &str) -> Option<usize> {
+          for i in 0..items.len() {
+              if items[i].name == name {
+                  return Some(i);
+              }
+          }
+          None
+      }
+
+      fn price_for(items: &[Item], name: &str, quantity: u32) -> Option<u32> {
+          let Some(i) = find(items, name) else {
+              return None;
+          };
+          let item = &items[i];
+          if item.stock < quantity {
+              return None;
+          }
+          Some(item.price_cents * quantity)
+      }
+    harness: |
+      fn shop() -> Vec<Item> {
+          vec![
+              Item { name: String::from("tea"), price_cents: 450, stock: 10 },
+              Item { name: String::from("mug"), price_cents: 1200, stock: 1 },
+          ]
+      }
+
+      #[test]
+      fn prices_an_order() {
+          assert_eq!(price_for(&shop(), "tea", 3), Some(1350), "price_for(shop, \"tea\", 3)");
+      }
+
+      #[test]
+      fn can_buy_the_whole_stock() {
+          assert_eq!(price_for(&shop(), "mug", 1), Some(1200), "price_for(shop, \"mug\", 1)");
+      }
+
+      #[test]
+      fn not_enough_stock_is_none() {
+          assert_eq!(price_for(&shop(), "mug", 2), None, "price_for(shop, \"mug\", 2) with 1 in stock");
+      }
+
+      #[test]
+      fn unknown_item_is_none() {
+          assert_eq!(price_for(&shop(), "cake", 1), None, "price_for(shop, \"cake\", 1)");
+      }
+
+      #[test]
+      fn zero_quantity_costs_nothing() {
+          assert_eq!(price_for(&shop(), "tea", 0), Some(0), "price_for(shop, \"tea\", 0)");
+      }
+    require:
+      - pattern: 'let\s+Some\s*\([^)]*\)\s*=[^;]*\belse\b'
+        message: "Use `let Some(i) = find(items, name) else { return None; };` for the lookup."
+    hints:
+      - "`let Some(i) = find(items, name) else { return None; };` gives you the index, or leaves the function."
+      - "Borrow the item: `let item = &items[i];` then check `item.stock < quantity`."
+      - "If everything is fine: `Some(item.price_cents * quantity)`."
+    more:
+      - task: |
+          Print a bill. For each name in `order`, use `if let` on `find_price`: print `NAME: PRICE` if it's on the menu, or `NAME: not available` if not. Add up the prices that were found and finish with `total: N`:
+
+          ```text
+          cake: 450
+          pizza: not available
+          tea: 300
+          total: 750
+          ```
+        seed: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+          }
+
+          fn find_price(items: &[Item], name: &str) -> Option<u32> {
+              for item in items {
+                  if item.name == name {
+                      return Some(item.price_cents);
+                  }
+              }
+              None
+          }
+
+          fn main() {
+              let menu = [
+                  Item { name: String::from("tea"), price_cents: 300 },
+                  Item { name: String::from("cake"), price_cents: 450 },
+                  Item { name: String::from("soup"), price_cents: 600 },
+              ];
+              let order = ["cake", "pizza", "tea"];
+              // Print one line per ordered name, then the total.
+          }
+        solution: |
+          struct Item {
+              name: String,
+              price_cents: u32,
+          }
+
+          fn find_price(items: &[Item], name: &str) -> Option<u32> {
+              for item in items {
+                  if item.name == name {
+                      return Some(item.price_cents);
+                  }
+              }
+              None
+          }
+
+          fn main() {
+              let menu = [
+                  Item { name: String::from("tea"), price_cents: 300 },
+                  Item { name: String::from("cake"), price_cents: 450 },
+                  Item { name: String::from("soup"), price_cents: 600 },
+              ];
+              let order = ["cake", "pizza", "tea"];
+              // Print one line per ordered name, then the total.
+              let mut total = 0;
+              for name in order {
+                  if let Some(price) = find_price(&menu, name) {
+                      println!("{}: {}", name, price);
+                      total += price;
+                  } else {
+                      println!("{}: not available", name);
+                  }
+              }
+              println!("total: {}", total);
+          }
+        require:
+          - pattern: 'if\s+let\s+Some\s*\('
+            message: "Use `if let Some(price) = find_price(&menu, name) { ... } else { ... }`."
+        hints:
+          - "Loop with `for name in order`, and keep a `let mut total = 0;` outside the loop."
+          - "`if let Some(price) = find_price(&menu, name) { ... } else { ... }`"
+        tests:
+          - expect: "cake: 450\npizza: not available\ntea: 300\ntotal: 750"
+      - task: |
+          Write `fn parse_point(line: &str) -> Option<(i32, i32)>` that reads two whole numbers separated by whitespace, like `"3 -4"`, and returns `Some((3, -4))`. Return `None` if there are fewer than two words, more than two, or a word isn't a number.
+
+          How to get the words one at a time: `let mut words = line.split_whitespace();` then each `words.next()` returns `Some(word)`, or `None` when there are no more words. It's another Option, so `let...else` fits perfectly. For the third-word check, `words.next().is_some()` tells you whether there's an extra word.
+        seed: |
+          fn parse_point(line: &str) -> Option<(i32, i32)> {
+              todo!()
+          }
+        solution: |
+          fn parse_point(line: &str) -> Option<(i32, i32)> {
+              let mut words = line.split_whitespace();
+              let Some(first) = words.next() else {
+                  return None;
+              };
+              let Some(second) = words.next() else {
+                  return None;
+              };
+              if words.next().is_some() {
+                  return None;
+              }
+              let Ok(x) = first.parse::<i32>() else {
+                  return None;
+              };
+              let Ok(y) = second.parse::<i32>() else {
+                  return None;
+              };
+              Some((x, y))
+          }
+        harness: |
+          #[test]
+          fn parses_two_numbers() {
+              assert_eq!(parse_point("3 -4"), Some((3, -4)), "parse_point(\"3 -4\")");
+          }
+
+          #[test]
+          fn ignores_extra_spaces() {
+              assert_eq!(parse_point("  7    8 "), Some((7, 8)), "parse_point(\"  7    8 \")");
+          }
+
+          #[test]
+          fn one_number_is_not_enough() {
+              assert_eq!(parse_point("3"), None, "parse_point(\"3\")");
+          }
+
+          #[test]
+          fn an_empty_line_is_none() {
+              assert_eq!(parse_point(""), None, "parse_point(\"\")");
+          }
+
+          #[test]
+          fn words_that_are_not_numbers_are_none() {
+              assert_eq!(parse_point("a 4"), None, "parse_point(\"a 4\")");
+              assert_eq!(parse_point("4 b"), None, "parse_point(\"4 b\")");
+          }
+
+          #[test]
+          fn three_numbers_is_too_many() {
+              assert_eq!(parse_point("1 2 3"), None, "parse_point(\"1 2 3\")");
+          }
+        require:
+          - pattern: 'let\s+(Some|Ok)\s*\([^)]*\)\s*=[^;]*\belse\b'
+            message: "Use `let...else` to get each word and each number, returning `None` when it fails."
+        hints:
+          - "`let Some(first) = words.next() else { return None; };` and the same for `second`."
+          - "`parse` returns `Ok(number)` or `Err(...)`: `let Ok(x) = first.parse::<i32>() else { return None; };`"
+          - "Before parsing, `if words.next().is_some() { return None; }` rejects a third word. Finish with `Some((x, y))`."
+
+  - title: Methods on enums and matches!
+    id: enums-6
+    text: |
+      Enums get `impl` blocks just like structs, and the method body is usually a `match self`. Inside the impl, `Self::Circle` is shorthand for `Shape::Circle`.
+
+      ```rust run
+      enum Shape {
+          Circle(f64),
+          Rectangle { width: f64, height: f64 },
+      }
+
+      impl Shape {
+          fn area(&self) -> f64 {
+              match self {
+                  Self::Circle(r) => std::f64::consts::PI * r * r,
+                  Self::Rectangle { width, height } => width * height,
+              }
+          }
+
+          fn scaled(&self, factor: f64) -> Shape {
+              match self {
+                  Self::Circle(r) => Self::Circle(r * factor),
+                  Self::Rectangle { width, height } => Self::Rectangle {
+                      width: width * factor,
+                      height: height * factor,
+                  },
+              }
+          }
+
+          fn is_round(&self) -> bool {
+              matches!(self, Self::Circle(_))
+          }
+      }
+
+      fn main() {
+          let shapes = [Shape::Circle(1.0), Shape::Rectangle { width: 2.0, height: 3.0 }];
+          for s in &shapes {
+              let big = s.scaled(2.0);
+              println!("area {:.2}, doubled {:.2}, round: {}", s.area(), big.area(), s.is_round());
+          }
+      }
+      ```
+
+      ```output
+      area 3.14, doubled 12.57, round: true
+      area 6.00, doubled 24.00, round: false
+      ```
+
+      - `match self` with `&self` works exactly like matching a `&Shape`: the bindings (`r`, `width`) are references, and arithmetic works through them.
+      - `scaled` builds a new value of the same variant from the old one's data.
+      - `Self::Circle(_)` matches any circle, ignoring its radius: `_` inside a pattern means "something, I don't care what".
+
+      ### matches!
+
+      **`matches!(value, pattern)`** is `true` if the value fits the pattern, `false` otherwise. It's a short form of a `match` with a `=> true` arm and a `_ => false` arm, and it's ideal for "is it this kind?" questions, which come up constantly in `if` conditions:
+
+      ```rust
+      if matches!(light, Light::Red) { /* stop */ }
+      ```
+
+      ### Small enums: derive Copy
+
+      An enum whose variants hold no data (or only `Copy` data) can derive `Clone` and `Copy`. Then methods can take `self` by value and the original stays usable, which suits state machines: `light = light.next();`.
+
+      ```rust run
+      #[derive(Debug, Clone, Copy)]
+      enum Light {
+          Red,
+          Green,
+          Yellow,
+      }
+
+      impl Light {
+          fn next(self) -> Self {
+              match self {
+                  Self::Red => Self::Green,
+                  Self::Green => Self::Yellow,
+                  Self::Yellow => Self::Red,
+              }
+          }
+
+          fn can_go(self) -> bool {
+              matches!(self, Self::Green)
+          }
+      }
+
+      fn main() {
+          let mut light = Light::Red;
+          for _ in 0..3 {
+              light = light.next();
+              println!("{:?}: go = {}", light, light.can_go());
+          }
+      }
+      ```
+
+      ```output
+      Green: go = true
+      Yellow: go = false
+      Red: go = false
+      ```
+
+      Associated functions work on enums too. A common one turns outside input into a variant, returning an Option because the input may not name any variant: `fn from_char(c: char) -> Option<Self>`. You'll write one in the last challenge of this step.
+
+      **Your turn:** a game map is made of cells. Write three methods on `Cell`:
+
+      - `fn is_walkable(&self) -> bool`: everything except a wall. Use `matches!`.
+      - `fn symbol(&self) -> char`: `'.'` for empty, `'#'` for a wall, `'$'` for a coin.
+      - `fn value(&self) -> u32`: a coin's value, 0 for every other cell.
+    seed: |
+      enum Cell {
+          Empty,
+          Wall,
+          Coin(u32),
+      }
+
+      impl Cell {
+          fn is_walkable(&self) -> bool {
+              todo!()
+          }
+
+          fn symbol(&self) -> char {
+              todo!()
+          }
+
+          fn value(&self) -> u32 {
+              todo!()
+          }
+      }
+    solution: |
+      enum Cell {
+          Empty,
+          Wall,
+          Coin(u32),
+      }
+
+      impl Cell {
+          fn is_walkable(&self) -> bool {
+              !matches!(self, Self::Wall)
+          }
+
+          fn symbol(&self) -> char {
+              match self {
+                  Self::Empty => '.',
+                  Self::Wall => '#',
+                  Self::Coin(_) => '$',
+              }
+          }
+
+          fn value(&self) -> u32 {
+              match self {
+                  Self::Coin(v) => *v,
+                  Self::Empty => 0,
+                  Self::Wall => 0,
+              }
+          }
+      }
+    harness: |
+      #[test]
+      fn walls_block_the_way() {
+          assert_eq!(Cell::Wall.is_walkable(), false, "Cell::Wall.is_walkable()");
+      }
+
+      #[test]
+      fn empty_cells_and_coins_are_walkable() {
+          assert_eq!(Cell::Empty.is_walkable(), true, "Cell::Empty.is_walkable()");
+          assert_eq!(Cell::Coin(5).is_walkable(), true, "Cell::Coin(5).is_walkable()");
+      }
+
+      #[test]
+      fn each_cell_has_a_symbol() {
+          let symbols = [Cell::Empty.symbol(), Cell::Wall.symbol(), Cell::Coin(10).symbol()];
+          assert_eq!(symbols, ['.', '#', '$'], "symbols of Empty, Wall, Coin(10)");
+      }
+
+      #[test]
+      fn coins_are_worth_their_value() {
+          assert_eq!(Cell::Coin(25).value(), 25, "Cell::Coin(25).value()");
+      }
+
+      #[test]
+      fn other_cells_are_worth_nothing() {
+          assert_eq!((Cell::Empty.value(), Cell::Wall.value()), (0, 0), "(Empty.value(), Wall.value())");
+      }
+    require:
+      - pattern: 'matches!\s*\('
+        message: "Write `is_walkable` with `matches!`."
+    hints:
+      - "`is_walkable` is \"not a wall\": `!matches!(self, Self::Wall)`."
+      - "`symbol` and `value` are `match self { ... }` with one arm per variant; `Self::Coin(_)` ignores the value."
+      - "In `value`, the binding is a `&u32`, so return `*v` to get the number."
+    more:
+      - task: |
+          Give `Direction` some methods. It derives `Copy`, so the methods take `self` by value:
+
+          - `fn turn_right(self) -> Self`: North → East → South → West → North.
+          - `fn turn_left(self) -> Self`: the other way round.
+          - `fn opposite(self) -> Self`: hint, that's two right turns.
+          - `fn is_vertical(self) -> bool`: North or South. Use `matches!` (one for each, joined with `||`).
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Direction {
+              North,
+              East,
+              South,
+              West,
+          }
+
+          impl Direction {
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Direction {
+              North,
+              East,
+              South,
+              West,
+          }
+
+          impl Direction {
+              fn turn_right(self) -> Self {
+                  match self {
+                      Self::North => Self::East,
+                      Self::East => Self::South,
+                      Self::South => Self::West,
+                      Self::West => Self::North,
+                  }
+              }
+
+              fn turn_left(self) -> Self {
+                  match self {
+                      Self::North => Self::West,
+                      Self::West => Self::South,
+                      Self::South => Self::East,
+                      Self::East => Self::North,
+                  }
+              }
+
+              fn opposite(self) -> Self {
+                  self.turn_right().turn_right()
+              }
+
+              fn is_vertical(self) -> bool {
+                  matches!(self, Self::North) || matches!(self, Self::South)
+              }
+          }
+        harness: |
+          use Direction::*;
+
+          #[test]
+          fn turning_right_goes_clockwise() {
+              assert_eq!([North.turn_right(), East.turn_right(), South.turn_right(), West.turn_right()], [East, South, West, North], "turn_right of North, East, South, West");
+          }
+
+          #[test]
+          fn turning_left_goes_counterclockwise() {
+              assert_eq!([North.turn_left(), East.turn_left(), South.turn_left(), West.turn_left()], [West, North, East, South], "turn_left of North, East, South, West");
+          }
+
+          #[test]
+          fn opposite_turns_around() {
+              assert_eq!([North.opposite(), East.opposite()], [South, West], "opposite of North and East");
+          }
+
+          #[test]
+          fn north_and_south_are_vertical() {
+              assert_eq!([North.is_vertical(), South.is_vertical(), East.is_vertical(), West.is_vertical()], [true, true, false, false], "is_vertical of North, South, East, West");
+          }
+
+          #[test]
+          fn the_original_is_still_usable() {
+              let d = North;
+              let r = d.turn_right();
+              assert_eq!((d, r), (North, East), "d and d.turn_right()");
+          }
+        require:
+          - pattern: 'matches!\s*\('
+            message: "Write `is_vertical` with `matches!`."
+        hints:
+          - "`turn_right` and `turn_left` are each a `match self` with four arms returning `Self::...`."
+          - "`opposite` can reuse the others: `self.turn_right().turn_right()`."
+          - "`matches!(self, Self::North) || matches!(self, Self::South)`"
+      - task: |
+          Now control a robot with a string of letters. Write:
+
+          - `Direction::from_char(c: char) -> Option<Direction>`: `'N'`, `'E'`, `'S'`, `'W'` give the direction; any other character gives `None`.
+          - `fn follow(&mut self, path: &str) -> bool` on `Robot`: for each character of `path`, move one step (North is y + 1, East is x + 1, South is y - 1, West is x - 1). If a character isn't a direction, stop right there and return `false`; return `true` if the whole path was followed.
+
+          `for c in path.chars()` walks the characters, and `let...else` handles the bad ones neatly.
+        seed: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Direction {
+              North,
+              East,
+              South,
+              West,
+          }
+
+          struct Robot {
+              x: i32,
+              y: i32,
+          }
+
+          impl Direction {
+          }
+
+          impl Robot {
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Direction {
+              North,
+              East,
+              South,
+              West,
+          }
+
+          struct Robot {
+              x: i32,
+              y: i32,
+          }
+
+          impl Direction {
+              fn from_char(c: char) -> Option<Direction> {
+                  match c {
+                      'N' => Some(Direction::North),
+                      'E' => Some(Direction::East),
+                      'S' => Some(Direction::South),
+                      'W' => Some(Direction::West),
+                      _ => None,
+                  }
+              }
+          }
+
+          impl Robot {
+              fn follow(&mut self, path: &str) -> bool {
+                  for c in path.chars() {
+                      let Some(d) = Direction::from_char(c) else {
+                          return false;
+                      };
+                      match d {
+                          Direction::North => self.y += 1,
+                          Direction::East => self.x += 1,
+                          Direction::South => self.y -= 1,
+                          Direction::West => self.x -= 1,
+                      }
+                  }
+                  true
+              }
+          }
+        harness: |
+          #[test]
+          fn from_char_knows_the_four_letters() {
+              let all = [Direction::from_char('N'), Direction::from_char('E'), Direction::from_char('S'), Direction::from_char('W')];
+              assert_eq!(all, [Some(Direction::North), Some(Direction::East), Some(Direction::South), Some(Direction::West)], "from_char of N, E, S, W");
+          }
+
+          #[test]
+          fn from_char_rejects_other_characters() {
+              assert_eq!(Direction::from_char('x'), None, "Direction::from_char('x')");
+              assert_eq!(Direction::from_char('n'), None, "Direction::from_char('n')");
+          }
+
+          #[test]
+          fn follows_a_path() {
+              let mut r = Robot { x: 0, y: 0 };
+              assert_eq!(r.follow("NNE"), true, "follow(\"NNE\")");
+              assert_eq!((r.x, r.y), (1, 2), "position after NNE");
+          }
+
+          #[test]
+          fn moving_back_returns_home() {
+              let mut r = Robot { x: 3, y: -1 };
+              r.follow("NESW");
+              assert_eq!((r.x, r.y), (3, -1), "position after NESW from (3, -1)");
+          }
+
+          #[test]
+          fn stops_at_a_bad_character() {
+              let mut r = Robot { x: 0, y: 0 };
+              assert_eq!(r.follow("NX N"), false, "follow(\"NX N\")");
+              assert_eq!((r.x, r.y), (0, 1), "position after stopping at X");
+          }
+
+          #[test]
+          fn an_empty_path_is_fine() {
+              let mut r = Robot { x: 0, y: 0 };
+              assert_eq!(r.follow(""), true, "follow(\"\")");
+          }
+        hints:
+          - "`from_char` is an associated function (no `self`): a `match c` with four letter arms giving `Some(...)` and `_ => None`."
+          - "In `follow`, `let Some(d) = Direction::from_char(c) else { return false; };` handles bad characters."
+          - "Then `match d { Direction::North => self.y += 1, ... }` moves the robot. Return `true` after the loop."
+
+  - title: "Modeling with enums: parsing commands"
+    id: enums-7
+    text: |
+      Enums and Option together let you design types where bad data simply can't exist. Two patterns come up constantly at work.
+
+      ### States that carry their own data
+
+      Picture a network connection modeled with a struct:
+
+      ```rust
+      struct Connection {
+          connected: bool,
+          connecting: bool,
+          attempt: u32,      // only meaningful while connecting
+          session_id: u64,   // only meaningful while connected
+      }
+      ```
+
+      What does `connected: true, connecting: true` mean? What's the session id of a disconnected connection? Every function has to remember the unwritten rules. As an enum, each state carries exactly the data that makes sense for it, and impossible combinations can't be built:
+
+      ```rust run
+      enum Connection {
+          Disconnected,
+          Connecting { attempt: u32 },
+          Connected { session_id: u64 },
+      }
+
+      fn status(conn: &Connection) -> String {
+          match conn {
+              Connection::Disconnected => String::from("offline"),
+              Connection::Connecting { attempt } => format!("connecting (attempt {})", attempt),
+              Connection::Connected { session_id } => format!("online, session {}", session_id),
+          }
+      }
+
+      fn main() {
+          let states = [
+              Connection::Disconnected,
+              Connection::Connecting { attempt: 2 },
+              Connection::Connected { session_id: 9041 },
+          ];
+          for s in &states {
+              println!("{}", status(s));
+          }
+      }
+      ```
+
+      ```output
+      offline
+      connecting (attempt 2)
+      online, session 9041
+      ```
+
+      ### Parse once, at the edge
+
+      Text from users, files and networks is messy. The robust approach is to turn it into an enum **as soon as it enters the program**, with a function that returns `Option` (or, later, `Result`). Everything after that works with clean, typed values: no more string comparisons scattered around, no "what if the number is missing?" deep inside the logic. People call this **parse, don't validate**.
+
+      ```rust run
+      enum ChatCommand {
+          Join(String),
+          Nick(String),
+          Quit,
+      }
+
+      fn parse(line: &str) -> Option<ChatCommand> {
+          let mut words = line.split_whitespace();
+          let Some(name) = words.next() else {
+              return None;
+          };
+          let command = match name {
+              "/join" => {
+                  let Some(room) = words.next() else {
+                      return None;
+                  };
+                  ChatCommand::Join(room.to_string())
+              }
+              "/nick" => {
+                  let Some(nick) = words.next() else {
+                      return None;
+                  };
+                  ChatCommand::Nick(nick.to_string())
+              }
+              "/quit" => ChatCommand::Quit,
+              _ => return None,
+          };
+          Some(command)
+      }
+
+      fn run(cmd: &ChatCommand) -> String {
+          match cmd {
+              ChatCommand::Join(room) => format!("joining #{}", room),
+              ChatCommand::Nick(nick) => format!("you are now {}", nick),
+              ChatCommand::Quit => String::from("bye"),
+          }
+      }
+
+      fn main() {
+          let lines = ["/join rust", "/nick ferris", "/dance", "/join", "/quit"];
+          for line in lines {
+              if let Some(cmd) = parse(line) {
+                  println!("{}", run(&cmd));
+              } else {
+                  println!("can't parse: {}", line);
+              }
+          }
+      }
+      ```
+
+      ```output
+      joining #rust
+      you are now ferris
+      can't parse: /dance
+      can't parse: /join
+      bye
+      ```
+
+      - `words.next()` gives the words one at a time, as `Some(word)` or `None` when they run out.
+      - `let command = match name { ... };` uses `match` as an expression. The `_ => return None` arm leaves the function early: `return` never produces a value, so Rust accepts it in an arm of any type.
+      - `run` doesn't parse anything. By the time a `ChatCommand` exists, it's guaranteed valid, and the `match` guarantees every command is handled.
+
+      **Your turn:** write `fn parse_command(line: &str) -> Option<Command>` for a warehouse robot. Valid lines are:
+
+      - `forward N` where N is a whole number that isn't negative (a `u32`): `Command::Forward(N)`
+      - `left`, `right` and `report`: `Command::Left`, `Command::Right`, `Command::Report`
+
+      Anything else is `None`: an unknown word, a missing or invalid number, an empty line, or extra words after a complete command (`left now`).
+    seed: |
+      #[derive(Debug, PartialEq)]
+      enum Command {
+          Forward(u32),
+          Left,
+          Right,
+          Report,
+      }
+
+      fn parse_command(line: &str) -> Option<Command> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      enum Command {
+          Forward(u32),
+          Left,
+          Right,
+          Report,
+      }
+
+      fn parse_command(line: &str) -> Option<Command> {
+          let mut words = line.split_whitespace();
+          let Some(name) = words.next() else {
+              return None;
+          };
+          let command = match name {
+              "forward" => {
+                  let Some(arg) = words.next() else {
+                      return None;
+                  };
+                  let Ok(steps) = arg.parse::<u32>() else {
+                      return None;
+                  };
+                  Command::Forward(steps)
+              }
+              "left" => Command::Left,
+              "right" => Command::Right,
+              "report" => Command::Report,
+              _ => return None,
+          };
+          if words.next().is_some() {
+              return None;
+          }
+          Some(command)
+      }
+    harness: |
+      #[test]
+      fn parses_forward_with_a_number() {
+          assert_eq!(parse_command("forward 3"), Some(Command::Forward(3)), "parse_command(\"forward 3\")");
+      }
+
+      #[test]
+      fn parses_the_simple_commands() {
+          assert_eq!(parse_command("left"), Some(Command::Left), "parse_command(\"left\")");
+          assert_eq!(parse_command("right"), Some(Command::Right), "parse_command(\"right\")");
+          assert_eq!(parse_command("report"), Some(Command::Report), "parse_command(\"report\")");
+      }
+
+      #[test]
+      fn allows_extra_spaces() {
+          assert_eq!(parse_command("  forward   12 "), Some(Command::Forward(12)), "parse_command(\"  forward   12 \")");
+      }
+
+      #[test]
+      fn rejects_unknown_commands_and_empty_lines() {
+          assert_eq!(parse_command("jump"), None, "parse_command(\"jump\")");
+          assert_eq!(parse_command(""), None, "parse_command(\"\")");
+          assert_eq!(parse_command("Left"), None, "parse_command(\"Left\")");
+      }
+
+      #[test]
+      fn rejects_a_missing_or_bad_number() {
+          assert_eq!(parse_command("forward"), None, "parse_command(\"forward\")");
+          assert_eq!(parse_command("forward x"), None, "parse_command(\"forward x\")");
+          assert_eq!(parse_command("forward -2"), None, "parse_command(\"forward -2\")");
+      }
+
+      #[test]
+      fn rejects_extra_words() {
+          assert_eq!(parse_command("left now"), None, "parse_command(\"left now\")");
+          assert_eq!(parse_command("forward 2 3"), None, "parse_command(\"forward 2 3\")");
+      }
+    hints:
+      - "Start like the chat example: `let mut words = line.split_whitespace();` and `let Some(name) = words.next() else { return None; };`"
+      - "In the `\"forward\"` arm, get the next word with `let...else`, then `let Ok(steps) = arg.parse::<u32>() else { return None; };`"
+      - "After the match, `if words.next().is_some() { return None; }` rejects extra words. Then `Some(command)`."
+    more:
+      - task: |
+          Same technique for a bank: write `fn parse_transaction(line: &str) -> Option<Transaction>`. Valid lines are:
+
+          - `deposit N` and `withdraw N` (N is a `u64`)
+          - `transfer N NAME`: `Transaction::Transfer { amount: N, to: NAME }`
+          - `balance`
+
+          Anything else is `None`, including missing or invalid numbers, a transfer without a name, and extra words.
+        seed: |
+          #[derive(Debug, PartialEq)]
+          enum Transaction {
+              Deposit(u64),
+              Withdraw(u64),
+              Transfer { amount: u64, to: String },
+              Balance,
+          }
+
+          fn parse_transaction(line: &str) -> Option<Transaction> {
+              todo!()
+          }
+        solution: |
+          #[derive(Debug, PartialEq)]
+          enum Transaction {
+              Deposit(u64),
+              Withdraw(u64),
+              Transfer { amount: u64, to: String },
+              Balance,
+          }
+
+          fn parse_amount(word: Option<&str>) -> Option<u64> {
+              let Some(word) = word else {
+                  return None;
+              };
+              let Ok(amount) = word.parse::<u64>() else {
+                  return None;
+              };
+              Some(amount)
+          }
+
+          fn parse_transaction(line: &str) -> Option<Transaction> {
+              let mut words = line.split_whitespace();
+              let Some(name) = words.next() else {
+                  return None;
+              };
+              let transaction = match name {
+                  "deposit" => {
+                      let Some(amount) = parse_amount(words.next()) else {
+                          return None;
+                      };
+                      Transaction::Deposit(amount)
+                  }
+                  "withdraw" => {
+                      let Some(amount) = parse_amount(words.next()) else {
+                          return None;
+                      };
+                      Transaction::Withdraw(amount)
+                  }
+                  "transfer" => {
+                      let Some(amount) = parse_amount(words.next()) else {
+                          return None;
+                      };
+                      let Some(to) = words.next() else {
+                          return None;
+                      };
+                      Transaction::Transfer { amount, to: to.to_string() }
+                  }
+                  "balance" => Transaction::Balance,
+                  _ => return None,
+              };
+              if words.next().is_some() {
+                  return None;
+              }
+              Some(transaction)
+          }
+        harness: |
+          #[test]
+          fn parses_deposit_and_withdraw() {
+              assert_eq!(parse_transaction("deposit 500"), Some(Transaction::Deposit(500)), "parse_transaction(\"deposit 500\")");
+              assert_eq!(parse_transaction("withdraw 20"), Some(Transaction::Withdraw(20)), "parse_transaction(\"withdraw 20\")");
+          }
+
+          #[test]
+          fn parses_a_transfer() {
+              assert_eq!(
+                  parse_transaction("transfer 75 grace"),
+                  Some(Transaction::Transfer { amount: 75, to: String::from("grace") }),
+                  "parse_transaction(\"transfer 75 grace\")"
+              );
+          }
+
+          #[test]
+          fn parses_balance() {
+              assert_eq!(parse_transaction("balance"), Some(Transaction::Balance), "parse_transaction(\"balance\")");
+          }
+
+          #[test]
+          fn rejects_bad_amounts() {
+              assert_eq!(parse_transaction("deposit"), None, "parse_transaction(\"deposit\")");
+              assert_eq!(parse_transaction("withdraw ten"), None, "parse_transaction(\"withdraw ten\")");
+              assert_eq!(parse_transaction("deposit -5"), None, "parse_transaction(\"deposit -5\")");
+          }
+
+          #[test]
+          fn rejects_a_transfer_without_a_name() {
+              assert_eq!(parse_transaction("transfer 75"), None, "parse_transaction(\"transfer 75\")");
+          }
+
+          #[test]
+          fn rejects_unknown_commands_and_extra_words() {
+              assert_eq!(parse_transaction("steal 1000"), None, "parse_transaction(\"steal 1000\")");
+              assert_eq!(parse_transaction("balance please"), None, "parse_transaction(\"balance please\")");
+              assert_eq!(parse_transaction(""), None, "parse_transaction(\"\")");
+          }
+        hints:
+          - "Follow the shape of `parse_command`: first word, a `match` on it that builds the variant, then the extra-word check."
+          - "Three commands need an amount. A small helper `fn parse_amount(word: Option<&str>) -> Option<u64>` called as `parse_amount(words.next())` saves repeating the same two `let...else` lines."
+          - "For the transfer: amount first, then `let Some(to) = words.next() else { return None; };` and `Transaction::Transfer { amount, to: to.to_string() }`."
+      - task: |
+          Put it all together: a robot program that reads commands from standard input. The starter has `Direction` (with turning methods), `Command` and a working `parse_command`. Write a `Robot` struct (position and facing) with methods, and a `main` that runs each line:
+
+          - The robot starts at `0,0` facing `North`. North is y + 1, East x + 1, South y - 1, West x - 1.
+          - `forward N` moves N steps; `left` and `right` turn.
+          - `report` prints the position and direction like `2,3 East` (`{:?}` prints a Direction's name).
+          - A line that doesn't parse prints `invalid: ` followed by the line.
+
+          For example:
+
+          ```text
+          forward 3
+          right
+          forward 2
+          report
+          ```
+
+          prints `2,3 East`.
+        seed: |
+          #[derive(Debug, Clone, Copy)]
+          enum Direction {
+              North,
+              East,
+              South,
+              West,
+          }
+
+          impl Direction {
+              fn turn_right(self) -> Self {
+                  match self {
+                      Self::North => Self::East,
+                      Self::East => Self::South,
+                      Self::South => Self::West,
+                      Self::West => Self::North,
+                  }
+              }
+
+              fn turn_left(self) -> Self {
+                  self.turn_right().turn_right().turn_right()
+              }
+          }
+
+          enum Command {
+              Forward(u32),
+              Left,
+              Right,
+              Report,
+          }
+
+          fn parse_command(line: &str) -> Option<Command> {
+              let mut words = line.split_whitespace();
+              let Some(name) = words.next() else {
+                  return None;
+              };
+              let command = match name {
+                  "forward" => {
+                      let Some(arg) = words.next() else {
+                          return None;
+                      };
+                      let Ok(steps) = arg.parse::<u32>() else {
+                          return None;
+                      };
+                      Command::Forward(steps)
+                  }
+                  "left" => Command::Left,
+                  "right" => Command::Right,
+                  "report" => Command::Report,
+                  _ => return None,
+              };
+              if words.next().is_some() {
+                  return None;
+              }
+              Some(command)
+          }
+
+          // Write struct Robot and its impl block here.
+
+          fn main() {
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  // TODO: parse the line and run it on the robot
+              }
+          }
+        solution: |
+          #[derive(Debug, Clone, Copy)]
+          enum Direction {
+              North,
+              East,
+              South,
+              West,
+          }
+
+          impl Direction {
+              fn turn_right(self) -> Self {
+                  match self {
+                      Self::North => Self::East,
+                      Self::East => Self::South,
+                      Self::South => Self::West,
+                      Self::West => Self::North,
+                  }
+              }
+
+              fn turn_left(self) -> Self {
+                  self.turn_right().turn_right().turn_right()
+              }
+          }
+
+          enum Command {
+              Forward(u32),
+              Left,
+              Right,
+              Report,
+          }
+
+          fn parse_command(line: &str) -> Option<Command> {
+              let mut words = line.split_whitespace();
+              let Some(name) = words.next() else {
+                  return None;
+              };
+              let command = match name {
+                  "forward" => {
+                      let Some(arg) = words.next() else {
+                          return None;
+                      };
+                      let Ok(steps) = arg.parse::<u32>() else {
+                          return None;
+                      };
+                      Command::Forward(steps)
+                  }
+                  "left" => Command::Left,
+                  "right" => Command::Right,
+                  "report" => Command::Report,
+                  _ => return None,
+              };
+              if words.next().is_some() {
+                  return None;
+              }
+              Some(command)
+          }
+
+          // Write struct Robot and its impl block here.
+          struct Robot {
+              x: i32,
+              y: i32,
+              facing: Direction,
+          }
+
+          impl Robot {
+              fn new() -> Self {
+                  Self { x: 0, y: 0, facing: Direction::North }
+              }
+
+              fn run(&mut self, command: Command) {
+                  match command {
+                      Command::Forward(steps) => {
+                          let n = steps as i32;
+                          match self.facing {
+                              Direction::North => self.y += n,
+                              Direction::East => self.x += n,
+                              Direction::South => self.y -= n,
+                              Direction::West => self.x -= n,
+                          }
+                      }
+                      Command::Left => self.facing = self.facing.turn_left(),
+                      Command::Right => self.facing = self.facing.turn_right(),
+                      Command::Report => println!("{},{} {:?}", self.x, self.y, self.facing),
+                  }
+              }
+          }
+
+          fn main() {
+              let mut robot = Robot::new();
+              for line in std::io::stdin().lines() {
+                  let line = line.expect("could not read input");
+                  // TODO: parse the line and run it on the robot
+                  let Some(command) = parse_command(&line) else {
+                      println!("invalid: {}", line);
+                      continue;
+                  };
+                  robot.run(command);
+              }
+          }
+        require:
+          - pattern: 'struct\s+Robot\b'
+            message: "Model the robot with a `struct Robot`."
+          - pattern: 'impl\s+Robot\b'
+            message: "Give `Robot` an impl block with a method that runs a command."
+        hints:
+          - "`struct Robot { x: i32, y: i32, facing: Direction }` with a `new()` that starts at 0,0 facing North."
+          - "A method `fn run(&mut self, command: Command)` with a `match command { ... }`. For `Forward(steps)`, match on `self.facing` to decide which coordinate changes (convert with `steps as i32`)."
+          - "In `main`: `let Some(command) = parse_command(&line) else { println!(\"invalid: {}\", line); continue; };` then `robot.run(command);`"
+        tests:
+          - stdin: "forward 3\nright\nforward 2\nreport\n"
+            expect: "2,3 East"
+          - stdin: "report\nleft\nforward 5\nreport\njump\nforward\nright\nright\nforward 2\nreport\n"
+            hidden: true
+          - stdin: "right\nright\nforward 4\nleft\nforward 1\nreport\nleft left\nleft\nleft\nreport\n"
+            hidden: true

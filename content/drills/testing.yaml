@@ -1,0 +1,249 @@
+topic: testing
+drills:
+  - type: predict
+    pre: |
+      fn double(n: i32) -> i32 {
+          n * 2
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn doubles() {
+              println!("test ran");
+              assert_eq!(double(2), 4);
+          }
+      }
+    body: |
+      println!("main ran: {}", double(21));
+    why: "#[cfg(test)] code is only compiled by cargo test. A normal run (cargo run) leaves the tests module out entirely, so only main's line is printed."
+
+  - type: predict
+    body: |
+      let total: f64 = 0.1 + 0.2;
+      println!("{}", total == 0.3);
+      println!("{}", (total - 0.3).abs() < 1e-9);
+    why: 0.1 and 0.2 can't be stored exactly in binary floating point, so their sum is 0.30000000000000004. Compare floats in tests with a tolerance instead of ==.
+
+  - type: predict
+    pre: |
+      fn check(input: &str) -> Result<u32, String> {
+          let n: u32 = input.parse().map_err(|_| format!("bad input: {input}"))?;
+          if n > 5 {
+              return Err(format!("{n} is too big"));
+          }
+          Ok(n)
+      }
+    body: |
+      println!("{:?}", check("3"));
+      println!("{:?}", check("7"));
+    why: "\"3\" parses and passes the check, so it's Ok(3). \"7\" parses too, but the early return turns it into Err with the message."
+
+  - type: predict
+    body: |
+      let parsed: Result<u32, String> = Err(String::from("empty"));
+      println!("{}", matches!(parsed, Err(_)));
+      println!("{}", matches!(Some(4), Some(n) if n > 5));
+    why: matches! checks a value against a pattern (with an optional if guard) and returns a bool. It's handy in tests when you care about the shape of a value.
+
+  - type: predict
+    pre: |
+      fn is_even(n: u32) -> bool {
+          n % 2 == 0
+      }
+    body: |
+      let cases = [(2, true), (3, false), (10, true), (7, true)];
+      let failed: Vec<u32> = cases.iter().filter(|(n, want)| is_even(*n) != *want).map(|(n, _)| *n).collect();
+      println!("{} of {} failed: {:?}", failed.len(), cases.len(), failed);
+    why: "A table of cases makes it easy to see exactly which input disagrees. Here the table itself is wrong about 7: is_even(7) is false."
+
+  - type: fill
+    prompt: Check that the two values are equal (and show both if they're not).
+    pre: |
+      fn add(a: i32, b: i32) -> i32 {
+          a + b
+      }
+    body: |
+      assert_[[eq]]!(add(2, 3), 5);
+      println!("ok");
+    why: assert_eq!(left, right) panics when the values differ and prints both of them, which makes failures easy to read.
+
+  - type: fill
+    prompt: Assert that 1900 is NOT a leap year.
+    pre: |
+      fn is_leap_year(y: u32) -> bool {
+          (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+      }
+    body: |
+      assert!([[!]]is_leap_year(1900));
+      println!("1900 checked");
+    why: assert! panics when its condition is false. To check that something is false, negate it with !.
+
+  - type: fill
+    prompt: Let assert_eq! compare two Points.
+    pre: |
+      #[derive(Debug, [[PartialEq]])]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+    body: |
+      assert_eq!(Point { x: 1, y: 2 }, Point { x: 1, y: 2 });
+      println!("same point");
+    why: assert_eq! compares with == (which needs PartialEq) and prints the values when they differ (which needs Debug).
+
+  - type: bug
+    pre: |
+      fn last_index(v: &[i32]) -> usize {
+          v.len() // BUG
+      }
+    body: |
+      assert_eq!(last_index(&[4, 5, 6]), 2);
+      println!("ok");
+    fix: 'v.len() - 1'
+    prompt: "The assertion is right. Click the line with the bug so the program prints `ok`."
+    why: Indexes start at 0, so the last index of a 3-item slice is 2, one less than its length.
+
+  - type: bug
+    pre: |
+      fn cents_to_string(cents: u32) -> String {
+          format!("{}.{:02}", cents / 100, cents % 100)
+      }
+    body: |
+      assert_eq!(cents_to_string(250), "2.5"); // BUG
+      assert_eq!(cents_to_string(7), "0.07");
+      println!("ok");
+    fix: 'assert_eq!(cents_to_string(250), "2.50");'
+    prompt: "`cents_to_string` correctly prints two decimal places. Click the line with the bug."
+    why: "Sometimes the test is what's wrong. {:02} pads the cents to two digits, so 250 cents is \"2.50\", and the expected value has to say so."
+
+  - type: bug
+    body: |
+      let mut queue: Vec<&str> = Vec::new();
+      queue.push("job-1");
+      assert!(queue.is_empty()); // BUG
+      println!("{} queued", queue.len());
+    fix: 'assert!(!queue.is_empty());'
+    prompt: "This should print `1 queued`. Click the line with the bug."
+    why: After a push the queue is not empty, so assert!(queue.is_empty()) panics. The check needs a ! to say "not empty".
+
+  - type: compiles
+    answer: no
+    pre: |
+      #[derive(PartialEq)]
+      struct Order {
+          qty: u32,
+      }
+    body: |
+      assert_eq!(Order { qty: 1 }, Order { qty: 1 });
+    why: "assert_eq! needs Debug as well as PartialEq, to print the two values when they differ: `Order` doesn't implement `Debug` (E0277)."
+
+  - type: compiles
+    answer: no
+    pre: |
+      #[cfg(test)]
+      fn sample_order() -> u32 {
+          3
+      }
+    body: |
+      println!("{}", sample_order());
+    why: "#[cfg(test)] items only exist when compiling tests. In a normal build sample_order is removed, so main can't find it (E0425)."
+
+  - type: compiles
+    answer: yes
+    pre: |
+      fn parse_qty(s: &str) -> Result<u32, String> {
+          s.trim().parse::<u32>().map_err(|e| e.to_string())
+      }
+
+      fn check() -> Result<(), String> {
+          let q = parse_qty(" 4 ")?;
+          assert_eq!(q, 4);
+          Ok(())
+      }
+    body: |
+      println!("{:?}", check());
+    why: A function returning Result<(), String> can use ? on another Result<_, String>. Test functions can return Result the same way.
+
+  - type: choice
+    prompt: "What does #[should_panic(expected = \"insufficient funds\")] check?"
+    choices: ["That the test function returns an Err", "That the test panics, with a message containing \"insufficient funds\"", "That the test panics with exactly that message and nothing else", "That the code never panics"]
+    answer: 2
+    why: The test passes only if the code panics and the panic message contains the expected text. Without expected, any panic would do, even an unrelated one.
+
+  - type: choice
+    prompt: Where do integration tests go, and what can they use?
+    choices: ["In a #[cfg(test)] module, and they can use private functions", "In the tests/ folder, and they can only use the crate's public API", "In src/main.rs, after fn main", "In doc comments only"]
+    answer: 2
+    why: Each file in tests/ is compiled as a separate crate that uses your library from the outside, so only pub items are visible. Unit tests in mod tests can reach private items.
+
+  - type: boss
+    prompt: |
+      `is_palindrome` ignores case and anything that isn't a letter or digit, so `"Race car"` and `"A man, a plan, a canal: Panama"` are palindromes. Write at least **3 tests** that catch every planted bug.
+    mode: test
+    minTests: 3
+    seed: |
+      fn is_palindrome(s: &str) -> bool {
+          let cleaned: Vec<char> = s
+              .chars()
+              .filter(|c| c.is_alphanumeric())
+              .map(|c| c.to_ascii_lowercase())
+              .collect();
+          cleaned.iter().eq(cleaned.iter().rev())
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+      }
+    solution: |
+      fn is_palindrome(s: &str) -> bool {
+          let cleaned: Vec<char> = s
+              .chars()
+              .filter(|c| c.is_alphanumeric())
+              .map(|c| c.to_ascii_lowercase())
+              .collect();
+          cleaned.iter().eq(cleaned.iter().rev())
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          // Write your #[test] functions here.
+          #[test]
+          fn simple_palindromes() {
+              assert!(is_palindrome("level"));
+              assert!(is_palindrome(""));
+          }
+
+          #[test]
+          fn ignores_case_spaces_and_punctuation() {
+              assert!(is_palindrome("Race car"));
+              assert!(is_palindrome("A man, a plan, a canal: Panama"));
+          }
+
+          #[test]
+          fn rejects_non_palindromes() {
+              assert!(!is_palindrome("crab"));
+              assert!(!is_palindrome("ab"));
+          }
+      }
+    mutants:
+      - name: case matters
+        find: ".map(|c| c.to_ascii_lowercase())"
+        replace: ".map(|c| c)"
+      - name: spaces and punctuation are kept
+        find: ".filter(|c| c.is_alphanumeric())"
+        replace: ".filter(|_| true)"
+      - name: everything is a palindrome
+        find: "cleaned.iter().eq(cleaned.iter().rev())"
+        replace: "cleaned.len() < 1_000_000"
+    hints:
+      - "Test a plain palindrome, one that needs case and spaces ignored, and a word that is not a palindrome."
+      - "\"Race car\" fails if case or spaces are not ignored; \"crab\" fails if everything counts as a palindrome."
+    why: Each planted bug breaks one rule from the specification, so a good suite has at least one test per rule, including a negative case.

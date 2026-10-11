@@ -2,7 +2,7 @@ import { BrowserRouter, NavLink, Route, Routes, Link, useLocation } from "react-
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Menu, Moon, Sun, X } from "lucide-react";
 import { BrandMark } from "./components/Brand";
-import CompilerBadge from "./components/CompilerBadge";
+import RunnerBadge from "./components/RunnerBadge";
 import Home from "./pages/Home";
 import Learn from "./pages/Learn";
 import StepPage from "./pages/StepPage";
@@ -13,7 +13,9 @@ import Profile from "./pages/Profile";
 import Pro from "./pages/Pro";
 import ProPage from "./pages/ProPage";
 import NotFound from "./pages/NotFound";
-import { VisualIndex, VisualPage } from "./pages/Visualize";
+import Roadmap from "./pages/Roadmap";
+import Settings from "./pages/Settings";
+import About from "./pages/About";
 import Placement from "./pages/Placement";
 import Daily from "./pages/Daily";
 import { TopicIndex, TopicPage } from "./pages/Topics";
@@ -70,19 +72,20 @@ function Footer() {
       <div className="footer-inner">
         <div className="footer-grid">
           <div className="footer-brand">
-            <Link to="/" className="brand" aria-label="C/C++ Arena home">
+            <Link to="/" className="brand" aria-label="RustArena home">
               <BrandMark />
               <span className="brand-name">
-                C/C++ <b>Arena</b>
+                Rust<b>Arena</b>
               </span>
             </Link>
-            <p>Learn C and C++ with a real compiler that runs right in your browser.</p>
+            <p>Learn Rust from your first line of code to job-ready, with every exercise checked by the real Rust compiler.</p>
           </div>
           <FooterCol title="Learn">
+            <li><Link to="/roadmap">Roadmap</Link></li>
             <li><Link to="/learn">Curriculum</Link></li>
             <li><Link to="/projects">Projects</Link></li>
             <li><Link to="/pro">Pro Track</Link></li>
-            <li><Link to="/topics">C and C++ topics</Link></li>
+            <li><Link to="/topics">Rust topics</Link></li>
           </FooterCol>
           <FooterCol title="Practice">
             <li><Link to="/deathmatch">Deathmatch</Link></li>
@@ -92,9 +95,9 @@ function Footer() {
           </FooterCol>
           <FooterCol title="Tools">
             <li><Link to="/playground">Playground</Link></li>
-            <li><Link to="/visualize">Watch code run</Link></li>
             <li><Link to="/certificate">Certificates</Link></li>
             <li><Link to="/next">Where to go next</Link></li>
+            <li><Link to="/settings">Settings</Link></li>
           </FooterCol>
           <FooterCol title="Project">
             <li>
@@ -108,10 +111,11 @@ function Footer() {
               </a>
             </li>
             <li><Link to="/profile">Your progress</Link></li>
+            <li><Link to="/about">About and credits</Link></li>
           </FooterCol>
         </div>
         <div className="footer-bottom">
-          <p>© {new Date().getFullYear()} C/C++ Arena. Free and open source.</p>
+          <p>© {new Date().getFullYear()} RustArena. Free and open source. Not affiliated with or endorsed by the Rust Foundation or the Rust Project.</p>
           <p>Your progress stays in your browser unless you choose to sync it.</p>
         </div>
       </div>
@@ -120,6 +124,7 @@ function Footer() {
 }
 
 const NAV: [string, string][] = [
+  ["/roadmap", "Roadmap"],
   ["/learn", "Learn"],
   ["/deathmatch", "Deathmatch"],
   ["/daily", "Daily"],
@@ -148,10 +153,10 @@ function Header() {
   }, [open]);
   return (
     <header className="topbar">
-      <Link to="/" className="brand" aria-label="C/C++ Arena home">
+      <Link to="/" className="brand" aria-label="RustArena home">
         <BrandMark />
         <span className="brand-name">
-          C/C++ <b>Arena</b>
+          Rust<b>Arena</b>
         </span>
       </Link>
       <nav id="main-nav" className={open ? "nav nav-open" : "nav"} aria-label="Main">
@@ -161,9 +166,9 @@ function Header() {
           </NavLink>
         ))}
         <div className="nav-extra">
-          <Link to="/topics">C and C++ topics</Link>
-          <Link to="/visualize">Watch code run</Link>
+          <Link to="/topics">Rust topics</Link>
           <Link to="/placement">Placement quiz</Link>
+          <Link to="/settings">Settings</Link>
           <div className="nav-theme">
             <span>Theme</span>
             <ThemeToggle />
@@ -171,7 +176,7 @@ function Header() {
         </div>
       </nav>
       <div className="topbar-right">
-        <CompilerBadge compact />
+        <RunnerBadge compact />
         <ThemeToggle />
         <Link to="/learn" className="btn btn-primary btn-sm topbar-cta">
           Start learning
@@ -229,8 +234,9 @@ export default function App() {
           <Route path="/playground" element={<Playground />} />
           <Route path="/topics" element={<TopicIndex />} />
           <Route path="/topics/:slug" element={<TopicPage />} />
-          <Route path="/visualize" element={<VisualIndex />} />
-          <Route path="/visualize/:id" element={<VisualPage />} />
+          <Route path="/roadmap" element={<Roadmap />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/about" element={<About />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Main>

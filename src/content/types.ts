@@ -106,7 +106,7 @@ export type Topic = {
 export type RoadmapSection = {
   title: string;
   summary: string;
-  items: { title: string; modules: string[]; pro?: string[]; note?: string }[];
+  items: { title: string; modules?: string[]; pro?: string[]; note?: string; links?: { label: string; url: string }[] }[];
 };
 
 export type Content = {

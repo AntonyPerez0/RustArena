@@ -1,0 +1,154 @@
+topic: strings-intro
+drills:
+  - type: predict
+    body: |
+      let s = "héllo";
+      println!("{} {}", s.len(), s.chars().count());
+    why: "len() counts bytes and é takes two bytes in UTF-8, so there are 6 bytes but only 5 characters."
+  - type: predict
+    body: |
+      let mut s = String::from("ab");
+      s.push('c');
+      s.push_str("de");
+      println!("{s}");
+    why: push adds one char and push_str adds text, both at the end.
+  - type: predict
+    body: |
+      let n = 4;
+      let s = format!("{}-{n}-{:.1}", "x", 2.0);
+      println!("{s}");
+    why: format! fills placeholders exactly like println!, but returns the text instead of printing it.
+  - type: predict
+    body: |
+      let t = "  Hi there \n".trim();
+      println!("[{t}]");
+    why: trim removes whitespace, including the newline, from both ends but keeps the space in the middle.
+  - type: predict
+    after: strings-intro-6
+    body: |
+      let a = "Rust".to_lowercase() == "rust";
+      let b = "Rust" == "rust";
+      println!("{a} {b}");
+    why: Comparison is case-sensitive, so "Rust" == "rust" is false. Lowercasing first makes them equal.
+  - type: predict
+    body: |
+      let s = "a,b,,c".replace(",", "");
+      println!("{} {}", s, s.len());
+    why: replace swaps every occurrence, so all three commas disappear.
+  - type: fill
+    prompt: Create an empty String.
+    body: |
+      let mut s = String::[[new]]();
+      s.push_str("ok");
+      println!("{s}");
+    why: String::new() makes an empty String, ready to grow.
+  - type: fill
+    prompt: Append the text "ris" to the name.
+    body: |
+      let mut name = String::from("Fer");
+      name.[[push_str]]("ris");
+      println!("{name}");
+    why: push_str appends a piece of text; push only takes a single char.
+  - type: fill
+    after: strings-intro-3
+    prompt: Build the text without printing it.
+    body: |
+      let items = 3;
+      let label = [[format!]]("{items} items");
+      println!("[{label}]");
+    why: format! works like println! but returns a String.
+  - type: bug
+    after: strings-intro-2
+    body: |
+      let mut s = String::from("Done");
+      s.push("!"); // BUG
+      println!("{s}");
+    fix: "s.push('!');"
+    why: push takes a char in single quotes. "!" is a &str, so this doesn't compile.
+  - type: bug
+    after: strings-intro-6
+    body: |
+      let answer = "  Yes ";
+      if answer.trim() == "yes" { // BUG
+          println!("confirmed");
+      } else {
+          println!("cancelled");
+      }
+    fix: 'if answer.trim().to_lowercase() == "yes" {'
+    prompt: "The user typed `  Yes ` and should get `confirmed`. Click the line with the bug."
+    why: Comparison is case-sensitive, so "Yes" isn't equal to "yes". Lowercase the trimmed answer before comparing.
+  - type: bug
+    body: |
+      let name = "José";
+      let length = name.len(); // BUG
+      println!("{name} has {length} letters");
+    fix: "let length = name.chars().count();"
+    why: len() counts bytes, and é takes two. chars().count() counts the 4 characters.
+  - type: compiles
+    answer: no
+    body: |
+      let s: String = "hi";
+    why: "\"hi\" is a &str, not a String. Write \"hi\".to_string() or String::from(\"hi\")."
+  - type: compiles
+    after: strings-intro-2
+    answer: no
+    body: |
+      let s = String::from("a");
+      s.push('b');
+    why: Pushing changes the String, so it must be declared with let mut.
+  - type: compiles
+    answer: no
+    body: |
+      let s = "crab";
+      let first = s[0];
+    why: Strings can't be indexed by position, because a character may take several bytes. Use .chars() instead.
+  - type: compiles
+    after: strings-intro-3
+    answer: yes
+    body: |
+      let a = String::from("x");
+      let b = a + "y";
+      println!("{b}");
+    why: + takes a String on the left and a &str on the right, so String + literal works.
+  - type: choice
+    prompt: "Why does `\"crab🦀\".len()` return 8?"
+    choices: ["len() counts bytes, and the emoji takes 4 bytes in UTF-8", "len() counts characters, and the emoji counts as 4", "Strings always reserve 8 bytes"]
+    answer: 1
+    why: Each ASCII letter is one byte and the crab emoji is four, so 4 + 4 = 8 bytes. chars().count() would give 5.
+  - type: boss
+    prompt: |
+      Write `receipt_line(item, qty, unit_price)` for a till. Clean up the item name (trim it and make it lowercase), then return a line like `3 x coffee @ 2.50 = 7.50`: the quantity, the name, the unit price and the total, both prices with two decimals.
+    seed: |
+      fn receipt_line(item: &str, qty: u32, unit_price: f64) -> String {
+          todo!()
+      }
+    solution: |
+      fn receipt_line(item: &str, qty: u32, unit_price: f64) -> String {
+          let name = item.trim().to_lowercase();
+          let total = qty as f64 * unit_price;
+          format!("{qty} x {name} @ {unit_price:.2} = {total:.2}")
+      }
+    harness: |
+      #[test]
+      fn three_coffees() {
+          assert_eq!(receipt_line("coffee", 3, 2.5), "3 x coffee @ 2.50 = 7.50", "receipt_line(\"coffee\", 3, 2.5)");
+      }
+
+      #[test]
+      fn cleans_up_the_item_name() {
+          assert_eq!(receipt_line("  Green TEA ", 2, 1.75), "2 x green tea @ 1.75 = 3.50", "receipt_line(\"  Green TEA \", 2, 1.75)");
+      }
+
+      #[test]
+      fn a_single_item() {
+          assert_eq!(receipt_line("Bagel", 1, 3.0), "1 x bagel @ 3.00 = 3.00", "receipt_line(\"Bagel\", 1, 3.0)");
+      }
+
+      #[test]
+      fn zero_quantity() {
+          assert_eq!(receipt_line("cake", 0, 4.25), "0 x cake @ 4.25 = 0.00", "receipt_line(\"cake\", 0, 4.25)");
+      }
+    hints:
+      - "Clean the name with item.trim().to_lowercase(), and compute the total as qty as f64 * unit_price."
+      - "Build the line with format! and {:.2} for both prices."
+    why: Cleaning text with trim and to_lowercase, then building the result with format!, is the bread and butter of text handling.

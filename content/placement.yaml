@@ -2,180 +2,274 @@
 # Getting a question wrong means "start at that module"; everything before it
 # can be skipped. Every question's answer is checked by compiling and running it.
 questions:
-  - module: c-ops
+  - module: variables
     type: predict
     body: |
-      int a = 7, b = 2;
-      printf("%d %d\n", a / b, a % b);
-    why: Dividing two ints throws away the fraction (7 / 2 is 3), and `%` gives the remainder (1).
-
-  - module: c-loops
-    type: predict
-    body: |
-      for (int i = 0; i < 10; i += 3) {
-          printf("%d ", i);
-      }
-      printf("\n");
-    why: "`i` goes 0, 3, 6, 9; the next value, 12, fails `i < 10`."
-
-  - module: c-funcs
-    type: predict
-    pre: |
-      void set_five(int x) {
-          x = 5;
-      }
-    body: |
-      int a = 1;
-      set_five(a);
-      printf("%d\n", a);
-    why: C passes arguments by value, so the function changes its own copy and `a` stays 1.
-
-  - module: c-arrays
-    type: predict
-    body: |
-      int a[] = {4, 8, 15, 16};
-      printf("%zu\n", sizeof a / sizeof a[0]);
-    why: The size of the whole array divided by the size of one element is the element count.
-
-  - module: c-strings
-    type: predict
-    body: |
-      char s[] = "hello";
-      printf("%zu %zu\n", strlen(s), sizeof s);
-    why: "`strlen` counts letters (5); the array also holds the `'\\0'` terminator, so it's 6 bytes."
-
-  - module: c-pointers
-    type: predict
-    body: |
-      int a[] = {10, 20, 30};
-      int *p = a;
-      p++;
-      *p += 1;
-      printf("%d %d\n", a[1], *(p + 1));
-    why: "`p++` moves to `a[1]`, which becomes 21; `*(p + 1)` is `a[2]`."
-
-  - module: c-structs
-    type: predict
-    pre: |
-      struct point { int x; int y; };
-    body: |
-      struct point a = {1, 2};
-      struct point *q = &a;
-      q->x = 9;
-      printf("%d %d\n", a.x, q->y);
-    why: "`q` points at `a`, so `q->x = 9` changes `a.x`."
-
-  - module: c-memory
-    type: choice
-    prompt: What's wrong with this code?
-    body: |
-      char *s = malloc(5);
-      if (!s) return 1;
-      strcpy(s, "hello");
-      printf("%s\n", s);
-      free(s);
-    choices:
-      - There's no room for the `'\0'` at the end, so `strcpy` writes past the block
-      - "`malloc` needs a cast to `char *`"
-      - "`strcpy` only works on arrays, not on heap memory"
-      - Nothing, it's correct
-    answer: 1
-    compiles: true
-    why: '"hello" needs 6 bytes including the terminator. `malloc(strlen(src) + 1)` is the safe pattern.'
-
-  - module: cpp-refs
-    type: predict
-    pre: |
-      void twice(int &r) { r *= 2; }
-    body: |
-      int v = 4;
-      twice(v);
-      twice(v);
-      std::cout << v << "\n";
-    why: A reference parameter is the caller's variable, so both calls double `v`.
-
-  - module: cpp-raii
-    type: predict
-    pre: |
-      struct Noisy {
-          char c;
-          explicit Noisy(char ch) : c(ch) { std::cout << c; }
-          ~Noisy() { std::cout << (char)(c + 32); }
-      };
-    body: |
+      let x = 5;
+      let x = x * 2;
       {
-          Noisy a('A');
-          Noisy b('B');
+          let x = x + 1;
+          print!("{x} ");
       }
-      std::cout << "\n";
-    why: Objects are destroyed in reverse order of construction, so `b` goes first.
+      println!("{x}");
+    why: Each `let x` shadows the previous one. The inner block's `x` (11) disappears at the closing brace, so the outer `x` is still 10.
 
-  - module: cpp-algorithms
+  - module: types
     type: predict
     body: |
-      std::vector<int> v{3, 1, 2};
-      std::sort(v.begin(), v.end());
-      v.push_back(0);
-      std::cout << v[0] << v.back() << v.size() << "\n";
-    why: After sorting, `v` is 1 2 3; then 0 is added at the end, making 4 elements.
+      let a = 7;
+      let b = 2;
+      println!("{} {} {}", a / b, a % b, 7.0 / 2.0);
+    why: "Integer division drops the fraction (3), `%` is the remainder (1), and float division keeps it (3.5)."
 
-  - module: cpp-smart
-    type: choice
-    prompt: "`a` is a `std::unique_ptr<int>`. What happens with `auto b = a;`?"
-    choices:
-      - It doesn't compile, because a unique_ptr can't be copied
-      - Both `a` and `b` own the int, and it's deleted twice
-      - "`b` takes ownership and `a` becomes empty"
-      - "`b` gets its own copy of the int"
-    answer: 1
-    why: unique_ptr's copy constructor is deleted. To hand over ownership you write `auto b = std::move(a);`.
-
-  - module: cpp-oop
+  - module: functions
     type: predict
     pre: |
-      struct Animal {
-          virtual std::string sound() const { return "..."; }
-          virtual ~Animal() = default;
-      };
-      struct Dog : Animal {
-          std::string sound() const override { return "woof"; }
-      };
-    body: |
-      std::unique_ptr<Animal> a = std::make_unique<Dog>();
-      std::cout << a->sound() << "\n";
-    why: "`sound` is virtual, so the call goes to the real object's override."
-
-  - module: cpp-concurrency
-    type: choice
-    prompt: Two threads each run `counter++` a million times on a shared `int`, with no mutex or atomic. What's true?
-    choices:
-      - It's a data race, which is undefined behavior; updates can be lost
-      - It always ends at exactly 2,000,000
-      - It doesn't compile
-      - The second thread automatically waits for the first to finish
-    answer: 1
-    why: "`counter++` is a load, an add and a store, and the two threads' steps can interleave. Protect it with a `std::mutex` or make it a `std::atomic<int>`."
-
-  - module: dsa-complexity
-    type: choice
-    prompt: About how many comparisons does binary search need to find a value among 1,000,000 sorted numbers?
-    choices:
-      - About 20
-      - About 1,000
-      - About 500,000
-      - About 1,000,000
-    answer: 1
-    why: Each comparison halves the range, and 2 to the power 20 is about a million.
-
-  - module: dsa-dp
-    type: predict
-    pre: |
-      long long memo[51];
-      long long fib(int n) {
-          if (n < 2) return n;
-          if (memo[n] != 0) return memo[n];
-          return memo[n] = fib(n - 1) + fib(n - 2);
+      fn f(n: i32) -> i32 {
+          if n > 3 { n - 1 } else { n * 10 }
       }
     body: |
-      std::cout << fib(50) << "\n";
-    why: Memoization computes each fib(n) once, so fib(50) is instant. Plain recursion would need about 40 billion calls.
+      println!("{} {}", f(5), f(2));
+    why: "`if` is an expression, and the function returns the last expression of its body (no `;`): 4 and 20."
+
+  - module: control
+    type: predict
+    body: |
+      let mut n = 0;
+      let r = loop {
+          n += 3;
+          if n > 10 {
+              break n * 2;
+          }
+      };
+      println!("{r}");
+    why: "`n` goes 3, 6, 9, 12; at 12 the loop breaks with the value 24, which becomes `r`."
+
+  - module: compound
+    type: predict
+    body: |
+      let t = (1, "two", 3.0);
+      let (a, _, c) = t;
+      let arr = [a; 3];
+      println!("{} {:?} {}", c, arr, arr.len());
+    why: "Destructuring takes the tuple apart; `[a; 3]` makes an array of three copies of `a`."
+
+  - module: strings-intro
+    type: predict
+    body: |
+      let mut s = String::from("crab");
+      s.push_str("s!");
+      println!("{} {}", s.len(), s.to_uppercase());
+    why: "`push_str` appends in place, so the String is \"crabs!\" (6 bytes long)."
+
+  - module: ownership
+    type: compiles
+    answer: no
+    body: |
+      let a = String::from("ferris");
+      let b = a;
+      println!("{a} {b}");
+    why: Assigning a String moves it. After `let b = a;`, `a` no longer owns anything, so using it is an error (E0382).
+
+  - module: borrowing
+    type: compiles
+    answer: no
+    body: |
+      let mut v = vec![1, 2, 3];
+      let first = &v[0];
+      v.push(4);
+      println!("{first}");
+    why: "`first` borrows `v` immutably and is used after `v.push`, which needs a mutable borrow. Pushing may move the vector's storage, leaving `first` dangling (E0502)."
+
+  - module: slices
+    type: predict
+    body: |
+      let s = "hello world";
+      let word = &s[6..];
+      let nums = [10, 20, 30, 40];
+      let mid = &nums[1..3];
+      println!("{word} {:?}", mid);
+    why: Ranges in slices are start-inclusive and end-exclusive; `6..` runs to the end.
+
+  - module: structs
+    type: predict
+    pre: |
+      #[derive(Debug, Clone)]
+      struct Point {
+          x: i32,
+          y: i32,
+      }
+    body: |
+      let p = Point { x: 1, y: 2 };
+      let q = Point { y: 5, ..p.clone() };
+      println!("{:?} {}", q, p.x + q.y);
+    why: Struct update syntax takes the remaining fields from `p`; `p.x + q.y` is 1 + 5.
+
+  - module: enums
+    type: predict
+    pre: |
+      enum Shape {
+          Circle(f64),
+          Rect { w: f64, h: f64 },
+      }
+
+      fn area(s: &Shape) -> f64 {
+          match s {
+              Shape::Circle(r) => 3.0 * r * r,
+              Shape::Rect { w, h } => w * h,
+          }
+      }
+    body: |
+      let shapes = [Shape::Circle(2.0), Shape::Rect { w: 2.0, h: 3.5 }];
+      let total: f64 = shapes.iter().map(area).sum();
+      println!("{total}");
+    why: "12 + 7 = 19. `match` binds the data inside each variant."
+
+  - module: vectors
+    type: predict
+    body: |
+      let mut v = vec![5, 3, 8, 3, 1];
+      v.sort();
+      v.dedup();
+      v.retain(|&x| x != 8);
+      println!("{:?} {:?}", v, v.get(10));
+    why: "Sorting gives [1, 3, 3, 5, 8]; `dedup` removes adjacent duplicates; `retain` drops 8; `get` returns None instead of panicking."
+
+  - module: hashmaps
+    type: predict
+    body: |
+      use std::collections::HashMap;
+      let mut counts = HashMap::new();
+      for w in "a b a c a b".split_whitespace() {
+          *counts.entry(w).or_insert(0) += 1;
+      }
+      let mut keys: Vec<_> = counts.iter().collect();
+      keys.sort();
+      println!("{:?}", keys);
+    why: "The entry API counts each word. HashMap order is unspecified, so the pairs are sorted before printing."
+
+  - module: errors
+    type: predict
+    pre: |
+      fn parse_sum(a: &str, b: &str) -> Result<i32, std::num::ParseIntError> {
+          let x: i32 = a.parse()?;
+          let y: i32 = b.parse()?;
+          Ok(x + y)
+      }
+    body: |
+      println!("{:?}", parse_sum("4", "5"));
+      println!("{}", parse_sum("4", "five").is_err());
+    why: The `?` operator returns the error early from the function, so the second call is an Err.
+
+  - module: generics
+    type: predict
+    pre: |
+      fn largest<T: PartialOrd + Copy>(items: &[T]) -> T {
+          let mut best = items[0];
+          for &x in items {
+              if x > best {
+                  best = x;
+              }
+          }
+          best
+      }
+    body: |
+      println!("{} {}", largest(&[3, 9, 2]), largest(&['r', 'u', 's', 't']));
+    why: One generic function works for any type that can be compared (PartialOrd) and copied.
+
+  - module: traits
+    type: predict
+    pre: |
+      trait Speak {
+          fn name(&self) -> String;
+          fn greet(&self) -> String {
+              format!("Hi, I'm {}", self.name())
+          }
+      }
+
+      struct Crab;
+
+      impl Speak for Crab {
+          fn name(&self) -> String {
+              "Ferris".to_string()
+          }
+      }
+    body: |
+      println!("{}", Crab.greet());
+    why: "`greet` has a default body that calls `name`, which `Crab` provides."
+
+  - module: lifetimes
+    type: compiles
+    answer: no
+    pre: |
+      fn longest(a: &str, b: &str) -> &str {
+          if a.len() > b.len() { a } else { b }
+      }
+    body: |
+      println!("{}", longest("hi", "there"));
+    why: The returned reference could come from either parameter, so Rust needs a lifetime annotation (`fn longest<'a>(a: &'a str, b: &'a str) -> &'a str`) (E0106).
+
+  - module: closures
+    type: predict
+    body: |
+      let mut count = 0;
+      let mut inc = |by: i32| count += by;
+      inc(2);
+      inc(5);
+      println!("{count}");
+    why: The closure mutably borrows `count` (it's FnMut), so each call adds to it.
+
+  - module: iterators
+    type: predict
+    body: |
+      let total: i32 = (1..=10)
+          .filter(|n| n % 2 == 0)
+          .map(|n| n * n)
+          .take(3)
+          .sum();
+      println!("{total}");
+    why: "The even numbers 2, 4, 6 squared are 4 + 16 + 36 = 56; `take(3)` stops after three."
+
+  - module: smart-pointers
+    type: predict
+    body: |
+      use std::cell::RefCell;
+      use std::rc::Rc;
+      let shared = Rc::new(RefCell::new(vec![1]));
+      let other = Rc::clone(&shared);
+      other.borrow_mut().push(2);
+      println!("{:?} {}", shared.borrow(), Rc::strong_count(&shared));
+    why: Both Rc handles point at the same RefCell, so the push is visible through `shared`, and there are 2 owners.
+
+  - module: threads
+    type: compiles
+    answer: no
+    body: |
+      let data = vec![1, 2, 3];
+      let handle = std::thread::spawn(|| {
+          println!("{:?}", data);
+      });
+      handle.join().unwrap();
+    why: The thread might outlive `data`, so the closure must own it. Write `move ||` to move the vector into the thread (E0373).
+
+  - module: sync
+    type: predict
+    body: |
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+      let counter = Arc::new(Mutex::new(0));
+      let handles: Vec<_> = (0..4)
+          .map(|_| {
+              let c = Arc::clone(&counter);
+              thread::spawn(move || {
+                  for _ in 0..100 {
+                      *c.lock().unwrap() += 1;
+                  }
+              })
+          })
+          .collect();
+      for h in handles {
+          h.join().unwrap();
+      }
+      println!("{}", *counter.lock().unwrap());
+    why: Four threads each add 100 under the lock, and all are joined before printing, so it's always 400.

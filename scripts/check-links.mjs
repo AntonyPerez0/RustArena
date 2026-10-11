@@ -12,7 +12,7 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
 const SOURCES = [
   { dir: "content", ext: /\.ya?ml$/ },
   { dir: "src", ext: /\.(tsx?|js)$/, skip: ["generated"] },
-  { dir: "pro-track/starter", ext: /\.(md|cmake|txt)$/ },
+  { dir: "pro-track/starter", ext: /\.(md|toml|rs)$/, skip: ["target"] },
   { file: "scripts/prerender.mjs" },
   { file: "index.html" },
 ];
@@ -27,7 +27,7 @@ export function collect(root = ROOT) {
       const f = path.join(dir, e.name);
       if (e.isDirectory()) {
         if (!skip.includes(e.name)) walk(f, ext, skip);
-      } else if (ext.test(e.name) || e.name === "CMakeLists.txt") files.push(f);
+      } else if (ext.test(e.name)) files.push(f);
     }
   };
   for (const s of SOURCES) {
@@ -61,7 +61,7 @@ export async function check(url, { tries = 3, timeoutMs = 20000, backoffMs = 300
       const res = await fetch(url, {
         redirect: "follow",
         signal: AbortSignal.timeout(timeoutMs),
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; cpp-arena-link-check; +https://github.com/AntonyPerez0/cpp-arena)", Accept: "text/html,*/*" },
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; rustarena-link-check; +https://github.com/AntonyPerez0/RustArena)", Accept: "text/html,*/*" },
       });
       await res.body?.cancel();
       if (res.ok) return { status: "ok", detail: String(res.status) };
