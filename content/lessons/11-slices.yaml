@@ -1,0 +1,1406 @@
+id: slices
+title: Slices
+phase: "Ownership"
+summary: Borrow part of a string, array or vector without copying it. String slices (&str), array and vector slices (&[T] and &mut [T]), and why &str and &[T] are the parameter types experienced Rust programmers reach for.
+roadmap: [Borrowing, References and Slices]
+steps:
+  - title: String slices
+    id: slices-1
+    text: |
+      You often need part of a string: the first word of a command, the domain of an email address, the date at the start of a log line. Copying that part into a new `String` would work, but it costs an allocation every time. A **slice** lets you refer to part of a string without copying anything.
+
+      `&s[start..end]` is a **string slice**: a reference to the bytes of `s` from index `start` up to, but **not including**, `end`. Its type is `&str`.
+
+      ```rust run
+      fn main() {
+          let line = String::from("2024-05-17 ERROR disk full");
+          let date = &line[0..10];
+          let level = &line[11..16];
+          let message = &line[17..];
+          println!("date: {}", date);
+          println!("level: {}", level);
+          println!("message: {}", message);
+      }
+      ```
+
+      ```output
+      date: 2024-05-17
+      level: ERROR
+      message: disk full
+      ```
+
+      A slice is a reference made of two numbers: a pointer to its first byte and a length. (It's sometimes called a **fat pointer**, because it's twice the size of a plain reference.) It points straight into the `String`'s heap text:
+
+      ```text
+                                             0         1         2
+                                             01234567890123456789012345
+       line: String  ┌────────────┐
+                     │ ptr ───────┼───────►  2024-05-17 ERROR disk full   (heap)
+                     │ len 26     │          ▲          ▲
+                     │ cap 26     │          │          │
+                     └────────────┘          │          │
+       date: &str    ┌────────────┐          │          │
+                     │ ptr ───────┼──────────┘          │
+                     │ len 10     │                     │
+                     └────────────┘                     │
+       level: &str   ┌────────────┐                     │
+                     │ ptr ───────┼─────────────────────┘
+                     │ len 5      │
+                     └────────────┘
+      ```
+
+      Nothing was copied: `date` and `level` **borrow** from `line`, with all the borrowing rules you know. While they're in use, `line` can't be changed or moved.
+
+      ### Range shorthand
+
+      | You write | You get |
+      |---|---|
+      | `&s[2..5]` | bytes 2, 3 and 4 |
+      | `&s[..5]` | from the start up to (not including) 5 |
+      | `&s[6..]` | from byte 6 to the end |
+      | `&s[..]` | the whole string |
+      | `&s[2..=4]` | bytes 2 to 4, including 4 |
+
+      It's the same range syntax as in `for` loops.
+
+      ### Indexes count bytes, not characters
+
+      Slice indexes are **byte** positions. For plain ASCII text (English letters, digits, common punctuation), one character is one byte, so it's what you'd expect. But characters like `é`, `ü` or `🦀` take 2 to 4 bytes in UTF-8, and a slice must start and end on a character boundary. If it doesn't, the program panics:
+
+      ```rust panics
+      fn main() {
+          let word = String::from("héllo");
+          println!("{} bytes", word.len());
+          println!("{}", &word[0..2]);
+      }
+      ```
+
+      ```output
+      6 bytes
+      ```
+
+      The panic message explains it: `end byte index 2 is not a char boundary; it is inside 'é' (bytes 1..3 of string)`. A slice past the end panics too (`&line[0..50]` on a 26-byte string), just like an array index out of bounds.
+
+      This is also why `s[0]` doesn't compile for strings: ``error[E0277]: the type `str` cannot be indexed by `{integer}` ``. Byte 0 might be only part of a character. The strings module shows how to walk through characters properly.
+
+      ### Common mistakes
+
+      - **Off by one**: `end` is exclusive. `&s[0..4]` is 4 bytes: indexes 0, 1, 2 and 3.
+      - **Slicing user text at fixed byte positions.** It works for ASCII but panics on accents or emoji.
+      - **Expecting a slice to be a `String`.** `&s[1..3]` is a `&str`. If you need an owned copy, call `.to_string()` on it. Assigning it to a `String` variable directly gives ``error[E0308]: mismatched types`` (``expected `String`, found `&str` ``).
+
+      **Your turn:** fill in the two blanks with slice expressions (`&email[...]`) so the program splits the email address into the user name (bytes 0 to 5) and the domain (everything after the `@` at index 6). It should print:
+
+      ```
+      user: ferris
+      domain: rust-lang.org
+      ```
+    fill: |
+      fn main() {
+          let email = String::from("ferris@rust-lang.org");
+          let user = [[&email[..6]‖&email[0..6]‖&email[0..=5]‖&email[..=5]]];
+          let domain = [[&email[7..]‖&email[7..20]]];
+          println!("user: {}", user);
+          println!("domain: {}", domain);
+      }
+    hints:
+      - "`ferris` is bytes 0 to 5, so the range ends at 6 (exclusive). The `@` is byte 6, so the domain starts at 7."
+      - "`&email[..6]` and `&email[7..]`."
+    tests:
+      - expect: "user: ferris\ndomain: rust-lang.org"
+    more:
+      - task: |
+          Each log entry starts with an 8-character time `HH:MM:SS`, then a space, then the message. Read one entry from the input and, using string slices, print its hour, its minute and its message. For the input `09:41:07 user ferris logged in` it prints:
+
+          ```
+          hour: 09
+          minute: 41
+          message: user ferris logged in
+          ```
+        seed: |
+          fn main() {
+              let mut entry = String::new();
+              std::io::stdin().read_line(&mut entry).expect("could not read input");
+              let entry = entry.trim();
+              // Slice out the hour, the minute and the message.
+          }
+        solution: |
+          fn main() {
+              let mut entry = String::new();
+              std::io::stdin().read_line(&mut entry).expect("could not read input");
+              let entry = entry.trim();
+              // Slice out the hour, the minute and the message.
+              let hour = &entry[0..2];
+              let minute = &entry[3..5];
+              let message = &entry[9..];
+              println!("hour: {}", hour);
+              println!("minute: {}", minute);
+              println!("message: {}", message);
+          }
+        require:
+          - pattern: 'entry\[[^\]]*\.\.'
+            message: "Use slices of the entry, like `&entry[0..2]`."
+        hints:
+          - "Count the positions: `09:41:07 ` has the hour at 0 and 1, a colon at 2, the minute at 3 and 4, and the message starts at 9."
+          - "`&entry[0..2]`, `&entry[3..5]` and `&entry[9..]`."
+        tests:
+          - stdin: "09:41:07 user ferris logged in\n"
+          - stdin: "23:59:59 backup finished\n"
+            hidden: true
+          - stdin: "00:05:00 cron: cleanup started\n"
+            hidden: true
+      - task: |
+          Write `mask_card`, which hides all but the last 4 digits of a card number with `*`: `"4111111111111111"` becomes `"************1111"`. If the number has 4 digits or fewer, return it unchanged. The function creates new text, so it returns an owned `String`.
+
+          `number.len().saturating_sub(4)` gives the number of digits to hide without going below zero.
+        seed: |
+          fn mask_card(number: &String) -> String {
+              todo!()
+          }
+        solution: |
+          fn mask_card(number: &String) -> String {
+              let hidden = number.len().saturating_sub(4);
+              let mut masked = String::new();
+              for _ in 0..hidden {
+                  masked.push('*');
+              }
+              masked.push_str(&number[hidden..]);
+              masked
+          }
+        harness: |
+          #[test]
+          fn hides_all_but_the_last_four_digits() {
+              assert_eq!(mask_card(&String::from("4111111111111111")), "************1111", "mask_card(\"4111111111111111\")");
+          }
+
+          #[test]
+          fn works_for_shorter_numbers() {
+              assert_eq!(mask_card(&String::from("12345678")), "****5678", "mask_card(\"12345678\")");
+          }
+
+          #[test]
+          fn leaves_four_digits_unchanged() {
+              assert_eq!(mask_card(&String::from("1234")), "1234", "mask_card(\"1234\")");
+          }
+
+          #[test]
+          fn leaves_very_short_numbers_unchanged() {
+              assert_eq!(mask_card(&String::from("42")), "42", "mask_card(\"42\")");
+              assert_eq!(mask_card(&String::new()), "", "mask_card(\"\")");
+          }
+        hints:
+          - "Push one `'*'` for each hidden digit, then add the visible end with a slice."
+          - "`let hidden = number.len().saturating_sub(4);` then a loop pushing `'*'` `hidden` times, then `masked.push_str(&number[hidden..]);`."
+
+  - title: "&str: the type for text parameters"
+    id: slices-2
+    text: |
+      Now you can see what string literals really are. A literal like `"hello"` is stored in the program's binary, and the value you get is a **slice** pointing at it: that's why its type is `&str`, and why it's read-only. (Its full type is `&'static str`: a borrow that's valid for the whole run of the program. More on that in the lifetimes module.)
+
+      So text comes in three shapes: an owned `String`, a slice of a `String`, and a literal. A function that takes `&String` only accepts the first. A function that takes **`&str`** accepts all three, because Rust automatically turns a `&String` into a `&str` covering the whole text. This automatic conversion is called **deref coercion**.
+
+      ```rust run
+      fn shout(text: &str) -> String {
+          text.to_uppercase()
+      }
+
+      fn main() {
+          let owned = String::from("ferris wins");
+          println!("{}", shout(&owned));        // &String becomes &str automatically
+          println!("{}", shout(&owned[7..]));   // a slice of it
+          println!("{}", shout("gg"));          // a literal
+      }
+      ```
+
+      ```output
+      FERRIS WINS
+      WINS
+      GG
+      ```
+
+      With a `&String` parameter, the literal doesn't fit:
+
+      ```rust compile_fail
+      fn shout(text: &String) -> String {
+          text.to_uppercase()
+      }
+
+      fn main() {
+          println!("{}", shout("gg"));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:6:26
+        |
+      6 |     println!("{}", shout("gg"));
+        |                    ----- ^^^^ expected `&String`, found `&str`
+      ```
+
+      ### Prefer &str over &String
+
+      **Workplace note:** for a parameter that only reads text, write `&str`. It accepts more kinds of argument and loses nothing: every method that reads text (`len`, `chars`, `contains`, `to_uppercase`, `trim`, ...) is a `str` method, which `String` just makes available. Clippy flags `&String` parameters with its `ptr_arg` lint ("writing `&String` instead of `&str` involves a new object where a slice will do"). Take an owned `String` only when the function keeps the text, for example to store it in a vector.
+
+      | | `String` | `&str` |
+      |---|---|---|
+      | Owns its text? | yes | no, borrows it |
+      | Can grow or change? | yes (if `mut`) | no |
+      | Where the text is | its own heap block | anywhere: a `String`'s heap block, or the program's binary |
+      | Size of the value | 24 bytes (pointer, length, capacity) | 16 bytes (pointer, length) |
+      | Get the other one | `&s`, `&s[..]` or `s.as_str()` | `s.to_string()` or `String::from(s)` |
+
+      ### Methods that return slices
+
+      Several `str` methods hand you slices of the original text instead of new strings. `trim()` returns the part without the spaces at both ends, as a `&str` pointing into the original:
+
+      ```rust run
+      fn main() {
+          let input = String::from("   add milk   ");
+          let cleaned: &str = input.trim();      // a slice of input: nothing copied
+          println!("[{}] {} bytes", input, input.len());
+          println!("[{}] {} bytes", cleaned, cleaned.len());
+      }
+      ```
+
+      ```output
+      [   add milk   ] 14 bytes
+      [add milk] 8 bytes
+      ```
+
+      `split_whitespace()`, which you used for reading input, works the same way: each word it gives you is a `&str` slice of the original line. No copies.
+
+      ### Common mistakes
+
+      - **`&String` parameters.** They work, but they force every caller to have a `String`. Use `&str`.
+      - **Trying to change a `&str`.** It's a read-only view. To build or change text, use a `String`.
+      - **Returning a `&str` that points into a `String` created inside the function** (E0515 from the borrowing module). Return the `String`.
+
+      **Your turn:** the two functions take `&String`, so the calls with a slice and with a literal don't compile. Change both parameters to `&str` (don't change `main`). The program should print:
+
+      ```
+      6 words
+      first part: 2 words
+      literal: 2 words
+      flagged: true
+      title flagged: false
+      ```
+    seed: |
+      fn word_count(text: &String) -> usize {
+          let mut count = 0;
+          for _ in text.split_whitespace() {
+              count += 1;
+          }
+          count
+      }
+
+      fn has_bad_word(text: &String) -> bool {
+          text.to_lowercase().contains("darn")
+      }
+
+      fn main() {
+          let post = String::from("Well darn, the build failed again");
+          println!("{} words", word_count(&post));
+          println!("first part: {} words", word_count(&post[..9]));
+          println!("literal: {} words", word_count("hello there"));
+          println!("flagged: {}", has_bad_word(&post));
+          println!("title flagged: {}", has_bad_word("Release notes"));
+      }
+    solution: |
+      fn word_count(text: &str) -> usize {
+          let mut count = 0;
+          for _ in text.split_whitespace() {
+              count += 1;
+          }
+          count
+      }
+
+      fn has_bad_word(text: &str) -> bool {
+          text.to_lowercase().contains("darn")
+      }
+
+      fn main() {
+          let post = String::from("Well darn, the build failed again");
+          println!("{} words", word_count(&post));
+          println!("first part: {} words", word_count(&post[..9]));
+          println!("literal: {} words", word_count("hello there"));
+          println!("flagged: {}", has_bad_word(&post));
+          println!("title flagged: {}", has_bad_word("Release notes"));
+      }
+    require:
+      - pattern: 'fn\s+word_count\s*\(\s*text\s*:\s*&str\s*\)'
+        message: "Change `word_count` to take `text: &str`."
+      - pattern: 'fn\s+has_bad_word\s*\(\s*text\s*:\s*&str\s*\)'
+        message: "Change `has_bad_word` to take `text: &str`."
+    forbid:
+      - pattern: '\.to_string\(|\.to_owned\(|String::from[\s\S]*String::from'
+        message: "Don't convert the arguments into Strings: change the parameter types instead."
+    hints:
+      - "Only the two function signatures need to change; `main` already works with `&str` parameters."
+      - "`fn word_count(text: &str) -> usize` and `fn has_bad_word(text: &str) -> bool`."
+    tests:
+      - expect: "6 words\nfirst part: 2 words\nliteral: 2 words\nflagged: true\ntitle flagged: false"
+    more:
+      - task: |
+          Write `initials`, which returns the first letter of each word, in capitals: `"Ada Lovelace"` gives `"AL"`, and `"grace brewster hopper"` gives `"GBH"`. Take a `&str` so it works with literals and `String`s alike. Loop over `full_name.split_whitespace()` and take each word's first letter with a slice (`&word[..1]`: the names are plain ASCII). Then uppercase the result.
+        seed: |
+          fn initials(full_name: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn initials(full_name: &str) -> String {
+              let mut result = String::new();
+              for word in full_name.split_whitespace() {
+                  result.push_str(&word[..1]);
+              }
+              result.to_uppercase()
+          }
+        harness: |
+          #[test]
+          fn takes_the_first_letter_of_each_word() {
+              assert_eq!(initials("Ada Lovelace"), "AL", "initials(\"Ada Lovelace\")");
+          }
+
+          #[test]
+          fn uppercases_the_letters() {
+              assert_eq!(initials("grace brewster hopper"), "GBH", "initials(\"grace brewster hopper\")");
+          }
+
+          #[test]
+          fn works_with_a_string_argument() {
+              let name = String::from("ferris the crab");
+              assert_eq!(initials(&name), "FTC", "initials(&String::from(\"ferris the crab\"))");
+          }
+
+          #[test]
+          fn ignores_extra_spaces() {
+              assert_eq!(initials("  spaced   out  "), "SO", "initials(\"  spaced   out  \")");
+          }
+
+          #[test]
+          fn returns_an_empty_string_for_no_words() {
+              assert_eq!(initials(""), "", "initials(\"\")");
+          }
+        hints:
+          - "Start with `let mut result = String::new();` and loop `for word in full_name.split_whitespace()`."
+          - "Inside: `result.push_str(&word[..1]);`. Return `result.to_uppercase()`."
+      - task: |
+          Write `censor`. It returns a copy of `text` in which every occurrence of `banned` is replaced by as many `*` as `banned` has characters: `censor("well darn it", "darn")` returns `"well **** it"`. Both parameters are `&str`, so it works on `String`s, slices and literals. (`text.replace(from, to)` returns a new `String`, as you saw in the strings module.)
+        seed: |
+          fn censor(text: &str, banned: &str) -> String {
+              todo!()
+          }
+        solution: |
+          fn censor(text: &str, banned: &str) -> String {
+              let mut stars = String::new();
+              for _ in banned.chars() {
+                  stars.push('*');
+              }
+              text.replace(banned, &stars)
+          }
+        harness: |
+          #[test]
+          fn replaces_the_banned_word_with_stars() {
+              assert_eq!(censor("well darn it", "darn"), "well **** it", "censor(\"well darn it\", \"darn\")");
+          }
+
+          #[test]
+          fn replaces_every_occurrence() {
+              assert_eq!(censor("heck, heck!", "heck"), "****, ****!", "censor(\"heck, heck!\", \"heck\")");
+          }
+
+          #[test]
+          fn leaves_clean_text_alone() {
+              assert_eq!(censor("all good", "darn"), "all good", "censor(\"all good\", \"darn\")");
+          }
+
+          #[test]
+          fn works_on_a_string_and_on_a_slice() {
+              let post = String::from("darn bugs, darn it");
+              assert_eq!(censor(&post, "darn"), "**** bugs, **** it", "censor(&post, \"darn\")");
+              assert_eq!(censor(&post[..9], "darn"), "**** bugs", "censor(&post[..9], \"darn\")");
+          }
+
+          #[test]
+          fn uses_one_star_per_character() {
+              assert_eq!(censor("très bien", "très"), "**** bien", "censor(\"très bien\", \"très\")");
+          }
+        hints:
+          - "Build the replacement first: one `'*'` for each character of `banned` (loop over `banned.chars()`)."
+          - "Then `text.replace(banned, &stars)` returns the censored `String`."
+
+  - title: "Returning slices: first_word"
+    id: slices-3
+    text: |
+      Suppose you need the first word of a command. Without slices, you might return the index where the word ends. But that number knows nothing about the string it came from. If the string changes later, the index is stale and silently wrong:
+
+      ```rust run
+      fn first_word_end(s: &str) -> usize {
+          let bytes = s.as_bytes();
+          for i in 0..bytes.len() {
+              if bytes[i] == b' ' {
+                  return i;
+              }
+          }
+          s.len()
+      }
+
+      fn main() {
+          let mut command = String::from("move north");
+          let end = first_word_end(&command);
+          command.clear();                          // the string is now empty...
+          println!("first word ends at {}", end);   // ...but end still says 4
+      }
+      ```
+
+      ```output
+      first word ends at 4
+      ```
+
+      Two new pieces here: `s.as_bytes()` views the text as a slice of bytes (`&[u8]`), and `b' '` is the byte value of a space. Looking at bytes is safe for this job: a space is one byte in UTF-8, and no multi-byte character contains that byte. `command.clear()` empties a `String`.
+
+      Now return a **slice** instead of an index:
+
+      ```rust run
+      fn first_word(s: &str) -> &str {
+          let bytes = s.as_bytes();
+          for i in 0..bytes.len() {
+              if bytes[i] == b' ' {
+                  return &s[..i];
+              }
+          }
+          s
+      }
+
+      fn main() {
+          let command = String::from("move north");
+          let word = first_word(&command);
+          println!("command: {}", word);
+          println!("single: {}", first_word("look"));
+      }
+      ```
+
+      ```output
+      command: move
+      single: look
+      ```
+
+      If there's no space, the whole string is the first word, and `s` is already a `&str`, so it's returned as is.
+
+      The returned `&str` borrows from the argument. Rust knows this without being told: when a function has exactly one reference parameter, any reference it returns must come from that parameter. (The lifetimes module covers the rules.) So the borrow checker ties `word` to `command`, and the stale-index bug becomes a compile error:
+
+      ```rust compile_fail
+      fn first_word(s: &str) -> &str {
+          let bytes = s.as_bytes();
+          for i in 0..bytes.len() {
+              if bytes[i] == b' ' {
+                  return &s[..i];
+              }
+          }
+          s
+      }
+
+      fn main() {
+          let mut command = String::from("move north");
+          let word = first_word(&command);
+          command.clear();
+          println!("{}", word);
+      }
+      ```
+
+      ```error
+      error[E0502]: cannot borrow `command` as mutable because it is also borrowed as immutable
+        --> src/main.rs:14:5
+         |
+      13 |     let word = first_word(&command);
+         |                           -------- immutable borrow occurs here
+      14 |     command.clear();
+         |     ^^^^^^^^^^^^^^^ mutable borrow occurs here
+      15 |     println!("{}", word);
+         |                    ---- immutable borrow later used here
+      ```
+
+      `clear` needs a `&mut` borrow of `command` while `word` still borrows it: "many readers or one writer". Use the word first, or copy it with `word.to_string()` if you really need it after changing the string.
+
+      ### Cutting at an index: split_at
+
+      `s.split_at(i)` gives you both halves at once, as two slices: `(&s[..i], &s[i..])`.
+
+      ```rust run
+      fn main() {
+          let code = "EU-4417";
+          let (region, rest) = code.split_at(2);
+          println!("region {} / number {}", region, &rest[1..]);
+      }
+      ```
+
+      ```output
+      region EU / number 4417
+      ```
+
+      **Workplace note:** functions that *find* something in their input return a slice of it, which costs no allocation at all. The standard library works this way everywhere (`trim`, `split_whitespace`, `lines`). Callers who need to keep the result after the original changes call `.to_string()` on it. And clippy will suggest writing the index loop above with `.iter().enumerate()`, which you'll learn in the iterators module; the loop with an index does the same thing.
+
+      ### Common mistakes
+
+      - **Forgetting the "no space" case.** Without the final `s`, the function doesn't return anything when there's no space.
+      - **Changing the string while a slice of it is in use** (E0502). Use the slice first.
+      - **Returning a slice of a `String` built inside the function** (E0515). Return the `String` instead.
+
+      **Your turn:** write `last_word`, which returns the part of `s` after its **last** space (or the whole of `s` if there's no space): `last_word("pick up the key")` returns `"key"`. Walk the bytes backwards with `for i in (0..bytes.len()).rev()`.
+    seed: |
+      fn last_word(s: &str) -> &str {
+          todo!()
+      }
+    solution: |
+      fn last_word(s: &str) -> &str {
+          let bytes = s.as_bytes();
+          for i in (0..bytes.len()).rev() {
+              if bytes[i] == b' ' {
+                  return &s[i + 1..];
+              }
+          }
+          s
+      }
+    harness: |
+      #[test]
+      fn returns_the_word_after_the_last_space() {
+          assert_eq!(last_word("pick up the key"), "key", "last_word(\"pick up the key\")");
+      }
+
+      #[test]
+      fn works_with_two_words() {
+          assert_eq!(last_word("move north"), "north", "last_word(\"move north\")");
+      }
+
+      #[test]
+      fn returns_a_single_word_unchanged() {
+          assert_eq!(last_word("look"), "look", "last_word(\"look\")");
+      }
+
+      #[test]
+      fn returns_an_empty_string_unchanged() {
+          assert_eq!(last_word(""), "", "last_word(\"\")");
+      }
+
+      #[test]
+      fn works_on_part_of_a_string() {
+          let line = String::from("go west now");
+          assert_eq!(last_word(&line[..7]), "west", "last_word(&\"go west now\"[..7])");
+      }
+    hints:
+      - "Copy the shape of `first_word`, but loop backwards: `for i in (0..bytes.len()).rev()`."
+      - "When `bytes[i] == b' '`, the last word starts after the space: `return &s[i + 1..];`. After the loop, return `s`."
+    more:
+      - task: |
+          Write `extension`, which returns a file name's extension: the part after its **last** `.`. If there's no dot, return `""` (an empty literal is a fine `&str` to return). Examples: `"report.pdf"` gives `"pdf"`, `"archive.tar.gz"` gives `"gz"`, `"README"` gives `""`.
+        seed: |
+          fn extension(filename: &str) -> &str {
+              todo!()
+          }
+        solution: |
+          fn extension(filename: &str) -> &str {
+              let bytes = filename.as_bytes();
+              for i in (0..bytes.len()).rev() {
+                  if bytes[i] == b'.' {
+                      return &filename[i + 1..];
+                  }
+              }
+              ""
+          }
+        harness: |
+          #[test]
+          fn returns_the_extension() {
+              assert_eq!(extension("report.pdf"), "pdf", "extension(\"report.pdf\")");
+          }
+
+          #[test]
+          fn uses_the_last_dot() {
+              assert_eq!(extension("archive.tar.gz"), "gz", "extension(\"archive.tar.gz\")");
+          }
+
+          #[test]
+          fn returns_empty_without_a_dot() {
+              assert_eq!(extension("README"), "", "extension(\"README\")");
+          }
+
+          #[test]
+          fn handles_a_leading_dot() {
+              assert_eq!(extension(".bashrc"), "bashrc", "extension(\".bashrc\")");
+          }
+
+          #[test]
+          fn handles_a_trailing_dot() {
+              assert_eq!(extension("photo."), "", "extension(\"photo.\")");
+          }
+        hints:
+          - "It's `last_word` again, looking for `b'.'` instead of `b' '`."
+          - "Return `&filename[i + 1..]` when you find the dot, and `\"\"` after the loop."
+      - task: |
+          Write `split_command`, which splits a text-adventure command into its verb and the rest, both as slices of the input: `"take rusty key"` gives `("take", "rusty key")`. If there's no space, the rest is `""`. Use `split_at`, or two slices.
+        seed: |
+          fn split_command(line: &str) -> (&str, &str) {
+              todo!()
+          }
+        solution: |
+          fn split_command(line: &str) -> (&str, &str) {
+              let bytes = line.as_bytes();
+              for i in 0..bytes.len() {
+                  if bytes[i] == b' ' {
+                      let (verb, rest) = line.split_at(i);
+                      return (verb, &rest[1..]);
+                  }
+              }
+              (line, "")
+          }
+        harness: |
+          #[test]
+          fn splits_off_the_verb() {
+              assert_eq!(split_command("go north"), ("go", "north"), "split_command(\"go north\")");
+          }
+
+          #[test]
+          fn keeps_the_rest_together() {
+              assert_eq!(split_command("take rusty key"), ("take", "rusty key"), "split_command(\"take rusty key\")");
+          }
+
+          #[test]
+          fn returns_an_empty_rest_without_a_space() {
+              assert_eq!(split_command("look"), ("look", ""), "split_command(\"look\")");
+          }
+
+          #[test]
+          fn handles_an_empty_command() {
+              assert_eq!(split_command(""), ("", ""), "split_command(\"\")");
+          }
+        hints:
+          - "Find the first space with the `first_word` loop."
+          - "At the space: `let (verb, rest) = line.split_at(i); return (verb, &rest[1..]);` (rest starts with the space). Without a space: `(line, \"\")`."
+
+  - title: "Array and Vec slices: &[T]"
+    id: slices-4
+    text: |
+      Slices aren't only for text. `&v[1..3]` is a slice of a vector or array: its type is `&[T]` (for example `&[i32]`), a pointer to the first element plus a count of elements.
+
+      ```rust run
+      fn main() {
+          let temps = vec![14, 17, 21, 19, 16, 12, 10];
+          let weekdays = &temps[..5];
+          let weekend = &temps[5..];
+          println!("weekdays {:?}, weekend {:?}", weekdays, weekend);
+          println!("{} + {} days", weekdays.len(), weekend.len());
+      }
+      ```
+
+      ```output
+      weekdays [14, 17, 21, 19, 16], weekend [12, 10]
+      5 + 2 days
+      ```
+
+      ```text
+       temps: Vec<i32>  ┌────────────┐
+                        │ ptr ───────┼───────►  [14, 17, 21, 19, 16, 12, 10]   (heap)
+                        │ len 7      │           ▲                   ▲
+                        │ cap 7      │           │                   │
+                        └────────────┘           │                   │
+       weekdays: &[i32] ┌────────────┐           │                   │
+                        │ ptr ───────┼───────────┘                   │
+                        │ len 5      │                               │
+                        └────────────┘                               │
+       weekend: &[i32]  ┌────────────┐                               │
+                        │ ptr ───────┼───────────────────────────────┘
+                        │ len 2      │
+                        └────────────┘
+      ```
+
+      ### Functions that take &[T]
+
+      A `&[T]` parameter accepts a vector, an array, or any part of either. A `&Vec<T>` turns into a `&[T]` automatically, just like `&String` turns into `&str`:
+
+      ```rust run
+      fn total(values: &[i32]) -> i32 {
+          let mut sum = 0;
+          for v in values {
+              sum += v;
+          }
+          sum
+      }
+
+      fn main() {
+          let week = vec![3, 5, 2, 8, 6, 1, 0];
+          let fixed = [10, 20, 30];
+          println!("{}", total(&week));         // &Vec<i32> becomes &[i32]
+          println!("{}", total(&week[..5]));    // part of it
+          println!("{}", total(&fixed));        // an array
+          println!("{}", total(&[]));           // an empty slice
+      }
+      ```
+
+      ```output
+      25
+      24
+      60
+      0
+      ```
+
+      **Workplace note:** it's the same advice as for text: **prefer `&[T]` over `&Vec<T>`** for parameters (clippy's `ptr_arg` lint again). `&str` is to `String` what `&[T]` is to `Vec<T>`: a borrowed view that doesn't care who owns the data.
+
+      What you can do with a `&[T]`:
+
+      - `.len()` and `.is_empty()`
+      - index it, `s[i]`, and slice it again, `&s[a..b]`
+      - loop over it: `for x in s` gives a `&T` for each element
+      - `s.contains(&x)`: is `x` in it?
+      - `s.split_at(i)`: two slices, before and after `i`
+
+      ```rust run
+      fn main() {
+          let scores = [88, 92, 75, 64, 99, 81];
+          let (first_half, second_half) = scores.split_at(3);
+          println!("{:?} | {:?}", first_half, second_half);
+          println!("has a 99: {}", scores.contains(&99));
+      }
+      ```
+
+      ```output
+      [88, 92, 75] | [64, 99, 81]
+      has a 99: true
+      ```
+
+      ### Common mistakes
+
+      - **`&Vec<T>` parameters.** They work, but callers with an array or a part of a vector can't use them. Take `&[T]`.
+      - **Passing the vector instead of a reference**: ``error[E0308]: mismatched types`` (``expected `&[i32]`, found `Vec<{integer}>` ``) with the help `consider borrowing here`.
+      - **Moving out of a slice**: `let first = names[0];` with a `&[String]` is ``error[E0508]: cannot move out of type `[String]`, a non-copy slice``. As with vectors, borrow (`&names[0]`) or clone.
+      - **Out-of-range slices panic**, like out-of-range indexes: `&v[3..10]` on a 5-element vector.
+
+      **Your turn:** write `average`, which returns the average of a slice of `f64`s, or `0.0` for an empty slice. The tests call it with a vector, an array and part of a vector.
+    seed: |
+      fn average(values: &[f64]) -> f64 {
+          todo!()
+      }
+    solution: |
+      fn average(values: &[f64]) -> f64 {
+          if values.is_empty() {
+              return 0.0;
+          }
+          let mut sum = 0.0;
+          for v in values {
+              sum += v;
+          }
+          sum / values.len() as f64
+      }
+    harness: |
+      #[test]
+      fn averages_a_vector() {
+          let v = vec![1.0, 2.0, 3.0, 4.0];
+          assert_eq!(average(&v), 2.5, "average(&vec![1.0, 2.0, 3.0, 4.0])");
+      }
+
+      #[test]
+      fn averages_an_array() {
+          assert_eq!(average(&[10.0, 20.0]), 15.0, "average(&[10.0, 20.0])");
+      }
+
+      #[test]
+      fn averages_part_of_a_vector() {
+          let v = vec![1.0, 2.0, 3.0, 4.0];
+          assert_eq!(average(&v[1..3]), 2.5, "average(&v[1..3]) of [1.0, 2.0, 3.0, 4.0]");
+      }
+
+      #[test]
+      fn returns_zero_for_an_empty_slice() {
+          assert_eq!(average(&[]), 0.0, "average(&[])");
+      }
+    hints:
+      - "Return `0.0` early if `values.is_empty()`, so you never divide by zero."
+      - "Sum with `for v in values { sum += v; }`, then `sum / values.len() as f64`."
+    more:
+      - task: |
+          Write `count_above`, which returns how many values in the slice are **greater than** `limit`. The tests call it with a vector, an array and part of a vector.
+        seed: |
+          fn count_above(values: &[u32], limit: u32) -> usize {
+              todo!()
+          }
+        solution: |
+          fn count_above(values: &[u32], limit: u32) -> usize {
+              let mut count = 0;
+              for v in values {
+                  if *v > limit {
+                      count += 1;
+                  }
+              }
+              count
+          }
+        harness: |
+          #[test]
+          fn counts_values_above_the_limit() {
+              let v = vec![5, 12, 8, 30];
+              assert_eq!(count_above(&v, 8), 2, "count_above(&[5, 12, 8, 30], 8)");
+          }
+
+          #[test]
+          fn works_on_an_array() {
+              assert_eq!(count_above(&[100, 200, 300], 150), 2, "count_above(&[100, 200, 300], 150)");
+          }
+
+          #[test]
+          fn works_on_part_of_a_vector() {
+              let v = vec![50, 60, 70, 80];
+              assert_eq!(count_above(&v[..2], 55), 1, "count_above(&[50, 60, 70, 80][..2], 55)");
+          }
+
+          #[test]
+          fn returns_zero_for_an_empty_slice() {
+              assert_eq!(count_above(&[], 0), 0, "count_above(&[], 0)");
+          }
+        hints:
+          - "Each `v` in `for v in values` is a `&u32`, so compare with `*v > limit`."
+          - "Count with `let mut count = 0;` and `count += 1;` inside an `if`."
+      - task: |
+          Write `total(values: &[i32]) -> i32` and use it to finish `main`: split the numbers into two halves (the first half gets `numbers.len() / 2` elements, so the second half gets the extra one for odd counts) and print each half with its total. For the input `3 5 2 8 6` it prints:
+
+          ```
+          first half [3, 5]: 8
+          second half [2, 8, 6]: 16
+          ```
+        seed: |
+          // Write total(values: &[i32]) -> i32 here.
+
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              let mut numbers = Vec::new();
+              for word in line.split_whitespace() {
+                  let n: i32 = word.parse().expect("not a number");
+                  numbers.push(n);
+              }
+              // Split `numbers` in two and print both halves with their totals.
+          }
+        solution: |
+          // Write total(values: &[i32]) -> i32 here.
+          fn total(values: &[i32]) -> i32 {
+              let mut sum = 0;
+              for v in values {
+                  sum += v;
+              }
+              sum
+          }
+
+          fn main() {
+              let mut line = String::new();
+              std::io::stdin().read_line(&mut line).expect("could not read input");
+              let mut numbers = Vec::new();
+              for word in line.split_whitespace() {
+                  let n: i32 = word.parse().expect("not a number");
+                  numbers.push(n);
+              }
+              // Split `numbers` in two and print both halves with their totals.
+              let (first, second) = numbers.split_at(numbers.len() / 2);
+              println!("first half {:?}: {}", first, total(first));
+              println!("second half {:?}: {}", second, total(second));
+          }
+        require:
+          - pattern: 'fn\s+total\s*\(\s*values\s*:\s*&\[i32\]\s*\)\s*->\s*i32'
+            message: "Write `fn total(values: &[i32]) -> i32`."
+        hints:
+          - "`numbers.split_at(numbers.len() / 2)` gives you both halves as `&[i32]` slices."
+          - "`let (first, second) = numbers.split_at(numbers.len() / 2);` then `println!(\"first half {:?}: {}\", first, total(first));` and the same for `second`."
+        tests:
+          - stdin: "3 5 2 8 6\n"
+          - stdin: "10 20 30 40\n"
+            hidden: true
+          - stdin: "7\n"
+            hidden: true
+          - stdin: "-4 4 -1 1 9 -9\n"
+            hidden: true
+
+  - title: "Mutable slices: &mut [T]"
+    id: slices-5
+    text: |
+      `&mut v[a..b]` lends part of a vector or array **for changing**. Its type is `&mut [T]`. A function that changes elements in place, without adding or removing any, should take `&mut [T]`: it then works on arrays, vectors, and parts of either.
+
+      ```rust run
+      fn reset(values: &mut [i32]) {
+          for v in values {
+              *v = 0;
+          }
+      }
+
+      fn main() {
+          let mut board = [5, 3, 8, 1, 9, 2];
+          reset(&mut board[2..4]);
+          println!("{:?}", board);
+      }
+      ```
+
+      ```output
+      [5, 3, 0, 0, 9, 2]
+      ```
+
+      Looping over a `&mut [i32]` gives a `&mut i32` for each element, so you change it with `*v`, as in the borrowing module. A slice has a **fixed length**: you can change its elements, but you can't push or remove. A function that needs to grow a vector takes `&mut Vec<T>`.
+
+      ### Built-in methods that change a slice in place
+
+      `.sort()`, `.reverse()`, `.swap(i, j)` and `.fill(x)` are slice methods. They work on a whole vector or on part of one:
+
+      ```rust run
+      fn main() {
+          let mut leaderboard = vec![40, 95, 70, 10, 85];
+          leaderboard[..3].sort();          // sort only the first three
+          println!("{:?}", leaderboard);
+          leaderboard.reverse();
+          println!("{:?}", leaderboard);
+          leaderboard.swap(0, 4);
+          println!("{:?}", leaderboard);
+      }
+      ```
+
+      ```output
+      [40, 70, 95, 10, 85]
+      [85, 10, 95, 70, 40]
+      [40, 10, 95, 70, 85]
+      ```
+
+      ### Two mutable parts at once: split_at_mut
+
+      Two `&mut` slices of the same vector, even of parts that don't overlap, don't compile:
+
+      ```rust compile_fail
+      fn main() {
+          let mut v = vec![1, 2, 3, 4];
+          let left = &mut v[..2];
+          let right = &mut v[2..];
+          left[0] = 9;
+          right[0] = 8;
+          println!("{:?}", v);
+      }
+      ```
+
+      ```error
+      error[E0499]: cannot borrow `v` as mutable more than once at a time
+       --> src/main.rs:4:22
+        |
+      3 |     let left = &mut v[..2];
+        |                     - first mutable borrow occurs here
+      4 |     let right = &mut v[2..];
+        |                      ^ second mutable borrow occurs here
+      5 |     left[0] = 9;
+        |     ------- first borrow later used here
+        |
+        = help: use `.split_at_mut(position)` to obtain two mutable non-overlapping sub-slices
+      ```
+
+      The ranges are just numbers worked out at run time, so the compiler can't prove the two parts don't overlap; it treats each one as borrowing all of `v`. The help line names the fix. `split_at_mut` checks the position once and returns two `&mut` slices that are guaranteed not to overlap:
+
+      ```rust run
+      fn main() {
+          let mut teams = [10, 20, 30, 40];
+          let (red, blue) = teams.split_at_mut(2);
+          red[0] += 1;
+          blue[0] += 100;
+          println!("{:?}", teams);
+      }
+      ```
+
+      ```output
+      [11, 20, 130, 40]
+      ```
+
+      (Inside, `split_at_mut` uses a few lines of `unsafe` code that the standard library guarantees are correct. The unsafe module shows how such safe wrappers are built.)
+
+      ### Common mistakes
+
+      - **Pushing to a `&mut [T]`**: ``error[E0599]: no method named `push` found for mutable reference `&mut [i32]` ``. Take `&mut Vec<T>` if the function must grow the vector.
+      - **Forgetting `*`** when assigning to elements in a loop.
+      - **Two `&mut` slices of one vector at once** (E0499): use `split_at_mut`.
+
+      **Your turn:** write `shift_left`, which moves every element one place to the left and puts the first element at the end: `[1, 2, 3, 4]` becomes `[2, 3, 4, 1]`. Empty and one-element slices stay as they are. Use `.swap` in a loop (and not the built-in `rotate_left`, which would do it for you).
+    seed: |
+      fn shift_left(values: &mut [i32]) {
+          todo!()
+      }
+    solution: |
+      fn shift_left(values: &mut [i32]) {
+          for i in 1..values.len() {
+              values.swap(i - 1, i);
+          }
+      }
+    harness: |
+      #[test]
+      fn moves_the_first_element_to_the_end() {
+          let mut v = vec![1, 2, 3, 4];
+          shift_left(&mut v);
+          assert_eq!(v, vec![2, 3, 4, 1], "shift_left([1, 2, 3, 4])");
+      }
+
+      #[test]
+      fn works_on_an_array() {
+          let mut a = [7, 8, 9];
+          shift_left(&mut a);
+          assert_eq!(a, [8, 9, 7], "shift_left([7, 8, 9])");
+      }
+
+      #[test]
+      fn works_on_part_of_a_vector() {
+          let mut v = vec![1, 2, 3, 4, 5];
+          shift_left(&mut v[1..4]);
+          assert_eq!(v, vec![1, 3, 4, 2, 5], "shift_left(&mut v[1..4]) of [1, 2, 3, 4, 5]");
+      }
+
+      #[test]
+      fn leaves_short_slices_alone() {
+          let mut empty: [i32; 0] = [];
+          shift_left(&mut empty);
+          assert_eq!(empty, [], "shift_left([])");
+          let mut one = [42];
+          shift_left(&mut one);
+          assert_eq!(one, [42], "shift_left([42])");
+      }
+    forbid:
+      - pattern: '\.rotate_(left|right)\s*\('
+        message: "Do it yourself with `.swap` in a loop."
+    hints:
+      - "Swapping neighbours from left to right carries the first element along to the end: swap 0 and 1, then 1 and 2, and so on."
+      - "`for i in 1..values.len() { values.swap(i - 1, i); }` (starting at 1 means an empty slice never computes `0 - 1`)."
+    more:
+      - task: |
+          Write `zero_negatives`, which replaces every negative number in the slice with `0` and returns how many it replaced.
+        seed: |
+          fn zero_negatives(values: &mut [i32]) -> usize {
+              todo!()
+          }
+        solution: |
+          fn zero_negatives(values: &mut [i32]) -> usize {
+              let mut changed = 0;
+              for v in values {
+                  if *v < 0 {
+                      *v = 0;
+                      changed += 1;
+                  }
+              }
+              changed
+          }
+        harness: |
+          #[test]
+          fn replaces_negatives_with_zero() {
+              let mut v = vec![3, -1, 4, -5];
+              let n = zero_negatives(&mut v);
+              assert_eq!(v, vec![3, 0, 4, 0], "values after zero_negatives([3, -1, 4, -5])");
+              assert_eq!(n, 2, "zero_negatives([3, -1, 4, -5]) returns");
+          }
+
+          #[test]
+          fn returns_zero_when_nothing_is_negative() {
+              let mut a = [0, 1, 2];
+              assert_eq!(zero_negatives(&mut a), 0, "zero_negatives([0, 1, 2])");
+              assert_eq!(a, [0, 1, 2], "values after zero_negatives([0, 1, 2])");
+          }
+
+          #[test]
+          fn only_changes_the_part_it_was_given() {
+              let mut v = vec![-1, -2, -3, -4];
+              assert_eq!(zero_negatives(&mut v[1..3]), 2, "zero_negatives(&mut v[1..3])");
+              assert_eq!(v, vec![-1, 0, 0, -4], "v after zero_negatives(&mut v[1..3])");
+          }
+        hints:
+          - "`for v in values` gives you a `&mut i32` for each element."
+          - "`if *v < 0 { *v = 0; changed += 1; }` and return `changed` at the end."
+      - task: |
+          Write `swap_halves`, which swaps the first half of a slice with the second half: `[1, 2, 3, 4]` becomes `[3, 4, 1, 2]`. With an odd length, the middle element stays where it is: `[1, 2, 3, 4, 5]` becomes `[4, 5, 3, 1, 2]`. Use `.swap(i, j)`, or `split_at_mut` to get the two halves as separate `&mut` slices.
+        seed: |
+          fn swap_halves(values: &mut [i32]) {
+              todo!()
+          }
+        solution: |
+          fn swap_halves(values: &mut [i32]) {
+              let n = values.len();
+              let half = n / 2;
+              for i in 0..half {
+                  values.swap(i, n - half + i);
+              }
+          }
+        harness: |
+          #[test]
+          fn swaps_the_halves_of_an_even_slice() {
+              let mut v = vec![1, 2, 3, 4];
+              swap_halves(&mut v);
+              assert_eq!(v, vec![3, 4, 1, 2], "swap_halves([1, 2, 3, 4])");
+          }
+
+          #[test]
+          fn keeps_the_middle_of_an_odd_slice() {
+              let mut v = vec![1, 2, 3, 4, 5];
+              swap_halves(&mut v);
+              assert_eq!(v, vec![4, 5, 3, 1, 2], "swap_halves([1, 2, 3, 4, 5])");
+          }
+
+          #[test]
+          fn leaves_short_slices_alone() {
+              let mut one = [9];
+              swap_halves(&mut one);
+              assert_eq!(one, [9], "swap_halves([9])");
+              let mut empty: [i32; 0] = [];
+              swap_halves(&mut empty);
+              assert_eq!(empty, [], "swap_halves([])");
+          }
+
+          #[test]
+          fn works_on_part_of_a_vector() {
+              let mut v = vec![0, 1, 2, 3, 4, 0];
+              swap_halves(&mut v[1..5]);
+              assert_eq!(v, vec![0, 3, 4, 1, 2, 0], "swap_halves(&mut v[1..5])");
+          }
+        hints:
+          - "With length `n` and `half = n / 2`, element `i` of the first half pairs with element `n - half + i` of the second half."
+          - "`for i in 0..half { values.swap(i, n - half + i); }`"
+
+  - title: Slices in real code
+    id: slices-6
+    text: |
+      Slices are everywhere in real Rust code, because they let one function work on any data without caring who owns it, and without copying it. This step puts the pieces together.
+
+      ### Iterating slices
+
+      All of these loops work on a slice `s` (and on a vector or array, through a slice):
+
+      | Loop | You get |
+      |---|---|
+      | `for x in s` or `for x in s.iter()` | a `&T` for each element (the same thing, two spellings) |
+      | `for x in s.iter_mut()`, when `s` is a `&mut [T]` | a `&mut T` for each element |
+      | `for i in 0..s.len()` | each index, for when you need positions |
+      | `for word in text.split_whitespace()` | each word, as a `&str` slice of `text` |
+      | `for line in text.lines()` | each line, as a `&str` slice of `text` |
+
+      ### A zero-copy log reader
+
+      This program reads a log held in one `String` and never copies any of its text: every line and every level is a slice pointing into `log`.
+
+      ```rust run
+      // "[LEVEL] message": the level is between the brackets.
+      fn level_of(line: &str) -> &str {
+          let bytes = line.as_bytes();
+          for i in 0..bytes.len() {
+              if bytes[i] == b']' {
+                  return &line[1..i];
+              }
+          }
+          ""
+      }
+
+      fn count_level(lines: &[&str], level: &str) -> usize {
+          let mut n = 0;
+          for line in lines {
+              if level_of(line) == level {
+                  n += 1;
+              }
+          }
+          n
+      }
+
+      fn main() {
+          let log = String::from("[INFO] started\n[ERROR] disk full\n[WARN] slow\n[ERROR] timeout");
+          let mut lines = Vec::new();
+          for line in log.lines() {
+              lines.push(line);          // a &str slice of log: nothing copied
+          }
+          println!("{} lines, {} errors", lines.len(), count_level(&lines, "ERROR"));
+          println!("first level: {}", level_of(lines[0]));
+      }
+      ```
+
+      ```output
+      4 lines, 2 errors
+      first level: INFO
+      ```
+
+      Look at the types: `lines` is a `Vec<&str>`, a vector of slices that all borrow from `log`. `count_level` takes `&[&str]`, a slice of string slices. Each `line` in its loop is a `&&str` (a reference to an element); Rust lets you pass it where a `&str` is expected. And because every slice borrows from `log`, the borrow checker won't let `log` be changed or dropped while `lines` is in use.
+
+      ### Idiomatic signatures
+
+      | Your function needs to... | Take | Rather than |
+      |---|---|---|
+      | read text | `&str` | `&String` or `String` |
+      | read a list | `&[T]` | `&Vec<T>` or `Vec<T>` |
+      | change elements in place | `&mut [T]` | `&mut Vec<T>` |
+      | add or remove elements | `&mut Vec<T>` | |
+      | add to text | `&mut String` | |
+      | keep the value (store it) | `String`, `Vec<T>` | |
+
+      And for return values:
+
+      | It returns... | Return |
+      |---|---|
+      | part of its input | `&str` or `&[T]`, a slice of the input |
+      | new data | `String` or `Vec<T>`, owned |
+
+      **Workplace note:** these signatures are what reviewers look for. A function taking `&str` or `&[T]` works with every caller and makes no copies, and returning slices of the input is how fast parsers stay fast. When a slice has to outlive the data it points into (say, you're reading lines one at a time and each line is dropped after its loop round), call `.to_string()` or `.to_vec()` to get an owned copy: the compiler will tell you when (E0597).
+
+      ### Common mistakes
+
+      - **Keeping a slice of a value that's about to be dropped**, like a line `String` that only lives for one loop round (E0597). Read everything into one `String` first, or keep an owned copy.
+      - **Mixing up `&[&str]` and `&[String]`.** Both are fine parameter types; use whichever matches the data you have.
+      - **Returning `String` when a slice would do.** If the result is part of the input, return a slice and let the caller decide whether to copy it.
+
+      **Your turn:** write `longest_word`, which returns the longest word in `text` (words are separated by whitespace), as a slice of `text`. Compare lengths in **characters** (`.chars().count()`); on a tie, the first word wins. If there are no words, return `""`.
+    seed: |
+      fn longest_word(text: &str) -> &str {
+          todo!()
+      }
+    solution: |
+      fn longest_word(text: &str) -> &str {
+          let mut best = "";
+          for word in text.split_whitespace() {
+              if word.chars().count() > best.chars().count() {
+                  best = word;
+              }
+          }
+          best
+      }
+    harness: |
+      #[test]
+      fn returns_the_longest_word() {
+          assert_eq!(longest_word("a bb ccc bb"), "ccc", "longest_word(\"a bb ccc bb\")");
+      }
+
+      #[test]
+      fn keeps_the_first_on_a_tie() {
+          assert_eq!(longest_word("the quick brown fox"), "quick", "longest_word(\"the quick brown fox\")");
+      }
+
+      #[test]
+      fn returns_empty_for_no_words() {
+          assert_eq!(longest_word(""), "", "longest_word(\"\")");
+          assert_eq!(longest_word("   "), "", "longest_word(\"   \")");
+      }
+
+      #[test]
+      fn counts_characters_not_bytes() {
+          assert_eq!(longest_word("élan ville"), "ville", "longest_word(\"élan ville\")");
+      }
+
+      #[test]
+      fn ignores_extra_spaces() {
+          assert_eq!(longest_word("   spaced    out   "), "spaced", "longest_word(\"   spaced    out   \")");
+      }
+    hints:
+      - "Start with `let mut best = \"\";` and loop `for word in text.split_whitespace()`: each `word` is already a slice of `text`."
+      - "`if word.chars().count() > best.chars().count() { best = word; }`, and return `best`."
+    more:
+      - task: |
+          Write `longest_name`, which takes a slice of `String`s and returns the longest name (by `.len()`, first on a tie) as a `&str`, or `""` if the slice is empty. A `&String` element can be assigned to a `&str` variable directly.
+        seed: |
+          fn longest_name(names: &[String]) -> &str {
+              todo!()
+          }
+        solution: |
+          fn longest_name(names: &[String]) -> &str {
+              let mut best = "";
+              for name in names {
+                  if name.len() > best.len() {
+                      best = name;
+                  }
+              }
+              best
+          }
+        harness: |
+          #[test]
+          fn returns_the_longest_name() {
+              let names = vec![String::from("Ana"), String::from("Bartholomew"), String::from("Cy")];
+              assert_eq!(longest_name(&names), "Bartholomew", "longest_name([Ana, Bartholomew, Cy])");
+          }
+
+          #[test]
+          fn keeps_the_first_on_a_tie() {
+              let names = vec![String::from("Zed"), String::from("Amy")];
+              assert_eq!(longest_name(&names), "Zed", "longest_name([Zed, Amy])");
+          }
+
+          #[test]
+          fn works_on_part_of_a_vector() {
+              let names = vec![String::from("Maximilian"), String::from("Bo"), String::from("Kim")];
+              assert_eq!(longest_name(&names[1..]), "Kim", "longest_name(&names[1..]) of [Maximilian, Bo, Kim]");
+          }
+
+          #[test]
+          fn returns_empty_for_no_names() {
+              assert_eq!(longest_name(&[]), "", "longest_name(&[])");
+          }
+        hints:
+          - "Same shape as `longest_word`: `let mut best = \"\";` then loop `for name in names`."
+          - "`if name.len() > best.len() { best = name; }` and return `best`."
+      - task: |
+          A scoreboard arrives as lines of `name score`. Write `parse_line`, which splits one line into the name (a slice of the line) and the score (a `u32`), then finish `main`: print the player with the highest score (the first one on a tie) and the total. The starter reads the whole input into one `String`, so every name can stay a slice of it: no copies. For the input:
+
+          ```
+          ferris 42
+          corro 17
+          sunny 41
+          ```
+
+          it prints:
+
+          ```
+          top: ferris (42)
+          total: 100
+          ```
+        seed: |
+          use std::io::Read;
+
+          // Split "name score" into the name and the score.
+          fn parse_line(line: &str) -> (&str, u32) {
+              todo!()
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).expect("could not read input");
+              // Loop over input.lines(), keep the top player and the total, then print them.
+          }
+        solution: |
+          use std::io::Read;
+
+          // Split "name score" into the name and the score.
+          fn parse_line(line: &str) -> (&str, u32) {
+              let bytes = line.as_bytes();
+              for i in 0..bytes.len() {
+                  if bytes[i] == b' ' {
+                      let score: u32 = line[i + 1..].trim().parse().expect("bad score");
+                      return (&line[..i], score);
+                  }
+              }
+              (line, 0)
+          }
+
+          fn main() {
+              let mut input = String::new();
+              std::io::stdin().read_to_string(&mut input).expect("could not read input");
+              // Loop over input.lines(), keep the top player and the total, then print them.
+              let mut top_name = "";
+              let mut top_score = 0;
+              let mut total = 0;
+              for line in input.lines() {
+                  let (name, score) = parse_line(line);
+                  total += score;
+                  if score > top_score {
+                      top_name = name;
+                      top_score = score;
+                  }
+              }
+              println!("top: {} ({})", top_name, top_score);
+              println!("total: {}", total);
+          }
+        require:
+          - pattern: 'fn\s+parse_line\s*\(\s*line\s*:\s*&str\s*\)\s*->\s*\(\s*&str\s*,\s*u32\s*\)'
+            message: "Keep the signature `fn parse_line(line: &str) -> (&str, u32)`."
+        forbid:
+          - pattern: '\.clone\(\)|\.to_string\(|\.to_owned\('
+            message: "Keep the names as slices of `input`; no copies needed."
+        hints:
+          - "In `parse_line`, find the space like `first_word` does. The name is `&line[..i]` and the score is `line[i + 1..].trim().parse().expect(\"bad score\")`."
+          - "In `main`, keep `let mut top_name = \"\";`, `let mut top_score = 0;` and `let mut total = 0;`, and update them for each `parse_line(line)`."
+        tests:
+          - stdin: "ferris 42\ncorro 17\nsunny 41\n"
+          - stdin: "ana 5\nben 9\ncy 9\n"
+            hidden: true
+          - stdin: "solo 77\n"
+            hidden: true

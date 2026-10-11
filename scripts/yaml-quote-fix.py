@@ -2,6 +2,8 @@
 """Quote plain YAML scalars on why:/prompt:/message:/hint lines that contain ': ' or start with a backtick.
 
 Authoring helper: prose often contains colons, which YAML would read as nested mappings.
+Lines inside block scalars (`key: |` or `- |` and everything indented under them, such as code
+in seed:, solution:, fill: and text:) are never touched.
 Usage: python3 scripts/yaml-quote-fix.py content/**/*.yaml
 """
 import re
@@ -27,10 +29,18 @@ for path in sys.argv[1:]:
     out = []
     in_hints = False
     hints_indent = -1
+    block_indent = -1  # indent of the line that opened a block scalar (| or >), or -1
     changed = 0
     for line in lines:
         stripped = line.lstrip()
         indent = len(line) - len(stripped)
+        if block_indent >= 0:
+            if not stripped or indent > block_indent:
+                out.append(line)
+                continue
+            block_indent = -1
+        if re.search(r'(?:^|:|-)\s*[|>][-+0-9]*\s*$', line):
+            block_indent = indent
         if re.match(r'^\s*hints:\s*$', line):
             in_hints, hints_indent = True, indent
             out.append(line)

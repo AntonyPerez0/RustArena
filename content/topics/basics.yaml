@@ -1,0 +1,1040 @@
+# Reference pages at /topics/<slug>: the Foundations phase (first programs, variables, types, input).
+topics:
+  - slug: hello-world
+    title: "Hello World in Rust: fn main, println! and Cargo"
+    description: Write and run your first Rust program with Cargo, and learn what fn main, println! and the exclamation mark mean.
+    modules: [hello]
+    body: |
+      Every Rust program starts running at a function called `main`. The smallest useful program prints one line:
+
+      ```rust run
+      fn main() {
+          println!("Hello, world!");
+      }
+      ```
+
+      ```output
+      Hello, world!
+      ```
+
+      Line by line:
+
+      - `fn main()` declares a **function** named `main` that takes no arguments. `fn` is short for function, and the body goes between `{` and `}`.
+      - `println!` prints text followed by a newline. The `!` means it's a **macro**, not a normal function: a macro is code that writes more code at compile time. `println!` is a macro so it can check your format string against your arguments while compiling. A missing argument is a compile error, not a crash.
+      - `"Hello, world!"` is a **string literal**: text in double quotes.
+      - The `;` ends the statement.
+
+      ## Running it with Cargo
+
+      **Cargo** is Rust's build tool and package manager. It comes with Rust when you install it with **rustup** (from rustup.rs). To create a project and run it:
+
+      ```text
+      $ cargo new hello
+      $ cd hello
+      $ cargo run
+         Compiling hello v0.1.0 (/home/you/hello)
+          Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s
+           Running `target/debug/hello`
+      Hello, world!
+      ```
+
+      `cargo new` creates `Cargo.toml` (the project's name, version and dependencies) and `src/main.rs`, which already contains the program above. The commands you'll use every day:
+
+      | Command | What it does |
+      |---|---|
+      | `cargo run` | compile if needed, then run |
+      | `cargo build` | compile into `target/debug/` |
+      | `cargo check` | type-check without building a program (the fastest feedback) |
+      | `cargo build --release` | compile with optimizations, for real speed |
+      | `cargo fmt` | format your code in the standard style |
+      | `cargo clippy` | lint: point out bugs and less idiomatic code |
+      | `cargo test` | run the tests |
+
+      ## print!, escapes and braces
+
+      `print!` is `println!` without the newline. Inside a string, `\n` is a newline, `\t` a tab, `\"` a double quote and `\\` a backslash. Curly braces are placeholders (`{}` is replaced by the next argument), so a literal brace is written twice: `{{` and `}}`.
+
+      ## Common mistakes
+
+      Forgetting the `!` makes Rust look for a function called `println`, which doesn't exist:
+
+      ```rust compile_fail
+      fn main() {
+          println("Hello");
+      }
+      ```
+
+      ```error
+      error[E0423]: expected function, found macro `println`
+       --> src/main.rs:2:5
+        |
+      2 |     println("Hello");
+        |     ^^^^^^^ not a function
+        |
+      help: use `!` to invoke the macro
+      ```
+
+      Using single quotes for text is the other classic. In Rust `'a'` is one character (a `char`); text always uses double quotes:
+
+      ```rust compile_fail
+      fn main() {
+          println!('Hello');
+      }
+      ```
+
+      ```error
+      error: character literal may only contain one codepoint
+      ```
+
+      Read compiler errors from the top. The first error is usually the real problem, and rustc often prints the fix in a `help:` line, as above. On this site you can edit and run every example; the playground shows the same errors `cargo run` would.
+    example: |
+      fn main() {
+          println!("Hello, world!");
+          print!("Rust ");
+          print!("is ");
+          println!("ready.");
+          println!("Tabs:\tone\ttwo");
+          println!("Braces {{}} and a \"quote\"");
+          println!("{} + {} = {}", 2, 3, 2 + 3);
+      }
+
+  - slug: variables-and-mutability
+    title: "Variables and mutability in Rust (let vs let mut)"
+    description: Why Rust variables are immutable by default, when to use let mut, const vs let, type inference, and the E0384 error explained.
+    modules: [variables]
+    body: |
+      You create a variable with `let`. Rust works out the type from the value (**type inference**), or you can write it yourself after a colon:
+
+      ```rust run
+      fn main() {
+          let lives = 3;
+          let speed: f64 = 2.5;
+          println!("{lives} lives, speed {speed}");
+      }
+      ```
+
+      ```output
+      3 lives, speed 2.5
+      ```
+
+      ## Immutable by default
+
+      A variable made with `let` can't be changed after it gets its value. This is **immutability**, and it's the default on purpose: when you read code and see `let total = ...`, you know `total` keeps that value for the rest of its scope. Fewer moving parts means fewer bugs, and it's one of the things that lets the compiler check concurrent code.
+
+      Trying to assign again is a compile error:
+
+      ```rust compile_fail
+      fn main() {
+          let score = 10;
+          println!("{score}");
+          score = 20;
+          println!("{score}");
+      }
+      ```
+
+      ```error
+      error[E0384]: cannot assign twice to immutable variable `score`
+       --> src/main.rs:4:5
+        |
+      2 |     let score = 10;
+        |         ----- first assignment to `score`
+      3 |     println!("{score}");
+      4 |     score = 20;
+        |     ^^^^^^^^^^ cannot assign twice to immutable variable
+        |
+      help: consider making this binding mutable
+        |
+      2 |     let mut score = 10;
+        |         +++
+      ```
+
+      ## let mut
+
+      When a value really needs to change (a counter, a running total, a buffer you fill), opt in with `let mut`. The `mut` is a signal to readers: "watch this one, it changes". If you write `mut` and never change the variable, the compiler warns `variable does not need to be mutable`, so `mut` always means something.
+
+      ## const
+
+      A **constant** is a value fixed at compile time, written in `SCREAMING_SNAKE_CASE` with its type spelled out: `const MAX_PLAYERS: u32 = 8;`. Use `const` for values that are part of the program's design (limits, conversion factors), and `let` for values computed while the program runs.
+
+      | | `let` | `let mut` | `const` |
+      |---|---|---|---|
+      | Can change | no | yes | no |
+      | Type annotation | optional | optional | required |
+      | Value known | at run time | at run time | at compile time |
+      | Where | inside functions | inside functions | anywhere, including the top level |
+
+      ## Naming and unused variables
+
+      Variables and functions use `snake_case` (`player_name`), types use `CamelCase`, constants use `SCREAMING_SNAKE_CASE`. The compiler warns about other styles. An unused variable also gets a warning; if it's unused on purpose, start its name with an underscore (`_unused`).
+
+      ## Common mistakes
+
+      - **Adding `mut` everywhere "just in case".** Start without it and add it when the compiler asks (its `help:` line even shows where).
+      - **Declaring a variable without a value and reading it.** `let x: i32;` followed by `println!("{x}")` is error E0381, "used binding `x` isn't initialized". Rust never lets you read garbage.
+      - **Confusing `mut` with shadowing.** `let x = x + 1;` makes a new variable instead of changing the old one; see the shadowing page.
+    example: |
+      const MAX_LIVES: u32 = 3;
+
+      fn main() {
+          let player = "Ferris";
+          let mut lives = MAX_LIVES;
+          println!("{player} starts with {lives} lives");
+
+          lives -= 1;
+          println!("{player} lost one: {lives} left");
+
+          let mut coins = 0;
+          for _ in 0..4 {
+              coins += 25;
+          }
+          println!("coins collected: {coins}");
+
+          let _unused_bonus = 10;
+      }
+
+  - slug: shadowing
+    title: "Shadowing in Rust: reusing a variable name with let"
+    description: What shadowing is in Rust, how let x = x + 1 differs from mut, changing a value's type under the same name, and shadowing in inner blocks.
+    modules: [variables]
+    body: |
+      **Shadowing** means declaring a new variable with the same name as an existing one. The new variable hides (shadows) the old one from that point on:
+
+      ```rust run
+      fn main() {
+          let level = 1;
+          let level = level + 1;
+          let level = level * 10;
+          println!("level {level}");
+      }
+      ```
+
+      ```output
+      level 20
+      ```
+
+      Each `let` creates a brand new variable. Nothing is modified, so `level` doesn't need `mut`.
+
+      ## Shadowing vs mut
+
+      Two differences matter:
+
+      1. **The type can change.** A shadowing `let` can give the name a value of a different type. This is the idiomatic way to convert input: read a `String`, then shadow it with the parsed number. You don't need two names like `age_str` and `age`.
+      2. **The result is still immutable.** After `let total = total + tax;` the new `total` can't be changed by accident later.
+
+      With `mut`, the type is fixed forever, so this fails:
+
+      ```rust compile_fail
+      fn main() {
+          let mut spaces = "   ";
+          spaces = spaces.len();
+          println!("{spaces}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:3:14
+        |
+      2 |     let mut spaces = "   ";
+        |                      ----- expected due to this value
+      3 |     spaces = spaces.len();
+        |              ^^^^^^^^^^^^ expected `&str`, found `usize`
+      ```
+
+      Writing `let spaces = spaces.len();` instead compiles: it's a new variable of type `usize`.
+
+      ## Shadowing in an inner block
+
+      A shadow only lasts until the end of the block (`{ ... }`) it was declared in. When the block ends, the outer variable is visible again, unchanged:
+
+      ```rust run
+      fn main() {
+          let temp = 20;
+          {
+              let temp = temp + 15;
+              println!("inside: {temp}");
+          }
+          println!("outside: {temp}");
+      }
+      ```
+
+      ```output
+      inside: 35
+      outside: 20
+      ```
+
+      This surprises people who expected the inner `let` to change the outer value. If that's what you want, use `let mut temp` outside and assign with `temp = temp + 15;` (no `let`) inside.
+
+      ## When to use it at work
+
+      Shadowing is idiomatic for **transforming the same value step by step**: trimming then parsing input, unwrapping an `Option` into a plain value (`let config = config.unwrap_or_default();`), or turning a `Vec` into a sorted version. It keeps one good name for one concept.
+
+      Avoid shadowing a name with something **unrelated** (`let count = "hello";` far from the first `count`), because readers have to work out which one is live. Clippy has opt-in lints (`shadow_unrelated`, `shadow_reuse`) for teams that want to restrict it, but the default style accepts shadowing.
+
+      ## Common mistakes
+
+      - **Writing `let` inside a loop to update a total.** `let total = total + x;` inside a `for` body shadows only for that one pass; after the loop, the outer `total` is unchanged. Use `let mut total` outside and `total += x;` inside.
+      - **Forgetting `let`.** `level = level + 1;` without `let` is an assignment, which needs `mut` (error E0384).
+    example: |
+      fn main() {
+          let input = "  42  ";
+          let input = input.trim();
+          let input: u32 = input.parse().expect("not a number");
+          println!("parsed {input}, doubled {}", input * 2);
+
+          let mut total = 0;
+          for price in [5, 10, 20] {
+              let price = price * 2; // a new `price` for this pass only
+              total += price;
+          }
+          println!("total {total}");
+
+          let name = "ferris";
+          {
+              let name = name.to_uppercase();
+              println!("shouting: {name}");
+          }
+          println!("back to: {name}");
+      }
+
+  - slug: integer-types-and-overflow
+    title: "Rust integer types and integer overflow"
+    description: "i8 to i128, u8 to usize: Rust integer ranges, what happens on overflow in debug and release builds, and checked, wrapping and saturating math."
+    modules: [types]
+    body: |
+      Rust has signed (`i`) and unsigned (`u`) integers of fixed sizes. The number is how many bits they use:
+
+      | Type | Range | Typical use |
+      |---|---|---|
+      | `u8` | 0 to 255 | bytes, small counts |
+      | `i32` | about -2.1 billion to 2.1 billion | the default for integer literals |
+      | `u32` | 0 to about 4.3 billion | counts, ids |
+      | `i64` / `u64` | about ±9.2 × 10^18 / 0 to 1.8 × 10^19 | money in cents, timestamps, big totals |
+      | `i128` / `u128` | huge | rare: cryptography, very large math |
+      | `usize` / `isize` | pointer-sized (64-bit on most machines) | indexes and lengths: `v.len()` is a `usize` |
+
+      Each type has `MIN` and `MAX` constants, like `u8::MAX` (255) and `i32::MAX` (2147483647). Literals can use underscores for readability (`1_000_000`), other bases (`0xff`, `0b1010`, `0o17`) and a type suffix (`255u8`, `10_i64`).
+
+      ## What happens on overflow
+
+      **Overflow** is a result that doesn't fit in the type: `250u8 + 10` would be 260, but a `u8` stops at 255. What Rust does depends on the build:
+
+      - **Debug builds** (`cargo run`, `cargo test`, this site): the program **panics** with `attempt to add with overflow`. You find the bug the first time it happens.
+      - **Release builds** (`cargo build --release`): the value **wraps around** (250 + 10 becomes 4) for speed, unless you turn checks on with `overflow-checks = true` in your `Cargo.toml` profile.
+
+      Either way it's never undefined behavior like in C. When the compiler can see the overflow, it refuses to build:
+
+      ```rust compile_fail
+      fn main() {
+          let level: u8 = 256;
+          println!("{level}");
+      }
+      ```
+
+      ```error
+      error: literal out of range for `u8`
+      ```
+
+      ## Choosing what overflow means
+
+      When overflow is possible, say what you want with explicit methods:
+
+      ```rust run
+      fn main() {
+          let hp: u8 = 250;
+          println!("{:?}", hp.checked_add(10));
+          println!("{:?}", hp.checked_add(5));
+          println!("{}", hp.wrapping_add(10));
+          println!("{}", hp.saturating_add(10));
+          println!("{:?}", hp.overflowing_add(10));
+      }
+      ```
+
+      ```output
+      None
+      Some(255)
+      4
+      255
+      (4, true)
+      ```
+
+      - `checked_*` returns an `Option`: `None` on overflow. Use it when overflow means bad input you should report.
+      - `saturating_*` clamps at `MIN`/`MAX`. Good for health bars, volume and progress counters.
+      - `wrapping_*` wraps around on purpose. Used in hashing, checksums and random number generators.
+      - `overflowing_*` returns the wrapped value and a `bool` saying whether it overflowed.
+
+      ## Common mistakes
+
+      - **`len() - 1` on an empty collection.** `v.len()` is a `usize`, which can't go below zero, so `v.len() - 1` on an empty `Vec` panics with `attempt to subtract with overflow`. Use `v.len().checked_sub(1)`, `v.last()`, or check `v.is_empty()` first.
+      - **Using `u32` for values that can be negative.** A bank balance or a temperature difference needs a signed type.
+      - **Summing many `i32`s.** A total of large values can overflow even when each one fits. Use `i64` or `u64` for totals.
+      - **Mixing integer types.** `a + b` with an `i32` and an `i64` doesn't compile; convert explicitly with `i64::from(a)` or `as`.
+    example: |
+      fn main() {
+          println!("u8: {} to {}", u8::MIN, u8::MAX);
+          println!("i32: {} to {}", i32::MIN, i32::MAX);
+          println!("big literal: {}", 1_000_000_u64 * 1_000_000);
+          println!("hex 0xff = {}, binary 0b1010 = {}", 0xff, 0b1010);
+
+          let stock: u8 = 250;
+          match stock.checked_add(10) {
+              Some(n) => println!("new stock {n}"),
+              None => println!("stock would overflow a u8"),
+          }
+          println!("health capped at {}", stock.saturating_add(10));
+
+          let empty: Vec<i32> = Vec::new();
+          println!("last index of empty list: {:?}", empty.len().checked_sub(1));
+      }
+
+  - slug: type-casting-with-as
+    title: "Converting between number types in Rust (as, From and TryFrom)"
+    description: How to convert i32 to f64, u64 to usize and back in Rust with as, From and TryFrom, and the truncation and wrapping traps of as.
+    modules: [types, std-traits]
+    body: |
+      Rust never converts between number types behind your back. An `i32` won't silently become an `i64`, even though that would always be safe:
+
+      ```rust compile_fail
+      fn main() {
+          let items: i32 = 7;
+          let total: i64 = items;
+          println!("{total}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      That strictness is deliberate: implicit conversions are a classic source of bugs in C and JavaScript. You choose the conversion, and there are three tools.
+
+      ## 1. `as`: fast, never fails, can lose information
+
+      `value as Type` converts between any number types (and `char`/`u8`, `bool` to integer):
+
+      ```rust run
+      fn main() {
+          let sum = 87 + 92 + 78;
+          let count = 3;
+          let average = sum as f64 / count as f64;
+          println!("{average:.2}");
+          println!("{}", 3.99_f64 as i32);
+          println!("{}", 300_i32 as u8);
+          println!("{}", -1_i32 as u32);
+          println!("{}", 1e10_f64 as i32);
+          println!("{}", 'A' as u8);
+      }
+      ```
+
+      ```output
+      85.67
+      3
+      44
+      4294967295
+      2147483647
+      65
+      ```
+
+      Read the output carefully, because each line is a rule:
+
+      - **Float to integer** drops the fraction (rounds toward zero): `3.99` becomes `3`. Out-of-range values **saturate** to the type's `MAX` or `MIN`, and `NaN` becomes `0`.
+      - **Integer to a smaller integer** keeps only the low bits: `300 as u8` is `44` (300 - 256).
+      - **Signed to unsigned** reinterprets the bits: `-1` becomes `u32::MAX`.
+      - **Integer division happens before the cast.** `(sum / count) as f64` would compute `85` first. Cast the operands, then divide.
+
+      ## 2. `From` / `into()`: lossless conversions
+
+      When every value of the source type fits in the target, the standard library implements `From`: `i64::from(x)` for an `i32`, `f64::from(x)` for an `i32` or `f32`, `u32::from(c)` for a `char`. The same conversion is available as `x.into()` when the target type is known. If someone later changes the source type so the conversion could lose data, `From` stops compiling, while `as` keeps quietly truncating.
+
+      ## 3. `TryFrom` / `try_into()`: checked conversions
+
+      For conversions that might not fit, `u8::try_from(x)` returns a `Result`: `Ok(value)` if it fits, `Err(...)` if not. This is how you safely turn a `u64` from a file into a `usize` index, or an `i32` from user input into a `u8`.
+
+      ## At work
+
+      - Prefer `From`/`into()` for widening and `TryFrom` for narrowing. Keep `as` for float/int math where you've thought about the rounding.
+      - Clippy's pedantic lints (`cast_possible_truncation`, `cast_sign_loss`) flag risky `as` casts; many teams enable them in code that handles money or sizes.
+      - `as` between floats and integers never panics, so it's easy to hide a bug: a huge value silently saturates.
+      - To round instead of truncate, call `.round()` first: `2.7_f64.round() as i32` is `3`.
+    example: |
+      fn main() {
+          let cents: i32 = 1999;
+          let dollars = f64::from(cents) / 100.0;
+          println!("price ${dollars:.2}");
+
+          let big: i64 = i64::from(cents) * 1_000_000;
+          println!("wide math: {big}");
+
+          for raw in [200_i32, 300, -5] {
+              match u8::try_from(raw) {
+                  Ok(b) => println!("{raw} fits in a u8: {b}"),
+                  Err(e) => println!("{raw} does not fit: {e}"),
+              }
+          }
+
+          let ratio = 2.0_f64 / 3.0;
+          println!("truncated {} rounded {}", (ratio * 100.0) as i32, (ratio * 100.0).round() as i32);
+      }
+
+  - slug: println-formatting
+    title: "Rust println! formatting: {}, {:?}, width and precision"
+    description: "A cheat sheet for Rust format strings: placeholders, inline {name} args, {:?}, {:.2}, padding and alignment, hex, binary and format!."
+    modules: [hello, strings]
+    body: |
+      `println!`, `print!`, `format!`, `eprintln!` and `write!` all use the same **format string** syntax. Each `{}` is a placeholder filled by an argument.
+
+      ## Filling placeholders
+
+      ```rust run
+      fn main() {
+          let item = "potion";
+          let qty = 3;
+          println!("{} x {}", qty, item);
+          println!("{qty} x {item}");
+          println!("{0} and {0} again, then {1}", item, qty);
+          println!("{label}: {}", qty * 2, label = "doubled");
+      }
+      ```
+
+      ```output
+      3 x potion
+      3 x potion
+      potion and potion again, then 3
+      doubled: 6
+      ```
+
+      `{qty}` is an **inline format argument**: it captures the variable by name. It only accepts a plain name, not an expression, so `{qty * 2}` is an error; put expressions after the string.
+
+      ## The format spec cheat sheet
+
+      Everything after a `:` inside the braces controls how the value looks.
+
+      | Spec | Meaning | Example | Output |
+      |---|---|---|---|
+      | `{}` | **Display**, the user-facing form | `{}`, `"hi"` | `hi` |
+      | `{:?}` | **Debug**, the programmer form | `{:?}`, `"hi"` | `"hi"` |
+      | `{:#?}` | pretty Debug, one field per line | structs, vectors | |
+      | `{:.2}` | 2 digits after the decimal point | `3.14159` | `3.14` |
+      | `{:8}` | minimum width 8 | `42` | `      42` |
+      | `{:<8}` `{:^8}` `{:>8}` | left, center, right align | `"ab"` | `ab      ` |
+      | `{:*^8}` | fill character `*`, centered | `"ab"` | `***ab***` |
+      | `{:05}` | pad with zeros | `42` | `00042` |
+      | `{:+}` | always show the sign | `42` | `+42` |
+      | `{:x}` `{:X}` `{:#x}` | hexadecimal | `255` | `ff`, `FF`, `0xff` |
+      | `{:b}` `{:#010b}` | binary, padded | `5` | `101`, `0b00000101` |
+      | `{:e}` | scientific notation | `1500.0` | `1.5e3` |
+      | `{:width$}` | width from a variable | `width = 6` | |
+
+      Numbers are right-aligned by default and text is left-aligned. Specs combine in a fixed order: fill and alignment, sign, `#`, `0`, width, `.precision`, type. So `{:>10.2}` is "right-align in 10 columns with 2 decimals".
+
+      ## format!, eprintln! and write!
+
+      - `format!` returns the text as a `String` instead of printing it.
+      - `eprintln!` prints to standard error, which is where error messages belong (they stay out of piped output).
+      - `write!` and `writeln!` format into anything that implements `Write`, such as a `String` or a file; you'll use `write!` when implementing `Display` for your own types.
+
+      ## Common mistakes
+
+      Putting an expression inside the braces:
+
+      ```rust compile_fail
+      fn main() {
+          let x = 5;
+          println!("{x + 1}");
+      }
+      ```
+
+      ```error
+      error: invalid format string: expected `}`, found `+`
+      ```
+
+      Printing your own struct with `{}` gives E0277, "`Point` doesn't implement `std::fmt::Display`". Add `#[derive(Debug)]` and use `{:?}`, or implement `Display` yourself.
+
+      A literal brace must be doubled: `println!("{{}}")` prints `{}`. A mismatch between placeholders and arguments (`println!("{} {}", a)`) is a compile error, not a runtime surprise.
+    example: |
+      fn main() {
+          let rows = [("Ferris", 1250.5, 7), ("Corro", 980.25, 12), ("Gopher", 15.0, 3)];
+          println!("{:<8}|{:>10}|{:>5}", "name", "score", "games");
+          println!("{:-<8}+{:->10}+{:->5}", "", "", "");
+          for (name, score, games) in rows {
+              println!("{name:<8}|{score:>10.2}|{games:>5}");
+          }
+
+          let id = 42;
+          println!("ticket #{id:05}, hex {id:#x}, binary {id:#010b}");
+          println!("change: {:+}, {:+}", 7, -3);
+
+          let width = 12;
+          println!("[{:^width$}]", "centered");
+
+          let summary = format!("{} players", rows.len());
+          println!("{summary:?}");
+      }
+
+  - slug: string-vs-str
+    title: "String vs &str in Rust: what's the difference?"
+    description: "Rust's two string types explained: owned, growable String vs borrowed &str slices, when to use each, and how to convert between them."
+    modules: [strings-intro, slices, strings]
+    body: |
+      Rust has two main string types, and every beginner asks why.
+
+      - **`String`** is an **owned**, growable piece of text. It keeps its bytes on the heap, can be changed (`push_str`, `push`), and frees its memory when it goes out of scope.
+      - **`&str`** (pronounced "string slice") is a **borrowed view** of text that lives somewhere else: inside a `String`, or baked into your program's binary. It's just a pointer and a length, and you can't grow it.
+
+      A string literal like `"hello"` is a `&str` (precisely `&'static str`, because the text lives as long as the program).
+
+      ```text
+      let owned = String::from("Ferris");      let view: &str = &owned[0..3];
+
+        owned (stack)             heap             view (stack)
+        ┌─────────────┐          ┌─┬─┬─┬─┬─┬─┐     ┌─────────────┐
+        │ ptr ────────┼────────► │F│e│r│r│i│s│ ◄───┼──── ptr     │
+        │ len  6      │          └─┴─┴─┴─┴─┴─┘     │     len 3   │
+        │ capacity 6  │                            └─────────────┘
+        └─────────────┘
+      ```
+
+      The relationship is the same as `Vec<T>` and `&[T]`: one owns the data, the other borrows part of it.
+
+      ## Which one to use
+
+      | Situation | Use | Why |
+      |---|---|---|
+      | Function parameter you only read | `&str` | accepts literals, `&String` and slices |
+      | Struct field | `String` | the struct should own its data |
+      | Building or changing text | `String` | only `String` can grow |
+      | Returning newly created text | `String` | a `&str` would point at a local that's about to be freed |
+      | Fixed text in your code | `&'static str` | literals cost nothing |
+
+      Taking `&str` parameters is the single most useful habit: `fn greet(name: &str)` works with `greet("Ferris")`, `greet(&my_string)` and `greet(&line[..5])`. A `&String` turns into a `&str` automatically (this is **deref coercion**). Clippy flags `&String` parameters (`ptr_arg`) for this reason.
+
+      ## Converting
+
+      - `&str` to `String`: `String::from("hi")`, `"hi".to_string()`, `"hi".to_owned()`, or `format!(...)`. All allocate a copy.
+      - `String` to `&str`: `&s`, `s.as_str()`, or a slice `&s[1..4]`. Free: no copy.
+
+      ## Common mistakes
+
+      Giving a literal where a `String` is expected:
+
+      ```rust compile_fail
+      fn main() {
+          let name: String = "Ferris";
+          println!("{name}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:2:24
+        |
+      2 |     let name: String = "Ferris";
+        |               ------   ^^^^^^^^ expected `String`, found `&str`
+        |               |
+        |               expected due to this
+        |
+      help: try using a conversion method
+        |
+      2 |     let name: String = "Ferris".to_string();
+        |                                ++++++++++++
+      ```
+
+      Adding two `&str` with `+`:
+
+      ```rust compile_fail
+      fn main() {
+          let a = "Hello, ";
+          let b = "world";
+          let c = a + b;
+          println!("{c}");
+      }
+      ```
+
+      ```error
+      error[E0369]: cannot add `&str` to `&str`
+      ```
+
+      `+` needs an owned `String` on the left (it reuses that buffer): `a.to_string() + b` works. Usually `format!("{a}{b}")` is clearer.
+
+      Also watch out for returning a `&str` that points into a local `String`: the `String` is freed when the function returns, so the compiler refuses (E0515 or E0106). Return the `String` itself.
+    example: |
+      fn greet(name: &str) -> String {
+          format!("Welcome to the arena, {name}!")
+      }
+
+      struct Player {
+          name: String,
+      }
+
+      fn main() {
+          let literal: &str = "Ferris";
+          let owned: String = String::from("Corro the Unsafe");
+          let player = Player { name: literal.to_string() };
+
+          println!("{}", greet(literal));
+          println!("{}", greet(&owned));
+          println!("{}", greet(&player.name));
+
+          let first_word: &str = &owned[0..5];
+          println!("slice: {first_word}");
+
+          let mut log = String::new();
+          log.push_str("round 1");
+          log.push(';');
+          log += " round 2";
+          println!("{log} ({} bytes)", log.len());
+      }
+
+  - slug: reading-input
+    title: "Reading user input in Rust (stdin, read_line and parse)"
+    description: How to read a line, a number, or all of standard input in Rust with read_line, trim, parse and lines(), and how to handle bad input.
+    modules: [input]
+    body: |
+      Programs read input from **standard input** (stdin): the keyboard, or a file or another program piped in. In Rust you reach it through `std::io::stdin()`.
+
+      ## Read one line, then parse it
+
+      ```rust run
+      use std::io;
+
+      fn main() {
+          let mut line = String::new();
+          io::stdin().read_line(&mut line).expect("failed to read input");
+          let age: u32 = line.trim().parse().expect("age must be a whole number");
+          println!("Next year you'll be {}", age + 1);
+      }
+      ```
+
+      ```input
+      41
+      ```
+
+      ```output
+      Next year you'll be 42
+      ```
+
+      Step by step:
+
+      1. `String::new()` makes an empty, growable buffer. It must be `mut` because `read_line` writes into it.
+      2. `read_line(&mut line)` **appends** the next line to the buffer, **including the newline** `\n`. It returns a `Result` holding the number of bytes read (0 means end of input), so `.expect(...)` unwraps it or stops with that message.
+      3. `.trim()` removes the newline and surrounding spaces. Without it, `"41\n".parse()` fails.
+      4. `.parse()` converts text into a number. It needs to know the target type, given here by `let age: u32` (or write `.parse::<u32>()`). It returns a `Result`, because the text might not be a number.
+
+      ## Handling bad input without crashing
+
+      `expect` stops the program. To recover, `match` on the `Result`:
+
+      ```rust
+      match line.trim().parse::<i32>() {
+          Ok(n) => println!("got {n}"),
+          Err(e) => println!("not a number: {e}"),
+      }
+      ```
+
+      The error prints as `invalid digit found in string`, or `cannot parse integer from empty string` for an empty line.
+
+      ## Reading every line
+
+      For input of unknown length, loop over `lines()` on a locked stdin (locking once is faster than locking per read). `lines()` strips the newline for you and yields a `Result` per line:
+
+      ```rust
+      use std::io::{self, BufRead};
+
+      for line in io::stdin().lock().lines() {
+          let line = line.expect("read error");
+          // use line
+      }
+      ```
+
+      To grab everything at once, use `io::read_to_string(io::stdin())`, then split it with `.lines()` or `.split_whitespace()`. `split_whitespace` is the easy way to read several numbers on one line.
+
+      ## Common mistakes
+
+      - **Forgetting `trim()`.** The parse fails on the trailing newline with `invalid digit found in string`.
+      - **Forgetting `mut`** on the buffer:
+
+      ```rust compile_fail
+      fn main() {
+          let line = String::new();
+          std::io::stdin().read_line(&mut line).unwrap();
+      }
+      ```
+
+      ```error
+      error[E0596]: cannot borrow `line` as mutable, as it is not declared as mutable
+      ```
+
+      - **Reusing one buffer in a loop without clearing it.** `read_line` appends, so the second line is added to the first. Call `line.clear()` before each read, or use `lines()`.
+      - **Prompts that don't appear.** `print!("Name: ")` without a newline may stay in the output buffer. Call `io::stdout().flush()` (with `use std::io::Write;`) before reading.
+    example: |
+      use std::io::{self, BufRead};
+
+      fn main() {
+          let stdin = io::stdin();
+          let mut name = String::new();
+          stdin.read_line(&mut name).expect("failed to read the name");
+          let name = name.trim();
+
+          let mut total = 0;
+          let mut skipped = 0;
+          for line in stdin.lock().lines() {
+              let line = line.expect("failed to read a line");
+              for word in line.split_whitespace() {
+                  match word.parse::<i32>() {
+                      Ok(n) => total += n,
+                      Err(e) => {
+                          println!("skipping {word:?}: {e}");
+                          skipped += 1;
+                      }
+                  }
+              }
+          }
+          println!("{name} scored {total} ({skipped} bad values)");
+      }
+    stdin: "Ferris\n10 20 x\n5 -3\n\n7\n"
+
+  - slug: functions-and-expressions
+    title: "Functions in Rust: parameters, return values and expressions"
+    description: How to write Rust functions with typed parameters and return values, why the last line has no semicolon, and expressions vs statements.
+    modules: [functions]
+    body: |
+      A function is declared with `fn`, its parameters (each with a type), and a return type after `->`:
+
+      ```rust run
+      fn area(width: u32, height: u32) -> u32 {
+          width * height
+      }
+
+      fn main() {
+          let a = area(4, 5);
+          println!("area {a}");
+      }
+      ```
+
+      ```output
+      area 20
+      ```
+
+      Parameter types are always required; Rust infers types inside a function body, but never across a function's signature. That keeps every function readable on its own and makes error messages point at the right place.
+
+      ## The last expression is the return value
+
+      There's no `return` in `area`. In Rust, a block's value is its last **expression**, the part written *without* a semicolon. A function body is a block, so `width * height` is what `area` returns.
+
+      The difference between **expressions** (which produce a value) and **statements** (which don't) is central to Rust:
+
+      - `width * height`, `area(2, 3)`, `if x > 0 { 1 } else { -1 }` and a `{ ... }` block are expressions.
+      - `let x = 5;` is a statement. Adding `;` after an expression turns it into a statement and throws the value away.
+
+      Use `return value;` for **early exits**, typically inside an `if` near the top of the function (a **guard clause**). For the normal result at the end, idiomatic Rust leaves out `return`; clippy flags `return x;` as the last line (`needless_return`).
+
+      Functions with no `->` return the **unit type** `()`, an empty value meaning "nothing useful". `fn log(msg: &str)` is short for `fn log(msg: &str) -> ()`.
+
+      ## Blocks and if are expressions too
+
+      ```rust run
+      fn main() {
+          let score = 82;
+          let grade = if score >= 90 { 'A' } else if score >= 75 { 'B' } else { 'C' };
+          let bonus = {
+              let base = score / 10;
+              base * 2
+          };
+          println!("{grade} {bonus}");
+      }
+      ```
+
+      ```output
+      B 16
+      ```
+
+      Every branch of an `if` used as a value must have the same type, and there must be an `else`.
+
+      ## Common mistakes
+
+      A semicolon after the final expression is the number one beginner error:
+
+      ```rust compile_fail
+      fn area(width: u32, height: u32) -> u32 {
+          width * height;
+      }
+
+      fn main() {
+          println!("{}", area(2, 3));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:1:37
+        |
+      1 | fn area(width: u32, height: u32) -> u32 {
+        |    ----                             ^^^ expected `u32`, found `()`
+        |    |
+        |    implicitly returns `()` as its body has no tail or `return` expression
+      2 |     width * height;
+        |                   - help: remove this semicolon to return this value
+      ```
+
+      With the `;`, the body ends in a statement, so the function would return `()`, not a `u32`. Other common ones:
+
+      - **Missing a parameter type:** `fn greet(name)` fails with "expected one of `:`, `@`, or `|`".
+      - **Wrong number of arguments:** E0061, "this function takes 2 arguments but 1 argument was supplied". Rust has no default or optional parameters; use an `Option` parameter or a second function.
+      - **Expecting a function to change its argument.** Numbers are copied into parameters. To change the caller's value, take `&mut` (see borrowing) or return the new value.
+    example: |
+      fn area(width: u32, height: u32) -> u32 {
+          width * height
+      }
+
+      fn grade(score: u32) -> char {
+          if score > 100 {
+              return '?';
+          }
+          if score >= 90 {
+              'A'
+          } else if score >= 75 {
+              'B'
+          } else {
+              'C'
+          }
+      }
+
+      fn log_line(msg: &str) {
+          println!("[log] {msg}");
+      }
+
+      fn min_max(a: i32, b: i32) -> (i32, i32) {
+          if a < b { (a, b) } else { (b, a) }
+      }
+
+      fn main() {
+          log_line("computing");
+          let room = area(4, 5);
+          let half = {
+              let h = room / 2;
+              h + 1
+          };
+          println!("area {room}, half plus one {half}");
+          println!("grades: {} {} {} {}", grade(95), grade(80), grade(60), grade(120));
+          let (lo, hi) = min_max(9, 3);
+          println!("min {lo}, max {hi}");
+      }
+
+  - slug: e0308-mismatched-types
+    title: "Rust error E0308: mismatched types"
+    description: "What Rust's E0308 mismatched types error means, how to read expected vs found, and fixes for the most common causes."
+    modules: [functions, types]
+    body: |
+      **E0308** means an expression has a different type from the one the compiler needed at that spot. It's the most common Rust error, and the message always has the same shape: **expected** X, **found** Y.
+
+      - **expected** comes from something you wrote earlier: a type annotation, a function signature, the first branch of an `if`.
+      - **found** is the type of the expression underlined with `^^^`.
+
+      So the fix is either to change the expression to produce the expected type, or to change what you declared.
+
+      ## Cause 1: a semicolon after the return value
+
+      ```rust compile_fail
+      fn total(a: i32, b: i32) -> i32 {
+          a + b;
+      }
+
+      fn main() {
+          println!("{}", total(1, 2));
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+       --> src/main.rs:1:29
+        |
+      1 | fn total(a: i32, b: i32) -> i32 {
+        |    -----                    ^^^ expected `i32`, found `()`
+        |    |
+        |    implicitly returns `()` as its body has no tail or `return` expression
+      2 |     a + b;
+        |          - help: remove this semicolon to return this value
+      ```
+
+      "found `()`" almost always means a stray semicolon or a missing `else`. Delete the `;`.
+
+      ## Cause 2: mixing number types
+
+      Rust never converts numbers implicitly, so `i32 + i64`, or an `i32` passed where a `usize` is expected, is an error. Convert one side: `i64::from(a) + b`, or `index as usize`. (Mixed arithmetic also reports E0277, "cannot add `i64` to `i32`".)
+
+      ## Cause 3: `&str` vs `String`
+
+      `let name: String = "Ferris";` says expected `String`, found `&str`. Use `"Ferris".to_string()` or `String::from("Ferris")`. The reverse (a `String` passed to a `&str` parameter) is fixed by borrowing: `greet(&name)`.
+
+      ## Cause 4: `Option` or `Result` used as a plain value
+
+      ```rust compile_fail
+      fn main() {
+          let scores = vec![10, 20, 30];
+          let first: i32 = scores.first();
+          println!("{first}");
+      }
+      ```
+
+      ```error
+      error[E0308]: mismatched types
+      ```
+
+      `first()` returns `Option<&i32>` because the vector might be empty. Handle the `None` case: `scores.first().copied().unwrap_or(0)`, or `if let Some(&first) = scores.first() { ... }`.
+
+      ## Cause 5: branches of different types
+
+      ```rust compile_fail
+      fn main() {
+          let lives = 3;
+          let label = if lives > 0 { "alive" } else { 0 };
+          println!("{label}");
+      }
+      ```
+
+      ```error
+      error[E0308]: `if` and `else` have incompatible types
+      ```
+
+      Every arm of an `if` or `match` used as a value must have the same type. The same goes for `match` arms.
+
+      ## Cause 6: a reference where a value is expected (or the reverse)
+
+      Expected `i32`, found `&i32` happens when iterating with `for x in &v` and passing `x` to a function taking `i32`. Dereference with `*x`, or iterate with `.iter().copied()`. Expected `&str`, found `String`: add `&`.
+
+      ## How to fix it fast
+
+      1. Read the `expected` and `found` types, and find where the expected type came from (rustc points at it with `---- expected due to this`).
+      2. Check the `help:` lines; rustc often suggests the exact conversion (`.to_string()`, `.into()`, removing a `;`).
+      3. If you're unsure of a type, annotate a variable with a wrong type on purpose, like `let x: () = value;`. The error tells you the real type.
+    example: |
+      fn total(a: i32, b: i32) -> i32 {
+          a + b
+      }
+
+      fn describe(lives: i32) -> String {
+          let label = if lives > 0 { "alive" } else { "out" };
+          format!("{label} with {lives} lives")
+      }
+
+      fn main() {
+          let small: i32 = 7;
+          let big: i64 = 5_000_000_000;
+          println!("{}", total(1, 2));
+          println!("{}", i64::from(small) + big);
+
+          let name: String = "Ferris".to_string();
+          println!("{}", describe(3));
+          println!("{name} {}", describe(0));
+
+          let scores = vec![10, 20, 30];
+          let first: i32 = scores.first().copied().unwrap_or(0);
+          let none: Vec<i32> = Vec::new();
+          println!("{first} {}", none.first().copied().unwrap_or(0));
+
+          let mut sum = 0;
+          for s in &scores {
+              sum += *s;
+          }
+          println!("sum {sum}");
+      }

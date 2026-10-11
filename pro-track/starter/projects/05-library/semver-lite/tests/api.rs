@@ -53,7 +53,13 @@ fn handles_the_largest_numbers() {
 
 #[test]
 fn from_str_and_display_round_trip() {
-    for text in ["0.0.0", "1.2.3", "10.20.30", "1.0.0-alpha.1", "2.0.0-rc.1.x-y"] {
+    for text in [
+        "0.0.0",
+        "1.2.3",
+        "10.20.30",
+        "1.0.0-alpha.1",
+        "2.0.0-rc.1.x-y",
+    ] {
         let parsed: Version = text.parse().unwrap();
         assert_eq!(parsed.to_string(), text);
     }
@@ -114,7 +120,10 @@ fn rejects_bad_versions_with_typed_errors() {
 fn error_messages() {
     let msg = |text: &str| Version::parse(text).unwrap_err().to_string();
     assert_eq!(msg(""), "empty version string");
-    assert_eq!(msg("1.2"), r#"invalid version "1.2": expected MAJOR.MINOR.PATCH"#);
+    assert_eq!(
+        msg("1.2"),
+        r#"invalid version "1.2": expected MAJOR.MINOR.PATCH"#
+    );
     assert_eq!(msg("1.x.3"), r#"invalid version number "x""#);
     assert_eq!(msg("1.02.3"), r#"version number "02" has a leading zero"#);
     assert_eq!(msg("1.2.3-rc..1"), r#"invalid pre-release "rc..1""#);
@@ -195,8 +204,14 @@ fn prerelease_numbers_compare_as_numbers_even_when_huge() {
 
 #[test]
 fn equal_versions_are_equal_everywhere() {
-    assert_eq!(v("1.2.3-rc.1").cmp(&v("1.2.3-rc.1")), std::cmp::Ordering::Equal);
-    let set: HashSet<Version> = ["1.0.0", "1.0.0", "1.0.0-rc.1"].iter().map(|s| v(s)).collect();
+    assert_eq!(
+        v("1.2.3-rc.1").cmp(&v("1.2.3-rc.1")),
+        std::cmp::Ordering::Equal
+    );
+    let set: HashSet<Version> = ["1.0.0", "1.0.0", "1.0.0-rc.1"]
+        .iter()
+        .map(|s| v(s))
+        .collect();
     assert_eq!(set.len(), 2);
 }
 
@@ -257,7 +272,10 @@ fn builder_options_combine_and_can_be_switched_off() {
 #[test]
 fn parse_all_accepts_anything_string_like() {
     let p = Parser::new();
-    assert_eq!(p.parse_all(["1.0.0", "2.0.0"]), Ok(vec![v("1.0.0"), v("2.0.0")]));
+    assert_eq!(
+        p.parse_all(["1.0.0", "2.0.0"]),
+        Ok(vec![v("1.0.0"), v("2.0.0")])
+    );
     let owned: Vec<String> = vec!["3.0.0".to_string()];
     assert_eq!(p.parse_all(&owned), Ok(vec![v("3.0.0")]));
     assert_eq!(p.parse_all(owned), Ok(vec![v("3.0.0")]));
@@ -285,7 +303,11 @@ fn check(req_text: &str, yes: &[&str], no: &[&str]) {
 
 #[test]
 fn caret_requirements() {
-    check("^1.2.3", &["1.2.3", "1.2.4", "1.9.0"], &["1.2.2", "2.0.0", "0.9.0"]);
+    check(
+        "^1.2.3",
+        &["1.2.3", "1.2.4", "1.9.0"],
+        &["1.2.2", "2.0.0", "0.9.0"],
+    );
     check("1.2.3", &["1.2.3", "1.9.0"], &["2.0.0", "1.2.2"]);
     check("^1.2", &["1.2.0", "1.99.0"], &["1.1.9", "2.0.0"]);
     check("^1", &["1.0.0", "1.99.99"], &["0.9.0", "2.0.0"]);
@@ -331,12 +353,17 @@ fn invalid_requirements_keep_their_cause() {
     let err = "^1.x".parse::<VersionReq>().unwrap_err();
     assert!(matches!(err, Error::InvalidReq { .. }), "{err:?}");
     assert_eq!(err.to_string(), r#"invalid version requirement "^1.x""#);
-    let cause = err.source().expect("InvalidReq should return its cause from source()");
+    let cause = err
+        .source()
+        .expect("InvalidReq should return its cause from source()");
     assert_eq!(cause.to_string(), r#"invalid version number "x""#);
 
     // `>=` needs a full version.
     let err = ">=1.2".parse::<VersionReq>().unwrap_err();
-    assert_eq!(err.source().unwrap().to_string(), r#"invalid version "1.2": expected MAJOR.MINOR.PATCH"#);
+    assert_eq!(
+        err.source().unwrap().to_string(),
+        r#"invalid version "1.2": expected MAJOR.MINOR.PATCH"#
+    );
 
     let err = "^1.2,".parse::<VersionReq>().unwrap_err();
     assert_eq!(
@@ -355,7 +382,10 @@ fn max_satisfying_and_matching() {
         .unwrap();
     let r = req("^1.2");
     assert_eq!(r.max_satisfying(&versions), Some(&v("1.9.1-rc.1")));
-    assert_eq!(req(">=1.0.0, <1.9.1-rc.1").max_satisfying(&versions), Some(&v("1.9.0")));
+    assert_eq!(
+        req(">=1.0.0, <1.9.1-rc.1").max_satisfying(&versions),
+        Some(&v("1.9.0"))
+    );
     assert_eq!(req("^3").max_satisfying(&versions), None);
     assert_eq!(req("^3").max_satisfying(Vec::new().iter()), None);
     let matching: Vec<String> = r.matching(&versions).map(Version::to_string).collect();

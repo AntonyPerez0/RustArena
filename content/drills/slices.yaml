@@ -1,0 +1,229 @@
+topic: slices
+drills:
+  - type: predict
+    body: |
+      let s = String::from("hello world");
+      let hello = &s[..5];
+      let world = &s[6..];
+      println!("{}-{}", world, hello);
+    why: "`..5` covers bytes 0 to 4 and `6..` runs from byte 6 to the end. Both slices borrow from s without copying."
+
+  - type: predict
+    body: |
+      let v = [10, 20, 30, 40, 50];
+      let mid = &v[1..4];
+      println!("{:?} {}", mid, mid.len());
+    why: The range 1..4 takes the elements at indexes 1, 2 and 3; the end is exclusive.
+
+  - type: predict
+    body: |
+      let s = "  ferris  ";
+      let t = s.trim();
+      println!("{} {}", s.len(), t.len());
+    why: trim returns a slice of s without the spaces at both ends. s is 10 bytes, the trimmed slice 6.
+
+  - type: predict
+    body: |
+      let code = "AB1234";
+      let (letters, digits) = code.split_at(2);
+      println!("{} {}", digits, letters);
+    why: split_at(2) returns two slices, before and from index 2, as a tuple.
+
+  - type: predict
+    body: |
+      let mut v = vec![5, 1, 4, 2, 3];
+      v[1..4].sort();
+      println!("{:?}", v);
+    why: sort works on any mutable slice. Only the elements at indexes 1 to 3 (1, 4, 2) are sorted; the rest stay put.
+
+  - type: fill
+    prompt: Take the first three bytes of the name as a slice.
+    body: |
+      let name = String::from("Ferris");
+      let short = [[&name[..3]‖&name[0..3]‖&name[..=2]‖&name[0..=2]]];
+      println!("{}", short);
+    why: "`&name[..3]` borrows bytes 0, 1 and 2 of the String as a &str."
+
+  - type: fill
+    prompt: Choose a parameter type that accepts both a literal and a String.
+    pre: |
+      fn count_a(text: [[&str]]) -> usize {
+          let mut n = 0;
+          for c in text.chars() {
+              if c == 'a' {
+                  n += 1;
+              }
+          }
+          n
+      }
+    body: |
+      let word = String::from("aha");
+      println!("{} {}", count_a("banana"), count_a(&word));
+    why: "A &str parameter accepts literals directly, and &String turns into &str automatically. &String would reject the literal."
+
+  - type: fill
+    prompt: Choose a parameter type that accepts both a vector and an array.
+    pre: |
+      fn biggest(values: [[&[i32]]]) -> i32 {
+          let mut best = values[0];
+          for v in values {
+              if *v > best {
+                  best = *v;
+              }
+          }
+          best
+      }
+    body: |
+      let v = vec![3, 9, 2];
+      println!("{} {}", biggest(&v), biggest(&[7, 1]));
+    why: "A slice parameter, &[i32], works with a borrowed Vec, an array, or part of either."
+
+  - type: bug
+    body: |
+      let date = String::from("2024-05-17");
+      let year = &date[0..3]; // BUG
+      println!("{}", year);
+    fix: 'let year = &date[0..4];'
+    why: The end of a range is exclusive, so the four year digits are 0..4. 0..3 gives only "202".
+
+  - type: bug
+    pre: |
+      fn add_bonus(scores: &mut [u32]) {
+          for s in scores {
+              s += 5; // BUG
+          }
+      }
+    body: |
+      let mut v = vec![10, 20];
+      add_bonus(&mut v);
+      println!("{:?}", v);
+    fix: '*s += 5;'
+    why: "Looping over a &mut [u32] gives a &mut u32 for each element. To change the number, dereference it: `*s += 5`."
+
+  - type: compiles
+    answer: no
+    body: |
+      let mut s = String::from("hello world");
+      let word = &s[..5];
+      s.clear();
+      println!("{}", word);
+    why: "word borrows from s and is used after clear, which needs a mutable borrow: E0502. The slice can't outlive a change to its String."
+
+  - type: compiles
+    answer: yes
+    pre: |
+      fn shout(t: &str) -> String {
+          t.to_uppercase()
+      }
+    body: |
+      let s = String::from("hi");
+      println!("{} {}", shout(&s), shout("yo"));
+    why: A &str parameter accepts a literal, and &s (a &String) is converted to &str automatically by deref coercion.
+
+  - type: compiles
+    answer: no
+    pre: |
+      fn shout(t: &String) -> String {
+          t.to_uppercase()
+      }
+    body: |
+      println!("{}", shout("yo"));
+    why: "A literal is a &str, not a &String, so this is E0308 mismatched types. That's why parameters should be &str."
+
+  - type: compiles
+    answer: yes
+    pre: |
+      fn sum(values: &[i32]) -> i32 {
+          let mut total = 0;
+          for v in values {
+              total += v;
+          }
+          total
+      }
+    body: |
+      let a = [1, 2];
+      let v = vec![3, 4];
+      println!("{}", sum(&a) + sum(&v[1..]));
+    why: "&[i32] accepts a borrowed array and a slice of a Vec alike."
+
+  - type: compiles
+    answer: no
+    body: |
+      let mut v = vec![1, 2, 3, 4];
+      let a = &mut v[..2];
+      let b = &mut v[2..];
+      a[0] = b[0];
+    why: "Two &mut borrows of v exist at once (E0499). The compiler can't prove the ranges don't overlap; use v.split_at_mut(2)."
+
+  - type: compiles
+    answer: yes
+    body: |
+      let mut v = vec![1, 2, 3, 4];
+      let (a, b) = v.split_at_mut(2);
+      a[0] = b[0];
+      println!("{:?}", v);
+    why: split_at_mut returns two &mut slices that are guaranteed not to overlap, so both can be used together.
+
+  - type: choice
+    prompt: Which parameter type accepts a String (borrowed), part of a String and a string literal?
+    choices: ["&String", "&str", "String", "&mut String"]
+    answer: 2
+    why: "&str is a view of any text. &String only fits borrowed Strings, String takes ownership, and &mut String needs a mutable String."
+
+  - type: boss
+    prompt: |
+      Write `fn longest_run(values: &[i32]) -> &[i32]` that returns the longest run of **strictly increasing** consecutive values, as a slice of `values`. For `[1, 2, 0, 3, 4, 5, 1]` it returns `[0, 3, 4, 5]`. On a tie, return the first run. An empty slice gives an empty slice.
+    seed: |
+      fn longest_run(values: &[i32]) -> &[i32] {
+          todo!()
+      }
+    solution: |
+      fn longest_run(values: &[i32]) -> &[i32] {
+          if values.is_empty() {
+              return values;
+          }
+          let mut best_start = 0;
+          let mut best_len = 1;
+          let mut start = 0;
+          for i in 1..values.len() {
+              if values[i] <= values[i - 1] {
+                  start = i;
+              }
+              let len = i - start + 1;
+              if len > best_len {
+                  best_start = start;
+                  best_len = len;
+              }
+          }
+          &values[best_start..best_start + best_len]
+      }
+    harness: |
+      #[test]
+      fn finds_the_longest_increasing_run() {
+          assert_eq!(longest_run(&[1, 2, 0, 3, 4, 5, 1]), &[0, 3, 4, 5], "longest_run([1, 2, 0, 3, 4, 5, 1])");
+      }
+
+      #[test]
+      fn returns_the_whole_slice_when_it_all_increases() {
+          assert_eq!(longest_run(&[1, 2, 3]), &[1, 2, 3], "longest_run([1, 2, 3])");
+      }
+
+      #[test]
+      fn returns_one_element_when_nothing_increases() {
+          assert_eq!(longest_run(&[5, 4, 3]), &[5], "longest_run([5, 4, 3])");
+          assert_eq!(longest_run(&[2, 2]), &[2], "longest_run([2, 2])");
+      }
+
+      #[test]
+      fn keeps_the_first_run_on_a_tie() {
+          assert_eq!(longest_run(&[1, 2, 0, 1]), &[1, 2], "longest_run([1, 2, 0, 1])");
+      }
+
+      #[test]
+      fn returns_an_empty_slice_for_empty_input() {
+          assert_eq!(longest_run(&[]).len(), 0, "longest_run([]).len()");
+      }
+    hints:
+      - "Track where the current run starts. Whenever `values[i] <= values[i - 1]`, a new run starts at `i`."
+      - "After each step, the current run is `i - start + 1` long; if that beats the best, remember `start` and the length. Return `&values[best_start..best_start + best_len]`."
+    why: Returning a sub-slice hands the caller a view into their own data, with no copying.

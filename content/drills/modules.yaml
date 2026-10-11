@@ -1,0 +1,362 @@
+topic: modules
+drills:
+  - type: predict
+    pre: |
+      mod outer {
+          pub fn answer() -> i32 {
+              inner::base() + 1
+          }
+
+          mod inner {
+              pub fn base() -> i32 {
+                  41
+              }
+          }
+      }
+    body: |
+      println!("{}", outer::answer());
+    why: outer can call its own child module inner (base is pub, and inner is visible inside outer). 41 + 1 = 42.
+
+  - type: predict
+    pre: |
+      fn base() -> u32 {
+          10
+      }
+
+      mod calc {
+          pub fn double() -> u32 {
+              super::base() * 2
+          }
+      }
+    body: |
+      println!("{}", calc::double());
+    why: "super:: is the parent module, here the crate root, where base lives. A child may call its parent's private functions."
+
+  - type: predict
+    pre: |
+      fn name() -> &'static str {
+          "root"
+      }
+
+      mod inner {
+          pub fn name() -> &'static str {
+              "inner"
+          }
+
+          pub fn who() -> String {
+              format!("{} {}", name(), crate::name())
+          }
+      }
+    body: |
+      println!("{}", inner::who());
+    why: A plain name() inside inner means inner's own function. crate::name() is the absolute path to the root's function.
+
+  - type: predict
+    pre: |
+      mod en {
+          pub fn hi() -> &'static str {
+              "hello"
+          }
+      }
+
+      mod fr {
+          pub fn hi() -> &'static str {
+              "bonjour"
+          }
+      }
+
+      use en::hi as en_hi;
+      use fr::hi;
+    body: |
+      println!("{} / {}", en_hi(), hi());
+    why: use ... as renames the import, so both functions named hi can be in scope at once.
+
+  - type: predict
+    pre: |
+      mod counter {
+          pub struct Counter {
+              n: u32,
+          }
+
+          impl Counter {
+              pub fn new() -> Counter {
+                  Counter { n: 0 }
+              }
+
+              pub fn tick(&mut self) -> u32 {
+                  self.n += 1;
+                  self.n
+              }
+          }
+      }
+    body: |
+      let mut c = counter::Counter::new();
+      c.tick();
+      c.tick();
+      println!("{}", c.tick());
+    why: The field n is private, but the public methods can change it. Each tick adds one, so the third call returns 3.
+
+  - type: fill
+    prompt: Make the function callable from main.
+    pre: |
+      mod math {
+          [[pub]] fn square(x: i32) -> i32 {
+              x * x
+          }
+      }
+    body: |
+      println!("{}", math::square(7));
+    why: Items in a module are private by default; pub makes square visible to the parent, where main lives.
+
+  - type: fill
+    prompt: Reach the parent module's private function.
+    pre: |
+      mod game {
+          fn max_hp() -> u32 {
+              100
+          }
+
+          pub mod player {
+              pub fn full_heal() -> u32 {
+                  [[super‖crate::game]]::max_hp()
+              }
+          }
+      }
+    body: |
+      println!("{}", game::player::full_heal());
+    why: "player lives inside game, so super:: names game. A child module can use its parent's private items."
+
+  - type: fill
+    prompt: Re-export the struct so users can write shop::Product.
+    pre: |
+      mod shop {
+          mod catalog {
+              pub struct Product {
+                  pub name: String,
+              }
+          }
+
+          [[pub use]] catalog::Product;
+      }
+    body: |
+      let p = shop::Product { name: String::from("rope") };
+      println!("{}", p.name);
+    why: pub use imports the name and makes it public at the new place, so the private catalog module stays hidden.
+
+  - type: bug
+    pre: |
+      mod bank {
+          pub struct Account {
+              balance: u64,
+          }
+
+          impl Account {
+              pub fn new(balance: u64) -> Account {
+                  Account { balance }
+              }
+
+              pub fn balance(&self) -> u64 {
+                  self.balance
+              }
+          }
+      }
+    body: |
+      let acct = bank::Account::new(70);
+      println!("{}", acct.balance); // BUG
+    fix: 'println!("{}", acct.balance());'
+    why: The field balance is private to the bank module (E0616). Outside it, use the public getter balance().
+
+  - type: bug
+    pre: |
+      fn log(msg: &str) {
+          println!("[log] {msg}");
+      }
+
+      mod server {
+          pub fn start() {
+              log("starting"); // BUG
+          }
+      }
+    body: |
+      server::start();
+    fix: 'crate::log("starting");'
+    why: A module doesn't see the names of the scope around it. The root's log needs a path (crate::log or super::log) or a use line.
+
+  - type: bug
+    pre: |
+      mod garden {
+          mod vegetables { // BUG
+              pub fn harvest() -> u32 {
+                  12
+              }
+          }
+      }
+    body: |
+      println!("{}", garden::vegetables::harvest());
+    fix: "pub mod vegetables {"
+    why: Every module on a path must be visible. harvest is pub, but the module vegetables is private to garden (E0603).
+
+  - type: compiles
+    answer: no
+    pre: |
+      mod a {
+          mod b {
+              pub fn f() -> i32 {
+                  1
+              }
+          }
+      }
+    body: |
+      println!("{}", a::b::f());
+    why: f is pub, but module b is private to a, so main can't reach a::b at all (E0603).
+
+  - type: compiles
+    answer: yes
+    pre: |
+      mod a {
+          fn secret() -> i32 {
+              7
+          }
+
+          pub mod b {
+              pub fn reveal() -> i32 {
+                  super::secret()
+              }
+          }
+      }
+    body: |
+      println!("{}", a::b::reveal());
+    why: A child module can use its parent's private items, so b may call a's secret. main only calls public items.
+
+  - type: compiles
+    answer: no
+    pre: |
+      mod shop {
+          pub struct Order {
+              pub id: u32,
+              total: u32,
+          }
+      }
+    body: |
+      let o = shop::Order { id: 1, total: 500 };
+      println!("{}", o.id);
+    why: total is private, so code outside shop can't build an Order with a struct literal (E0451). The module needs a constructor like Order::new.
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::collections::HashMap;
+
+      mod stats {
+          pub fn empty() -> HashMap<String, u32> {
+              HashMap::new()
+          }
+      }
+    body: |
+      println!("{}", stats::empty().len());
+    why: A use line only applies to its own module. Inside stats, HashMap isn't in scope; move the use into the module.
+
+  - type: choice
+    prompt: In Cargo.toml you write `regex = "1.9.3"`. Which versions may Cargo use?
+    choices: ["Exactly 1.9.3", "Any 1.x.y that is at least 1.9.3", "Any version at least 1.9.3, including 2.0.0", "Only 1.9.x versions from 1.9.3 on"]
+    answer: 2
+    why: A plain version is a caret requirement. It allows every semver-compatible version, >= 1.9.3 and < 2.0.0. "Only 1.9.x" is what the tilde form ~1.9.3 means.
+    after: modules-7
+
+  - type: choice
+    prompt: src/main.rs contains the line `mod network;`. Where does the compiler look for that module's code?
+    choices: ["src/network.rs or src/network/mod.rs", "Anywhere in the project folder", "On crates.io, as a dependency called network", "Nowhere: mod network; just imports names"]
+    answer: 1
+    why: mod name; with a semicolon declares a module whose body lives in name.rs (or name/mod.rs) next to the parent's file. Dependencies come from Cargo.toml, and use, not mod, creates shortcuts.
+    after: modules-6
+
+  - type: boss
+    prompt: |
+      Build a small library module. Inside `mod library`, write a **private** module `catalog` that contains `pub struct Book` with a public `title: String` and a **private** `available: bool`, and these methods:
+
+      - `Book::new(title: &str) -> Book` (a new book is available)
+      - `is_available(&self) -> bool`
+      - `checkout(&mut self) -> Result<(), String>`: on success the book is no longer available; if it's already out, return `Err(format!("{} is already checked out", title))`
+      - `give_back(&mut self)`: the book is available again
+
+      Then re-export it so users write `library::Book`.
+    seed: |
+      mod library {
+          // mod catalog { ... }
+          // pub use ...
+      }
+    solution: |
+      mod library {
+          mod catalog {
+              pub struct Book {
+                  pub title: String,
+                  available: bool,
+              }
+
+              impl Book {
+                  pub fn new(title: &str) -> Book {
+                      Book { title: title.to_string(), available: true }
+                  }
+
+                  pub fn is_available(&self) -> bool {
+                      self.available
+                  }
+
+                  pub fn checkout(&mut self) -> Result<(), String> {
+                      if !self.available {
+                          return Err(format!("{} is already checked out", self.title));
+                      }
+                      self.available = false;
+                      Ok(())
+                  }
+
+                  pub fn give_back(&mut self) {
+                      self.available = true;
+                  }
+              }
+          }
+
+          pub use catalog::Book;
+      }
+    require:
+      - pattern: 'pub\s+use\s+(self::)?catalog::Book'
+        message: "Re-export the struct from `library`: `pub use catalog::Book;`"
+    forbid:
+      - pattern: 'pub\s+mod\s+catalog'
+        message: Keep `catalog` private; users should only see `library::Book`.
+      - pattern: 'pub\s+available'
+        message: Keep `available` private so only the methods can change it.
+    harness: |
+      #[test]
+      fn a_new_book_is_available() {
+          let b = library::Book::new("Dune");
+          assert_eq!(b.is_available(), true, "Book::new(\"Dune\").is_available()");
+          assert_eq!(b.title, "Dune", "title");
+      }
+
+      #[test]
+      fn checkout_makes_it_unavailable() {
+          let mut b = library::Book::new("Dune");
+          assert_eq!(b.checkout(), Ok(()), "first checkout");
+          assert_eq!(b.is_available(), false, "available after checkout");
+      }
+
+      #[test]
+      fn double_checkout_is_an_error() {
+          let mut b = library::Book::new("Dune");
+          let _ = b.checkout();
+          assert_eq!(b.checkout(), Err(String::from("Dune is already checked out")), "second checkout");
+      }
+
+      #[test]
+      fn give_back_makes_it_available_again() {
+          let mut b = library::Book::new("Emma");
+          let _ = b.checkout();
+          b.give_back();
+          assert_eq!(b.is_available(), true, "available after give_back");
+          assert_eq!(b.checkout(), Ok(()), "checkout after give_back");
+      }
+    hints:
+      - "The shape is `mod library { mod catalog { pub struct Book { ... } impl Book { ... } } pub use catalog::Book; }`."
+      - "`checkout` checks `if !self.available { return Err(format!(\"{} is already checked out\", self.title)); }`, then sets `self.available = false;`."
+    why: The private module and private field hide the details; the re-export gives users one short path, and only the methods can change availability.

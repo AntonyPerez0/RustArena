@@ -1,0 +1,266 @@
+# Interview prep: data structures, complexity, algorithms and testing, asked in Rust terms.
+# Code questions are compiled and run to check the answers.
+topic: interview
+drills:
+  - type: choice
+    prompt: What's the time cost of `Vec::push`?
+    choices:
+      - Amortized O(1). Usually constant; when the buffer is full it reallocates and copies in O(n), but capacity grows geometrically so the average stays constant
+      - O(1) every time, guaranteed
+      - O(log n)
+      - O(n) every time, because the elements are copied
+    answer: 1
+    why: "Doubling the capacity means n pushes copy at most about 2n elements in total. If you know the final size, `Vec::with_capacity(n)` avoids the reallocations entirely."
+
+  - type: choice
+    prompt: Which of these is O(n) on a `Vec` of n elements?
+    choices:
+      - "`v.insert(0, x)`"
+      - "`v.push(x)`"
+      - "`v.pop()`"
+      - "`v[i]`"
+    answer: 1
+    why: "Inserting (or `remove(0)`) at the front shifts every other element one slot. Pushing and popping at the end and indexing are O(1). If you need the front too, use a VecDeque."
+
+  - type: fill
+    prompt: Use the VecDeque as a FIFO queue, serving the oldest ticket first.
+    body: |
+      use std::collections::VecDeque;
+      let mut queue = VecDeque::new();
+      queue.push_back("ticket-1");
+      queue.push_back("ticket-2");
+      queue.push_back("ticket-3");
+      let first = queue.[[pop_front]]().unwrap();
+      println!("{} {}", first, queue.len());
+    why: "VecDeque is a ring buffer with O(1) `push_back` and `pop_front`, the right tool for a queue. A Vec with `remove(0)` would shift every element, making each dequeue O(n)."
+
+  - type: choice
+    prompt: Which statement about `HashMap` and `BTreeMap` is right?
+    choices:
+      - "HashMap: O(1) average lookup and insert, no ordering. BTreeMap: O(log n), keys always sorted, supports range queries"
+      - BTreeMap is faster than HashMap for every workload
+      - HashMap iterates in insertion order
+      - BTreeMap keys must implement Hash
+    answer: 1
+    why: "HashMap keys need `Hash + Eq`; BTreeMap keys need `Ord`. Pick BTreeMap when you need sorted output, the smallest or largest key, or `range(..)` queries, and for deterministic iteration order."
+
+  - type: predict
+    body: |
+      use std::collections::BTreeMap;
+      let mut count = BTreeMap::new();
+      for w in "to be or not to be".split_whitespace() {
+          *count.entry(w).or_insert(0) += 1;
+      }
+      println!("{:?}", count);
+    why: "`entry(..).or_insert(0)` gives a mutable reference to the count, inserting 0 the first time. A BTreeMap iterates in sorted key order; a HashMap would print in an unspecified order that changes between runs."
+
+  - type: choice
+    prompt: What does `std::collections::BinaryHeap` give you, and how do you get the smallest item first?
+    choices:
+      - "A max-heap: O(1) `peek` at the largest, O(log n) `push` and `pop`. Wrap items in `std::cmp::Reverse` to get a min-heap"
+      - "A min-heap; wrap items in `Reverse` to get a max-heap"
+      - A sorted Vec with O(1) inserts
+      - A hash set that keeps items in insertion order
+    answer: 1
+    why: "Heaps power priority queues: Dijkstra's algorithm, task schedulers, and the k largest items of a stream (keep a min-heap of size k)."
+
+  - type: predict
+    body: |
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+      let mut heap = BinaryHeap::new();
+      for x in [5, 1, 8, 3] {
+          heap.push(Reverse(x));
+      }
+      let Reverse(a) = heap.pop().unwrap();
+      let Reverse(b) = heap.pop().unwrap();
+      println!("{a} {b} {}", heap.len());
+    why: "`Reverse` flips the ordering, so the max-heap pops the smallest numbers first: 1, then 3. Two items (5 and 8) are left."
+
+  - type: choice
+    prompt: What must be true before you call `v.binary_search(&x)`?
+    choices:
+      - "`v` must be sorted (in the same order); then it's O(log n) and returns `Ok(index)` or `Err(where x would go)`"
+      - "`v` must contain no duplicates"
+      - "`v` must have an even length"
+      - Nothing; it sorts `v` first if needed
+    answer: 1
+    why: "Each step halves the search range by comparing with the middle element, which only works on sorted data. On unsorted data the result is meaningless (but never undefined behavior)."
+
+  - type: predict
+    body: |
+      let prices = [10, 20, 30, 40];
+      println!("{:?} {:?}", prices.binary_search(&30), prices.binary_search(&25));
+    why: "30 is at index 2. 25 isn't present, so the result is `Err(2)`: the index where 25 could be inserted to keep the slice sorted, which is handy for sorted inserts."
+
+  - type: bug
+    prompt: "`find` should print `Some(1) None`. Click the line with the bug."
+    pre: |
+      fn find(v: &[i32], target: i32) -> Option<usize> {
+          let (mut lo, mut hi) = (0, v.len());
+          while lo < hi {
+              let mid = lo + (hi - lo) / 2;
+              if v[mid] == target {
+                  return Some(mid);
+              }
+              if v[mid] < target { lo = mid + 1; } else { hi = mid - 1; } // BUG
+          }
+          None
+      }
+    body: |
+      println!("{:?} {:?}", find(&[1, 3, 5, 7], 3), find(&[1, 3, 5, 7], 6));
+    fix: if v[mid] < target { lo = mid + 1; } else { hi = mid; }
+    why: "`hi` is exclusive (the search range is `lo..hi`), so when `v[mid]` is too big the new range is `lo..mid`. Setting `hi = mid - 1` skips an element that might be the target, and underflows when `mid` is 0."
+
+  - type: choice
+    prompt: A recursive function walks a linked list a million nodes long and crashes, while the same logic as a loop works. Why?
+    choices:
+      - Each call needs a stack frame, the main thread's stack is a few megabytes, and Rust doesn't guarantee tail-call optimization, so the stack overflows
+      - Rust limits recursion to 1000 levels
+      - Recursion allocates every frame on the heap and runs out of memory
+      - The borrow checker rejects deep recursion at compile time
+    answer: 1
+    why: "Rust aborts with \"thread 'main' has overflowed its stack\". Recursion is clearest for trees and divide and conquer, where depth is about log n; for long chains, use a loop or an explicit stack (a Vec)."
+
+  - type: choice
+    prompt: "In `let a = [0u8; 16]; let v = vec![0u8; 16];`, where do the bytes live?"
+    choices:
+      - "`a`'s 16 bytes are on the stack. `v`'s bytes are on the heap; the Vec itself (pointer, length, capacity) is on the stack"
+      - Both on the stack
+      - Both on the heap
+      - "`a` on the heap, `v` on the stack"
+    answer: 1
+    why: "Arrays are values whose size is known at compile time, so they live inline. Vec, String and Box own heap memory, freed when the owner is dropped. The stack is fast but small, so big or growing data goes on the heap."
+
+  - type: choice
+    prompt: "Why must `a == b` imply `hash(a) == hash(b)` for `HashMap` keys?"
+    choices:
+      - A lookup goes to the bucket picked by the key's hash and only then compares with ==; equal keys with different hashes land in different buckets and are never found
+      - It only matters for speed; lookups still work, just slower
+      - Because HashMap stores keys sorted by hash
+      - It isn't required; only Eq matters
+    answer: 1
+    why: "That's why `Hash` and `Eq` are derived together, and why a manual `PartialEq` needs a matching manual `Hash`. Collisions (different keys with the same hash) are fine and expected."
+
+  - type: compiles
+    answer: no
+    body: |
+      use std::collections::HashSet;
+      let mut seen = HashSet::new();
+      seen.insert(1.5_f64);
+      println!("{}", seen.len());
+    why: "HashSet needs `Eq + Hash`, and f64 implements neither: NaN != NaN breaks the rule that every value equals itself (E0277, the trait bound `f64: Eq` is not satisfied). Store integer cents or use an ordered-float wrapper."
+
+  - type: choice
+    prompt: "What's the difference between `sort` and `sort_unstable`?"
+    choices:
+      - "`sort` is stable (equal elements keep their original order) and may allocate a temporary buffer; `sort_unstable` may reorder equal elements but is usually faster and sorts in place without allocating"
+      - "`sort_unstable` sometimes returns a wrongly sorted result"
+      - "`sort_unstable` may panic on large inputs"
+      - "`sort` is O(n^2) and `sort_unstable` is O(n log n)"
+    answer: 1
+    why: "Both are O(n log n) worst case. Stability matters when sorting by one key after another, or by a key where ties should keep their earlier order. For plain numbers, where equal values are indistinguishable, prefer `sort_unstable`."
+
+  - type: predict
+    body: |
+      let mut orders = vec![("bob", 2), ("amy", 1), ("cat", 2), ("dan", 1)];
+      orders.sort_by_key(|&(_, priority)| priority);
+      let names: Vec<&str> = orders.iter().map(|&(name, _)| name).collect();
+      println!("{}", names.join(" "));
+    why: "`sort_by_key` is stable: within priority 1, amy came before dan, and within priority 2, bob came before cat, so those orders are kept."
+
+  - type: bug
+    prompt: This should print `true false`. Click the line with the bug.
+    pre: |
+      fn is_palindrome(s: &[u8]) -> bool {
+          if s.is_empty() {
+              return true;
+          }
+          let (mut i, mut j) = (0, s.len()); // BUG
+          while i < j {
+              if s[i] != s[j] {
+                  return false;
+              }
+              i += 1;
+              j -= 1;
+          }
+          true
+      }
+    body: |
+      println!("{} {}", is_palindrome(b"racecar"), is_palindrome(b"crab"));
+    fix: let (mut i, mut j) = (0, s.len() - 1);
+    why: "Two pointers start at both ends and move inward, so the right one must start at the last index, `len - 1`. `s[s.len()]` is one past the end and panics with index out of bounds."
+
+  - type: choice
+    prompt: You need the fewest moves from start to goal in an unweighted grid. Which search?
+    choices:
+      - "BFS with a queue (VecDeque): it explores cells in order of distance, so the first time it reaches the goal is along a shortest path"
+      - DFS, because it uses less memory and also finds shortest paths
+      - Either one; both always find a shortest path
+      - Binary search over the grid
+    answer: 1
+    why: "DFS finds a path, not necessarily the shortest. It's the natural choice for reachability, cycle detection and topological sort. With weighted edges, use Dijkstra (a BinaryHeap)."
+
+  - type: choice
+    prompt: This DFS uses a Vec as a stack. In what order does it visit the nodes?
+    body: |
+      let adj = vec![vec![1, 2], vec![3], vec![3], vec![]];
+      let mut seen = vec![false; 4];
+      let mut order = Vec::new();
+      let mut stack = vec![0];
+      while let Some(n) = stack.pop() {
+          if seen[n] {
+              continue;
+          }
+          seen[n] = true;
+          order.push(n);
+          for &m in &adj[n] {
+              stack.push(m);
+          }
+      }
+      println!("{:?}", order);
+    choices:
+      - "[0, 2, 3, 1]"
+      - "[0, 1, 2, 3]"
+      - "[0, 1, 3, 2]"
+      - "[0, 2, 1, 3]"
+    answer: 1
+    verify: output
+    why: "From 0 it pushes 1 then 2, and a stack pops the last pushed first, so it goes deep through 2 to 3 before backtracking to 1. Swap the stack for a VecDeque queue and you get BFS order `[0, 1, 2, 3]`."
+
+  - type: choice
+    prompt: What makes a problem a good fit for dynamic programming?
+    choices:
+      - Overlapping subproblems and optimal substructure. The answer is built from answers to smaller subproblems that recur, so each is computed once (memoized or in a bottom-up table)
+      - The input must be sorted first
+      - A greedy choice at each step always gives the best answer
+      - The input has to be a graph
+    answer: 1
+    why: "Naive recursive Fibonacci recomputes the same values and takes O(2^n) time; caching each fib(k) makes it O(n). If greedy works, you don't need DP; when it doesn't (like coin change with odd coins), DP does."
+
+  - type: predict
+    prompt: "Fewest coins (1, 3 and 4) to make 6. What does this print?"
+    body: |
+      let coins = [1, 3, 4];
+      let target = 6;
+      let mut best = vec![usize::MAX; target + 1];
+      best[0] = 0;
+      for amount in 1..=target {
+          for &c in &coins {
+              if c <= amount && best[amount - c] != usize::MAX {
+                  best[amount] = best[amount].min(best[amount - c] + 1);
+              }
+          }
+      }
+      println!("{}", best[target]);
+    why: "`best[a]` is the fewest coins for amount `a`, built from smaller amounts. 6 = 3 + 3 uses 2 coins. Greedy (largest coin first) would pick 4 + 1 + 1, which is 3 coins: this is why the problem needs DP."
+
+  - type: choice
+    prompt: Where do unit tests and integration tests live in a Cargo project?
+    choices:
+      - "Unit tests sit in a `#[cfg(test)] mod tests` next to the code, and can test private functions; integration tests go in `tests/`, each file a separate crate that sees only the public API"
+      - Both go in the `tests/` folder
+      - Both go in `src/main.rs`
+      - Unit tests go in `tests/`; integration tests go in a separate repository
+    answer: 1
+    why: "`cargo test` runs unit tests, integration tests and doc tests (examples in `///` comments). Integration tests exercise a library the way users will; unit tests pin down the details, including edge cases like empty input."

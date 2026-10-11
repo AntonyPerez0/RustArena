@@ -129,6 +129,10 @@ harness: |
 - Seeds that return `-> SomeType` need a body that compiles: `todo!()` works everywhere.
 - Unused parameters in a seed are fine (seeds may have warnings); solutions may not.
 - 3 to 6 tests per exercise, covering edge cases (empty input, zero, negatives, unicode).
+- The message in `assert_eq!(a, b, "...")` is a format string: write braces as `{{` and `}}`
+  (`"Point {{ x: 1 }}"`).
+- A struct field that is only ever printed with `{:?}` still counts as "never read" for the
+  dead-code lint, so read it somewhere (or don't add it) to keep solutions warning-free.
 - If the learner's code must also print, use stdout mode instead.
 
 **Write tests (test mode)** (testing module and a few others): `mode: test`. The learner writes
@@ -217,8 +221,8 @@ In edition 2024, `std::env::set_var`/`remove_var` are `unsafe`; `gen` is a reser
 ## Drills: `content/drills/<module-id>.yaml`
 
 Drills are fast questions for Deathmatch (endless practice). Each unlocks when the learner
-finishes the lesson step that teaches it (worked out automatically from the code features; set
-`after: <step id>` to force it). Write **14 to 18 drills per module**, mixing types: about 5
+finishes the lesson step that teaches it (worked out automatically from the code features by the
+full build, not by `--only` checks; set `after: <step id>` to choose it yourself). Write **14 to 18 drills per module**, mixing types: about 5
 predict, 3 fill, 2-3 bug, 3 compiles (great for ownership/borrowing/lifetimes/traits), 1-2
 choice, 1 boss.
 

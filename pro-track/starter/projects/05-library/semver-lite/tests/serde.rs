@@ -23,7 +23,10 @@ fn a_version_deserializes_from_a_string() {
 fn invalid_strings_are_rejected_with_the_parse_error() {
     let err = serde_json::from_str::<Version>(r#""1.02.0""#).unwrap_err();
     assert!(err.to_string().contains("leading zero"), "{err}");
-    assert!(serde_json::from_str::<Version>("1").is_err(), "a number is not a version");
+    assert!(
+        serde_json::from_str::<Version>("1").is_err(),
+        "a number is not a version"
+    );
 }
 
 #[test]

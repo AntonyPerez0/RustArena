@@ -32,7 +32,10 @@ fn declares_its_minimum_supported_rust_version() {
 
 #[test]
 fn has_a_readme() {
-    require("readme (or a README.md next to Cargo.toml)", env!("CARGO_PKG_README"));
+    require(
+        "readme (or a README.md next to Cargo.toml)",
+        env!("CARGO_PKG_README"),
+    );
 }
 
 #[test]

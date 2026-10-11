@@ -1,0 +1,295 @@
+topic: enums
+drills:
+  - type: predict
+    after: enums-2
+    pre: |
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+
+      fn action(light: Light) -> &'static str {
+          match light {
+              Light::Red => "stop",
+              Light::Yellow => "slow down",
+              Light::Green => "go",
+          }
+      }
+    body: |
+      println!("{} / {}", action(Light::Yellow), action(Light::Red));
+    why: match runs the arm whose pattern fits the value, so Yellow gives "slow down" and Red gives "stop".
+
+  - type: predict
+    after: enums-4
+    body: |
+      let x: Option<i32> = Some(4);
+      let doubled = match x {
+          Some(n) => n * 2,
+          None => 0,
+      };
+      println!("{}", doubled);
+    why: x is Some(4), so the Some(n) arm runs with n = 4 and the match evaluates to 8.
+
+  - type: predict
+    after: enums-3
+    pre: |
+      enum Shape {
+          Circle(u32),
+          Rect { w: u32, h: u32 },
+      }
+
+      fn area(s: &Shape) -> u32 {
+          match s {
+              Shape::Circle(r) => 3 * r * r,
+              Shape::Rect { w, h } => w * h,
+          }
+      }
+    body: |
+      let total = area(&Shape::Rect { w: 2, h: 3 }) + area(&Shape::Circle(1));
+      println!("{}", total);
+    why: The rectangle's pattern binds w = 2 and h = 3 (area 6); the circle binds r = 1 (area 3 with this rough pi). 6 + 3 = 9.
+
+  - type: predict
+    after: enums-5
+    body: |
+      let n: Option<u32> = 10u32.checked_sub(20);
+      if let Some(v) = n {
+          println!("got {}", v);
+      } else {
+          println!("nothing");
+      }
+    why: 10 - 20 doesn't fit in a u32, so checked_sub returns None and the else branch runs.
+
+  - type: predict
+    after: enums-6
+    pre: |
+      enum Status {
+          Active,
+          Suspended { days: u32 },
+          Closed,
+      }
+    body: |
+      let s = Status::Suspended { days: 3 };
+      println!("{} {}", matches!(s, Status::Suspended { .. }), matches!(s, Status::Closed));
+    why: "matches! is true when the value fits the pattern. s is Suspended (any days), not Closed."
+
+  - type: fill
+    after: enums-4
+    prompt: Bind the number inside the Option.
+    body: |
+      let stock: Option<u32> = Some(12);
+      match stock {
+          [[Some]](n) => println!("{} left", n),
+          None => println!("sold out"),
+      }
+    why: The Some(n) pattern matches a present value and binds what's inside to n.
+
+  - type: fill
+    after: enums-5
+    prompt: Run the block only when there is a value.
+    body: |
+      let coupon: Option<u32> = Some(15);
+      if [[let]] Some(percent) = coupon {
+          println!("{}% off", percent);
+      }
+    why: if let checks one pattern and binds its data for the block. It's shorter than a match that ignores None.
+
+  - type: fill
+    after: enums-2
+    prompt: Catch every other number.
+    pre: |
+      fn name(n: u32) -> &'static str {
+          match n {
+              1 => "one",
+              2 => "two",
+              [[_]] => "many",
+          }
+      }
+    body: |
+      println!("{} {}", name(2), name(40));
+    why: Numbers can't all be listed, so a match on them needs a catch-all arm. _ matches anything.
+
+  - type: bug
+    after: enums-2
+    pre: |
+      #[derive(Debug)]
+      enum Light {
+          Red,
+          Green,
+          Yellow,
+      }
+
+      fn next(light: Light) -> Light {
+          match light {
+              Light::Red => Light::Green,
+              Light::Green => Light::Yellow,
+              Light::Yellow => Light::Green, // BUG
+          }
+      }
+    body: |
+      println!("{:?}", next(next(next(Light::Red))));
+    fix: Light::Yellow => Light::Red,
+    prompt: "A traffic light goes Red, Green, Yellow, Red. Three steps from Red should print `Red`. Click the line with the bug."
+    why: Yellow must turn back to Red. With the bug, the light skips Red and bounces between Green and Yellow.
+
+  - type: bug
+    after: enums-4
+    pre: |
+      fn first_negative(v: &[i32]) -> Option<usize> {
+          for i in 0..v.len() {
+              if v[i] < 0 {
+                  return Some(i);
+              }
+          }
+          Some(0) // BUG
+      }
+    body: |
+      println!("{:?}", first_negative(&[3, 5, 8]));
+    fix: None
+    prompt: "There is no negative number, so this should print `None`. Click the line with the bug."
+    why: When nothing is found, the function must say so with None. Some(0) claims the first element is negative.
+
+  - type: bug
+    after: enums-5
+    body: |
+      let input = "12";
+      let Ok(n) = input.parse::<u32>() else { println!("bad input"); }; // BUG
+      println!("{}", n * 2);
+    fix: 'let Ok(n) = input.parse::<u32>() else { println!("bad input"); return; };'
+    prompt: "This should print `24`. Click the line with the bug."
+    why: The else block of let...else must leave (return, break, continue or panic). Otherwise there would be no n to continue with.
+
+  - type: compiles
+    after: enums-2
+    answer: no
+    pre: |
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+    body: |
+      let l = Light::Green;
+      let secs = match l {
+          Light::Red => 30,
+          Light::Green => 25,
+      };
+      println!("{}", secs);
+    why: "match must be exhaustive. Light::Yellow isn't handled (error E0004: non-exhaustive patterns)."
+
+  - type: compiles
+    after: enums-4
+    answer: no
+    body: |
+      let price: Option<u32> = Some(250);
+      let total = price + 50;
+      println!("{}", total);
+    why: An Option<u32> is not a u32. You must handle the None case before using the number.
+
+  - type: compiles
+    after: enums-2
+    answer: yes
+    pre: |
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+    body: |
+      let l = Light::Yellow;
+      let go = match l {
+          Light::Green => true,
+          _ => false,
+      };
+      println!("{}", go);
+    why: The _ arm covers Red and Yellow, so the match is exhaustive.
+
+  - type: compiles
+    after: enums-4
+    answer: no
+    body: |
+      let name: String = None;
+      println!("{}", name);
+    why: Rust has no null. None is a value of Option<T>, not of String; a String is always a real string.
+
+  - type: choice
+    after: enums-4
+    prompt: Why does Rust use Option<T> instead of null?
+    choices: ["Option is faster than null", "The type shows that a value may be missing, and the compiler makes you handle None before using it", "Null can't be stored on the heap", "Option lets any variable be null"]
+    answer: 2
+    why: With null, any reference might be missing and nothing reminds you to check. Option makes "maybe missing" part of the type, so forgetting the check is a compile error, not a crash.
+
+  - type: choice
+    after: enums-2
+    prompt: You add a new variant to your own enum. What's the downside of having used _ => ... arms in your matches on it?
+    choices: ["The program gets slower", "The compiler no longer points out the matches that should handle the new variant", "_ arms stop compiling", "Nothing, _ is always the better choice"]
+    answer: 2
+    why: An exhaustive match without _ fails to compile until the new variant is handled, which finds every place to update. A _ arm silently swallows it.
+
+  - type: boss
+    after: enums-5
+    prompt: |
+      A vending machine takes coins by name. Write:
+
+      - `fn coin_value(name: &str) -> Option<u32>`: `"nickel"` is 5, `"dime"` is 10, `"quarter"` is 25; anything else is `None`.
+      - `fn total(coins: &[&str]) -> Option<u32>`: the sum of all coins, or `None` if any of them is unknown.
+    seed: |
+      fn coin_value(name: &str) -> Option<u32> {
+          todo!()
+      }
+
+      fn total(coins: &[&str]) -> Option<u32> {
+          todo!()
+      }
+    solution: |
+      fn coin_value(name: &str) -> Option<u32> {
+          match name {
+              "nickel" => Some(5),
+              "dime" => Some(10),
+              "quarter" => Some(25),
+              _ => None,
+          }
+      }
+
+      fn total(coins: &[&str]) -> Option<u32> {
+          let mut sum = 0;
+          for coin in coins {
+              let Some(value) = coin_value(coin) else {
+                  return None;
+              };
+              sum += value;
+          }
+          Some(sum)
+      }
+    harness: |
+      #[test]
+      fn knows_the_three_coins() {
+          assert_eq!((coin_value("nickel"), coin_value("dime"), coin_value("quarter")), (Some(5), Some(10), Some(25)), "values of nickel, dime, quarter");
+      }
+
+      #[test]
+      fn unknown_coins_are_none() {
+          assert_eq!(coin_value("penny"), None, "coin_value(\"penny\")");
+          assert_eq!(coin_value("Dime"), None, "coin_value(\"Dime\")");
+      }
+
+      #[test]
+      fn adds_up_coins() {
+          assert_eq!(total(&["quarter", "dime", "dime", "nickel"]), Some(50), "total of quarter, dime, dime, nickel");
+      }
+
+      #[test]
+      fn no_coins_is_zero() {
+          assert_eq!(total(&[]), Some(0), "total(&[])");
+      }
+
+      #[test]
+      fn one_bad_coin_spoils_the_total() {
+          assert_eq!(total(&["quarter", "button", "dime"]), None, "total of quarter, button, dime");
+      }
+    hints:
+      - "`coin_value` is a `match name` with three string arms returning `Some(...)` and `_ => None`."
+      - "In `total`, keep a running sum and use `let Some(value) = coin_value(coin) else { return None; };` for each coin."
+      - "Return `Some(sum)` after the loop."
+    why: Returning Option from both functions makes the "unknown coin" case impossible to ignore, and let...else stops at the first bad coin.

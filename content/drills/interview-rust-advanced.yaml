@@ -1,0 +1,268 @@
+# Interview prep: advanced Rust questions (concurrency, async, zero-cost abstractions, advanced traits,
+# macros, Cargo and tooling). Code questions are compiled and run to check the answers.
+topic: interview
+drills:
+  - type: choice
+    prompt: What do the `Send` and `Sync` marker traits mean?
+    choices:
+      - "`Send`: ownership of the value can move to another thread. `Sync`: a `&T` can be shared between threads (T is Sync exactly when &T is Send)"
+      - "`Send` types can be sent over the network; `Sync` types are synchronized with a Mutex inside"
+      - Both mean the type is safe to use with async/await
+      - "`Sync` means the value is copied to every thread; `Send` means it is moved"
+    answer: 1
+    why: "The compiler implements them automatically from a type's fields. `Rc` is neither (its count isn't atomic), `RefCell` is Send but not Sync, and `Arc<Mutex<T>>` is both, which is why it's the standard way to share mutable state."
+
+  - type: compiles
+    answer: no
+    body: |
+      use std::rc::Rc;
+      use std::thread;
+      let data = Rc::new(vec![1, 2, 3]);
+      let handle = thread::spawn(move || data.len());
+      println!("{}", handle.join().unwrap());
+    why: "`Rc` updates its reference count without atomics, so two threads cloning it could corrupt the count. It isn't Send, and `thread::spawn` requires Send (E0277). Use `Arc`, which counts atomically."
+
+  - type: compiles
+    answer: no
+    body: |
+      use std::thread;
+      let words = vec!["a", "bb", "ccc"];
+      let handle = thread::spawn(|| words.len());
+      println!("{}", handle.join().unwrap());
+    why: "`thread::spawn` needs a `'static` closure because the thread could outlive `words` (E0373). Use a `move` closure to give it ownership, or `thread::scope`, whose threads are joined before the scope ends and may borrow locals."
+
+  - type: choice
+    prompt: When would you pick a channel (`mpsc`) over `Arc<Mutex<T>>`?
+    choices:
+      - When data flows from producers to a consumer, like workers sending results; each message has one owner at a time and there's no shared state to lock
+      - Always, because channels are faster than mutexes in every case
+      - When several threads must read and update the same map in place
+      - When you need many consumers, since std's mpsc allows any number of receivers
+    answer: 1
+    why: "Channels pass ownership; a mutex guards shared state that many threads update, like a cache or a counter. std's mpsc is multi-producer, single-consumer: clone the Sender, not the Receiver."
+
+  - type: choice
+    prompt: Thread 1 locks mutex A then B. Thread 2 locks B then A. What can go wrong, and what's the usual fix?
+    choices:
+      - "A deadlock: each thread holds one lock and waits forever for the other. Always take locks in the same global order, or hold one lock at a time"
+      - "A data race; Rust's Mutex can't prevent it"
+      - The second lock call returns a PoisonError
+      - Nothing, the borrow checker rejects code that could deadlock
+    answer: 1
+    why: "Safe Rust prevents data races at compile time, but deadlocks are a logic error it can't see. Poisoning is something else: a lock is poisoned when a thread panics while holding it."
+
+  - type: bug
+    prompt: This should print `[1, 2, 3, 4]`. Instead it hangs. Click the line with the bug.
+    body: |
+      use std::sync::Mutex;
+      let queue = Mutex::new(vec![1, 2, 3]);
+      {
+          let mut jobs = queue.lock().unwrap();
+          let next = jobs.len() + 1;
+          queue.lock().unwrap().push(next); // BUG
+      }
+      println!("{:?}", queue.lock().unwrap());
+    fix: jobs.push(next);
+    why: "The guard `jobs` still holds the lock, and std's Mutex isn't reentrant: locking it again on the same thread never returns (it deadlocks or panics). Use the guard you already have, and keep guards in small blocks so they drop early."
+
+  - type: choice
+    prompt: "Several threads count requests with `hits.fetch_add(1, Ordering::?)` on an `AtomicUsize`, and the total is read after joining them. Which ordering is enough?"
+    choices:
+      - "`Relaxed`: each increment is still atomic, so none are lost; stronger orderings only matter when the atomic publishes other data"
+      - "`SeqCst`, because Relaxed increments can be lost"
+      - "`Acquire`, because it's a read-modify-write"
+      - "No atomic is needed: `usize += 1` is atomic on x86"
+    answer: 1
+    why: "Ordering controls how other memory accesses are ordered around the atomic. For a flag that publishes data, store with `Release` and load with `Acquire`. `SeqCst` is the safe default when unsure; a plain `+=` from several threads is a data race and won't compile on shared data."
+
+  - type: choice
+    prompt: What happens when you call an `async fn` but never `.await` (or spawn) what it returns?
+    choices:
+      - Nothing runs. It returns a future, and futures do nothing until polled; the compiler warns that the future is unused
+      - It runs on a background thread
+      - It runs up to its first `.await` and then pauses
+      - It blocks the current thread until it finishes
+    answer: 1
+    why: "Rust futures are lazy state machines. `.await` polls them within the current task, `tokio::spawn` hands them to the runtime to run concurrently, and dropping one cancels it."
+
+  - type: predict
+    pre: |
+      async fn greet(name: &str) -> String {
+          println!("running {name}");
+          format!("hi {name}")
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let fut = greet("crab");
+          println!("created");
+          let msg = fut.await;
+          println!("{msg}");
+      }
+    why: "Calling `greet` only builds the future; its body runs when the future is awaited. That's why `created` comes before `running crab`."
+
+  - type: choice
+    prompt: Rust has `Future`, `async` and `.await` built in. Why do you still need Tokio (or another runtime)?
+    choices:
+      - The standard library has no executor; something must poll futures, wake them when I/O or timers are ready, and provide async sockets, files and timers
+      - async code doesn't compile without Tokio's macros
+      - Tokio makes futures eager so they start immediately
+      - Standard futures only work in WebAssembly
+    answer: 1
+    why: "The language defines how futures are written; a runtime decides how they run. Tokio's scheduler polls tasks on a thread pool and its reactor (epoll, kqueue, IOCP) wakes them when their I/O is ready."
+
+  - type: choice
+    prompt: "What's wrong with calling `std::thread::sleep` or doing heavy CPU work inside an async task on Tokio?"
+    choices:
+      - "It blocks the worker thread, so other tasks scheduled on it can't make progress. Use `tokio::time::sleep(..).await`, and `spawn_blocking` for blocking or CPU-heavy work"
+      - Nothing; Tokio detects blocking calls and moves the task elsewhere
+      - It panics at run time
+      - It doesn't compile inside an async fn
+    answer: 1
+    why: "Async scheduling is cooperative: a task gives up its thread only at an `.await` that isn't ready. Code that never awaits holds the thread and stalls every other task waiting for it."
+
+  - type: choice
+    prompt: "Why does `Future::poll` take `self: Pin<&mut Self>`?"
+    choices:
+      - An async fn's state can hold references into itself across `.await` points, so once polled it must not move in memory; Pin guarantees that
+      - Pin keeps the future on one thread
+      - Pin stops the future from being dropped early
+      - Pin is how a future is allocated on the heap
+    answer: 1
+    why: "Moving a self-referential value would leave its internal pointers dangling. Most types are `Unpin` and unaffected; in practice you pin with `Box::pin` or `std::pin::pin!` when an API asks for it."
+
+  - type: predict
+    prompt: "`fetch(2, 5)` finishes first. What does this print?"
+    pre: |
+      use tokio::time::{sleep, Duration};
+
+      async fn fetch(id: u32, ms: u64) -> u32 {
+          sleep(Duration::from_millis(ms)).await;
+          id * 10
+      }
+
+      #[tokio::main]
+      async fn main() {
+          let (a, b) = tokio::join!(fetch(1, 30), fetch(2, 5));
+          println!("{a} {b}");
+      }
+    why: "`join!` runs the futures concurrently, so this takes about 30 ms rather than 35, and it returns their results in argument order, whatever order they finish in."
+
+  - type: choice
+    prompt: "What does monomorphization mean for `fn largest<T: PartialOrd>(v: &[T]) -> &T` called with `&[i32]` and `&[f64]`?"
+    choices:
+      - The compiler generates a specialized copy for i32 and another for f64, so calls are static and can be inlined, at the cost of compile time and binary size
+      - One copy of the function checks the type at run time
+      - Each value is boxed so one function can handle any type
+      - Generic functions can only be used with one type per program
+    answer: 1
+    why: "This is how generics are a zero-cost abstraction: the generic code runs as fast as hand-written versions for each type. The same applies to iterator chains and closures, which usually compile down to a plain loop."
+
+  - type: choice
+    prompt: Why would a struct have a field of type `PhantomData<T>`?
+    choices:
+      - "To use a type parameter that no field stores (typestate, or tagging an `Id<User>` apart from an `Id<Order>`) so the compiler still tracks T, at zero size"
+      - To reserve memory for a T that will be stored later
+      - To make the struct thread-safe
+      - To store T on the heap
+    answer: 1
+    why: "An unused type parameter is an error (E0392). PhantomData says the struct logically involves T, which also feeds variance, the drop checker and auto traits like Send, while taking no space."
+
+  - type: compiles
+    answer: no
+    pre: |
+      use std::fmt;
+
+      impl fmt::Display for Vec<i32> {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{} items", self.len())
+          }
+      }
+    body: |
+      println!("{}", vec![1, 2, 3]);
+    why: "The orphan rule: you can implement a trait for a type only if your crate defines the trait or the type (E0117). Display and Vec both come from std. It keeps two crates from adding conflicting impls."
+
+  - type: fill
+    prompt: The orphan rule forbids `impl Display for Vec<i32>`. Implement it for a newtype wrapper instead.
+    pre: |
+      use std::fmt;
+
+      struct Scores(Vec<i32>);
+
+      impl fmt::Display for [[Scores]] {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              write!(f, "{} scores, best {}", self.0.len(), self.0.iter().max().unwrap_or(&0))
+          }
+      }
+    body: |
+      println!("{}", Scores(vec![90, 75, 82]));
+    why: "A newtype (a one-field tuple struct) is a new type defined in your crate, so you may implement any trait for it. It costs nothing at run time, and the inner value is `self.0`."
+
+  - type: choice
+    prompt: "Which method makes `trait Shape` unusable as `dyn Shape` (not dyn compatible, formerly \"object safe\")?"
+    choices:
+      - "`fn duplicate(&self) -> Self;`"
+      - "`fn area(&self) -> f64;`"
+      - "`fn name(&self) -> String;`"
+      - "`fn resize(&mut self, factor: f64);`"
+    answer: 1
+    why: "Behind `dyn Shape` the concrete type, and so the size of `Self`, is unknown, so a method can't return `Self` by value. Generic methods are excluded too, since a vtable can't list every instantiation. Adding `where Self: Sized` keeps such a method off the vtable. This is why `Box<dyn Clone>` doesn't work."
+
+  - type: choice
+    prompt: "How do `macro_rules!` macros differ from procedural macros?"
+    choices:
+      - "`macro_rules!` matches token patterns and expands templates, defined right in your code; proc macros are Rust functions in a separate proc-macro crate that take and return a TokenStream (derive, attribute and function-like)"
+      - "`macro_rules!` macros run at run time; proc macros at compile time"
+      - Proc macros can only print text; they can't generate code
+      - "`macro_rules!` is deprecated in edition 2024"
+    answer: 1
+    why: "Both expand at compile time. `#[derive(Serialize)]` is a proc macro: it reads your struct's tokens and writes the impl. Proc macros are more powerful but cost compile time and usually lean on the syn and quote crates."
+
+  - type: predict
+    pre: |
+      macro_rules! sum {
+          ($($x:expr),*) => { 0 $(+ $x)* };
+      }
+    body: |
+      println!("{} {}", sum!(1, 2, 3), sum!());
+    why: "`$(...),*` matches zero or more comma-separated expressions, and `$(+ $x)*` repeats `+ $x` once per match. So `sum!(1, 2, 3)` expands to `0 + 1 + 2 + 3` and `sum!()` to just `0`."
+
+  - type: choice
+    prompt: What are Cargo features for, and what rule should they follow?
+    choices:
+      - "Optional compile-time switches, like optional serde support or an optional dependency. They must be additive, because Cargo turns on the union of all features requested anywhere in the dependency graph"
+      - Run-time flags that users toggle with environment variables
+      - Different published versions of the same crate
+      - Mutually exclusive build modes, where turning one on turns the others off
+    answer: 1
+    why: "If two dependencies enable different features of the same crate, it's built once with both. A feature that removes or changes an API can therefore break an unrelated crate. Code checks features with `#[cfg(feature = \"serde\")]`."
+
+  - type: choice
+    prompt: What does a Cargo workspace give you?
+    choices:
+      - Several related crates developed together, sharing one Cargo.lock and one target directory, so they build with the same dependency versions
+      - A way to put each crate in its own git repository
+      - A separate process for each crate at run time
+      - Automatic publishing of every crate to crates.io
+    answer: 1
+    why: "A root Cargo.toml lists the members; `cargo build` and `cargo test` at the root cover them all. `[workspace.dependencies]` keeps versions in one place. Typical split: a core library, a CLI and a server."
+
+  - type: choice
+    prompt: "Cargo.toml says `serde = \"1.0.150\"`. Which versions may Cargo pick?"
+    choices:
+      - Any version from 1.0.150 up to, but not including, 2.0.0
+      - Exactly 1.0.150
+      - Any version 1.0.150 or newer, including 2.x
+      - Only 1.0.x patch releases
+    answer: 1
+    why: "A plain version is a caret requirement (`^1.0.150`): semver-compatible updates only, since a new major version may break the API. Cargo.lock records the exact version chosen, so builds are reproducible until you run `cargo update`."
+
+  - type: choice
+    prompt: What is clippy, and how do teams usually use it?
+    choices:
+      - "A linter with hundreds of lints for correctness, style, complexity and performance; teams run `cargo clippy -- -D warnings` in CI so any lint fails the build"
+      - The official code formatter
+      - The test runner behind `cargo test`
+      - A debugger for Rust programs
+    answer: 1
+    why: "Clippy catches things like needless `clone`s, `&Vec<T>` parameters (take `&[T]`) and manual loops that should be iterators. Formatting is rustfmt's job (`cargo fmt --check` in CI)."

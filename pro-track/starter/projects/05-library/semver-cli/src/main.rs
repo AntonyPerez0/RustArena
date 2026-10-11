@@ -47,7 +47,11 @@ fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
     match (command.as_str(), rest) {
         ("parse", [version]) => {
             let v = parser.parse(version)?;
-            let pre = if v.pre.is_empty() { "(none)" } else { v.pre.as_str() };
+            let pre = if v.pre.is_empty() {
+                "(none)"
+            } else {
+                v.pre.as_str()
+            };
             println!("major: {}", v.major);
             println!("minor: {}", v.minor);
             println!("patch: {}", v.patch);
@@ -66,7 +70,9 @@ fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
                 "major" => v.bump_major(),
                 "minor" => v.bump_minor(),
                 "patch" => v.bump_patch(),
-                other => return Err(format!("cannot bump {other:?}: use major, minor or patch").into()),
+                other => {
+                    return Err(format!("cannot bump {other:?}: use major, minor or patch").into());
+                }
             };
             println!("{next}");
         }

@@ -1,0 +1,2149 @@
+id: modules
+title: Modules, Crates and Cargo
+phase: "Idiomatic Rust"
+summary: Organizing code that grows. mod blocks, privacy with pub, paths and use, re-exports, struct field privacy, splitting a crate into files, and Cargo packages with dependencies, semver, features, workspaces and publishing.
+roadmap: [Modules & Crates, Code Organization & Namespacing, "Dependency Management (Cargo.toml)", Publishing on crates.io]
+steps:
+  - title: Modules and privacy
+    id: modules-1
+    text: |
+      As a program grows, you need a way to group related code and to hide the details. A **module** is a named container for functions, structs, enums, constants and other modules. You create one with `mod`:
+
+      ```rust run
+      mod arena {
+          pub fn welcome(name: &str) {
+              println!("Welcome to the arena, {name}!");
+              open_gates();
+          }
+
+          fn open_gates() {
+              println!("(the gates creak open)");
+          }
+      }
+
+      fn main() {
+          arena::welcome("Ferris");
+      }
+      ```
+
+      ```output
+      Welcome to the arena, Ferris!
+      (the gates creak open)
+      ```
+
+      Piece by piece:
+
+      - `mod arena { ... }` defines a module named `arena`. Everything inside lives in the `arena` **namespace**, so its names can't clash with names elsewhere.
+      - `arena::welcome` is a **path**: the module, `::`, then the item. It's the same `::` you've used in `String::from` and `std::io::stdin`.
+      - Items in a module are **private by default**: usable inside the module, invisible outside it. `pub` makes an item public.
+      - `welcome` is public, so `main` can call it. `open_gates` is private, but `welcome` can call it because they're in the same module.
+
+      Why private by default? A module's public items are its **interface**: what others may rely on. Private items are details you can change or delete later without breaking anyone. At work this matters a lot: if a helper isn't `pub`, you know nobody outside depends on it.
+
+      ### Calling a private function
+
+      ```rust compile_fail
+      mod arena {
+          pub fn welcome() {
+              println!("Welcome!");
+          }
+
+          fn secret_door() {
+              println!("You found the secret door");
+          }
+      }
+
+      fn main() {
+          arena::welcome();
+          arena::secret_door();
+      }
+      ```
+
+      ```error
+      error[E0603]: function `secret_door` is private
+      ```
+
+      The full message points at the definition (`note: the function secret_door is defined here`), so you can decide whether it should be `pub` or whether you're reaching for something you shouldn't.
+
+      ### Modules inside modules
+
+      Modules nest, and every module on a path must be reachable:
+
+      ```rust run
+      mod garden {
+          pub mod vegetables {
+              pub fn harvest() -> u32 {
+                  12
+              }
+          }
+
+          pub fn report() {
+              println!("harvested {} carrots", vegetables::harvest());
+          }
+      }
+
+      fn main() {
+          garden::report();
+          println!("{}", garden::vegetables::harvest());
+      }
+      ```
+
+      ```output
+      harvested 12 carrots
+      12
+      ```
+
+      The privacy rule in one sentence: **a private item is visible in its own module and in all the modules inside it; `pub` also makes it visible wherever its parent module is visible.** So a child can use its parent's private items, but a parent can't use its child's private items.
+
+      ### Common mistakes
+
+      - **`pub` on the function but not on the module.** If `vegetables` weren't `pub`, `main` would get ``error[E0603]: module `vegetables` is private``, even though `harvest` is `pub`. Every step of the path has to be visible.
+      - **Expecting a module to see its parent's names automatically.** Modules aren't nested blocks; the next step shows how to reach outward with paths.
+
+      **Your turn:** fill in the blanks: declare the module `scoreboard`, and make `record` public so `main` can call it. The program prints `Ferris: 120 pts`.
+    fill: |
+      [[mod]] scoreboard {
+          [[pub]] fn record(player: &str, points: u32) -> String {
+              format!("{player}: {points} pts")
+          }
+      }
+
+      fn main() {
+          println!("{}", scoreboard::record("Ferris", 120));
+      }
+    hints:
+      - A module is declared with the keyword `mod`.
+      - Items are private by default. Put `pub` in front of `fn` so `main` can call it.
+    tests:
+      - expect: "Ferris: 120 pts"
+    more:
+      - task: |
+          Move the two conversion functions into a module named `temperature`, and make them public, so that `temperature::c_to_f` and `temperature::f_to_c` work. The hidden tests call them through the module path.
+        seed: |
+          fn c_to_f(c: f64) -> f64 {
+              c * 9.0 / 5.0 + 32.0
+          }
+
+          fn f_to_c(f: f64) -> f64 {
+              (f - 32.0) * 5.0 / 9.0
+          }
+        solution: |
+          mod temperature {
+              pub fn c_to_f(c: f64) -> f64 {
+                  c * 9.0 / 5.0 + 32.0
+              }
+
+              pub fn f_to_c(f: f64) -> f64 {
+                  (f - 32.0) * 5.0 / 9.0
+              }
+          }
+        harness: |
+          #[test]
+          fn boiling_point_in_fahrenheit() {
+              assert_eq!(temperature::c_to_f(100.0), 212.0, "temperature::c_to_f(100.0)");
+          }
+
+          #[test]
+          fn freezing_point_in_celsius() {
+              assert_eq!(temperature::f_to_c(32.0), 0.0, "temperature::f_to_c(32.0)");
+          }
+
+          #[test]
+          fn minus_forty_is_the_same_in_both() {
+              assert_eq!(temperature::c_to_f(-40.0), -40.0, "temperature::c_to_f(-40.0)");
+              assert_eq!(temperature::f_to_c(-40.0), -40.0, "temperature::f_to_c(-40.0)");
+          }
+        hints:
+          - "Wrap both functions in `mod temperature { ... }`."
+          - "Inside the module, write `pub fn c_to_f` and `pub fn f_to_c`."
+      - task: |
+          Build this module structure from scratch:
+
+          - a module `shop` containing a **public** module `pricing`;
+          - in `pricing`: a public function `with_tax(cents: u32) -> u32` that adds 20% (`cents * 120 / 100`) and then rounds **down** to a multiple of 10 using a **private** helper `round_to_ten(cents: u32) -> u32` (`cents / 10 * 10`);
+          - in `shop`: a public function `receipt(cents: u32) -> String` that returns `"total: 1200 cents"` for `1000`, using `pricing::with_tax`.
+
+          The tests call `shop::pricing::with_tax` and `shop::receipt`.
+        seed: |
+          // build the modules here
+        solution: |
+          // build the modules here
+          mod shop {
+              pub mod pricing {
+                  pub fn with_tax(cents: u32) -> u32 {
+                      round_to_ten(cents * 120 / 100)
+                  }
+
+                  fn round_to_ten(cents: u32) -> u32 {
+                      cents / 10 * 10
+                  }
+              }
+
+              pub fn receipt(cents: u32) -> String {
+                  format!("total: {} cents", pricing::with_tax(cents))
+              }
+          }
+        require:
+          - pattern: '(?<!pub\s)fn\s+round_to_ten'
+            message: Keep `round_to_ten` private (no `pub`).
+        harness: |
+          #[test]
+          fn adds_twenty_percent() {
+              assert_eq!(shop::pricing::with_tax(1000), 1200, "shop::pricing::with_tax(1000)");
+          }
+
+          #[test]
+          fn rounds_down_to_ten() {
+              assert_eq!(shop::pricing::with_tax(999), 1190, "shop::pricing::with_tax(999)");
+          }
+
+          #[test]
+          fn receipt_shows_the_total() {
+              assert_eq!(shop::receipt(1000), "total: 1200 cents", "shop::receipt(1000)");
+          }
+
+          #[test]
+          fn zero_costs_nothing() {
+              assert_eq!(shop::receipt(0), "total: 0 cents", "shop::receipt(0)");
+          }
+        hints:
+          - "The shape is `mod shop { pub mod pricing { pub fn with_tax ... fn round_to_ten ... } pub fn receipt ... }`."
+          - "Inside `shop`, `receipt` can call `pricing::with_tax(cents)`; inside `pricing`, `with_tax` can call `round_to_ten` by its plain name."
+
+  - title: "Paths: crate, super and self"
+    id: modules-2
+    text: |
+      A **path** names an item. There are two kinds:
+
+      - **Absolute** paths start at the crate root with `crate::`, like a full address: `crate::restaurant::kitchen::cook`.
+      - **Relative** paths start from the current module: a child's name (`kitchen::cook`), `super::` (the parent module) or `self::` (this module; rarely needed).
+
+      The **crate root** is the top of the module tree: the file `main.rs` (or `lib.rs`) itself. Everything you write at the top level, like `fn main`, lives there. The module tree of the next example:
+
+      ```text
+      crate                 (main.rs, the crate root)
+      ├── fn log
+      ├── fn main
+      └── mod restaurant
+          ├── fn open
+          ├── fn ring_bell
+          └── mod kitchen
+              ├── fn cook
+              └── fn prep
+      ```
+
+      ```rust run
+      fn log(msg: &str) {
+          println!("[log] {msg}");
+      }
+
+      mod restaurant {
+          pub fn open() {
+              crate::log("opening");   // absolute: from the crate root
+              kitchen::cook("soup");   // relative: kitchen is a child of restaurant
+          }
+
+          fn ring_bell() {
+              println!("ding!");
+          }
+
+          pub mod kitchen {
+              pub fn cook(dish: &str) {
+                  prep(dish);          // same module: just the name
+                  println!("{dish} is ready");
+                  super::ring_bell();  // the parent module, restaurant
+              }
+
+              fn prep(dish: &str) {
+                  println!("chopping for {dish}");
+              }
+          }
+      }
+
+      fn main() {
+          restaurant::open();
+          restaurant::kitchen::cook("salad");
+      }
+      ```
+
+      ```output
+      [log] opening
+      chopping for soup
+      soup is ready
+      ding!
+      chopping for salad
+      salad is ready
+      ding!
+      ```
+
+      - `super::ring_bell()`: `kitchen` lives inside `restaurant`, so `super` is `restaurant`. A child may use its parent's private items, so `ring_bell` doesn't need `pub`.
+      - `crate::log(...)`: from anywhere, `crate::` starts at the root. The root's private items are visible everywhere in the crate, because every module is inside the root.
+      - `main` is in the root, so `restaurant::...` from `main` is relative and absolute at the same time.
+
+      **Which kind should you write?** Absolute `crate::` paths keep working when you move the code that *uses* them; relative `super::` paths keep working when you move a module *together with* its parent. Many teams prefer `crate::` in general for clarity, and `super::` for close relatives, most famously `use super::*;` in test modules (the testing module).
+
+      ### Common mistake: names from outside the module
+
+      A module does **not** see the names of the scope around it, unlike a block inside a function:
+
+      ```rust compile_fail
+      fn log(msg: &str) {
+          println!("[log] {msg}");
+      }
+
+      mod restaurant {
+          pub fn open() {
+              log("opening");
+          }
+      }
+
+      fn main() {
+          restaurant::open();
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find function `log` in this scope
+      ```
+
+      The compiler suggests `consider importing this function: use crate::log;`. Either write the path (`crate::log("opening")` or `super::log(...)`) or bring the name in with `use`, the next step.
+
+      **Your turn:** the starter doesn't compile: inside `teller::withdraw`, the calls to `fee` and `audit` can't find those functions. Give each call the right path: `fee` lives in the parent module `bank` (use `super::`), and `audit` lives in the crate root (use `crate::`). The program should print:
+
+      ```
+      audit: withdrawal
+      balance: 68
+      ```
+    seed: |
+      fn audit(event: &str) {
+          println!("audit: {event}");
+      }
+
+      mod bank {
+          fn fee() -> u32 {
+              2
+          }
+
+          pub mod teller {
+              pub fn withdraw(balance: u32, amount: u32) -> u32 {
+                  let total = amount + fee();
+                  audit("withdrawal");
+                  balance - total
+              }
+          }
+      }
+
+      fn main() {
+          let left = bank::teller::withdraw(100, 30);
+          println!("balance: {left}");
+      }
+    solution: |
+      fn audit(event: &str) {
+          println!("audit: {event}");
+      }
+
+      mod bank {
+          fn fee() -> u32 {
+              2
+          }
+
+          pub mod teller {
+              pub fn withdraw(balance: u32, amount: u32) -> u32 {
+                  let total = amount + super::fee();
+                  crate::audit("withdrawal");
+                  balance - total
+              }
+          }
+      }
+
+      fn main() {
+          let left = bank::teller::withdraw(100, 30);
+          println!("balance: {left}");
+      }
+    require:
+      - pattern: 'super::fee'
+        message: "Reach the parent module's `fee` with `super::fee()`."
+      - pattern: 'crate::audit'
+        message: "Reach the root's `audit` with `crate::audit(...)`."
+    hints:
+      - "`teller` is inside `bank`, so `bank`'s `fee` is `super::fee()`."
+      - "`audit` is at the top of the file, the crate root: `crate::audit(\"withdrawal\")`."
+    more:
+      - task: |
+          Fill in the two path prefixes: `heal` (in `game::player`) needs `max_hp` from its parent module `game`, and `price_with_bonus` (in `shop`) needs `bonus` from the crate root. The program prints:
+
+          ```
+          80
+          100
+          15
+          ```
+        fill: |
+          mod game {
+              fn max_hp() -> u32 {
+                  100
+              }
+
+              pub mod player {
+                  pub fn heal(hp: u32) -> u32 {
+                      (hp + 30).min([[super‖crate::game]]::max_hp())
+                  }
+              }
+          }
+
+          fn bonus() -> u32 {
+              5
+          }
+
+          mod shop {
+              pub fn price_with_bonus(price: u32) -> u32 {
+                  price - [[crate‖super]]::bonus()
+              }
+          }
+
+          fn main() {
+              println!("{}", game::player::heal(50));
+              println!("{}", game::player::heal(90));
+              println!("{}", shop::price_with_bonus(20));
+          }
+        hints:
+          - "`player` is inside `game`, so `game` is its `super`."
+          - "`bonus` is in the crate root, which `crate::` names from anywhere."
+      - task: |
+          Build this module tree. `shout` is given at the root.
+
+          ```text
+          crate
+          ├── fn shout(s: &str) -> String       (given: uppercases and adds "!")
+          └── mod notify
+              ├── pub fn alert(msg: &str) -> String
+              │       "[ALERT] " followed by shout(msg)
+              └── pub mod email
+                  └── pub fn subject(msg: &str) -> String
+                          "Subject: " followed by alert(msg)
+          ```
+
+          So `notify::alert("disk full")` is `"[ALERT] DISK FULL!"` and `notify::email::subject("disk full")` is `"Subject: [ALERT] DISK FULL!"`. Reach `shout` and `alert` with paths (`crate::` or `super::`); don't copy their code.
+        seed: |
+          fn shout(s: &str) -> String {
+              format!("{}!", s.to_uppercase())
+          }
+
+          // mod notify { ... }
+        solution: |
+          fn shout(s: &str) -> String {
+              format!("{}!", s.to_uppercase())
+          }
+
+          mod notify {
+              pub fn alert(msg: &str) -> String {
+                  format!("[ALERT] {}", crate::shout(msg))
+              }
+
+              pub mod email {
+                  pub fn subject(msg: &str) -> String {
+                      format!("Subject: {}", super::alert(msg))
+                  }
+              }
+          }
+        require:
+          - pattern: '(crate|super)::shout'
+            message: "Call the root's `shout` with a path: `crate::shout(msg)`."
+          - pattern: '(super|crate::notify)::alert'
+            message: "In `email`, call `alert` with a path: `super::alert(msg)`."
+        harness: |
+          #[test]
+          fn alert_shouts_the_message() {
+              assert_eq!(notify::alert("disk full"), "[ALERT] DISK FULL!", "notify::alert(\"disk full\")");
+          }
+
+          #[test]
+          fn email_subject_wraps_the_alert() {
+              assert_eq!(notify::email::subject("disk full"), "Subject: [ALERT] DISK FULL!", "notify::email::subject(\"disk full\")");
+          }
+
+          #[test]
+          fn works_with_short_messages() {
+              assert_eq!(notify::email::subject("hi"), "Subject: [ALERT] HI!", "notify::email::subject(\"hi\")");
+          }
+        hints:
+          - "`alert` returns `format!(\"[ALERT] {}\", crate::shout(msg))`."
+          - "Inside `pub mod email`, `subject` returns `format!(\"Subject: {}\", super::alert(msg))`."
+
+  - title: "use: shortcuts for long paths"
+    id: modules-3
+    text: |
+      Writing `crate::restaurant::kitchen::cook` over and over gets old. `use` creates a **shortcut**: a local name for a path, valid in the module where you write it.
+
+      ```rust run
+      mod shapes {
+          pub mod circle {
+              pub fn area(r: f64) -> f64 {
+                  std::f64::consts::PI * r * r
+              }
+          }
+
+          pub mod square {
+              pub fn area(side: f64) -> f64 {
+                  side * side
+              }
+          }
+      }
+
+      use shapes::circle;
+      use shapes::square::area as square_area;
+      use std::collections::{BTreeMap, HashSet};
+
+      fn main() {
+          println!("{:.2}", circle::area(1.0));
+          println!("{:.2}", square_area(3.0));
+
+          let mut stock = BTreeMap::new();
+          stock.insert("bolts", 40);
+          let mut seen = HashSet::new();
+          seen.insert("bolts");
+          println!("{} {}", stock.len(), seen.len());
+      }
+      ```
+
+      ```output
+      3.14
+      9.00
+      1 1
+      ```
+
+      | Form | Brings into scope |
+      |---|---|
+      | `use a::b::c;` | `c` |
+      | `use a::b::{c, d};` | `c` and `d` (braces can nest: `use std::{fmt, io::{self, Read}};`) |
+      | `use a::b::{self, c};` | `b` itself, and `c` |
+      | `use a::b::c as other;` | `c`, under the name `other` |
+      | `use a::b::*;` | everything public in `b` (a **glob** import) |
+
+      ### What reviewers expect
+
+      These are the conventions from the Rust book, and what `cargo fmt` plus a code review will push you toward:
+
+      - **Functions**: import the parent module and call `module::function()`: `use std::io;` then `io::stdin()`. The call shows the function isn't local.
+      - **Types** (structs, enums, traits): import the type itself: `use std::collections::HashMap;` then `HashMap::new()`.
+      - **Two things with the same name**: keep their modules (`fmt::Result` vs `io::Result`), or rename one with `as`.
+      - **Globs**: avoid them in normal code, since readers can't tell where names come from. They're fine for preludes (`use rayon::prelude::*;`) and for `use super::*;` in test modules.
+      - Group `use` lines at the top of the module; `cargo fmt` sorts them, and rust-analyzer can add them for you.
+
+      ### use is per module
+
+      A `use` only applies to the module it's written in. Modules inside it don't inherit it:
+
+      ```rust compile_fail
+      use std::collections::HashMap;
+
+      mod stats {
+          pub fn count(words: &[&str]) -> HashMap<String, usize> {
+              let mut counts = HashMap::new();
+              for w in words {
+                  *counts.entry(w.to_string()).or_insert(0) += 1;
+              }
+              counts
+          }
+      }
+
+      fn main() {
+          println!("{}", stats::count(&["a", "b", "a"]).len());
+      }
+      ```
+
+      ```error
+      error[E0425]: cannot find type `HashMap` in this scope
+      ```
+
+      Move the `use std::collections::HashMap;` line *inside* `mod stats`, where the code that needs it is. (The compiler also warns that the root's `use` is now unused.)
+
+      **Your turn:** the `main` function uses `Item`, `stock::restock`, `report::line` and `BTreeMap`, but nothing brings them into scope. Add `use` lines (and don't change `main` or the modules) so the program compiles and prints:
+
+      ```
+      bolts     55
+      ```
+    seed: |
+      mod warehouse {
+          pub mod stock {
+              pub struct Item {
+                  pub name: String,
+                  pub qty: u32,
+              }
+
+              pub fn restock(item: &mut Item, amount: u32) {
+                  item.qty += amount;
+              }
+          }
+
+          pub mod report {
+              pub fn line(name: &str, qty: u32) -> String {
+                  format!("{name:<8}{qty:>4}")
+              }
+          }
+      }
+
+      // add your use lines here
+
+      fn main() {
+          let mut bolts = Item { name: String::from("bolts"), qty: 40 };
+          stock::restock(&mut bolts, 15);
+          let mut totals = BTreeMap::new();
+          totals.insert(bolts.name.clone(), bolts.qty);
+          for (name, qty) in &totals {
+              println!("{}", report::line(name, *qty));
+          }
+      }
+    solution: |
+      mod warehouse {
+          pub mod stock {
+              pub struct Item {
+                  pub name: String,
+                  pub qty: u32,
+              }
+
+              pub fn restock(item: &mut Item, amount: u32) {
+                  item.qty += amount;
+              }
+          }
+
+          pub mod report {
+              pub fn line(name: &str, qty: u32) -> String {
+                  format!("{name:<8}{qty:>4}")
+              }
+          }
+      }
+
+      // add your use lines here
+      use std::collections::BTreeMap;
+      use warehouse::report;
+      use warehouse::stock::{self, Item};
+
+      fn main() {
+          let mut bolts = Item { name: String::from("bolts"), qty: 40 };
+          stock::restock(&mut bolts, 15);
+          let mut totals = BTreeMap::new();
+          totals.insert(bolts.name.clone(), bolts.qty);
+          for (name, qty) in &totals {
+              println!("{}", report::line(name, *qty));
+          }
+      }
+    require:
+      - pattern: 'use\s+std::collections::(BTreeMap|\{[^}]*BTreeMap)'
+        message: "Bring `BTreeMap` in with `use std::collections::BTreeMap;`."
+      - pattern: 'use\s+(crate::)?warehouse::'
+        message: "Import from the `warehouse` module with `use warehouse::...;` lines."
+      - pattern: 'let\s+mut\s+bolts\s*=\s*Item\s*\{'
+        message: "Keep `main` as it is: it creates the item with `Item { ... }`."
+    hints:
+      - "`main` needs four names: `BTreeMap` (from `std::collections`), `Item` and `stock` (from `warehouse::stock`), and `report` (from `warehouse`)."
+      - "`use warehouse::stock::{self, Item};` brings in both the module `stock` and the type `Item`."
+    tests:
+      - expect: "bolts     55"
+    more:
+      - task: |
+          Two modules each have a function called `distance`. Add two `use` lines with `as` so `main` can call the metric one as `km` and the imperial one as `miles`. The program prints:
+
+          ```
+          5.0 km
+          3.1 mi
+          ```
+        seed: |
+          mod metric {
+              pub fn distance(km: f64) -> String {
+                  format!("{km:.1} km")
+              }
+          }
+
+          mod imperial {
+              pub fn distance(km: f64) -> String {
+                  format!("{:.1} mi", km * 0.621371)
+              }
+          }
+
+          // add two use lines with `as`
+
+          fn main() {
+              println!("{}", km(5.0));
+              println!("{}", miles(5.0));
+          }
+        solution: |
+          mod metric {
+              pub fn distance(km: f64) -> String {
+                  format!("{km:.1} km")
+              }
+          }
+
+          mod imperial {
+              pub fn distance(km: f64) -> String {
+                  format!("{:.1} mi", km * 0.621371)
+              }
+          }
+
+          // add two use lines with `as`
+          use imperial::distance as miles;
+          use metric::distance as km;
+
+          fn main() {
+              println!("{}", km(5.0));
+              println!("{}", miles(5.0));
+          }
+        require:
+          - pattern: 'use\s+(crate::)?metric::distance\s+as\s+km\s*;'
+            message: "Write `use metric::distance as km;`."
+          - pattern: 'use\s+(crate::)?imperial::distance\s+as\s+miles\s*;'
+            message: "Write `use imperial::distance as miles;`."
+        hints:
+          - "`use metric::distance as km;` makes `km(...)` call `metric::distance`."
+          - "Do the same for `imperial::distance` with the name `miles`."
+      - task: |
+          Finish the module `stats`: `stats::word_counts(text: &str) -> BTreeMap<String, usize>` counts how many times each word appears (split on whitespace, lowercase the words). The starter has a `use` line, but in the wrong place: fix it so `stats` can name `BTreeMap`, then write the function.
+        seed: |
+          use std::collections::BTreeMap;
+
+          mod stats {
+              pub fn word_counts(text: &str) -> BTreeMap<String, usize> {
+                  todo!()
+              }
+          }
+        solution: |
+          mod stats {
+              use std::collections::BTreeMap;
+
+              pub fn word_counts(text: &str) -> BTreeMap<String, usize> {
+                  let mut counts = BTreeMap::new();
+                  for word in text.split_whitespace() {
+                      *counts.entry(word.to_lowercase()).or_insert(0) += 1;
+                  }
+                  counts
+              }
+          }
+        require:
+          - pattern: 'mod\s+stats\s*\{\s*use\s+std::collections::'
+            message: "Put the `use std::collections::BTreeMap;` line inside `mod stats`, at its top."
+        harness: |
+          #[test]
+          fn counts_each_word() {
+              let counts = stats::word_counts("the crab and the sea");
+              assert_eq!(counts.get("the"), Some(&2), "count of \"the\"");
+              assert_eq!(counts.get("crab"), Some(&1), "count of \"crab\"");
+              assert_eq!(counts.len(), 4, "number of different words");
+          }
+
+          #[test]
+          fn ignores_case() {
+              let counts = stats::word_counts("Rust rust RUST");
+              assert_eq!(counts.get("rust"), Some(&3), "count of \"rust\"");
+          }
+
+          #[test]
+          fn empty_text_has_no_words() {
+              assert_eq!(stats::word_counts("   ").len(), 0, "stats::word_counts(\"   \").len()");
+          }
+        hints:
+          - "A `use` at the crate root doesn't reach into `mod stats`. Move the line inside the module's braces."
+          - "Count with `*counts.entry(word.to_lowercase()).or_insert(0) += 1;` for each word of `text.split_whitespace()`."
+
+  - title: Struct fields, privacy and pub(crate)
+    id: modules-4
+    text: |
+      Privacy also applies to the fields of a struct. `pub struct` makes the *type* usable outside its module, but each field stays private unless it's marked `pub` too. That's how Rust protects **invariants**: rules that must always hold, like "a balance never goes below zero". If only the module's own methods can touch the field, the rule is checked in exactly one place.
+
+      ```rust run
+      mod bank {
+          pub struct Account {
+              pub owner: String,
+              balance: u64,
+          }
+
+          impl Account {
+              pub fn new(owner: &str) -> Account {
+                  Account { owner: owner.to_string(), balance: 0 }
+              }
+
+              pub fn deposit(&mut self, amount: u64) {
+                  self.balance += amount;
+              }
+
+              pub fn withdraw(&mut self, amount: u64) -> Result<(), String> {
+                  if amount > self.balance {
+                      return Err(format!("insufficient funds: have {}, need {amount}", self.balance));
+                  }
+                  self.balance -= amount;
+                  Ok(())
+              }
+
+              pub fn balance(&self) -> u64 {
+                  self.balance
+              }
+          }
+      }
+
+      fn main() {
+          let mut acct = bank::Account::new("Ann");
+          acct.deposit(100);
+          println!("{:?}", acct.withdraw(30));
+          println!("{:?}", acct.withdraw(500));
+          println!("{} has {}", acct.owner, acct.balance());
+      }
+      ```
+
+      ```output
+      Ok(())
+      Err("insufficient funds: have 70, need 500")
+      Ann has 70
+      ```
+
+      - Outside `bank`, code can read and change `owner` (it's `pub`) but can't touch `balance`. The only ways to change the balance are `deposit` and `withdraw`, which keep it valid.
+      - The **getter** `balance()` gives read-only access. Naming it like the field (`balance`, not `get_balance`) is the Rust convention.
+      - Because a field is private, code outside the module can't build an `Account` with a struct literal. It has to go through `new`: the **constructor** pattern.
+
+      ### The errors you'll see
+
+      Reading a private field:
+
+      ```rust compile_fail
+      mod bank {
+          pub struct Account {
+              pub owner: String,
+              balance: u64,
+          }
+
+          impl Account {
+              pub fn new(owner: &str) -> Account {
+                  Account { owner: owner.to_string(), balance: 0 }
+              }
+          }
+      }
+
+      fn main() {
+          let acct = bank::Account::new("Ann");
+          println!("{} has {}", acct.owner, acct.balance);
+      }
+      ```
+
+      ```error
+      error[E0616]: field `balance` of struct `Account` is private
+      ```
+
+      Building the struct directly, skipping the constructor:
+
+      ```rust compile_fail
+      mod bank {
+          pub struct Account {
+              pub owner: String,
+              balance: u64,
+          }
+      }
+
+      fn main() {
+          let acct = bank::Account { owner: String::from("Ann"), balance: 1_000_000 };
+          println!("{}", acct.owner);
+      }
+      ```
+
+      ```error
+      error[E0451]: field `balance` of struct `Account` is private
+      ```
+
+      Nice try, Ann.
+
+      ### Enums are different
+
+      When an enum is `pub`, all its variants (and their data) are public too. An enum with hidden variants would be useless: you couldn't `match` on it.
+
+      ### Finer control: pub(crate) and pub(super)
+
+      | Written | Visible to |
+      |---|---|
+      | `pub` | everyone who can see the parent module; in a library, other crates too |
+      | `pub(crate)` | the whole crate, but never other crates |
+      | `pub(super)` | the parent module (and the parent's other children) |
+      | nothing | this module and the modules inside it |
+
+      ```rust run
+      mod app {
+          pub(crate) fn version() -> &'static str {
+              "1.4.0"
+          }
+
+          pub mod ui {
+              pub(super) fn theme() -> &'static str {
+                  "dark"
+              }
+          }
+
+          pub fn banner() -> String {
+              format!("v{} ({})", version(), ui::theme())
+          }
+      }
+
+      fn main() {
+          println!("{}", app::banner());
+          println!("{}", app::version());
+      }
+      ```
+
+      ```output
+      v1.4.0 (dark)
+      1.4.0
+      ```
+
+      `main` may call `app::version()` (it's `pub(crate)`), but `app::ui::theme()` would fail with ``error[E0603]: function `theme` is private``: only `app` can see it. In a program (a binary crate), `pub` and `pub(crate)` behave the same. The difference matters in **libraries**, where every `pub` item is part of your public API, a promise other crates rely on. `pub(crate)` lets modules share helpers without making that promise.
+
+      **Your turn:** finish the `inventory` module. `Item` has a public `name` and a private `qty`, so the quantity can never go negative. Implement:
+
+      - `Item::new(name: &str, qty: u32) -> Item`
+      - `qty(&self) -> u32`, the getter
+      - `add(&mut self, amount: u32)`
+      - `remove(&mut self, amount: u32) -> Result<(), String>`: if there aren't enough, return `Err(format!("only {} left", qty))` and change nothing.
+
+      The tests use the item through `inventory::Item`.
+    seed: |
+      mod inventory {
+          pub struct Item {
+              pub name: String,
+              qty: u32,
+          }
+
+          impl Item {
+              pub fn new(name: &str, qty: u32) -> Item {
+                  todo!()
+              }
+
+              pub fn qty(&self) -> u32 {
+                  todo!()
+              }
+
+              pub fn add(&mut self, amount: u32) {
+                  todo!()
+              }
+
+              pub fn remove(&mut self, amount: u32) -> Result<(), String> {
+                  todo!()
+              }
+          }
+      }
+    solution: |
+      mod inventory {
+          pub struct Item {
+              pub name: String,
+              qty: u32,
+          }
+
+          impl Item {
+              pub fn new(name: &str, qty: u32) -> Item {
+                  Item { name: name.to_string(), qty }
+              }
+
+              pub fn qty(&self) -> u32 {
+                  self.qty
+              }
+
+              pub fn add(&mut self, amount: u32) {
+                  self.qty += amount;
+              }
+
+              pub fn remove(&mut self, amount: u32) -> Result<(), String> {
+                  if amount > self.qty {
+                      return Err(format!("only {} left", self.qty));
+                  }
+                  self.qty -= amount;
+                  Ok(())
+              }
+          }
+      }
+    forbid:
+      - pattern: 'pub\s+qty\s*:'
+        message: Keep `qty` private; that's the point of the getter and the methods.
+    harness: |
+      #[test]
+      fn new_item_has_its_quantity() {
+          let item = inventory::Item::new("bolt", 5);
+          assert_eq!(item.qty(), 5, "Item::new(\"bolt\", 5).qty()");
+      }
+
+      #[test]
+      fn name_is_public() {
+          let item = inventory::Item::new("bolt", 5);
+          assert_eq!(item.name, "bolt", "item.name");
+      }
+
+      #[test]
+      fn adding_increases_the_quantity() {
+          let mut item = inventory::Item::new("nut", 2);
+          item.add(8);
+          assert_eq!(item.qty(), 10, "qty after add(8) to 2");
+      }
+
+      #[test]
+      fn removing_decreases_the_quantity() {
+          let mut item = inventory::Item::new("nut", 10);
+          assert_eq!(item.remove(4), Ok(()), "remove(4) from 10");
+          assert_eq!(item.qty(), 6, "qty after remove(4)");
+      }
+
+      #[test]
+      fn removing_too_many_is_an_error_and_changes_nothing() {
+          let mut item = inventory::Item::new("saw", 3);
+          assert_eq!(item.remove(5), Err(String::from("only 3 left")), "remove(5) from 3");
+          assert_eq!(item.qty(), 3, "qty after the failed remove");
+      }
+    hints:
+      - "`new` returns `Item { name: name.to_string(), qty }`; the getter returns `self.qty`."
+      - "In `remove`, check `if amount > self.qty { return Err(format!(\"only {} left\", self.qty)); }` before subtracting."
+    more:
+      - task: |
+          A thermostat must always target a temperature between `10.0` and `30.0`. Finish the module so that invariant can't be broken: `new` and `set` **clamp** the value into that range (`t.clamp(10.0, 30.0)` does exactly that), and `target()` is the getter. The field stays private.
+        seed: |
+          mod thermostat {
+              pub struct Thermostat {
+                  target: f64,
+              }
+
+              impl Thermostat {
+                  pub fn new(target: f64) -> Thermostat {
+                      Thermostat { target }
+                  }
+
+                  pub fn set(&mut self, target: f64) {
+                      self.target = target;
+                  }
+
+                  pub fn target(&self) -> f64 {
+                      self.target
+                  }
+              }
+          }
+        solution: |
+          mod thermostat {
+              pub struct Thermostat {
+                  target: f64,
+              }
+
+              impl Thermostat {
+                  pub fn new(target: f64) -> Thermostat {
+                      Thermostat { target: target.clamp(10.0, 30.0) }
+                  }
+
+                  pub fn set(&mut self, target: f64) {
+                      self.target = target.clamp(10.0, 30.0);
+                  }
+
+                  pub fn target(&self) -> f64 {
+                      self.target
+                  }
+              }
+          }
+        forbid:
+          - pattern: 'pub\s+target\s*:'
+            message: Keep the `target` field private.
+        harness: |
+          #[test]
+          fn normal_values_are_kept() {
+              assert_eq!(thermostat::Thermostat::new(21.5).target(), 21.5, "Thermostat::new(21.5).target()");
+          }
+
+          #[test]
+          fn new_clamps_too_hot() {
+              assert_eq!(thermostat::Thermostat::new(45.0).target(), 30.0, "Thermostat::new(45.0).target()");
+          }
+
+          #[test]
+          fn set_clamps_too_cold() {
+              let mut t = thermostat::Thermostat::new(20.0);
+              t.set(-5.0);
+              assert_eq!(t.target(), 10.0, "target after set(-5.0)");
+          }
+
+          #[test]
+          fn set_changes_the_target() {
+              let mut t = thermostat::Thermostat::new(20.0);
+              t.set(25.0);
+              assert_eq!(t.target(), 25.0, "target after set(25.0)");
+          }
+        hints:
+          - "Every place that stores a target must clamp it: `new` and `set`."
+          - "`Thermostat { target: target.clamp(10.0, 30.0) }` and `self.target = target.clamp(10.0, 30.0);`"
+      - task: |
+          `main` doesn't compile: it reaches into `Queue`'s private fields. Rewrite **only `main`** so it uses the public methods `Queue::new`, `open`, `count` and `list` (don't change the module, and don't make fields public). The program should print:
+
+          ```
+          opened #1
+          opened #2
+          2 tickets
+          #1 Login fails
+          #2 Slow search
+          ```
+        seed: |
+          mod tickets {
+              pub struct Queue {
+                  items: Vec<String>,
+                  next_id: u32,
+              }
+
+              impl Queue {
+                  pub fn new(first_id: u32) -> Queue {
+                      Queue { items: Vec::new(), next_id: first_id }
+                  }
+
+                  pub fn open(&mut self, title: &str) -> u32 {
+                      let id = self.next_id;
+                      self.next_id += 1;
+                      self.items.push(format!("#{id} {title}"));
+                      id
+                  }
+
+                  pub fn count(&self) -> usize {
+                      self.items.len()
+                  }
+
+                  pub fn list(&self) -> &[String] {
+                      &self.items
+                  }
+              }
+          }
+
+          fn main() {
+              let mut q = tickets::Queue { items: Vec::new(), next_id: 1 };
+              q.items.push(String::from("#1 Login fails"));
+              println!("opened #1");
+              q.items.push(String::from("#2 Slow search"));
+              println!("opened #2");
+              println!("{} tickets", q.items.len());
+              for t in &q.items {
+                  println!("{t}");
+              }
+          }
+        solution: |
+          mod tickets {
+              pub struct Queue {
+                  items: Vec<String>,
+                  next_id: u32,
+              }
+
+              impl Queue {
+                  pub fn new(first_id: u32) -> Queue {
+                      Queue { items: Vec::new(), next_id: first_id }
+                  }
+
+                  pub fn open(&mut self, title: &str) -> u32 {
+                      let id = self.next_id;
+                      self.next_id += 1;
+                      self.items.push(format!("#{id} {title}"));
+                      id
+                  }
+
+                  pub fn count(&self) -> usize {
+                      self.items.len()
+                  }
+
+                  pub fn list(&self) -> &[String] {
+                      &self.items
+                  }
+              }
+          }
+
+          fn main() {
+              let mut q = tickets::Queue::new(1);
+              let first = q.open("Login fails");
+              println!("opened #{first}");
+              let second = q.open("Slow search");
+              println!("opened #{second}");
+              println!("{} tickets", q.count());
+              for t in q.list() {
+                  println!("{t}");
+              }
+          }
+        require:
+          - pattern: 'Queue::new\(\s*1\s*\)'
+            message: "Create the queue with `tickets::Queue::new(1)`."
+          - pattern: 'q\.open\('
+            message: "Open tickets with `q.open(\"...\")`, which returns the new id."
+          - pattern: 'q\.list\(\)'
+            message: "Print the tickets from `q.list()`."
+        forbid:
+          - pattern: 'pub\s+(items|next_id)\s*:'
+            message: Don't make the fields public; use the methods.
+        hints:
+          - "`let mut q = tickets::Queue::new(1);` then `let first = q.open(\"Login fails\");` returns `1`."
+          - "`q.count()` gives the number of tickets and `for t in q.list() { ... }` walks them."
+
+  - title: Re-exports with pub use
+    id: modules-5
+    text: |
+      How you organize modules internally is *your* business. People using your code want short, stable paths. `pub use` brings a name into a module **and** makes it public there: a **re-export**.
+
+      ```rust run
+      mod shop {
+          mod catalog {
+              pub struct Product {
+                  pub name: String,
+                  pub cents: u32,
+              }
+          }
+
+          mod pricing {
+              use super::catalog::Product;
+
+              pub fn total(products: &[Product]) -> u32 {
+                  products.iter().map(|p| p.cents).sum()
+              }
+          }
+
+          pub use catalog::Product;
+          pub use pricing::total;
+      }
+
+      use shop::{total, Product};
+
+      fn main() {
+          let cart = vec![
+              Product { name: String::from("rope"), cents: 1250 },
+              Product { name: String::from("lamp"), cents: 3999 },
+          ];
+          println!("{} items, {} cents", cart.len(), total(&cart));
+          println!("first: {}", cart[0].name);
+      }
+      ```
+
+      ```output
+      2 items, 5249 cents
+      first: rope
+      ```
+
+      - `catalog` and `pricing` are private modules: nobody outside `shop` can write `shop::catalog::Product`.
+      - `pub use catalog::Product;` makes `shop::Product` a public path to the same struct. Users write `shop::Product` and never learn that `catalog` exists. Later you can move `Product` to another module, or split `catalog` in two, and nobody's code breaks.
+
+      The standard library does this all the time. `std::collections::HashMap` is really defined in a private module deep inside `std` and re-exported where you find it. Crates often offer a **prelude** module that re-exports their most-used items, so one glob brings them all in: `use rayon::prelude::*;`. Rust itself has a prelude: that's why `Vec`, `String`, `Option` and `Some` work without any `use`.
+
+      ### A plain use is private
+
+      A `use` without `pub` is a private shortcut for its own module. Others can't go through it:
+
+      ```rust compile_fail
+      mod shop {
+          mod catalog {
+              pub struct Product {
+                  pub name: String,
+              }
+          }
+
+          use catalog::Product;
+
+          pub fn make() -> Product {
+              Product { name: String::from("rope") }
+          }
+      }
+
+      fn main() {
+          let p: shop::Product = shop::make();
+          println!("{}", p.name);
+      }
+      ```
+
+      ```error
+      error[E0603]: struct import `Product` is private
+      ```
+
+      Notice that `shop::make()` itself is fine: you can *receive* a `Product` without being able to *name* its type. Making it `pub use catalog::Product;` fixes the error.
+
+      ### Designing a library's public API
+
+      In a library crate, the paths users can reach are the API you promise to keep working. A common layout keeps the modules private and re-exports the important items at the top (in `lib.rs`), so users write `mycrate::Product` instead of `mycrate::catalog::types::Product`. `pub use` can also rename: `pub use v2::parse as parse_v2;`.
+
+      **Your turn:** the tests use `geometry::Circle` and `geometry::area`, but those live in the private modules `geometry::shapes` and `geometry::math`. Add re-exports to `geometry` (don't move the code, and keep the inner modules private) so the tests compile and pass.
+    seed: |
+      mod geometry {
+          mod shapes {
+              pub struct Circle {
+                  pub radius: f64,
+              }
+          }
+
+          mod math {
+              use super::shapes::Circle;
+
+              pub fn area(c: &Circle) -> f64 {
+                  std::f64::consts::PI * c.radius * c.radius
+              }
+          }
+
+          // re-export Circle and area here
+      }
+    solution: |
+      mod geometry {
+          mod shapes {
+              pub struct Circle {
+                  pub radius: f64,
+              }
+          }
+
+          mod math {
+              use super::shapes::Circle;
+
+              pub fn area(c: &Circle) -> f64 {
+                  std::f64::consts::PI * c.radius * c.radius
+              }
+          }
+
+          // re-export Circle and area here
+          pub use math::area;
+          pub use shapes::Circle;
+      }
+    require:
+      - pattern: 'pub\s+use\s+(self::)?shapes::Circle'
+        message: "Re-export the struct: `pub use shapes::Circle;`"
+      - pattern: 'pub\s+use\s+(self::)?math::area'
+        message: "Re-export the function: `pub use math::area;`"
+    forbid:
+      - pattern: 'pub\s+mod'
+        message: Keep `shapes` and `math` private; re-export the items instead.
+    harness: |
+      #[test]
+      fn circle_is_reachable_from_geometry() {
+          let c = geometry::Circle { radius: 2.0 };
+          assert_eq!(c.radius, 2.0, "geometry::Circle {{ radius: 2.0 }}.radius");
+      }
+
+      #[test]
+      fn area_of_unit_circle_is_pi() {
+          let c = geometry::Circle { radius: 1.0 };
+          assert!((geometry::area(&c) - std::f64::consts::PI).abs() < 1e-9, "geometry::area of radius 1.0 should be pi");
+      }
+
+      #[test]
+      fn area_grows_with_the_square_of_the_radius() {
+          let small = geometry::area(&geometry::Circle { radius: 1.0 });
+          let big = geometry::area(&geometry::Circle { radius: 3.0 });
+          assert!((big / small - 9.0).abs() < 1e-9, "area(radius 3) should be 9 times area(radius 1)");
+      }
+    hints:
+      - "Inside `mod geometry`, `pub use shapes::Circle;` makes `geometry::Circle` a public path."
+      - "Do the same for the function: `pub use math::area;`"
+    more:
+      - task: |
+          Give the `game` module a **prelude**: a public module `prelude` inside `game` that re-exports `Player` and `spawn`, so that one line, `use game::prelude::*;`, brings in everything a user needs. The tests do exactly that.
+        seed: |
+          mod game {
+              pub mod entities {
+                  pub struct Player {
+                      pub name: String,
+                      pub hp: u32,
+                  }
+              }
+
+              pub mod world {
+                  use super::entities::Player;
+
+                  pub fn spawn(name: &str) -> Player {
+                      Player { name: name.to_string(), hp: 100 }
+                  }
+              }
+
+              // add `pub mod prelude { ... }` here
+          }
+        solution: |
+          mod game {
+              pub mod entities {
+                  pub struct Player {
+                      pub name: String,
+                      pub hp: u32,
+                  }
+              }
+
+              pub mod world {
+                  use super::entities::Player;
+
+                  pub fn spawn(name: &str) -> Player {
+                      Player { name: name.to_string(), hp: 100 }
+                  }
+              }
+
+              // add `pub mod prelude { ... }` here
+              pub mod prelude {
+                  pub use super::entities::Player;
+                  pub use super::world::spawn;
+              }
+          }
+        require:
+          - pattern: 'pub\s+mod\s+prelude'
+            message: "Add a public module: `pub mod prelude { ... }` inside `game`."
+        harness: |
+          #[test]
+          fn prelude_brings_in_spawn() {
+              use crate::game::prelude::*;
+              let p = spawn("Ferris");
+              assert_eq!(p.name, "Ferris", "spawn(\"Ferris\").name");
+              assert_eq!(p.hp, 100, "spawn(\"Ferris\").hp");
+          }
+
+          #[test]
+          fn prelude_brings_in_player() {
+              use crate::game::prelude::*;
+              let p = Player { name: String::from("Crab"), hp: 7 };
+              assert_eq!(p.hp, 7, "Player {{ hp: 7 }}.hp");
+          }
+        hints:
+          - "Inside `prelude`, the sibling modules are reached through `super::`: `super::entities::Player`."
+          - "`pub mod prelude { pub use super::entities::Player; pub use super::world::spawn; }`"
+      - task: |
+          Your library has an old parser (`v1::parse`) and a new one (`v2::parse`, which also accepts spaces around the number and `_` separators like `1_000`). Users should call `api::parse` for the new one and `api::parse_legacy` for the old one. Inside `mod api`, add re-exports **with renaming** (`pub use ... as ...`) where needed. Don't copy the functions.
+        seed: |
+          mod v1 {
+              pub fn parse(s: &str) -> Option<u32> {
+                  s.parse().ok()
+              }
+          }
+
+          mod v2 {
+              pub fn parse(s: &str) -> Option<u32> {
+                  s.trim().replace('_', "").parse().ok()
+              }
+          }
+
+          mod api {
+              // re-export v2's parse as `parse` and v1's parse as `parse_legacy`
+          }
+        solution: |
+          mod v1 {
+              pub fn parse(s: &str) -> Option<u32> {
+                  s.parse().ok()
+              }
+          }
+
+          mod v2 {
+              pub fn parse(s: &str) -> Option<u32> {
+                  s.trim().replace('_', "").parse().ok()
+              }
+          }
+
+          mod api {
+              // re-export v2's parse as `parse` and v1's parse as `parse_legacy`
+              pub use crate::v1::parse as parse_legacy;
+              pub use crate::v2::parse;
+          }
+        require:
+          - pattern: 'pub\s+use\s+[\w:]*v1::parse\s+as\s+parse_legacy'
+            message: "Rename while re-exporting: `pub use crate::v1::parse as parse_legacy;`"
+          - pattern: 'pub\s+use\s+[\w:]*v2::parse'
+            message: "Re-export the new parser: `pub use crate::v2::parse;`"
+        harness: |
+          #[test]
+          fn new_parser_accepts_separators() {
+              assert_eq!(api::parse(" 1_000 "), Some(1000), "api::parse(\" 1_000 \")");
+          }
+
+          #[test]
+          fn legacy_parser_is_strict() {
+              assert_eq!(api::parse_legacy(" 1_000 "), None, "api::parse_legacy(\" 1_000 \")");
+              assert_eq!(api::parse_legacy("42"), Some(42), "api::parse_legacy(\"42\")");
+          }
+
+          #[test]
+          fn both_reject_words() {
+              assert_eq!(api::parse("ten"), None, "api::parse(\"ten\")");
+              assert_eq!(api::parse_legacy("ten"), None, "api::parse_legacy(\"ten\")");
+          }
+        hints:
+          - "`v1` and `v2` are in the crate root, so from inside `api` they're `crate::v1` and `crate::v2` (or `super::v1`)."
+          - "`pub use crate::v2::parse;` and `pub use crate::v1::parse as parse_legacy;`"
+
+  - title: Splitting a crate into files
+    id: modules-6
+    text: |
+      So far every module was an inline `mod name { ... }` block in one file (this site compiles a single `main.rs`). In a real project, each module usually gets its own file. The **module tree stays exactly the same**; only where the code is stored changes.
+
+      First, two words people mix up:
+
+      - A **crate** is what the compiler builds in one go: a tree of modules starting at a **crate root** file. A **binary crate** has a `fn main` and becomes a program (root: `src/main.rs`). A **library crate** has no `main`; it's code for other crates to use (root: `src/lib.rs`).
+      - A **package** is what `cargo new` creates: a `Cargo.toml` plus one or more crates (at most one library, any number of binaries).
+
+      The garden from the first step, split into files:
+
+      ```text
+      garden-app/
+      ├── Cargo.toml
+      └── src/
+          ├── main.rs             crate root: declares `mod garden;`
+          ├── garden.rs           the module garden
+          └── garden/
+              └── vegetables.rs   the module garden::vegetables
+      ```
+
+      `src/main.rs`:
+
+      ```rust
+      mod garden; // "the module garden's code is in garden.rs"
+
+      fn main() {
+          garden::report();
+      }
+      ```
+
+      `src/garden.rs`:
+
+      ```rust
+      pub mod vegetables; // "its child vegetables is in garden/vegetables.rs"
+
+      pub fn report() {
+          println!("harvested {} carrots", vegetables::harvest());
+      }
+      ```
+
+      `src/garden/vegetables.rs`:
+
+      ```rust
+      pub fn harvest() -> u32 {
+          12
+      }
+      ```
+
+      And the one-file version, which compiles to exactly the same program:
+
+      ```rust run
+      mod garden {
+          pub mod vegetables {
+              pub fn harvest() -> u32 {
+                  12
+              }
+          }
+
+          pub fn report() {
+              println!("harvested {} carrots", vegetables::harvest());
+          }
+      }
+
+      fn main() {
+          garden::report();
+      }
+      ```
+
+      ```output
+      harvested 12 carrots
+      ```
+
+      The rules:
+
+      - `mod garden;` with a **semicolon** instead of a block means "the body is in another file". The compiler looks for `src/garden.rs`, or the older style `src/garden/mod.rs`.
+      - Inside `garden.rs`, `pub mod vegetables;` looks in a folder named after the parent: `src/garden/vegetables.rs` (or `src/garden/vegetables/mod.rs`).
+      - A file does **not** become a module just by existing. Only a `mod` line in its parent includes it; a forgotten file is silently ignored (rust-analyzer shows "file not included in module tree").
+      - `mod` is not an import. Each module is declared **once**, in its parent. Everywhere else, refer to it with paths and `use`.
+      - `garden.rs` or `garden/mod.rs`? Both work. The newer `garden.rs` style (Rust 2018 and later) avoids an editor full of tabs named `mod.rs`; some older projects still use `mod.rs`. Don't create both for the same module: that's `error[E0761]`.
+
+      Privacy, paths and `use` work exactly as in the inline version: inside `vegetables.rs`, `super::` is `garden`, and `crate::` is still the root.
+
+      ### A library and a binary in one package
+
+      A very common layout puts the logic in a library crate and keeps the binary thin. Tests, benchmarks and other programs can then use the library too.
+
+      ```text
+      inventory/
+      ├── Cargo.toml          [package] name = "inventory"
+      └── src/
+          ├── lib.rs          library crate root
+          ├── stock.rs        the library's module stock
+          └── main.rs         binary crate root
+      ```
+
+      `src/lib.rs`:
+
+      ```rust
+      mod stock;
+
+      pub use stock::Item;
+      ```
+
+      `src/main.rs`:
+
+      ```rust
+      use inventory::Item; // the library crate, named after the package
+
+      fn main() {
+          let bolts = Item::new("bolt", 40);
+          println!("{}: {}", bolts.name, bolts.qty());
+      }
+      ```
+
+      The binary is a *separate crate* that depends on the library: it refers to it by the package name (`inventory::`), and it can only use the library's `pub` items. Inside the library, paths start with `crate::` as usual. (Dashes in a package name become underscores in code: package `my-tool` is `my_tool::`.)
+
+      More binaries go in `src/bin/name.rs` (run with `cargo run --bin name`), examples in `examples/` (`cargo run --example name`), and integration tests in `tests/` (the testing module).
+
+      **Your turn:** here is a project split into three files. Write the same program as **one file**, replacing each `mod name;` line with an inline `mod name { ... }` block that holds that file's code. It should print `Ferris enters with 3 wins`.
+
+      `src/main.rs`:
+
+      ```rust
+      mod arena;
+
+      fn main() {
+          let fighter = arena::fighters::Fighter::new("Ferris", 3);
+          println!("{}", arena::announce(&fighter));
+      }
+      ```
+
+      `src/arena.rs`:
+
+      ```rust
+      pub mod fighters;
+
+      use fighters::Fighter;
+
+      pub fn announce(f: &Fighter) -> String {
+          format!("{} enters with {} wins", f.name, f.wins())
+      }
+      ```
+
+      `src/arena/fighters.rs`:
+
+      ```rust
+      pub struct Fighter {
+          pub name: String,
+          wins: u32,
+      }
+
+      impl Fighter {
+          pub fn new(name: &str, wins: u32) -> Fighter {
+              Fighter { name: name.to_string(), wins }
+          }
+
+          pub fn wins(&self) -> u32 {
+              self.wins
+          }
+      }
+      ```
+    seed: |
+      // src/main.rs, src/arena.rs and src/arena/fighters.rs as one file.
+      // Replace `mod arena;` with `mod arena { ... }` holding arena.rs,
+      // and inside it, `pub mod fighters;` with a block holding fighters.rs.
+
+      fn main() {
+          let fighter = arena::fighters::Fighter::new("Ferris", 3);
+          println!("{}", arena::announce(&fighter));
+      }
+    solution: |
+      // src/main.rs, src/arena.rs and src/arena/fighters.rs as one file.
+      // Replace `mod arena;` with `mod arena { ... }` holding arena.rs,
+      // and inside it, `pub mod fighters;` with a block holding fighters.rs.
+      mod arena {
+          pub mod fighters {
+              pub struct Fighter {
+                  pub name: String,
+                  wins: u32,
+              }
+
+              impl Fighter {
+                  pub fn new(name: &str, wins: u32) -> Fighter {
+                      Fighter { name: name.to_string(), wins }
+                  }
+
+                  pub fn wins(&self) -> u32 {
+                      self.wins
+                  }
+              }
+          }
+
+          use fighters::Fighter;
+
+          pub fn announce(f: &Fighter) -> String {
+              format!("{} enters with {} wins", f.name, f.wins())
+          }
+      }
+
+      fn main() {
+          let fighter = arena::fighters::Fighter::new("Ferris", 3);
+          println!("{}", arena::announce(&fighter));
+      }
+    require:
+      - pattern: 'mod\s+arena\s*\{'
+        message: "Write the arena module inline: `mod arena { ... }`."
+      - pattern: 'pub\s+mod\s+fighters\s*\{'
+        message: "Inside `arena`, write `pub mod fighters { ... }` with the code of fighters.rs."
+    hints:
+      - "The shape is `mod arena { pub mod fighters { ...fighters.rs... } ...the rest of arena.rs... }`, then `fn main`."
+      - "Copy each file's code into its block unchanged: the `use fighters::Fighter;` line and the paths keep working, because the module tree is the same."
+    tests:
+      - expect: "Ferris enters with 3 wins"
+    more:
+      - task: |
+          Here's the library-plus-binary package from the lesson. Write it as one file: an inline `mod inventory { ... }` stands in for the library crate (`src/lib.rs`, with its private module `stock` inside), so that `main.rs`'s line `use inventory::Item;` works unchanged. It should print `bolt: 40`.
+
+          `src/lib.rs`:
+
+          ```rust
+          mod stock;
+
+          pub use stock::Item;
+          ```
+
+          `src/stock.rs`:
+
+          ```rust
+          pub struct Item {
+              pub name: String,
+              qty: u32,
+          }
+
+          impl Item {
+              pub fn new(name: &str, qty: u32) -> Item {
+                  Item { name: name.to_string(), qty }
+              }
+
+              pub fn qty(&self) -> u32 {
+                  self.qty
+              }
+          }
+          ```
+
+          `src/main.rs`:
+
+          ```rust
+          use inventory::Item;
+
+          fn main() {
+              let bolts = Item::new("bolt", 40);
+              println!("{}: {}", bolts.name, bolts.qty());
+          }
+          ```
+        seed: |
+          // src/lib.rs (with src/stock.rs) and src/main.rs as one file.
+          // `mod inventory { ... }` stands in for the library crate.
+
+          use inventory::Item;
+
+          fn main() {
+              let bolts = Item::new("bolt", 40);
+              println!("{}: {}", bolts.name, bolts.qty());
+          }
+        solution: |
+          // src/lib.rs (with src/stock.rs) and src/main.rs as one file.
+          // `mod inventory { ... }` stands in for the library crate.
+          mod inventory {
+              mod stock {
+                  pub struct Item {
+                      pub name: String,
+                      qty: u32,
+                  }
+
+                  impl Item {
+                      pub fn new(name: &str, qty: u32) -> Item {
+                          Item { name: name.to_string(), qty }
+                      }
+
+                      pub fn qty(&self) -> u32 {
+                          self.qty
+                      }
+                  }
+              }
+
+              pub use stock::Item;
+          }
+
+          use inventory::Item;
+
+          fn main() {
+              let bolts = Item::new("bolt", 40);
+              println!("{}: {}", bolts.name, bolts.qty());
+          }
+        require:
+          - pattern: 'mod\s+inventory\s*\{'
+            message: "Write the library as `mod inventory { ... }`."
+          - pattern: 'mod\s+stock\s*\{'
+            message: "Inside `inventory`, write `mod stock { ... }` with the code of stock.rs."
+          - pattern: 'pub\s+use\s+(self::)?stock::Item'
+            message: "Keep lib.rs's re-export: `pub use stock::Item;` inside `inventory`."
+        forbid:
+          - pattern: 'pub\s+mod\s+stock'
+            message: "`stock` is private in lib.rs (`mod stock;`); keep it private and re-export `Item`."
+        hints:
+          - "`mod inventory { mod stock { ...stock.rs... } pub use stock::Item; }`"
+          - "Leave `use inventory::Item;` and `main` exactly as they are."
+        tests:
+          - expect: "bolt: 40"
+      - task: |
+          Design it yourself. Write a one-file program whose inline modules match this file tree exactly:
+
+          ```text
+          src/
+          ├── main.rs        fn main
+          ├── orders.rs      pub struct Order { pub id: u32, pub cents: u32 }
+          │                  pub fn sample() -> Vec<Order>
+          │                      orders #1 (1000 cents) and #2 (250 cents)
+          ├── orders/
+          │   └── tax.rs     pub fn with_vat(cents: u32) -> u32
+          │                      adds 20%: cents * 120 / 100
+          └── report.rs      pub fn line(order: &Order) -> String
+                                 uses orders::tax::with_vat through a crate:: path
+          ```
+
+          `main` prints the report line of every order from `orders::sample()`:
+
+          ```
+          order #1: 1200 cents incl. VAT
+          order #2: 300 cents incl. VAT
+          ```
+        seed: |
+          // the modules go here
+
+          fn main() {
+              // print report::line for every order in orders::sample()
+          }
+        solution: |
+          // the modules go here
+          mod orders {
+              pub mod tax {
+                  pub fn with_vat(cents: u32) -> u32 {
+                      cents * 120 / 100
+                  }
+              }
+
+              pub struct Order {
+                  pub id: u32,
+                  pub cents: u32,
+              }
+
+              pub fn sample() -> Vec<Order> {
+                  vec![Order { id: 1, cents: 1000 }, Order { id: 2, cents: 250 }]
+              }
+          }
+
+          mod report {
+              use crate::orders::Order;
+              use crate::orders::tax::with_vat;
+
+              pub fn line(order: &Order) -> String {
+                  format!("order #{}: {} cents incl. VAT", order.id, with_vat(order.cents))
+              }
+          }
+
+          fn main() {
+              // print report::line for every order in orders::sample()
+              for order in orders::sample() {
+                  println!("{}", report::line(&order));
+              }
+          }
+        require:
+          - pattern: 'mod\s+orders\s*\{'
+            message: "orders.rs becomes `mod orders { ... }`."
+          - pattern: 'pub\s+mod\s+tax\s*\{'
+            message: "orders/tax.rs is a child of orders: `pub mod tax { ... }` inside `orders`."
+          - pattern: 'mod\s+report\s*\{'
+            message: "report.rs becomes `mod report { ... }`."
+          - pattern: 'crate::orders::'
+            message: "In `report`, reach the orders module with a `crate::orders::...` path."
+        hints:
+          - "`orders` holds `pub mod tax { ... }`, the `Order` struct and `sample()`. `report` is a sibling of `orders` at the root."
+          - "In `report`: `use crate::orders::Order;` and `use crate::orders::tax::with_vat;`, then `format!(\"order #{}: {} cents incl. VAT\", order.id, with_vat(order.cents))`."
+        tests:
+          - expect: "order #1: 1200 cents incl. VAT\norder #2: 300 cents incl. VAT"
+
+  - title: "Cargo: dependencies, versions, features, workspaces"
+    id: modules-7
+    text: |
+      Real projects stand on other people's code. **crates.io** is Rust's public registry of crates, and **Cargo** downloads, builds and links them for you. You list what you need in `Cargo.toml`:
+
+      ```toml
+      [package]
+      name = "inventory"
+      version = "0.3.1"
+      edition = "2024"
+
+      [dependencies]
+      serde = { version = "1.0", features = ["derive"] }
+      regex = "1.11"
+      itertools = "0.14"
+      ```
+
+      - `cargo add regex` adds the line for you (with the newest version); `cargo remove regex` takes it out.
+      - On the first build, Cargo picks exact versions and writes them to **Cargo.lock**, so every build (yours, your teammates', CI's) uses the same code. Commit `Cargo.lock`. `cargo update` moves to newer compatible versions on purpose.
+      - In code, a dependency's crate name is the start of a path, like `std`: `use regex::Regex;`. Dashes become underscores: package `serde_json` is `serde_json::`, package `my-utils` would be `my_utils::`.
+
+      This site's compiler has a few popular crates available, as if they were in your `Cargo.toml` (serde, serde_json, anyhow, thiserror, tokio, regex, itertools, rayon, chrono). For example, `itertools` adds extra iterator methods:
+
+      ```rust run
+      use itertools::Itertools;
+
+      fn main() {
+          let scores = vec![30, 10, 20, 10];
+          let line = scores.iter().sorted().dedup().join(" < ");
+          println!("{line}");
+      }
+      ```
+
+      ```output
+      10 < 20 < 30
+      ```
+
+      `use itertools::Itertools;` brings a **trait** into scope. A trait's methods can only be called where the trait is in scope; that's why crates offer preludes, and why forgetting the `use` gives "no method named `sorted` found".
+
+      ### Semantic versioning
+
+      Crate versions are **MAJOR.MINOR.PATCH**, and the numbers carry a promise (**semver**):
+
+      - **PATCH** (1.4.2 to 1.4.3): bug fixes only.
+      - **MINOR** (1.4.2 to 1.5.0): new features, nothing breaks.
+      - **MAJOR** (1.4.2 to 2.0.0): breaking changes; your code may need updating.
+      - Before 1.0, the first non-zero number acts as the major: 0.14 to 0.15 may break things.
+
+      In `Cargo.toml`, `regex = "1.11"` doesn't mean exactly 1.11. It's a **caret requirement** (`^1.11`): any version that semver says is compatible.
+
+      | Requirement | Allows |
+      |---|---|
+      | `"1.11.2"` (same as `"^1.11.2"`) | `>= 1.11.2` and `< 2.0.0` |
+      | `"0.14"` | `>= 0.14.0` and `< 0.15.0` |
+      | `"0.0.3"` | exactly `0.0.3` |
+      | `"~1.11.2"` (tilde) | `>= 1.11.2` and `< 1.12.0` |
+      | `"=1.11.2"` | exactly `1.11.2` (rarely a good idea) |
+
+      Cargo uses **one** version per semver-compatible range in a build: if two of your dependencies need `regex 1.9` and `regex 1.11`, both get the newest 1.x. Incompatible majors (`1.x` and `2.x`) can live side by side. As a **library author**, the promise is on you: removing a `pub` item, changing a public function's signature or adding a required field to a public struct is a breaking change that needs a new major version. `cargo-semver-checks` can catch these before you publish.
+
+      ### Features
+
+      **Features** are optional parts of a crate that you switch on. `serde = { version = "1", features = ["derive"] }` turns on serde's derive macros. Your own crate can define features too:
+
+      ```toml
+      [features]
+      default = ["color"]          # on unless the user opts out
+      color = []                   # a plain on/off switch
+      json = ["dep:serde_json"]    # turning it on pulls in an optional dependency
+
+      [dependencies]
+      serde_json = { version = "1", optional = true }
+      ```
+
+      ```rust
+      #[cfg(feature = "json")]
+      pub fn to_json(report: &Report) -> String {
+          serde_json::to_string(report).unwrap()
+      }
+      ```
+
+      Code under `#[cfg(feature = "json")]` is compiled only when the feature is on: `cargo build --features json`, or `--no-default-features` to turn off the defaults. Features should be **additive**: turning one on may add things, never break or remove them, because Cargo merges the features everybody in the build asks for.
+
+      Other dependency sections: `[dev-dependencies]` are only for tests, examples and benchmarks; `[build-dependencies]` are for build scripts.
+
+      ### Workspaces
+
+      A **workspace** is several related packages developed together: one shared `Cargo.lock`, one `target/` folder, one command to build or test everything.
+
+      ```text
+      shop/
+      ├── Cargo.toml          the workspace
+      ├── shop-core/          library: domain logic
+      │   ├── Cargo.toml
+      │   └── src/lib.rs
+      └── shop-cli/           binary: the command-line tool
+          ├── Cargo.toml
+          └── src/main.rs
+      ```
+
+      ```toml
+      # shop/Cargo.toml
+      [workspace]
+      members = ["shop-core", "shop-cli"]
+      resolver = "3"
+
+      [workspace.dependencies]
+      serde = { version = "1", features = ["derive"] }
+      ```
+
+      ```toml
+      # shop-cli/Cargo.toml
+      [package]
+      name = "shop-cli"
+      version = "0.1.0"
+      edition = "2024"
+
+      [dependencies]
+      shop-core = { path = "../shop-core" }
+      serde = { workspace = true }
+      ```
+
+      `cargo build` at the top builds every member; `cargo test -p shop-core` tests one package; `cargo run -p shop-cli` runs the tool. In `shop-cli`'s code, the library is `shop_core::`. Most company codebases with more than one crate are workspaces.
+
+      ### Publishing on crates.io
+
+      1. Add metadata to `[package]`: `description`, `license` (often `"MIT OR Apache-2.0"`), `repository`, and optionally `readme`, `keywords`, `categories`.
+      2. Document the public API with `///` comments: docs.rs builds and hosts the documentation of every published crate.
+      3. `cargo login` with an API token from your crates.io account.
+      4. `cargo publish --dry-run` to check, then `cargo publish`.
+      5. A published version is **permanent**: it can't be overwritten or deleted. To fix a mistake, publish a new version. `cargo yank --version 1.0.1` stops new projects from choosing a broken version, while existing `Cargo.lock`s keep working.
+
+      Most code at work is never published. Teams depend on internal crates through workspaces, `path` dependencies, git dependencies (`my-lib = { git = "https://..." }`) or a private registry.
+
+      **Your turn:** put Cargo's caret rule into code. Inside a module `semver`, write a private helper `parse` that turns `"1.4.2"` into the tuple `(1, 4, 2)`, and a public `caret_matches(req: &str, version: &str) -> bool`: does `version` satisfy the caret requirement `req`? Both are full `MAJOR.MINOR.PATCH` strings. The rules:
+
+      - `version` must be at least `req`, and
+      - if `req`'s major is above 0, the majors must be equal;
+      - else if `req`'s minor is above 0, major and minor must be equal (`0.14.x`);
+      - else (`0.0.z`), the versions must be exactly equal.
+
+      Tuples compare element by element, so `(1, 4, 2) <= (1, 10, 0)` is `true`, which is exactly what version comparison needs (comparing the *strings* would get `"1.10.0" < "1.4.2"` wrong).
+    seed: |
+      mod semver {
+          fn parse(v: &str) -> (u64, u64, u64) {
+              todo!()
+          }
+
+          pub fn caret_matches(req: &str, version: &str) -> bool {
+              todo!()
+          }
+      }
+    solution: |
+      mod semver {
+          fn parse(v: &str) -> (u64, u64, u64) {
+              let parts: Vec<u64> = v.split('.').map(|p| p.parse().unwrap()).collect();
+              (parts[0], parts[1], parts[2])
+          }
+
+          pub fn caret_matches(req: &str, version: &str) -> bool {
+              let r = parse(req);
+              let v = parse(version);
+              if v < r {
+                  return false;
+              }
+              if r.0 > 0 {
+                  v.0 == r.0
+              } else if r.1 > 0 {
+                  v.0 == 0 && v.1 == r.1
+              } else {
+                  v == r
+              }
+          }
+      }
+    require:
+      - pattern: '(?<!pub\s)fn\s+parse'
+        message: Keep `parse` a private helper of the `semver` module.
+    harness: |
+      #[test]
+      fn same_major_newer_minor_matches() {
+          assert_eq!(semver::caret_matches("1.4.2", "1.9.0"), true, "caret_matches(\"1.4.2\", \"1.9.0\")");
+      }
+
+      #[test]
+      fn older_version_does_not_match() {
+          assert_eq!(semver::caret_matches("1.4.2", "1.4.1"), false, "caret_matches(\"1.4.2\", \"1.4.1\")");
+      }
+
+      #[test]
+      fn next_major_does_not_match() {
+          assert_eq!(semver::caret_matches("1.4.2", "2.0.0"), false, "caret_matches(\"1.4.2\", \"2.0.0\")");
+      }
+
+      #[test]
+      fn numbers_compare_as_numbers() {
+          assert_eq!(semver::caret_matches("1.4.2", "1.10.0"), true, "caret_matches(\"1.4.2\", \"1.10.0\")");
+      }
+
+      #[test]
+      fn zero_major_locks_the_minor() {
+          assert_eq!(semver::caret_matches("0.14.0", "0.14.7"), true, "caret_matches(\"0.14.0\", \"0.14.7\")");
+          assert_eq!(semver::caret_matches("0.14.0", "0.15.0"), false, "caret_matches(\"0.14.0\", \"0.15.0\")");
+      }
+
+      #[test]
+      fn zero_zero_must_be_exact() {
+          assert_eq!(semver::caret_matches("0.0.3", "0.0.3"), true, "caret_matches(\"0.0.3\", \"0.0.3\")");
+          assert_eq!(semver::caret_matches("0.0.3", "0.0.4"), false, "caret_matches(\"0.0.3\", \"0.0.4\")");
+      }
+    hints:
+      - "`parse`: `let parts: Vec<u64> = v.split('.').map(|p| p.parse().unwrap()).collect();` then return `(parts[0], parts[1], parts[2])`."
+      - "In `caret_matches`, parse both, return `false` if `v < r`, then check the three cases on `r.0` and `r.1`."
+    more:
+      - task: |
+          Add **tilde** requirements to the module: `pub fn tilde_matches(req: &str, version: &str) -> bool`. `~1.4.2` allows `>= 1.4.2` and `< 1.5.0`: the version must be at least `req`, with the same major and minor. `parse` is already written; use it.
+        seed: |
+          mod semver {
+              fn parse(v: &str) -> (u64, u64, u64) {
+                  let parts: Vec<u64> = v.split('.').map(|p| p.parse().unwrap()).collect();
+                  (parts[0], parts[1], parts[2])
+              }
+
+              pub fn tilde_matches(req: &str, version: &str) -> bool {
+                  todo!()
+              }
+          }
+        solution: |
+          mod semver {
+              fn parse(v: &str) -> (u64, u64, u64) {
+                  let parts: Vec<u64> = v.split('.').map(|p| p.parse().unwrap()).collect();
+                  (parts[0], parts[1], parts[2])
+              }
+
+              pub fn tilde_matches(req: &str, version: &str) -> bool {
+                  let r = parse(req);
+                  let v = parse(version);
+                  v >= r && v.0 == r.0 && v.1 == r.1
+              }
+          }
+        harness: |
+          #[test]
+          fn newer_patch_matches() {
+              assert_eq!(semver::tilde_matches("1.4.2", "1.4.9"), true, "tilde_matches(\"1.4.2\", \"1.4.9\")");
+          }
+
+          #[test]
+          fn newer_minor_does_not_match() {
+              assert_eq!(semver::tilde_matches("1.4.2", "1.5.0"), false, "tilde_matches(\"1.4.2\", \"1.5.0\")");
+          }
+
+          #[test]
+          fn older_patch_does_not_match() {
+              assert_eq!(semver::tilde_matches("1.4.2", "1.4.1"), false, "tilde_matches(\"1.4.2\", \"1.4.1\")");
+          }
+
+          #[test]
+          fn the_same_version_matches() {
+              assert_eq!(semver::tilde_matches("0.3.0", "0.3.0"), true, "tilde_matches(\"0.3.0\", \"0.3.0\")");
+          }
+        hints:
+          - "Parse both strings into tuples with `parse`."
+          - "`v >= r && v.0 == r.0 && v.1 == r.1`"
+      - task: |
+          Use a real dependency. This site's compiler has `itertools` (as if `Cargo.toml` had `itertools = "0.14"`). Write `fn leaderboard_line(scores: &[(&str, u32)]) -> String` that returns the players as `"name:score"` joined with `", "`, highest score first, equal scores by name A to Z. For example `[("bo", 75), ("ann", 90), ("cy", 75)]` gives `"ann:90, bo:75, cy:75"`.
+
+          Bring the `Itertools` trait into scope and use its iterator methods `sorted_by(|a, b| ...)` (sorts and gives back an iterator) and `join(", ")` (joins displayable items into a `String`). No loops.
+        seed: |
+          fn leaderboard_line(scores: &[(&str, u32)]) -> String {
+              todo!()
+          }
+        solution: |
+          use itertools::Itertools;
+
+          fn leaderboard_line(scores: &[(&str, u32)]) -> String {
+              scores
+                  .iter()
+                  .sorted_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)))
+                  .map(|(name, score)| format!("{name}:{score}"))
+                  .join(", ")
+          }
+        require:
+          - pattern: 'use\s+itertools::(Itertools|prelude::\*|\{)'
+            message: "Bring the trait into scope with `use itertools::Itertools;`."
+          - pattern: '\.join\('
+            message: "Join the entries with Itertools' `.join(\", \")`."
+        forbid:
+          - pattern: '\bfor\b|\bwhile\b|\bloop\b'
+            message: Use iterator methods (`sorted_by`, `map`, `join`), no loops.
+        harness: |
+          #[test]
+          fn highest_score_first() {
+              assert_eq!(leaderboard_line(&[("bo", 75), ("ann", 90)]), "ann:90, bo:75", "leaderboard_line(bo 75, ann 90)");
+          }
+
+          #[test]
+          fn ties_by_name() {
+              assert_eq!(leaderboard_line(&[("bo", 75), ("ann", 90), ("cy", 75)]), "ann:90, bo:75, cy:75", "leaderboard_line(bo 75, ann 90, cy 75)");
+          }
+
+          #[test]
+          fn one_player() {
+              assert_eq!(leaderboard_line(&[("ferris", 1)]), "ferris:1", "leaderboard_line(ferris 1)");
+          }
+
+          #[test]
+          fn nobody_gives_an_empty_string() {
+              assert_eq!(leaderboard_line(&[]), "", "leaderboard_line(&[])");
+          }
+        hints:
+          - "Start with `use itertools::Itertools;` at the top, then `scores.iter().sorted_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)))`."
+          - "`.map(|(name, score)| format!(\"{name}:{score}\")).join(\", \")`"

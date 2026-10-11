@@ -31,7 +31,14 @@ fn parse_shows_the_parts() {
 
 #[test]
 fn sort_orders_by_precedence() {
-    let out = semver(&["sort", "1.10.0", "v1.2.0", "1.2.0-rc.1", "1.2.0-alpha", "0.9.9"]);
+    let out = semver(&[
+        "sort",
+        "1.10.0",
+        "v1.2.0",
+        "1.2.0-rc.1",
+        "1.2.0-alpha",
+        "0.9.9",
+    ]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(
         stdout(&out),
