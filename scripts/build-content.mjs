@@ -18,6 +18,7 @@ import YAML from "yaml";
 import { assignDrillSteps } from "./drill-steps.mjs";
 import { applyStepUrls, readStepUrls, writeStepUrls, STEP_URLS_FILE } from "./step-urls.mjs";
 import { execute, EDITION } from "./rust-exec.mjs";
+import { execFileSync } from "node:child_process";
 import {
   parseTemplate,
   fillFirstBlank,
@@ -72,9 +73,12 @@ function limit(fn) {
   });
 }
 
+// Cached results belong to one compiler version: a new rustc can word its errors differently.
+const RUSTC = execFileSync("rustc", ["--version"], { encoding: "utf8" }).trim();
+
 /** Compile and run a complete program (already wrapped), like one Playground request. Cached by content. */
 async function play(code, { tests = false } = {}) {
-  const key = crypto.createHash("sha1").update(JSON.stringify([code, tests, EDITION, "v1"])).digest("hex");
+  const key = crypto.createHash("sha1").update(JSON.stringify([code, tests, EDITION, RUSTC, "v1"])).digest("hex");
   const file = path.join(CACHE_DIR, key + ".json");
   if (useCache && fs.existsSync(file)) {
     try {
@@ -92,6 +96,19 @@ async function play(code, { tests = false } = {}) {
 }
 
 const firstError = (diag) => diag.split("\n").find((l) => /^error/.test(l)) ?? diag.split("\n")[0] ?? "";
+
+/**
+ * Does rustc's output still show the error a lesson quotes? New Rust releases reword messages, so
+ * the same error code (or, for errors without one, the same start such as "error: invalid format
+ * string") is enough to pass; a reworded message is a warning, so the quote can be refreshed.
+ */
+function sameError(want, diag) {
+  if (diag.includes(want)) return "same";
+  const code = want.match(/^error\[(E\d{4})\]/);
+  if (code) return diag.includes(`error[${code[1]}]`) ? "reworded" : "different";
+  const head = want.match(/^(error: [^:`]+)/);
+  return head && diag.split("\n").some((l) => l.startsWith(head[1].trim())) ? "reworded" : "different";
+}
 
 /** Warnings rustc reports in the learner-visible part of the code (the first `lines` lines). */
 /** Whether one hidden test passed: it finished cleanly, or (for #[should_panic]) panicked with the expected text. */
@@ -320,7 +337,10 @@ async function checkExamples(where, text) {
       }
       if (next && next[1].trim() === "error") {
         const want = next[2].split("\n")[0].trim();
-        if (!res.diagnostics.includes(want)) errors.push(`${where}: example ${i + 1} shows the error\n${want}\nbut rustc says\n${firstError(res.diagnostics)}`);
+        const same = sameError(want, res.diagnostics);
+        const msg = `${where}: example ${i + 1} shows the error\n${want}\nbut rustc (${RUSTC}) says\n${firstError(res.diagnostics)}`;
+        if (same === "different") errors.push(msg);
+        else if (same === "reworded") warnings.push(msg);
       }
       continue;
     }
