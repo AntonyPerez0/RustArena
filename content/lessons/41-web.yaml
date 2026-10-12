@@ -662,7 +662,7 @@ steps:
       ### Common mistakes
 
       - **Deserializing straight into your database model**: a client could then send `"id": 1` or `"is_admin": true` and have it accepted. Request DTOs list only what clients may set.
-      - **`unwrap()` on the request body.** One malformed request would crash the handler (in a server, the framework catches the panic and answers 500, but the request is lost and logs fill with panics). Bad input is a 400, not a crash.
+      - **`unwrap()` on the request body.** One malformed request would crash the handler (in a server, the panic usually just drops that connection, or becomes a 500 if you add a catch-panic middleware; either way the client gets no useful answer and your logs fill with panics). Bad input is a 400, not a crash.
       - **Building JSON by hand** with `format!("{{\"name\":\"{}\"}}", name)`: a name containing `"` produces broken JSON (and an injection risk). Let serde escape it.
 
       **Your turn:** write `create_ticket`. The body looks like `{"title": "Printer on fire", "priority": "high"}`; `priority` is optional and defaults to `normal`. Respond with:
@@ -2582,7 +2582,7 @@ steps:
 
       ### Things that bite in async servers
 
-      - Handlers are `async fn` running on Tokio. A `std::sync::Mutex` is fine **as long as you don't hold the guard across an `.await`**: the handler would block a runtime thread, and axum refuses it at compile time anyway (`future cannot be sent between threads safely`). If you must hold a lock across `.await`, use `tokio::sync::Mutex`.
+      - Handlers are `async fn` running on Tokio. A `std::sync::Mutex` is fine **as long as you don't hold the guard across an `.await`**: the handler would block a runtime thread, and axum refuses it at compile time anyway (the error says your function doesn't implement `Handler`; adding `#[axum::debug_handler]` to it explains why: `future cannot be sent between threads safely`). If you must hold a lock across `.await`, use `tokio::sync::Mutex`.
       - Production servers add **middleware** with `tower-http` layers: request logging (`TraceLayer`, with the `tracing` crate), timeouts, CORS, compression. A real store is a database pool (`sqlx`) in the state instead of a `Mutex<BTreeMap>`.
 
       The **Pro Track** builds this service for real: axum, a database, configuration, logging, integration tests and deployment. Your turn first, though: axum's response system is just a trait, and you can build its core yourself.

@@ -7,7 +7,7 @@ steps:
   - title: "UTF-8: bytes, chars and why s[0] fails"
     id: strings-1
     text: |
-      In module 7 you met `String` (owned, growable text) and `&str` (a borrowed view of text). Both store text as **UTF-8**, the encoding used by the web, by files and by almost every system today. In UTF-8 one character takes **1 to 4 bytes**: plain English letters and digits take 1, accented Latin letters 2, most other scripts and symbols like `€` 3, and emoji 4.
+      In module 7 you met `String` (owned, growable text) and `&str` (a borrowed view of text). Both store text as **UTF-8**, the encoding used by the web, by files and by almost every system today. In UTF-8 one character takes **1 to 4 bytes**: plain English letters and digits take 1, accented Latin letters (and Greek, Cyrillic, Arabic, Hebrew) 2, Chinese, Japanese, Korean and symbols like `€` 3, and emoji 4.
 
       ```rust run
       fn main() {
@@ -196,7 +196,7 @@ steps:
       slicing...
       ```
 
-      The panic message says byte 4 `is not a char boundary; it is inside 'é' (bytes 3..5 ...)`. This is a real bug class at work: code that cuts names to "the first 10 characters" with `&name[..10]` passes every test written in English, then crashes on the first user named Zoë or 李.
+      The panic message is `end byte index 4 is not a char boundary; it is inside 'é' (bytes 3..5 of string)`. This is a real bug class at work: code that cuts names to "the first 10 characters" with `&name[..10]` passes every test written in English, then crashes on the first user named Zoë or 李.
 
       ### Finding where characters start
 
@@ -550,7 +550,7 @@ steps:
           - "`filename.rsplit_once('.')` gives `Some((stem, ext))` split at the last dot."
           - "A match guard rejects the edge cases: `Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => Some(ext),`"
       - task: |
-          Read a CSV grade sheet from input. The first line is the header `name,score`; every other line should be `name,score`. Skip rows that don't have exactly two fields or whose score isn't a whole number. There's always at least one valid row. Print:
+          Read a CSV grade sheet from input. The first line is the header `name,score`; every other line should be `name,score`. Trim spaces around each field. Skip rows that don't have exactly two fields (an empty line counts as one such row) or whose score isn't a whole number. There's always at least one valid row. Print:
 
           ```
           students: 3
@@ -705,7 +705,7 @@ steps:
       - **Case.** `line.contains("error")` misses `ERROR`. Lowercase first when case doesn't matter.
       - **`trim_start_matches` where you meant `strip_prefix`.** `"$$5".trim_start_matches('$')` removes both dollars; `strip_prefix` removes exactly one and tells you whether it was there.
 
-      **Your turn:** write `fn parse_price(text: &str) -> Option<u32>` that turns a price like `"$12.50"` into cents (`1250`). Rules: surrounding spaces are allowed; the price must start with `$`; the dollars must be a whole number; the cents part is optional but, if there's a `.`, it must be exactly two digits. `"$3"` is `300`, `"12.50"` (no `$`) and `"$1.5"` are `None`.
+      **Your turn:** write `fn parse_price(text: &str) -> Option<u32>` that turns a price like `"$12.50"` into cents (`1250`). Rules: surrounding spaces are allowed; the price must start with `$` (check it with `strip_prefix`); the dollars must be a whole number; the cents part is optional but, if there's a `.`, it must be exactly two digits. `"$3"` is `300`, `"12.50"` (no `$`) and `"$1.5"` are `None`.
     seed: |
       fn parse_price(text: &str) -> Option<u32> {
           todo!()
@@ -1180,10 +1180,10 @@ steps:
       - stdin: "Keyboard,1,89.9\nCable,3,4.25\nCrab hat,2,15\n"
         hidden: true
     require:
-      - pattern: '\{:<12\}'
+      - pattern: '\{\w*:<12\}'
         strings: true
         message: "Left-align the item name in 12 columns with `{:<12}`."
-      - pattern: '\{:>9\.2\}'
+      - pattern: '\{\w*:>9\.2\}'
         strings: true
         message: "Print prices and totals with `{:>9.2}`."
     hints:

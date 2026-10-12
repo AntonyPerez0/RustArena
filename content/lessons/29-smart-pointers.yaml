@@ -57,7 +57,7 @@ steps:
       error[E0072]: recursive type `List` has infinite size
       ```
 
-      Rust stores an enum value in one block of memory big enough for its largest variant. `Cons` contains a whole `List`, which could be a `Cons` containing a whole `List`, and so on: the size would be infinite. The compiler's help line says it all: `insert some indirection (e.g., a Box, Rc, or &) to break the cycle`. A `Box<List>` is a pointer, and a pointer has the same size whatever it points to:
+      Rust stores an enum value in one block of memory big enough for its largest variant. `Cons` contains a whole `List`, which could be a `Cons` containing a whole `List`, and so on: the size would be infinite. The compiler's help line says it all: ``insert some indirection (e.g., a `Box`, `Rc`, or `&`) to break the cycle``. A `Box<List>` is a pointer, and a pointer has the same size whatever it points to:
 
       ```rust run
       enum List {
@@ -382,7 +382,7 @@ steps:
 
       ### Common mistakes
 
-      - **`Option<Node>` without the Box**: the struct contains itself again, so you get `error[E0072]: recursive type `Node` has infinite size`. `Option` doesn't add a pointer; `Box` does.
+      - **`Option<Node>` without the Box**: the struct contains itself again, so you get ``error[E0072]: recursive type `Node` has infinite size``. `Option` doesn't add a pointer; `Box` does.
       - **Returning `n` instead of `*n`** in `Num(n) => ...`: `n` is a `&i64`, so it's `error[E0308]: mismatched types`.
       - **Getting the order wrong for subtraction**: in `Sub(a, b)`, it's `eval(a) - eval(b)`, left minus right.
 
@@ -715,7 +715,7 @@ steps:
       ### Common mistakes
 
       - **Calling `.drop()` yourself**: `b.drop()` is `error[E0040]: explicit use of destructor method`. Use `drop(b)`; Rust must be sure it never runs twice.
-      - **`let _ = value;` drops immediately.** The pattern `_` doesn't bind anything, so a guard written `let _ = Noisy("x");` is gone on the same line. Write `let _guard = ...` to keep it alive until the end of the scope.
+      - **`let _ = Noisy("x");` drops the new value immediately.** The pattern `_` doesn't bind anything, so a guard created that way is gone on the same line. Write `let _guard = ...` to keep it alive until the end of the scope.
       - **Using a value after `drop(x)`**: `drop` took ownership, so it's `error[E0382]: borrow of moved value`.
 
       **Your turn:** implement `Drop` for `Connection` so dropping one prints `closing <name>`. Then finish `main`: it opens `db`, then `cache`, closes `db` early with `drop`, prints `working`, and lets `cache` close at the end. The output must be exactly:
@@ -1346,13 +1346,13 @@ steps:
       - "`last_entry`: `self.log.borrow().last().cloned()` copies the String out so the borrow can end."
     more:
       - task: |
-          This program panics with `RefCell already borrowed`: it pushes to the queue while it's still iterating over it. Fix it so it prints the queue with each job over 1 followed by a copy of it times 10, appended at the end:
+          This program panics with `RefCell already borrowed`: it pushes to the queue while it's still iterating over it. It's meant to add, for every job greater than 1, a new job worth 10 times as much at the end of the queue, then print the queue:
 
           ```
           [3, 1, 2, 30, 20]
           ```
 
-          Keep the `RefCell`. Collect the new jobs first, and push them once the read borrow has ended.
+          Keep the `RefCell`. Collect the new jobs first, and push them with `queue.borrow_mut()` once the read borrow has ended.
         seed: |
           use std::cell::RefCell;
 
@@ -1375,6 +1375,11 @@ steps:
               queue.borrow_mut().extend(extra);
               println!("{:?}", queue.borrow());
           }
+        require:
+          - pattern: 'RefCell::new'
+            message: "Keep the queue in a `RefCell`."
+          - pattern: 'queue\.borrow_mut\(\)'
+            message: "Add the new jobs with `queue.borrow_mut()` after the read borrow has ended."
         hints:
           - "`jobs` is a `Ref` that lives until the end of `main`, so every `borrow_mut()` after it panics."
           - "First build a separate `Vec` of the new jobs from `queue.borrow()` (that borrow ends at the end of the statement), then call `queue.borrow_mut().extend(new_jobs)`."

@@ -821,14 +821,16 @@ steps:
               type Err = String;
 
               fn from_str(s: &str) -> Result<Self, Self::Err> {
-                  let unknown = || format!("unknown command: {s}");
                   let words: Vec<&str> = s.split_whitespace().collect();
                   match words.as_slice() {
-                      ["forward", n] => n.parse::<u32>().map(Command::Forward).map_err(|_| unknown()),
+                      ["forward", n] => match n.parse::<u32>() {
+                          Ok(steps) => Ok(Command::Forward(steps)),
+                          Err(_) => Err(format!("unknown command: {s}")),
+                      },
                       ["turn", "left"] => Ok(Command::Turn(Side::Left)),
                       ["turn", "right"] => Ok(Command::Turn(Side::Right)),
                       ["stop"] => Ok(Command::Stop),
-                      _ => Err(unknown()),
+                      _ => Err(format!("unknown command: {s}")),
                   }
               }
           }
@@ -1463,7 +1465,7 @@ steps:
           - "`other.years.cmp(&self.years)` puts more years first."
           - "Add `.then(self.name.cmp(&other.name))`, and make `partial_cmp` return `Some(self.cmp(other))`."
       - task: |
-          Write `fn leaderboard(entries: &[(&str, f64)]) -> Vec<String>` for a race: each entry is a name and a time in seconds. Return lines like `1. ana 9.58`, fastest time first, with equal times ordered by name. Use `sort_by` on a copy of the entries (`entries.to_vec()`), with `total_cmp` for the times and `.then(...)` for the names. Print times with `{}`.
+          Write `fn leaderboard(entries: &[(&str, f64)]) -> Vec<String>` for a race: each entry is a name and a time in seconds. Return lines like `1. ana 9.58`, fastest time first, with equal times ordered by name. Use `sort_by` on a copy of the entries (`entries.to_vec()`), with `total_cmp` for the times and `.then(...)` for the names. Print times with `{}`, so `12.0` shows as `12`.
         seed: |
           fn leaderboard(entries: &[(&str, f64)]) -> Vec<String> {
               todo!()

@@ -70,7 +70,7 @@ steps:
 
       ### The runtime
 
-      The standard library defines `Future`, `async` and `.await`, but not the machinery that runs futures, the **runtime** (also called an executor). You pick one as a crate. **Tokio** is the one nearly every company uses, and most async crates (the axum web framework, the reqwest HTTP client, the sqlx database library) are built on it:
+      Rust itself gives you `async`, `.await` and the `Future` trait (in the standard library), but not the machinery that runs futures, the **runtime** (also called an executor). You pick one as a crate. **Tokio** is by far the most widely used, and most async crates (the axum web framework, the reqwest HTTP client, the sqlx database library) are built on it:
 
       ```toml
       [dependencies]
@@ -102,7 +102,7 @@ steps:
 
       - **Forgetting `.await`**: the future is created and thrown away; nothing runs. Read the warning.
       - **Writing `await fetch()`** as in JavaScript or C#. Rust's `.await` goes after: `fetch().await`.
-      - **Calling async code from a normal `fn`**: `E0728`. Make it `async`, or (in tests and small tools) run it with a runtime's `block_on`, next step.
+      - **Using `.await` in a normal `fn`**: `E0728`. Make the function `async`, or (in tests and small tools) run the future with a runtime's `block_on`, next step.
 
       **Your turn:** fill in the three blanks: the attribute that starts Tokio, the keyword that makes `main` asynchronous, and the keyword that waits for the first future. The program should print `in stock: 10 items`.
     fill: |
@@ -256,7 +256,7 @@ steps:
       ### Common mistakes
 
       - **`std::thread::sleep` in async code**: correct output, frozen worker thread. Use `tokio::time::sleep(...).await`.
-      - **Forgetting `.await` on `sleep`**: `tokio::time::sleep(d);` creates a timer future and drops it, so nothing waits (and you get the "unused `Future`" warning).
+      - **Forgetting `.await` on `sleep`**: `tokio::time::sleep(d);` creates a timer future and drops it, so nothing waits (and rustc warns: ``unused `Sleep` that must be used``).
       - **Calling `block_on` inside async code**: Tokio panics with "Cannot start a runtime from within a runtime". `block_on` is only for the boundary from normal code; inside async code, just `.await`.
 
       **Your turn:** services fail sometimes, and real clients **retry with backoff**: wait a little longer after each failure. Write `async fn ping_with_retry(service: &mut FlakyService, max_tries: u32) -> Result<String, String>`. Try `service.ping().await` up to `max_tries` times (assume at least 1):
@@ -789,7 +789,7 @@ steps:
 
       ### Common mistakes
 
-      - **Borrowing locals in a spawned task**: the compiler says the borrowed value doesn't live long enough, or suggests `async move`. Move owned data in.
+      - **Borrowing locals in a spawned task**: `E0373`, "async block may outlive the current function", with a help line suggesting `move`. Move owned data in (`async move`).
       - **Holding an `Rc`, a `RefCell` borrow or a `std` `MutexGuard` across `.await`** in a spawned task: "future cannot be sent between threads safely".
       - **Printing from inside tasks**: the order changes between runs. Return values and print after awaiting.
       - **Not awaiting the handles**: work still running when `main` ends is lost.
@@ -1080,7 +1080,7 @@ steps:
           println!("total: {total}");
       }
     require:
-      - pattern: 'mpsc::channel\(\s*2\s*\)'
+      - pattern: 'mpsc::channel(::<[^>]*>)?\(\s*2\s*\)'
         message: Create the channel with `mpsc::channel(2)`.
       - pattern: 'tokio::spawn'
         message: Send the orders from a task started with `tokio::spawn`.

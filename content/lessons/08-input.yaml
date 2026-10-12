@@ -274,7 +274,7 @@ steps:
       - **Forgetting `.expect`**: `let n: i32 = line.trim().parse();` gives ``expected `i32`, found `Result<_, _>` ``. The `Result` must be unwrapped first, and the help line suggests `.expect(...)`.
       - **A type that doesn't fit the data.** `"-3"` doesn't parse as `u32` (no minus sign allowed), and `"300"` doesn't fit in a `u8` (`number too large to fit in target type`). Use `i32` or `i64` when values can be negative, `f64` for decimals.
 
-      **Your turn:** the program reads a temperature in Celsius (it may have decimals and may be negative). Parse it as an `f64`, convert it to Fahrenheit with F = C × 9 / 5 + 32, and print it with one decimal:
+      **Your turn:** the program reads a temperature in Celsius (it may have decimals and may be negative). Parse it as an `f64`, convert it to Fahrenheit with F = C × 9 / 5 + 32, and print both: the Celsius value with a plain `{}` (so `0` prints as `0`) and the Fahrenheit value with one decimal (`{:.1}`):
 
       ```
       21.5 C = 70.7 F
@@ -510,7 +510,7 @@ steps:
       ### Common mistakes
 
       - **Reusing a `String` without `clear()`**: the second value is glued to the first.
-      - **Reading past the end of the input.** When there are no more lines, `read_line` reads nothing and leaves the `String` empty, so parsing fails with `cannot parse integer from empty string`.
+      - **Reading past the end of the input.** When there are no more lines, `read_line` reads nothing and leaves the `String` empty, so parsing fails and the panic message ends with `ParseIntError { kind: Empty }`.
       - **Reading in the wrong order.** Lines come in the order they were typed; read them in the same order the input format describes.
 
       **Your turn:** read two whole numbers, one per line (they may be negative), and print their sum, difference (first minus second) and product:
@@ -706,7 +706,7 @@ steps:
       total: 42
       ```
 
-      - `use std::io::{self, BufRead};` imports `io` itself (`self`) and **`BufRead`**, a **trait**: a named set of methods that several types share (module 22). `lines()` on a locked stdin comes from `BufRead`, and a trait's methods can only be called when the trait is imported. Without the import, you get error E0599: ``no method named `lines` found for struct `StdinLock` ``, with a help line suggesting `use std::io::BufRead;`.
+      - `use std::io::{self, BufRead};` imports `io` itself (`self`) and **`BufRead`**, a **trait**: a named set of methods that several types share (module 22). `lines()` on a locked stdin comes from `BufRead`, and a trait's methods can only be called when the trait is imported. Without the import, you get error E0599: ``no method named `lines` found for struct `StdinLock<'a>` ``, with a help line suggesting `use std::io::BufRead;`.
       - `.lock()` takes hold of stdin once for the whole loop instead of on every read, which is faster for big inputs. `io::stdin().lines()`, added in Rust 1.62, does that for you.
 
       ### Skipping blank lines
@@ -777,11 +777,11 @@ steps:
 
       ### Common mistakes
 
-      - **Using the line before unwrapping it.** `line.trim()` straight on the loop variable gives E0599, ``no method named `trim` found for enum `Result` ``: unwrap it first with `.expect(...)`.
+      - **Using the line before unwrapping it.** `line.trim()` straight on the loop variable gives E0599, ``no method named `trim` found for enum `Result<T, E>` ``: unwrap it first with `.expect(...)`.
       - **Forgetting the `BufRead` import** with `lock().lines()` (see above).
       - **The program "hangs" in a terminal.** It's waiting for more input: the loop only ends at the end of input, so press Ctrl+D (or Ctrl+Z, Enter on Windows).
 
-      **Your turn:** numbers arrive one per line, as many as there are. Skip blank lines. Print how many numbers there were and their total:
+      **Your turn:** whole numbers (possibly negative) arrive one per line, as many as there are. Skip blank lines (empty or only spaces). Print how many numbers there were and their total:
 
       ```
       count: 4, total: 46
@@ -1081,7 +1081,7 @@ steps:
           - stdin: "-5 -1 -9\n"
             hidden: true
       - task: |
-          Each line holds a player's name and score, like `ana 92`. Read lines until the end of the input and print the best player. If two players tie, keep the one that came first:
+          Each line holds a player's name and a whole-number score (possibly negative), like `ana 92`. Read lines until the end of the input and print the best player. If two players tie, keep the one that came first:
 
           ```
           best: cy with 95
@@ -1203,7 +1203,7 @@ steps:
       - **Parsing the whole input as one number.** The input ends with a newline (and may hold several values), so `input.parse()` fails. Use `input.trim()` for a single value, or `split_whitespace()` for many.
       - **Forgetting that the input might be empty.** With no input, `read_to_string` gives an empty `String`; a loop over it simply runs zero times. Make sure your program still prints something sensible.
 
-      **Your turn:** read the whole input: whole numbers spread over any number of lines. Print their average with two decimals, or `no numbers` if there are none:
+      **Your turn:** read the whole input: whole numbers (possibly negative) spread over any number of lines. Print their average with two decimals, or `no numbers` if there are none:
 
       ```
       average: 5.00
@@ -1443,7 +1443,7 @@ steps:
       - **Arms that give different types.** `Ok(n) => n, Err(_) => "bad"` gives ``error[E0308]: `match` arms have incompatible types``: one arm is a number, the other a `&str`. Every arm that produces a value must produce the same type.
       - **No type for `parse`**: `match text.parse() { Ok(n) => println!("{n}"), ... }` doesn't say what to parse into (E0284, `type annotations needed`). Use `parse::<i32>()` or a typed `let`.
 
-      **Your turn:** read lines until the end of the input. Each line should be a whole number (an order quantity), but some lines are garbage. Add up the valid numbers, count every other line as skipped (blank lines too), and print:
+      **Your turn:** read lines until the end of the input. Each line should be a whole number (an order quantity, negative for a return), but some lines are garbage. Add up the valid numbers, count every other line as skipped (blank lines too), and print:
 
       ```
       total: 15

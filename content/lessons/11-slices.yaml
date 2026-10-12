@@ -385,7 +385,7 @@ steps:
           - "Start with `let mut result = String::new();` and loop `for word in full_name.split_whitespace()`."
           - "Inside: `result.push_str(&word[..1]);`. Return `result.to_uppercase()`."
       - task: |
-          Write `censor`. It returns a copy of `text` in which every occurrence of `banned` is replaced by as many `*` as `banned` has characters: `censor("well darn it", "darn")` returns `"well **** it"`. Both parameters are `&str`, so it works on `String`s, slices and literals. (`text.replace(from, to)` returns a new `String`, as you saw in the strings module.)
+          Write `censor`. It returns a copy of `text` in which every occurrence of `banned` is replaced by as many `*` as `banned` has characters: `censor("well darn it", "darn")` returns `"well **** it"`. Both parameters are `&str`, so it works on `String`s, slices and literals. (`text.replace(from, to)` returns a new `String`, as you saw in the strings intro module.)
         seed: |
           fn censor(text: &str, banned: &str) -> String {
               todo!()
@@ -487,7 +487,7 @@ steps:
 
       If there's no space, the whole string is the first word, and `s` is already a `&str`, so it's returned as is.
 
-      The returned `&str` borrows from the argument. Rust knows this without being told: when a function has exactly one reference parameter, any reference it returns must come from that parameter. (The lifetimes module covers the rules.) So the borrow checker ties `word` to `command`, and the stale-index bug becomes a compile error:
+      The returned `&str` borrows from the argument. Rust works this out without being told: when a function has exactly one reference parameter, Rust treats any reference it returns as borrowing from that parameter. (The lifetimes module covers the rules.) So the borrow checker ties `word` to `command`, and the stale-index bug becomes a compile error:
 
       ```rust compile_fail
       fn first_word(s: &str) -> &str {
@@ -542,7 +542,7 @@ steps:
 
       ### Common mistakes
 
-      - **Forgetting the "no space" case.** Without the final `s`, the function doesn't return anything when there's no space.
+      - **Forgetting the "no space" case.** Without the final `s`, the function has nothing to return when there's no space, so it doesn't compile: ``error[E0308]: mismatched types`` (``expected `&str`, found `()` ``).
       - **Changing the string while a slice of it is in use** (E0502). Use the slice first.
       - **Returning a slice of a `String` built inside the function** (E0515). Return the `String` instead.
 
@@ -990,7 +990,7 @@ steps:
         = help: use `.split_at_mut(position)` to obtain two mutable non-overlapping sub-slices
       ```
 
-      The ranges are just numbers worked out at run time, so the compiler can't prove the two parts don't overlap; it treats each one as borrowing all of `v`. The help line names the fix. `split_at_mut` checks the position once and returns two `&mut` slices that are guaranteed not to overlap:
+      The borrow checker doesn't reason about the numbers inside the brackets (in real code they're usually only known at run time), so it can't prove the two parts don't overlap; it treats each one as borrowing all of `v`. The help line names the fix. `split_at_mut` checks the position once and returns two `&mut` slices that are guaranteed not to overlap:
 
       ```rust run
       fn main() {

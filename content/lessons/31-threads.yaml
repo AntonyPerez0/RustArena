@@ -696,7 +696,7 @@ steps:
 
       ### Common mistakes
 
-      - **`chunks(0)` panics.** A chunk size from `data.len() / workers` is 0 when there are fewer items than workers. `div_ceil` divides and rounds **up** (`10.div_ceil(4)` is `3`), and `.max(1)` keeps the size at least 1.
+      - **`chunks(0)` panics.** A chunk size from `data.len() / workers` is 0 when there are fewer items than workers. `div_ceil` divides and rounds **up** (`10_usize.div_ceil(4)` is `3`), and `.max(1)` keeps the size at least 1.
       - **Loop variables still need `move`.** `for i in 0..4 { s.spawn(|| i * 2); }` borrows `i`, which dies at the end of each turn of the loop: `E0373`. Write `s.spawn(move || i * 2)`. If the closure also uses a `Vec`, `move` would move the whole `Vec` into the first thread; make a reference first (`let data = &data;`) and move that: copying a reference is free.
       - **Two threads writing the same variable**: `E0499`, explained in the next step.
 
@@ -785,7 +785,7 @@ steps:
             message: Use `chunks_mut` to give each thread its own part of the slice.
         hints:
           - "Inside `thread::scope(|s| { ... })`, loop `for chunk in prices.chunks_mut(size)` and spawn one thread per chunk."
-          - "Each thread runs `for p in chunk { *p = *p * (100 - percent) / 100; }`. Add `move` so the closure takes its own copy of `percent` and the chunk."
+          - "Each thread runs `for p in chunk { *p = *p * (100 - percent) / 100; }`. `move` is optional here: `percent` outlives the scope, and `for p in chunk` already moves the `&mut` chunk into the closure."
         harness: |
           #[test]
           fn ten_percent_off_with_two_workers() {
@@ -868,7 +868,7 @@ steps:
       - **`Send`**: a value of this type can be **moved** to another thread.
       - **`Sync`**: a value of this type can be **shared** between threads, read through `&T` from several threads at once. (Precisely: `T` is `Sync` when `&T` is `Send`.)
 
-      You almost never write these yourself. They're **auto traits**: the compiler implements them for your struct or enum automatically when all of its fields have them. Numbers, `String`, `Vec<T>`, `Box<T>`, `HashMap`, and your own structs built from them are all `Send` and `Sync`.
+      You almost never write these yourself. They're **auto traits**: the compiler implements them for your struct or enum automatically when all of its fields have them. Numbers and `String` are `Send` and `Sync`; so are `Vec<T>`, `Box<T>` and `HashMap` when what they hold is, and so are your own structs built from them.
 
       `thread::spawn` asks for them in its signature (simplified):
 
@@ -1355,7 +1355,7 @@ steps:
           - pattern: 'thread::spawn'
             message: Call `risky_parse` in its own thread with `thread::spawn`.
         hints:
-          - "Spawn all the threads and collect the handles first: `inputs.into_iter().map(|s| thread::spawn(move || risky_parse(&s))).collect()`."
+          - "Spawn all the threads and collect the handles first: `let handles: Vec<_> = inputs.into_iter().map(|s| thread::spawn(move || risky_parse(&s))).collect();`."
           - "`Result::ok()` turns `Ok(v)` into `Some(v)` and `Err(_)` into `None`: `handles.into_iter().map(|h| h.join().ok()).collect()`."
 
   - title: "rayon: data parallelism made easy"
@@ -1385,7 +1385,7 @@ steps:
       big orders: [996, 997, 998, 999, 1000]
       ```
 
-      - `use rayon::prelude::*;` brings in the traits that add the parallel methods. Forget it and you get ``error[E0599]: no method named `par_iter` found for struct `Vec<u64>` ``.
+      - `use rayon::prelude::*;` brings in the traits that add the parallel methods. Forget it and you get ``error[E0599]: no method named `par_iter` found for struct `Vec<u64>` in the current scope``.
       - `par_iter()` borrows the items, `par_iter_mut()` borrows them mutably, `into_par_iter()` takes ownership (it works on ranges too: `(1..=n).into_par_iter()`).
       - Most iterator methods you know have parallel versions: `map`, `filter`, `sum`, `count`, `min`, `max`, `any`, `all`, `for_each`, `collect`. On slices there are `par_sort()` and `par_sort_unstable()`.
       - `collect()` keeps the **original order**, even though the items were processed on different threads. `sum` and `count` give the same answer every run.

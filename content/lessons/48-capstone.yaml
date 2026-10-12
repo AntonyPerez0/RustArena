@@ -711,7 +711,7 @@ steps:
       - **Dividing by zero.** An empty log means 0 requests: handle it before computing averages.
       - **Ties in `max_by_key`.** When several items share the maximum, `max_by_key` returns the **last** one. To get the first, iterate in reverse (`.rev().max_by_key(...)`) or compare explicitly.
 
-      **Your turn:** write the report. The seed has the `LogEntry` parser from LOG-101 (simplified to `String` errors). Read every line of standard input; lines that don't parse are **skipped** and counted. Print exactly:
+      **Your turn:** write the report. The seed has the `LogEntry` parser from LOG-101 (simplified to `String` errors). Read every line of standard input; lines that don't parse (blank lines included) are **skipped** and counted. Print exactly:
 
       ```
       requests: 7
@@ -878,7 +878,7 @@ steps:
           14:00 # 1
           ```
 
-          A line counts if it has exactly 5 fields and its timestamp has a two-digit hour at character positions 11 and 12 (`2026-10-01T09:00:03Z`), from `00` to `23`; skip everything else. Use a `BTreeMap` keyed by hour. If nothing counts, print `no traffic`.
+          A line counts if it has exactly 5 fields and its timestamp has a two-digit hour at character positions 11 and 12, counting from 0 (the `09` in `2026-10-01T09:00:03Z`), from `00` to `23`; skip everything else. Use a `BTreeMap` keyed by hour. If nothing counts, print `no traffic`.
         seed: |
           use std::io::{self, BufRead};
 
@@ -1073,7 +1073,7 @@ steps:
       **Your turn:** implement `Inventory::place_order(&mut self, order: &[(&str, u32)]) -> Result<Receipt, OrderError>`. Each order line is `(sku, quantity)`. In this order:
 
       1. An empty order is `OrderError::Empty`.
-      2. Going through the lines in order, the first line with quantity 0 gives `ZeroQuantity(sku)`, and the first unknown SKU gives `UnknownSku(sku)` (whichever line comes first).
+      2. Going through the lines in order, the first line with quantity 0 gives `ZeroQuantity(sku)`, and the first unknown SKU gives `UnknownSku(sku)` (whichever line comes first; a line with both problems gives `ZeroQuantity`).
       3. Add up the quantities per SKU. The first SKU (in order of first appearance) whose total exceeds its stock gives `OutOfStock { sku, requested: total, available: stock }`.
       4. Only then reduce the stock and return a `Receipt` with one `ReceiptLine` per order line (product name, quantity, quantity times price) in order, and the total.
 
@@ -2447,7 +2447,7 @@ steps:
       | `if flag == true` | noise | `if flag` |
       | boolean parameters | `ship(3, true, false)` is unreadable at the call site | an enum per choice |
 
-      Clippy flags several of these on its own (`needless_range_loop`, `redundant_clone`, `ptr_arg` for `&Vec<T>` parameters, `bool_comparison`). Running `cargo clippy` before asking for review saves everyone time.
+      Clippy flags several of these on its own (`needless_range_loop` for `for i in 0..v.len()` loops, `ptr_arg` for `&Vec<T>` parameters, `bool_comparison` for `== true`), and opt-in lints such as `redundant_clone` (in the `nursery` group) catch more. Running `cargo clippy` before asking for review saves everyone time.
 
       Here's a small before and after: the same total, from a loop full of smells to an iterator chain.
 

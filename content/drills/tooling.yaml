@@ -146,7 +146,7 @@ drills:
       }
     body: |
       println!("{}", answer());
-    why: "rustc knows clippy's lint names, so #[allow(clippy::...)] compiles fine even when clippy isn't running. The return is just a style issue, not an error."
+    why: "rustc recognizes clippy as a lint tool and accepts #[allow(clippy::...)] without checking the name, so it compiles fine even when clippy isn't running. The return is just a style issue, not an error."
 
   - type: compiles
     after: tooling-4
@@ -178,7 +178,7 @@ drills:
   - type: boss
     after: tooling-5
     prompt: |
-      Clippy has five complaints about `summarize`: `&Vec` parameter, `len() == 0`, indexing in a range loop, needless `.clone()`s and a needless `return`. Rewrite it clippy-clean with the same behavior: `None` for no orders, otherwise `Some("N orders, T items, biggest: NAME")` where T is the total quantity and NAME is the order with the largest quantity.
+      Clippy has four complaints about `summarize` (a `&Vec` parameter, `len() == 0`, indexing in a range loop and a needless `return`), and a reviewer adds a fifth: needless `.clone()`s. Fix all five with the same behavior: `None` for no orders, otherwise `Some("N orders, T items, biggest: NAME")` where T is the total quantity and NAME is the order with the largest quantity (on a tie, the first one, as in the original).
     seed: |
       fn summarize(orders: &Vec<(String, u32)>) -> Option<String> {
           if orders.len() == 0 {
@@ -196,7 +196,7 @@ drills:
       }
     solution: |
       fn summarize(orders: &[(String, u32)]) -> Option<String> {
-          let (name, _) = orders.iter().max_by_key(|(_, qty)| *qty)?;
+          let (name, _) = orders.iter().rev().max_by_key(|(_, qty)| *qty)?;
           let total: u32 = orders.iter().map(|(_, qty)| qty).sum();
           Some(format!("{} orders, {} items, biggest: {}", orders.len(), total, name))
       }
@@ -229,11 +229,17 @@ drills:
       }
 
       #[test]
+      fn a_tie_keeps_the_first_order() {
+          let o = orders(&[("ana", 4), ("bo", 4), ("cy", 1)]);
+          assert_eq!(summarize(&o), Some("3 orders, 9 items, biggest: ana".to_string()), "summarize(ana 4, bo 4, cy 1)");
+      }
+
+      #[test]
       fn no_orders_is_none() {
           let o: Vec<(String, u32)> = Vec::new();
           assert_eq!(summarize(&o), None, "summarize([])");
       }
     hints:
-      - "`orders.iter().max_by_key(|(_, qty)| *qty)` finds the biggest order (as a reference) and returns `None` for an empty slice, so `?` handles the empty case."
+      - "`orders.iter().max_by_key(|(_, qty)| *qty)` finds the biggest order (as a reference) and returns `None` for an empty slice, so `?` handles the empty case. It returns the **last** maximum on a tie, so add `.rev()` before it to keep the first."
       - "The total is `orders.iter().map(|(_, qty)| qty).sum::<u32>()`."
     why: Iterator methods like max_by_key and sum replace the index loop, return None for empty input, and hand out references, so the clones and the length check disappear.
