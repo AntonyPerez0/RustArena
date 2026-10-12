@@ -559,7 +559,7 @@ await test("symbol bar types into the editor and into blanks on a phone", async 
 
 await test("report a problem opens a pre-filled GitHub issue", async () => {
   await go(codeStep.path);
-  const link = page.getByRole("link", { name: /Report a problem/ }).first();
+  const link = page.locator(".report-row").getByRole("link", { name: /Report a problem/ }).first();
   // The link is filled in when it's used (so it carries the latest code): focusing it does that.
   await link.focus();
   const href = await link.evaluate((a) => a.href);
@@ -913,7 +913,7 @@ await test("SEO: real URLs, per-page metadata and a sitemap", async () => {
   }
   const manifest = await page.request.get(BASE + "manifest.webmanifest");
   if (manifest.status() !== 200 || !(await manifest.json()).icons?.length) throw new Error("web app manifest missing");
-  if (/profile|settings/.test(sitemap)) throw new Error("a private page is in the sitemap");
+  if (/\/(profile|settings|certificate)\/<\/loc>/.test(sitemap)) throw new Error("a private page is in the sitemap");
   const titles = new Set();
   for (const m of content.modules.slice(0, 6)) titles.add((await get(L(m.id, 1).slice(1) + "/")).match(/<title>(.*?)<\/title>/)[1]);
   if (titles.size !== Math.min(6, content.modules.length)) throw new Error("pages share titles");

@@ -26,11 +26,11 @@ The rules:
 
 Configuration comes from environment variables, each with a default that works on a laptop:
 
-| Variable | Default | |
+| Variable | Default | Meaning |
 |---|---|---|
 | `HOST` | `0.0.0.0` | IP address to listen on |
-| `PORT` | `3000` | |
-| `DATABASE_URL` | `sqlite:shortener.db` | |
+| `PORT` | `3000` | TCP port to listen on |
+| `DATABASE_URL` | `sqlite:shortener.db` | where the SQLite database file lives |
 | `PUBLIC_URL` | `http://localhost:{PORT}` | the address users see; short links start with it |
 | `LOG_FORMAT` | `text` | or `json` |
 | `RUST_LOG` | `info` | read by the `EnvFilter`, as in project 10 |
