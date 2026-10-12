@@ -2,6 +2,8 @@
 
 Learn Rust from zero to job-ready, freeCodeCamp style, with **every exercise compiled and tested by the real Rust compiler**.
 
+**Live site: [rustarena.app](https://rustarena.app)**
+
 RustArena is the Rust sister site of [C/C++ Arena](https://github.com/AntonyPerez0/cpp-arena) and [Java Arena](https://github.com/AntonyPerez0/Java-Arena), with the same design, and a curriculum that follows the community [Rust developer roadmap](https://roadmap.sh/rust).
 
 - **Learn**: 48 modules from `println!` to professional Rust. Foundations (variables, types, functions, control flow, compound types, strings, input), then the heart of Rust (ownership, borrowing, slices), structuring data (structs, methods, enums, pattern matching, vectors, hash maps, strings in depth), errors and abstraction (Result and `?`, custom errors, generics, traits, standard traits, lifetimes, trait objects), idiomatic Rust (closures, iterators, modules and Cargo, smart pointers, testing), concurrency and async (threads, channels and shared state, async/await with Tokio), advanced Rust (advanced traits and type-level programming, macros, unsafe and FFI, performance), Rust at work (serde, anyhow and thiserror, command-line tools, web services, idiomatic patterns and code review, debugging and tooling), and algorithms for interviews, ending in a capstone. Early steps are fill-in-the-blank; later steps have you write whole programs, functions checked by hidden `#[test]`s, and your own test suites graded against planted bugs. Every step has hints you reveal one at a time and a "show solution" escape hatch.
