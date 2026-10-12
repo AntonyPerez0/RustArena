@@ -1,0 +1,1496 @@
+id: matrix-library
+title: A generic matrix library
+level: Advanced
+after: std-traits
+summary: Write a small linear-algebra library the way crates are written. A generic Matrix type with validated construction, Index and Display, + and * through operator overloading, and fast powers by repeated squaring. Graded by hidden unit tests, like a real library.
+seed: |
+  use std::fmt;
+
+  /// A rows x cols matrix, stored row by row in one Vec.
+  #[derive(Debug, Clone, PartialEq)]
+  struct Matrix<T> {
+      rows: usize,
+      cols: usize,
+      data: Vec<T>,
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  enum MatrixError {
+      Empty,
+      Ragged { row: usize, expected: usize, found: usize },
+  }
+
+  impl fmt::Display for MatrixError {
+      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+          todo!()
+      }
+  }
+
+  impl std::error::Error for MatrixError {}
+
+  // Methods that work for any T.
+  impl<T> Matrix<T> {
+      fn rows(&self) -> usize {
+          todo!()
+      }
+
+      fn cols(&self) -> usize {
+          todo!()
+      }
+
+      /// The entry at (row, col), or None if that's outside the matrix.
+      fn get(&self, row: usize, col: usize) -> Option<&T> {
+          todo!()
+      }
+  }
+
+  // Methods that need to copy entries.
+  impl<T: Clone> Matrix<T> {
+      /// A rows x cols matrix with every entry set to `value`.
+      fn filled(rows: usize, cols: usize, value: T) -> Self {
+          todo!()
+      }
+
+      /// Builds a matrix from its rows. Every row must have the same, non-zero length.
+      fn from_rows(rows: Vec<Vec<T>>) -> Result<Self, MatrixError> {
+          todo!()
+      }
+  }
+milestones:
+  - title: Storage and shape
+    text: |
+      Matrices are grids of numbers, and they're everywhere: 3D graphics (every rotation is a matrix), machine learning (a neural network layer is a matrix multiplication), physics simulations, image filters, even spreadsheets. In this project you'll write a small **library**, not a program: there's no `main`, and hidden unit tests check your API, exactly how library crates are tested at work.
+
+      A matrix has `rows` and `cols`, and an entry at each `(row, col)`, counted from 0:
+
+      ```text
+      [1 2 3]      rows: 2, cols: 3
+      [4 5 6]      entry (1, 2) is 6
+      ```
+
+      ### One Vec, row by row
+
+      The obvious representation is `Vec<Vec<T>>`. Libraries don't use it: each inner `Vec` is a separate heap allocation, the rows end up scattered in memory, and nothing stops two rows from having different lengths. Instead, store all the entries in **one** `Vec`, row after row (**row-major order**), and compute where an entry lives:
+
+      ```text
+      data = [1, 2, 3, 4, 5, 6]
+      (row, col) is at data[row * cols + col]      (1, 2) -> 1 * 3 + 2 = 5 -> 6
+      ```
+
+      One allocation, entries next to each other in memory (fast to walk), and the shape is two numbers that can't disagree with each other.
+
+      The struct is **generic**, `Matrix<T>`, so the same code works for `i32`, `f64`, `u64`, even `String`. That's why each `impl` block says which abilities of `T` it needs:
+
+      ```rust
+      impl<T> Matrix<T> { ... }          // works for any T: rows, cols, get
+      impl<T: Clone> Matrix<T> { ... }   // needs to copy entries: filled, from_rows
+      ```
+
+      `filled` clones `value` into every slot, so it needs `T: Clone`; `get` only hands out a reference, so it works for any `T`. Asking for the least you need keeps the type usable for as many `T`s as possible.
+
+      ### What to write
+
+      - `rows()` and `cols()`.
+      - `get(row, col) -> Option<&T>`: the entry, or `None` outside the matrix. Careful: on a 2x3 matrix, `(0, 4)` gives position 4, which **exists** in the `Vec`. Check `row < rows && col < cols`, not just the position, or `get(0, 4)` would quietly return the entry at `(1, 1)`.
+      - `filled(rows, cols, value)`: every entry is `value` (`vec![value; n]` does it).
+      - `from_rows(Vec<Vec<T>>) -> Result<Matrix<T>, MatrixError>`: builds the matrix from a list of rows. No rows, or an empty first row, is `MatrixError::Empty`. A row whose length differs from the first is `MatrixError::Ragged { row, expected, found }` (the first bad row, counted from 0).
+      - `Display` for `MatrixError`: `a matrix needs at least one row and one column` and `row 1 has 2 entries, expected 3`.
+
+      `from_rows` takes the rows **by value**, so it can move the entries into the new `Vec` (`data.extend(row)`) instead of cloning them. When a function will consume its input anyway, taking ownership saves the copies.
+    solution: |
+      use std::fmt;
+
+      /// A rows x cols matrix, stored row by row in one Vec.
+      #[derive(Debug, Clone, PartialEq)]
+      struct Matrix<T> {
+          rows: usize,
+          cols: usize,
+          data: Vec<T>,
+      }
+
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      enum MatrixError {
+          Empty,
+          Ragged { row: usize, expected: usize, found: usize },
+      }
+
+      impl fmt::Display for MatrixError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  MatrixError::Empty => write!(f, "a matrix needs at least one row and one column"),
+                  MatrixError::Ragged { row, expected, found } => {
+                      write!(f, "row {row} has {found} entries, expected {expected}")
+                  }
+              }
+          }
+      }
+
+      impl std::error::Error for MatrixError {}
+
+      // Methods that work for any T.
+      impl<T> Matrix<T> {
+          fn rows(&self) -> usize {
+              self.rows
+          }
+
+          fn cols(&self) -> usize {
+              self.cols
+          }
+
+          /// The entry at (row, col), or None if that's outside the matrix.
+          fn get(&self, row: usize, col: usize) -> Option<&T> {
+              if row < self.rows && col < self.cols { Some(&self.data[row * self.cols + col]) } else { None }
+          }
+      }
+
+      // Methods that need to copy entries.
+      impl<T: Clone> Matrix<T> {
+          /// A rows x cols matrix with every entry set to `value`.
+          fn filled(rows: usize, cols: usize, value: T) -> Self {
+              Matrix { rows, cols, data: vec![value; rows * cols] }
+          }
+
+          /// Builds a matrix from its rows. Every row must have the same, non-zero length.
+          fn from_rows(rows: Vec<Vec<T>>) -> Result<Self, MatrixError> {
+              let cols = match rows.first() {
+                  Some(first) if !first.is_empty() => first.len(),
+                  _ => return Err(MatrixError::Empty),
+              };
+              let row_count = rows.len();
+              let mut data = Vec::with_capacity(row_count * cols);
+              for (i, row) in rows.into_iter().enumerate() {
+                  if row.len() != cols {
+                      return Err(MatrixError::Ragged { row: i, expected: cols, found: row.len() });
+                  }
+                  data.extend(row);
+              }
+              Ok(Matrix { rows: row_count, cols, data })
+          }
+      }
+    harness: |
+      #[test]
+      fn from_rows_keeps_the_shape_and_the_entries() {
+          let m = Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5, 6]]).unwrap();
+          assert_eq!((m.rows(), m.cols()), (2, 3), "(rows, cols) of a 2x3 matrix");
+          assert_eq!(m.get(0, 0), Some(&1), "get(0, 0)");
+          assert_eq!(m.get(0, 2), Some(&3), "get(0, 2)");
+          assert_eq!(m.get(1, 0), Some(&4), "get(1, 0)");
+          assert_eq!(m.get(1, 2), Some(&6), "get(1, 2)");
+      }
+
+      #[test]
+      fn get_outside_the_matrix_is_none() {
+          let m = Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5, 6]]).unwrap();
+          assert_eq!(m.get(2, 0), None, "get(2, 0) on a 2x3 matrix");
+          assert_eq!(m.get(0, 3), None, "get(0, 3) on a 2x3 matrix");
+          // Position 0 * 3 + 4 = 4 exists in the Vec, but column 4 doesn't exist in the matrix.
+          assert_eq!(m.get(0, 4), None, "get(0, 4) on a 2x3 matrix");
+      }
+
+      #[test]
+      fn filled_works_for_any_cloneable_type() {
+          let m = Matrix::filled(2, 3, String::from("ab"));
+          assert_eq!((m.rows(), m.cols()), (2, 3), "(rows, cols)");
+          assert_eq!(m.get(1, 2), Some(&String::from("ab")), "get(1, 2)");
+          let z = Matrix::filled(1, 1, 0.5);
+          assert_eq!(z.get(0, 0), Some(&0.5), "a 1x1 matrix of f64");
+      }
+
+      #[test]
+      fn ragged_rows_are_an_error() {
+          let result = Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5]]);
+          assert_eq!(result, Err(MatrixError::Ragged { row: 1, expected: 3, found: 2 }), "rows of length 3 and 2");
+          let result = Matrix::from_rows(vec![vec![1.0], vec![2.0], vec![3.0, 4.0]]);
+          assert_eq!(result, Err(MatrixError::Ragged { row: 2, expected: 1, found: 2 }), "a third row that is too long");
+      }
+
+      #[test]
+      fn empty_input_is_an_error() {
+          assert_eq!(Matrix::<i32>::from_rows(vec![]), Err(MatrixError::Empty), "no rows at all");
+          assert_eq!(Matrix::<i32>::from_rows(vec![vec![], vec![]]), Err(MatrixError::Empty), "rows with no entries");
+      }
+
+      #[test]
+      fn errors_have_readable_messages() {
+          assert_eq!(MatrixError::Empty.to_string(), "a matrix needs at least one row and one column", "Empty");
+          assert_eq!(
+              MatrixError::Ragged { row: 1, expected: 3, found: 2 }.to_string(),
+              "row 1 has 2 entries, expected 3",
+              "Ragged {{ row: 1, expected: 3, found: 2 }}"
+          );
+      }
+    hints:
+      - "`get`: `if row < self.rows && col < self.cols { Some(&self.data[row * self.cols + col]) } else { None }`."
+      - "`from_rows`: find `cols` with `match rows.first() { Some(first) if !first.is_empty() => first.len(), _ => return Err(MatrixError::Empty) }`, remember `rows.len()`, then move each row into `data` after checking its length."
+      - "Loop with `for (i, row) in rows.into_iter().enumerate()` so you know which row is ragged: `return Err(MatrixError::Ragged { row: i, expected: cols, found: row.len() })`."
+
+  - title: Index, IndexMut and Display
+    text: |
+      `m.get(1, 2)` works, but a matrix library should let you write `m[(1, 2)]`, and assign with `m[(1, 2)] = 7`. Square brackets are an operator, and like every operator in Rust they're a trait you can implement:
+
+      ```rust
+      impl<T> Index<(usize, usize)> for Matrix<T> {
+          type Output = T;
+
+          fn index(&self, (row, col): (usize, usize)) -> &T {
+              &self.data[self.offset(row, col)]
+          }
+      }
+      ```
+
+      - The type parameter of `Index` is the type that goes between the brackets: here a tuple, so `m[(1, 2)]`. The parameter pattern `(row, col)` takes the tuple apart right in the signature.
+      - `type Output = T` is an **associated type**: what you get back. `index` returns a reference to it, and Rust adds the `*` for you, so `m[(1, 2)]` reads as a `T`.
+      - `IndexMut` is the same with `&mut self` and `&mut T`, and it's what makes `m[(1, 2)] = 7` and `m[(0, 1)] += 2` work.
+
+      ### Out of bounds must panic
+
+      Indexing a `Vec` past its end panics; indexing your matrix must too. And remember the `(0, 4)` trap from milestone 1: on a 2x3 matrix that's position 4, a perfectly valid `Vec` index, so `Vec` would **not** panic. You'd silently get the entry at `(1, 1)`, the worst kind of bug. Write one private helper that both impls use:
+
+      ```rust
+      fn offset(&self, row: usize, col: usize) -> usize {
+          assert!(
+              row < self.rows && col < self.cols,
+              "index ({row}, {col}) is outside a {}x{} matrix",
+              self.rows,
+              self.cols
+          );
+          row * self.cols + col
+      }
+      ```
+
+      Why panic and not return a `Result`? `Index` must return a reference, so there's no room for an error. That's the standard library's convention too: `[]` panics on bad input (a bug in the caller), and `get` returns an `Option` for callers who expect misses.
+
+      ### Display, aligned
+
+      Print one row per line, entries separated by one space and right-aligned to the **widest entry in the whole matrix**, each row in brackets, no newline after the last row:
+
+      ```text
+      [  1  20]
+      [300   4]
+      ```
+
+      That takes two passes: format every entry into a `String` first, find the widest (`chars().count()`), then print with that width. `{:>width$}` uses a variable as the width.
+
+      One more nicety: if the caller asks for a precision, like `format!("{m:.2}")`, apply it to every entry:
+
+      ```text
+      [ 1.50 -2.00]
+      [ 0.25 10.00]
+      ```
+
+      `f.precision()` tells you whether one was asked for (`Some(2)`) or not (`None`), and `format!("{x:.p$}")` formats with a precision held in the variable `p`. Respecting the formatter's options is what makes your type behave like the built-in ones. The `impl` needs `T: fmt::Display`, since you can only print a matrix whose entries can be printed.
+
+      Finally, add `transpose(&self) -> Self` (rows become columns: entry `(r, c)` moves to `(c, r)`, and a 2x3 matrix becomes 3x2). Use your new indexing to write it.
+    solution: |
+      use std::fmt;
+      use std::ops::{Index, IndexMut};
+
+      /// A rows x cols matrix, stored row by row in one Vec.
+      #[derive(Debug, Clone, PartialEq)]
+      struct Matrix<T> {
+          rows: usize,
+          cols: usize,
+          data: Vec<T>,
+      }
+
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      enum MatrixError {
+          Empty,
+          Ragged { row: usize, expected: usize, found: usize },
+      }
+
+      impl fmt::Display for MatrixError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  MatrixError::Empty => write!(f, "a matrix needs at least one row and one column"),
+                  MatrixError::Ragged { row, expected, found } => {
+                      write!(f, "row {row} has {found} entries, expected {expected}")
+                  }
+              }
+          }
+      }
+
+      impl std::error::Error for MatrixError {}
+
+      // Methods that work for any T.
+      impl<T> Matrix<T> {
+          fn rows(&self) -> usize {
+              self.rows
+          }
+
+          fn cols(&self) -> usize {
+              self.cols
+          }
+
+          /// The entry at (row, col), or None if that's outside the matrix.
+          fn get(&self, row: usize, col: usize) -> Option<&T> {
+              if row < self.rows && col < self.cols { Some(&self.data[row * self.cols + col]) } else { None }
+          }
+
+          /// Where (row, col) lives in `data`. Panics with a clear message when it's outside the matrix.
+          fn offset(&self, row: usize, col: usize) -> usize {
+              assert!(
+                  row < self.rows && col < self.cols,
+                  "index ({row}, {col}) is outside a {}x{} matrix",
+                  self.rows,
+                  self.cols
+              );
+              row * self.cols + col
+          }
+      }
+
+      // Methods that need to copy entries.
+      impl<T: Clone> Matrix<T> {
+          /// A rows x cols matrix with every entry set to `value`.
+          fn filled(rows: usize, cols: usize, value: T) -> Self {
+              Matrix { rows, cols, data: vec![value; rows * cols] }
+          }
+
+          /// Builds a matrix from its rows. Every row must have the same, non-zero length.
+          fn from_rows(rows: Vec<Vec<T>>) -> Result<Self, MatrixError> {
+              let cols = match rows.first() {
+                  Some(first) if !first.is_empty() => first.len(),
+                  _ => return Err(MatrixError::Empty),
+              };
+              let row_count = rows.len();
+              let mut data = Vec::with_capacity(row_count * cols);
+              for (i, row) in rows.into_iter().enumerate() {
+                  if row.len() != cols {
+                      return Err(MatrixError::Ragged { row: i, expected: cols, found: row.len() });
+                  }
+                  data.extend(row);
+              }
+              Ok(Matrix { rows: row_count, cols, data })
+          }
+
+          fn transpose(&self) -> Self {
+              let mut data = Vec::with_capacity(self.data.len());
+              for col in 0..self.cols {
+                  for row in 0..self.rows {
+                      data.push(self[(row, col)].clone());
+                  }
+              }
+              Matrix { rows: self.cols, cols: self.rows, data }
+          }
+      }
+
+      impl<T> Index<(usize, usize)> for Matrix<T> {
+          type Output = T;
+
+          fn index(&self, (row, col): (usize, usize)) -> &T {
+              &self.data[self.offset(row, col)]
+          }
+      }
+
+      impl<T> IndexMut<(usize, usize)> for Matrix<T> {
+          fn index_mut(&mut self, (row, col): (usize, usize)) -> &mut T {
+              let i = self.offset(row, col);
+              &mut self.data[i]
+          }
+      }
+
+      /// One row per line, entries right-aligned to the widest one. `{:.2}` sets the precision of every entry.
+      impl<T: fmt::Display> fmt::Display for Matrix<T> {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let mut cells = Vec::with_capacity(self.data.len());
+              for x in &self.data {
+                  cells.push(match f.precision() {
+                      Some(p) => format!("{x:.p$}"),
+                      None => x.to_string(),
+                  });
+              }
+              let mut width = 0;
+              for cell in &cells {
+                  width = width.max(cell.chars().count());
+              }
+              for row in 0..self.rows {
+                  if row > 0 {
+                      writeln!(f)?;
+                  }
+                  write!(f, "[")?;
+                  for col in 0..self.cols {
+                      if col > 0 {
+                          write!(f, " ")?;
+                      }
+                      write!(f, "{:>width$}", cells[row * self.cols + col])?;
+                  }
+                  write!(f, "]")?;
+              }
+              Ok(())
+          }
+      }
+    harness: |
+      fn sample() -> Matrix<i32> {
+          Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5, 6]]).unwrap()
+      }
+
+      #[test]
+      fn indexing_reads_row_then_column() {
+          let m = sample();
+          assert_eq!(m[(0, 0)], 1, "m[(0, 0)]");
+          assert_eq!(m[(0, 2)], 3, "m[(0, 2)]");
+          assert_eq!(m[(1, 0)], 4, "m[(1, 0)]");
+          assert_eq!(m.get(1, 1), Some(&5), "get(1, 1) still works");
+      }
+
+      #[test]
+      fn index_mut_changes_one_entry() {
+          let mut m = Matrix::filled(2, 2, 0);
+          m[(1, 0)] = 7;
+          m[(0, 1)] += 2;
+          assert_eq!(m, Matrix::from_rows(vec![vec![0, 2], vec![7, 0]]).unwrap(), "after m[(1, 0)] = 7 and m[(0, 1)] += 2");
+      }
+
+      #[test]
+      fn indexing_outside_the_matrix_panics() {
+          let m = sample();
+          // (0, 4) is position 4 in the Vec, but outside the 2x3 matrix: it must not quietly read m[(1, 1)].
+          let result = std::panic::catch_unwind(|| m[(0, 4)]);
+          assert!(result.is_err(), "m[(0, 4)] on a 2x3 matrix should panic");
+      }
+
+      #[test]
+      fn transpose_swaps_rows_and_columns() {
+          let t = sample().transpose();
+          assert_eq!((t.rows(), t.cols()), (3, 2), "(rows, cols) of the transpose");
+          assert_eq!(t, Matrix::from_rows(vec![vec![1, 4], vec![2, 5], vec![3, 6]]).unwrap(), "transpose of [[1, 2, 3], [4, 5, 6]]");
+      }
+
+      #[test]
+      fn display_aligns_the_columns() {
+          let m = Matrix::from_rows(vec![vec![1, 20], vec![300, 4]]).unwrap();
+          assert_eq!(m.to_string(), "[  1  20]\n[300   4]", "[[1, 20], [300, 4]]");
+          let row = Matrix::from_rows(vec![vec![-1, 2, 3]]).unwrap();
+          assert_eq!(row.to_string(), "[-1  2  3]", "a single row");
+      }
+
+      #[test]
+      fn display_passes_the_precision_to_every_entry() {
+          let m = Matrix::from_rows(vec![vec![1.5, -2.0], vec![0.25, 10.0]]).unwrap();
+          assert_eq!(format!("{m:.2}"), "[ 1.50 -2.00]\n[ 0.25 10.00]", "format!(\"{{m:.2}}\")");
+          assert_eq!(format!("{m}"), "[ 1.5   -2]\n[0.25   10]", "format!(\"{{m}}\")");
+      }
+    hints:
+      - "`IndexMut::index_mut(&mut self, (row, col): (usize, usize)) -> &mut T`: compute `let i = self.offset(row, col);` first, then return `&mut self.data[i]`."
+      - "In `Display`, build `cells: Vec<String>` with `match f.precision() { Some(p) => format!(\"{x:.p$}\"), None => x.to_string() }`, take the widest, then print each row as `[`, cells joined by spaces with `{:>width$}`, `]`, and `writeln!(f)?` between rows."
+      - "`transpose`: loop over `col` in the outside and `row` inside, pushing `self[(row, col)].clone()`, and swap `rows` and `cols` in the result."
+
+  - title: Adding with +
+    text: |
+      Now the part that makes a math library pleasant: real operators. `&a + &b` should add two matrices entry by entry, and `&m * 3` should multiply every entry by a number.
+
+      ### Operators are traits
+
+      `a + b` is shorthand for `Add::add(a, b)`. Implement `std::ops::Add` and `+` works on your type:
+
+      ```rust
+      impl<T: Copy + Add<Output = T>> Add for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn add(self, other: Self) -> Matrix<T> { ... }
+      }
+      ```
+
+      Read the bound `T: Copy + Add<Output = T>` as: "entries can be copied, and adding two entries gives an entry". That's exactly what entry-by-entry addition needs, and it holds for `i32`, `f64`, `u64` and so on. Without the bound, the compiler wouldn't let you write `x + y` for two `T`s, because it can't assume an arbitrary type can be added.
+
+      Notice the impl is for `&Matrix<T>`, a **reference**. A matrix can be big, and `a + b` on owned values would move both operands into the function, so you could never use `a` again. Implementing `Add` for references lets callers write `&a + &b` and keep their matrices. Add a second impl for owned matrices that just delegates (`&self + &other`), for when you're done with them; the standard library does the same for its own numeric types.
+
+      ### Shapes must match
+
+      Adding a 2x3 matrix to a 3x2 one is meaningless. Two APIs, two conventions:
+
+      - `checked_add(&self, other: &Matrix<T>) -> Result<Matrix<T>, MatrixError>` returns `MatrixError::ShapeMismatch { op: "add", left: (2, 3), right: (3, 2) }`, displayed as `cannot add a 2x3 matrix and a 3x2 matrix`. Use it when shapes come from user input.
+      - `+` panics with that same message. An operator can't return a `Result` without making every formula unreadable, and a shape mismatch in `a + b` is a bug in the program, like an out-of-bounds index. This mirrors `checked_add` and `+` on integers.
+
+      So `+` is just `match self.checked_add(other) { Ok(sum) => sum, Err(e) => panic!("{e}") }`, and the error message is written once.
+
+      To add entry by entry, walk both `data` vectors in step. `zip` pairs them up: `for (a, b) in self.data.iter().zip(&other.data) { data.push(*a + *b); }` (`*a` copies the entry out of the reference, which `T: Copy` allows).
+
+      ### Scaling: Mul with a different right-hand side
+
+      `Mul` has a type parameter for the right-hand side, and it doesn't have to be `Self`. `impl<T: Copy + Mul<Output = T>> Mul<T> for &Matrix<T>` means "a matrix reference times a `T`", so `&m * 3` multiplies every entry by 3.
+    solution: |
+      use std::fmt;
+      use std::ops::{Add, Index, IndexMut, Mul};
+
+      /// A rows x cols matrix, stored row by row in one Vec.
+      #[derive(Debug, Clone, PartialEq)]
+      struct Matrix<T> {
+          rows: usize,
+          cols: usize,
+          data: Vec<T>,
+      }
+
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      enum MatrixError {
+          Empty,
+          Ragged { row: usize, expected: usize, found: usize },
+          ShapeMismatch { op: &'static str, left: (usize, usize), right: (usize, usize) },
+      }
+
+      impl fmt::Display for MatrixError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  MatrixError::Empty => write!(f, "a matrix needs at least one row and one column"),
+                  MatrixError::Ragged { row, expected, found } => {
+                      write!(f, "row {row} has {found} entries, expected {expected}")
+                  }
+                  MatrixError::ShapeMismatch { op, left, right } => {
+                      write!(f, "cannot {op} a {}x{} matrix and a {}x{} matrix", left.0, left.1, right.0, right.1)
+                  }
+              }
+          }
+      }
+
+      impl std::error::Error for MatrixError {}
+
+      // Methods that work for any T.
+      impl<T> Matrix<T> {
+          fn rows(&self) -> usize {
+              self.rows
+          }
+
+          fn cols(&self) -> usize {
+              self.cols
+          }
+
+          /// The entry at (row, col), or None if that's outside the matrix.
+          fn get(&self, row: usize, col: usize) -> Option<&T> {
+              if row < self.rows && col < self.cols { Some(&self.data[row * self.cols + col]) } else { None }
+          }
+
+          /// Where (row, col) lives in `data`. Panics with a clear message when it's outside the matrix.
+          fn offset(&self, row: usize, col: usize) -> usize {
+              assert!(
+                  row < self.rows && col < self.cols,
+                  "index ({row}, {col}) is outside a {}x{} matrix",
+                  self.rows,
+                  self.cols
+              );
+              row * self.cols + col
+          }
+      }
+
+      // Methods that need to copy entries.
+      impl<T: Clone> Matrix<T> {
+          /// A rows x cols matrix with every entry set to `value`.
+          fn filled(rows: usize, cols: usize, value: T) -> Self {
+              Matrix { rows, cols, data: vec![value; rows * cols] }
+          }
+
+          /// Builds a matrix from its rows. Every row must have the same, non-zero length.
+          fn from_rows(rows: Vec<Vec<T>>) -> Result<Self, MatrixError> {
+              let cols = match rows.first() {
+                  Some(first) if !first.is_empty() => first.len(),
+                  _ => return Err(MatrixError::Empty),
+              };
+              let row_count = rows.len();
+              let mut data = Vec::with_capacity(row_count * cols);
+              for (i, row) in rows.into_iter().enumerate() {
+                  if row.len() != cols {
+                      return Err(MatrixError::Ragged { row: i, expected: cols, found: row.len() });
+                  }
+                  data.extend(row);
+              }
+              Ok(Matrix { rows: row_count, cols, data })
+          }
+
+          fn transpose(&self) -> Self {
+              let mut data = Vec::with_capacity(self.data.len());
+              for col in 0..self.cols {
+                  for row in 0..self.rows {
+                      data.push(self[(row, col)].clone());
+                  }
+              }
+              Matrix { rows: self.cols, cols: self.rows, data }
+          }
+      }
+
+      impl<T> Index<(usize, usize)> for Matrix<T> {
+          type Output = T;
+
+          fn index(&self, (row, col): (usize, usize)) -> &T {
+              &self.data[self.offset(row, col)]
+          }
+      }
+
+      impl<T> IndexMut<(usize, usize)> for Matrix<T> {
+          fn index_mut(&mut self, (row, col): (usize, usize)) -> &mut T {
+              let i = self.offset(row, col);
+              &mut self.data[i]
+          }
+      }
+
+      /// One row per line, entries right-aligned to the widest one. `{:.2}` sets the precision of every entry.
+      impl<T: fmt::Display> fmt::Display for Matrix<T> {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let mut cells = Vec::with_capacity(self.data.len());
+              for x in &self.data {
+                  cells.push(match f.precision() {
+                      Some(p) => format!("{x:.p$}"),
+                      None => x.to_string(),
+                  });
+              }
+              let mut width = 0;
+              for cell in &cells {
+                  width = width.max(cell.chars().count());
+              }
+              for row in 0..self.rows {
+                  if row > 0 {
+                      writeln!(f)?;
+                  }
+                  write!(f, "[")?;
+                  for col in 0..self.cols {
+                      if col > 0 {
+                          write!(f, " ")?;
+                      }
+                      write!(f, "{:>width$}", cells[row * self.cols + col])?;
+                  }
+                  write!(f, "]")?;
+              }
+              Ok(())
+          }
+      }
+
+      impl<T: Copy + Add<Output = T>> Matrix<T> {
+          /// Entry-by-entry sum, or an error if the shapes differ.
+          fn checked_add(&self, other: &Matrix<T>) -> Result<Matrix<T>, MatrixError> {
+              if (self.rows, self.cols) != (other.rows, other.cols) {
+                  return Err(MatrixError::ShapeMismatch {
+                      op: "add",
+                      left: (self.rows, self.cols),
+                      right: (other.rows, other.cols),
+                  });
+              }
+              let mut data = Vec::with_capacity(self.data.len());
+              for (a, b) in self.data.iter().zip(&other.data) {
+                  data.push(*a + *b);
+              }
+              Ok(Matrix { rows: self.rows, cols: self.cols, data })
+          }
+      }
+
+      /// `&a + &b`. Like indexing out of bounds, adding mismatched shapes is a bug: it panics.
+      impl<T: Copy + Add<Output = T>> Add for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn add(self, other: Self) -> Matrix<T> {
+              match self.checked_add(other) {
+                  Ok(sum) => sum,
+                  Err(e) => panic!("{e}"),
+              }
+          }
+      }
+
+      /// `a + b`, for when you don't need the operands any more.
+      impl<T: Copy + Add<Output = T>> Add for Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn add(self, other: Self) -> Matrix<T> {
+              &self + &other
+          }
+      }
+
+      /// `&m * k`: every entry times a scalar.
+      impl<T: Copy + Mul<Output = T>> Mul<T> for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn mul(self, k: T) -> Matrix<T> {
+              let mut data = Vec::with_capacity(self.data.len());
+              for x in &self.data {
+                  data.push(*x * k);
+              }
+              Matrix { rows: self.rows, cols: self.cols, data }
+          }
+      }
+    harness: |
+      #[test]
+      fn adds_matrices_entry_by_entry() {
+          let a = Matrix::from_rows(vec![vec![1, 2], vec![3, 4]]).unwrap();
+          let b = Matrix::from_rows(vec![vec![10, 20], vec![30, 40]]).unwrap();
+          let expected = Matrix::from_rows(vec![vec![11, 22], vec![33, 44]]).unwrap();
+          assert_eq!(&a + &b, expected, "&a + &b");
+          assert_eq!(a + b, expected, "a + b");
+      }
+
+      #[test]
+      fn adds_floats_too() {
+          let a = Matrix::from_rows(vec![vec![0.5, 1.5]]).unwrap();
+          assert_eq!(&a + &a, Matrix::from_rows(vec![vec![1.0, 3.0]]).unwrap(), "[[0.5, 1.5]] + itself");
+      }
+
+      #[test]
+      fn multiplies_by_a_scalar() {
+          let m = Matrix::from_rows(vec![vec![1, -2], vec![0, 4]]).unwrap();
+          assert_eq!(&m * 3, Matrix::from_rows(vec![vec![3, -6], vec![0, 12]]).unwrap(), "&m * 3");
+          assert_eq!(&m * 0, Matrix::filled(2, 2, 0), "&m * 0");
+      }
+
+      #[test]
+      fn checked_add_reports_mismatched_shapes() {
+          let a = Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5, 6]]).unwrap();
+          assert_eq!(
+              a.checked_add(&a.transpose()),
+              Err(MatrixError::ShapeMismatch { op: "add", left: (2, 3), right: (3, 2) }),
+              "a 2x3 plus a 3x2"
+          );
+          assert_eq!(a.checked_add(&a), Ok(&a * 2), "a.checked_add(&a)");
+      }
+
+      #[test]
+      fn plus_panics_on_mismatched_shapes() {
+          let a = Matrix::filled(2, 3, 1);
+          let b = Matrix::filled(3, 2, 1);
+          let result = std::panic::catch_unwind(|| &a + &b);
+          assert!(result.is_err(), "&a + &b with shapes 2x3 and 3x2 should panic");
+      }
+
+      #[test]
+      fn shape_errors_have_readable_messages() {
+          let e = MatrixError::ShapeMismatch { op: "add", left: (2, 3), right: (3, 2) };
+          assert_eq!(e.to_string(), "cannot add a 2x3 matrix and a 3x2 matrix", "ShapeMismatch");
+      }
+
+      #[test]
+      fn indexing_display_and_get_still_work() {
+          let m = Matrix::filled(1, 2, 5) + Matrix::filled(1, 2, 1);
+          assert_eq!(m.to_string(), "[6 6]", "display of filled(1, 2, 5) + filled(1, 2, 1)");
+          assert_eq!((m[(0, 1)], m.get(0, 2), m.rows(), m.cols()), (6, None, 1, 2), "index, get, rows, cols");
+      }
+    hints:
+      - "`checked_add`: compare `(self.rows, self.cols) != (other.rows, other.cols)` and return the `ShapeMismatch` error; otherwise build a new `data` with `zip`."
+      - "`impl<T: Copy + Add<Output = T>> Add for &Matrix<T>` with `type Output = Matrix<T>;` and `fn add(self, other: Self) -> Matrix<T>`; the owned impl's body is `&self + &other`."
+      - "`impl<T: Copy + Mul<Output = T>> Mul<T> for &Matrix<T>`: `fn mul(self, k: T) -> Matrix<T>` pushes `*x * k` for every entry."
+
+  - title: Matrix multiplication
+    text: |
+      Matrix multiplication is the operation the whole field runs on (every GPU is, at heart, a matrix multiplication machine). It isn't entry by entry. Entry `(r, c)` of `A * B` is row `r` of `A` combined with column `c` of `B`: multiply them pairwise and add up:
+
+      ```text
+      [1 2 3]   [1 4]   [1*1 + 2*2 + 3*3   1*4 + 2*5 + 3*6]   [14 32]
+      [4 5 6] * [2 5] = [4*1 + 5*2 + 6*3   4*4 + 5*5 + 6*6] = [32 77]
+                [3 6]
+      ```
+
+      So `A`'s columns must match `B`'s rows: a 2x3 times a 3x2 gives a 2x2. Write:
+
+      - `checked_mul(&self, other) -> Result<Matrix<T>, MatrixError>`: the product, or `ShapeMismatch { op: "multiply", ... }` when `self.cols != other.rows`.
+      - `Mul for &Matrix<T>` (and for owned matrices), panicking on a mismatch, just like `+`.
+      - `identity(n)`: the n x n matrix with 1 on the diagonal and 0 elsewhere. Multiplying by it changes nothing, like multiplying a number by 1.
+
+      Unlike numbers, `A * B` and `B * A` are usually **different** (when they're both even defined). That's not a bug in your code: it's what makes matrices able to describe "rotate, then move" as different from "move, then rotate".
+
+      ### Where do zero and one come from?
+
+      The sum for each entry starts at zero, and the identity needs ones, but `T` is generic: you can't write `0` and hope it becomes a `T`. Two standard traits help:
+
+      - `Default`: for every number type, `T::default()` is zero. Add `Default` to the bounds and start each sum at `T::default()`.
+      - `From<u8>`: `i32`, `i64`, `u32`, `u64`, `f32` and `f64` all implement `From<u8>` (a `u8` fits in each of them without loss), so `T::from(0)` and `T::from(1)` give zero and one of any of them. `identity` lives in its own `impl<T: Copy + From<u8>> Matrix<T>` block.
+
+      The product's bounds are getting long: `T: Copy + Default + Add<Output = T> + Mul<Output = T>`. That's normal for numeric generic code. (In the advanced traits module you'll see how a `Number` trait with a blanket impl can name that whole list once. Production crates like `nalgebra` and `ndarray` do exactly that.)
+
+      `Mul` now has two impls for `&Matrix<T>`: `Mul<T>` (times a scalar) from the last milestone and `Mul<&Matrix<T>>` (times a matrix). Rust picks one from the type on the right of `*`. Overloading on the right-hand side is allowed because they're different traits as far as the compiler is concerned (`Mul<T>` versus `Mul<&Matrix<T>>`).
+    solution: |
+      use std::fmt;
+      use std::ops::{Add, Index, IndexMut, Mul};
+
+      /// A rows x cols matrix, stored row by row in one Vec.
+      #[derive(Debug, Clone, PartialEq)]
+      struct Matrix<T> {
+          rows: usize,
+          cols: usize,
+          data: Vec<T>,
+      }
+
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      enum MatrixError {
+          Empty,
+          Ragged { row: usize, expected: usize, found: usize },
+          ShapeMismatch { op: &'static str, left: (usize, usize), right: (usize, usize) },
+      }
+
+      impl fmt::Display for MatrixError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  MatrixError::Empty => write!(f, "a matrix needs at least one row and one column"),
+                  MatrixError::Ragged { row, expected, found } => {
+                      write!(f, "row {row} has {found} entries, expected {expected}")
+                  }
+                  MatrixError::ShapeMismatch { op, left, right } => {
+                      write!(f, "cannot {op} a {}x{} matrix and a {}x{} matrix", left.0, left.1, right.0, right.1)
+                  }
+              }
+          }
+      }
+
+      impl std::error::Error for MatrixError {}
+
+      // Methods that work for any T.
+      impl<T> Matrix<T> {
+          fn rows(&self) -> usize {
+              self.rows
+          }
+
+          fn cols(&self) -> usize {
+              self.cols
+          }
+
+          /// The entry at (row, col), or None if that's outside the matrix.
+          fn get(&self, row: usize, col: usize) -> Option<&T> {
+              if row < self.rows && col < self.cols { Some(&self.data[row * self.cols + col]) } else { None }
+          }
+
+          /// Where (row, col) lives in `data`. Panics with a clear message when it's outside the matrix.
+          fn offset(&self, row: usize, col: usize) -> usize {
+              assert!(
+                  row < self.rows && col < self.cols,
+                  "index ({row}, {col}) is outside a {}x{} matrix",
+                  self.rows,
+                  self.cols
+              );
+              row * self.cols + col
+          }
+      }
+
+      // Methods that need to copy entries.
+      impl<T: Clone> Matrix<T> {
+          /// A rows x cols matrix with every entry set to `value`.
+          fn filled(rows: usize, cols: usize, value: T) -> Self {
+              Matrix { rows, cols, data: vec![value; rows * cols] }
+          }
+
+          /// Builds a matrix from its rows. Every row must have the same, non-zero length.
+          fn from_rows(rows: Vec<Vec<T>>) -> Result<Self, MatrixError> {
+              let cols = match rows.first() {
+                  Some(first) if !first.is_empty() => first.len(),
+                  _ => return Err(MatrixError::Empty),
+              };
+              let row_count = rows.len();
+              let mut data = Vec::with_capacity(row_count * cols);
+              for (i, row) in rows.into_iter().enumerate() {
+                  if row.len() != cols {
+                      return Err(MatrixError::Ragged { row: i, expected: cols, found: row.len() });
+                  }
+                  data.extend(row);
+              }
+              Ok(Matrix { rows: row_count, cols, data })
+          }
+
+          fn transpose(&self) -> Self {
+              let mut data = Vec::with_capacity(self.data.len());
+              for col in 0..self.cols {
+                  for row in 0..self.rows {
+                      data.push(self[(row, col)].clone());
+                  }
+              }
+              Matrix { rows: self.cols, cols: self.rows, data }
+          }
+      }
+
+      impl<T> Index<(usize, usize)> for Matrix<T> {
+          type Output = T;
+
+          fn index(&self, (row, col): (usize, usize)) -> &T {
+              &self.data[self.offset(row, col)]
+          }
+      }
+
+      impl<T> IndexMut<(usize, usize)> for Matrix<T> {
+          fn index_mut(&mut self, (row, col): (usize, usize)) -> &mut T {
+              let i = self.offset(row, col);
+              &mut self.data[i]
+          }
+      }
+
+      /// One row per line, entries right-aligned to the widest one. `{:.2}` sets the precision of every entry.
+      impl<T: fmt::Display> fmt::Display for Matrix<T> {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let mut cells = Vec::with_capacity(self.data.len());
+              for x in &self.data {
+                  cells.push(match f.precision() {
+                      Some(p) => format!("{x:.p$}"),
+                      None => x.to_string(),
+                  });
+              }
+              let mut width = 0;
+              for cell in &cells {
+                  width = width.max(cell.chars().count());
+              }
+              for row in 0..self.rows {
+                  if row > 0 {
+                      writeln!(f)?;
+                  }
+                  write!(f, "[")?;
+                  for col in 0..self.cols {
+                      if col > 0 {
+                          write!(f, " ")?;
+                      }
+                      write!(f, "{:>width$}", cells[row * self.cols + col])?;
+                  }
+                  write!(f, "]")?;
+              }
+              Ok(())
+          }
+      }
+
+      impl<T: Copy + Add<Output = T>> Matrix<T> {
+          /// Entry-by-entry sum, or an error if the shapes differ.
+          fn checked_add(&self, other: &Matrix<T>) -> Result<Matrix<T>, MatrixError> {
+              if (self.rows, self.cols) != (other.rows, other.cols) {
+                  return Err(MatrixError::ShapeMismatch {
+                      op: "add",
+                      left: (self.rows, self.cols),
+                      right: (other.rows, other.cols),
+                  });
+              }
+              let mut data = Vec::with_capacity(self.data.len());
+              for (a, b) in self.data.iter().zip(&other.data) {
+                  data.push(*a + *b);
+              }
+              Ok(Matrix { rows: self.rows, cols: self.cols, data })
+          }
+      }
+
+      /// `&a + &b`. Like indexing out of bounds, adding mismatched shapes is a bug: it panics.
+      impl<T: Copy + Add<Output = T>> Add for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn add(self, other: Self) -> Matrix<T> {
+              match self.checked_add(other) {
+                  Ok(sum) => sum,
+                  Err(e) => panic!("{e}"),
+              }
+          }
+      }
+
+      /// `a + b`, for when you don't need the operands any more.
+      impl<T: Copy + Add<Output = T>> Add for Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn add(self, other: Self) -> Matrix<T> {
+              &self + &other
+          }
+      }
+
+      /// `&m * k`: every entry times a scalar.
+      impl<T: Copy + Mul<Output = T>> Mul<T> for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn mul(self, k: T) -> Matrix<T> {
+              let mut data = Vec::with_capacity(self.data.len());
+              for x in &self.data {
+                  data.push(*x * k);
+              }
+              Matrix { rows: self.rows, cols: self.cols, data }
+          }
+      }
+
+      impl<T: Copy + Default + Add<Output = T> + Mul<Output = T>> Matrix<T> {
+          /// The matrix product, or an error if self.cols != other.rows.
+          fn checked_mul(&self, other: &Matrix<T>) -> Result<Matrix<T>, MatrixError> {
+              if self.cols != other.rows {
+                  return Err(MatrixError::ShapeMismatch {
+                      op: "multiply",
+                      left: (self.rows, self.cols),
+                      right: (other.rows, other.cols),
+                  });
+              }
+              let mut result = Matrix::filled(self.rows, other.cols, T::default());
+              for row in 0..self.rows {
+                  for col in 0..other.cols {
+                      let mut sum = T::default();
+                      for k in 0..self.cols {
+                          sum = sum + self[(row, k)] * other[(k, col)];
+                      }
+                      result[(row, col)] = sum;
+                  }
+              }
+              Ok(result)
+          }
+      }
+
+      /// `&a * &b`: the matrix product. Panics if the shapes don't fit.
+      impl<T: Copy + Default + Add<Output = T> + Mul<Output = T>> Mul for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn mul(self, other: Self) -> Matrix<T> {
+              match self.checked_mul(other) {
+                  Ok(product) => product,
+                  Err(e) => panic!("{e}"),
+              }
+          }
+      }
+
+      impl<T: Copy + Default + Add<Output = T> + Mul<Output = T>> Mul for Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn mul(self, other: Self) -> Matrix<T> {
+              &self * &other
+          }
+      }
+
+      impl<T: Copy + From<u8>> Matrix<T> {
+          /// The n x n identity: 1 on the diagonal, 0 elsewhere.
+          fn identity(n: usize) -> Self {
+              let mut m = Matrix::filled(n, n, T::from(0));
+              for i in 0..n {
+                  m[(i, i)] = T::from(1);
+              }
+              m
+          }
+      }
+    harness: |
+      fn sample() -> Matrix<i32> {
+          Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5, 6]]).unwrap()
+      }
+
+      #[test]
+      fn multiplies_a_2x3_by_a_3x2() {
+          let a = sample();
+          let product = &a * &a.transpose();
+          assert_eq!(product, Matrix::from_rows(vec![vec![14, 32], vec![32, 77]]).unwrap(), "a * a.transpose()");
+          let other = a.transpose() * a;
+          assert_eq!((other.rows(), other.cols()), (3, 3), "(rows, cols) of a.transpose() * a");
+          assert_eq!(other[(2, 2)], 45, "entry (2, 2) of a.transpose() * a");
+      }
+
+      #[test]
+      fn identity_changes_nothing() {
+          let m = Matrix::from_rows(vec![vec![2, -1], vec![5, 3]]).unwrap();
+          let id: Matrix<i32> = Matrix::identity(2);
+          assert_eq!(id, Matrix::from_rows(vec![vec![1, 0], vec![0, 1]]).unwrap(), "identity(2)");
+          assert_eq!(&m * &id, m, "m * identity");
+          assert_eq!(&id * &m, m, "identity * m");
+      }
+
+      #[test]
+      fn order_matters() {
+          let a = Matrix::from_rows(vec![vec![1, 2], vec![3, 4]]).unwrap();
+          let b = Matrix::from_rows(vec![vec![0, 1], vec![1, 0]]).unwrap();
+          assert_eq!(&a * &b, Matrix::from_rows(vec![vec![2, 1], vec![4, 3]]).unwrap(), "a * b swaps the columns");
+          assert_eq!(&b * &a, Matrix::from_rows(vec![vec![3, 4], vec![1, 2]]).unwrap(), "b * a swaps the rows");
+      }
+
+      #[test]
+      fn works_with_floats() {
+          let a = Matrix::from_rows(vec![vec![0.5, 2.0]]).unwrap();
+          let b = Matrix::from_rows(vec![vec![4.0], vec![0.25]]).unwrap();
+          assert_eq!(&a * &b, Matrix::filled(1, 1, 2.5), "[[0.5, 2]] * [[4], [0.25]]");
+          let id: Matrix<f64> = Matrix::identity(1);
+          assert_eq!(id.get(0, 0), Some(&1.0), "identity(1) for f64");
+      }
+
+      #[test]
+      fn checked_mul_reports_mismatched_shapes() {
+          let a = sample();
+          assert_eq!(
+              a.checked_mul(&a),
+              Err(MatrixError::ShapeMismatch { op: "multiply", left: (2, 3), right: (2, 3) }),
+              "a 2x3 times a 2x3"
+          );
+          assert_eq!(a.checked_mul(&Matrix::identity(3)), Ok(sample()), "a times identity(3)");
+      }
+
+      #[test]
+      fn star_panics_on_mismatched_shapes() {
+          let a = sample();
+          let result = std::panic::catch_unwind(|| &a * &a);
+          assert!(result.is_err(), "&a * &a with a 2x3 matrix should panic");
+      }
+
+      #[test]
+      fn addition_and_scaling_still_work() {
+          let a = sample();
+          assert_eq!(a.checked_add(&a), Ok(&a * 2), "a + a == a * 2");
+          assert_eq!((&a + &a).to_string(), "[ 2  4  6]\n[ 8 10 12]", "display of a + a");
+      }
+    hints:
+      - "`checked_mul`: after the shape check, `let mut result = Matrix::filled(self.rows, other.cols, T::default());` and three nested loops: `sum = sum + self[(row, k)] * other[(k, col)]`."
+      - "`impl<T: Copy + Default + Add<Output = T> + Mul<Output = T>> Mul for &Matrix<T>` mirrors your `Add` impl, calling `checked_mul`."
+      - "`identity`: start from `Matrix::filled(n, n, T::from(0))` and set `m[(i, i)] = T::from(1)` for each `i`."
+
+  - title: "Polish: powers, trace and a Fibonacci trick"
+    text: |
+      Two classic operations finish the library, and one of them needs a classic algorithm.
+
+      - `trace(&self) -> Result<T, MatrixError>`: the sum of the diagonal entries.
+      - `pow(&self, n: u32) -> Result<Matrix<T>, MatrixError>`: the matrix multiplied by itself `n` times. `pow(0)` is the identity and `pow(1)` the matrix itself.
+
+      Both only make sense for **square** matrices: otherwise return `MatrixError::NotSquare { rows, cols }`, displayed as `a 2x3 matrix is not square`.
+
+      ### Repeated squaring
+
+      Multiplying `n` times is far too slow for big `n` (the tests ask for the billionth power). Instead, square repeatedly and use the binary digits of `n`: `M^13 = M^8 * M^4 * M^1`, because 13 is `1101` in binary. Keep a running `base` (`M`, `M^2`, `M^4`, `M^8`, ...) and multiply it into the result whenever the current bit of `n` is 1:
+
+      ```rust
+      let mut result = Matrix::identity(self.rows);
+      let mut base = self.clone();
+      while n > 0 {
+          if n % 2 == 1 {
+              result = &result * &base;
+          }
+          n /= 2;
+          if n > 0 {
+              base = &base * &base;
+          }
+      }
+      ```
+
+      That's about `2 * log2(n)` multiplications: 60 instead of a billion. The `if n > 0` before squaring isn't decoration: squaring once more after the last bit would compute a power nobody asked for, and with integer entries that extra power can overflow and panic.
+
+      ### The Fibonacci trick
+
+      Here's a beautiful use of `pow`. The Fibonacci numbers (0, 1, 1, 2, 3, 5, 8, ...) hide in the powers of one small matrix:
+
+      ```text
+      [1 1] ^ n   =   [F(n+1)  F(n)  ]
+      [1 0]           [F(n)    F(n-1)]
+      ```
+
+      So `F(90)` is entry `(0, 1)` of the 90th power, computed with a handful of multiplications. With `u64` entries that's `2880067194370816120`, close to the largest Fibonacci number a `u64` can hold. The same idea (turn a step-by-step process into a matrix, then use fast powers) computes linear recurrences, graph walks and Markov chains at work.
+
+      You've built a generic library that works for integers and floats alike, has a checked API and a panicking operator API with one source of error messages, respects formatting options, and is fully covered by tests. That's the shape of a real crate.
+    solution: |
+      use std::fmt;
+      use std::ops::{Add, Index, IndexMut, Mul};
+
+      /// A rows x cols matrix, stored row by row in one Vec.
+      #[derive(Debug, Clone, PartialEq)]
+      struct Matrix<T> {
+          rows: usize,
+          cols: usize,
+          data: Vec<T>,
+      }
+
+      #[derive(Debug, Clone, PartialEq, Eq)]
+      enum MatrixError {
+          Empty,
+          Ragged { row: usize, expected: usize, found: usize },
+          ShapeMismatch { op: &'static str, left: (usize, usize), right: (usize, usize) },
+          NotSquare { rows: usize, cols: usize },
+      }
+
+      impl fmt::Display for MatrixError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  MatrixError::Empty => write!(f, "a matrix needs at least one row and one column"),
+                  MatrixError::Ragged { row, expected, found } => {
+                      write!(f, "row {row} has {found} entries, expected {expected}")
+                  }
+                  MatrixError::ShapeMismatch { op, left, right } => {
+                      write!(f, "cannot {op} a {}x{} matrix and a {}x{} matrix", left.0, left.1, right.0, right.1)
+                  }
+                  MatrixError::NotSquare { rows, cols } => write!(f, "a {rows}x{cols} matrix is not square"),
+              }
+          }
+      }
+
+      impl std::error::Error for MatrixError {}
+
+      // Methods that work for any T.
+      impl<T> Matrix<T> {
+          fn rows(&self) -> usize {
+              self.rows
+          }
+
+          fn cols(&self) -> usize {
+              self.cols
+          }
+
+          /// The entry at (row, col), or None if that's outside the matrix.
+          fn get(&self, row: usize, col: usize) -> Option<&T> {
+              if row < self.rows && col < self.cols { Some(&self.data[row * self.cols + col]) } else { None }
+          }
+
+          /// Where (row, col) lives in `data`. Panics with a clear message when it's outside the matrix.
+          fn offset(&self, row: usize, col: usize) -> usize {
+              assert!(
+                  row < self.rows && col < self.cols,
+                  "index ({row}, {col}) is outside a {}x{} matrix",
+                  self.rows,
+                  self.cols
+              );
+              row * self.cols + col
+          }
+      }
+
+      // Methods that need to copy entries.
+      impl<T: Clone> Matrix<T> {
+          /// A rows x cols matrix with every entry set to `value`.
+          fn filled(rows: usize, cols: usize, value: T) -> Self {
+              Matrix { rows, cols, data: vec![value; rows * cols] }
+          }
+
+          /// Builds a matrix from its rows. Every row must have the same, non-zero length.
+          fn from_rows(rows: Vec<Vec<T>>) -> Result<Self, MatrixError> {
+              let cols = match rows.first() {
+                  Some(first) if !first.is_empty() => first.len(),
+                  _ => return Err(MatrixError::Empty),
+              };
+              let row_count = rows.len();
+              let mut data = Vec::with_capacity(row_count * cols);
+              for (i, row) in rows.into_iter().enumerate() {
+                  if row.len() != cols {
+                      return Err(MatrixError::Ragged { row: i, expected: cols, found: row.len() });
+                  }
+                  data.extend(row);
+              }
+              Ok(Matrix { rows: row_count, cols, data })
+          }
+
+          fn transpose(&self) -> Self {
+              let mut data = Vec::with_capacity(self.data.len());
+              for col in 0..self.cols {
+                  for row in 0..self.rows {
+                      data.push(self[(row, col)].clone());
+                  }
+              }
+              Matrix { rows: self.cols, cols: self.rows, data }
+          }
+      }
+
+      impl<T> Index<(usize, usize)> for Matrix<T> {
+          type Output = T;
+
+          fn index(&self, (row, col): (usize, usize)) -> &T {
+              &self.data[self.offset(row, col)]
+          }
+      }
+
+      impl<T> IndexMut<(usize, usize)> for Matrix<T> {
+          fn index_mut(&mut self, (row, col): (usize, usize)) -> &mut T {
+              let i = self.offset(row, col);
+              &mut self.data[i]
+          }
+      }
+
+      /// One row per line, entries right-aligned to the widest one. `{:.2}` sets the precision of every entry.
+      impl<T: fmt::Display> fmt::Display for Matrix<T> {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let mut cells = Vec::with_capacity(self.data.len());
+              for x in &self.data {
+                  cells.push(match f.precision() {
+                      Some(p) => format!("{x:.p$}"),
+                      None => x.to_string(),
+                  });
+              }
+              let mut width = 0;
+              for cell in &cells {
+                  width = width.max(cell.chars().count());
+              }
+              for row in 0..self.rows {
+                  if row > 0 {
+                      writeln!(f)?;
+                  }
+                  write!(f, "[")?;
+                  for col in 0..self.cols {
+                      if col > 0 {
+                          write!(f, " ")?;
+                      }
+                      write!(f, "{:>width$}", cells[row * self.cols + col])?;
+                  }
+                  write!(f, "]")?;
+              }
+              Ok(())
+          }
+      }
+
+      impl<T: Copy + Add<Output = T>> Matrix<T> {
+          /// Entry-by-entry sum, or an error if the shapes differ.
+          fn checked_add(&self, other: &Matrix<T>) -> Result<Matrix<T>, MatrixError> {
+              if (self.rows, self.cols) != (other.rows, other.cols) {
+                  return Err(MatrixError::ShapeMismatch {
+                      op: "add",
+                      left: (self.rows, self.cols),
+                      right: (other.rows, other.cols),
+                  });
+              }
+              let mut data = Vec::with_capacity(self.data.len());
+              for (a, b) in self.data.iter().zip(&other.data) {
+                  data.push(*a + *b);
+              }
+              Ok(Matrix { rows: self.rows, cols: self.cols, data })
+          }
+      }
+
+      /// `&a + &b`. Like indexing out of bounds, adding mismatched shapes is a bug: it panics.
+      impl<T: Copy + Add<Output = T>> Add for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn add(self, other: Self) -> Matrix<T> {
+              match self.checked_add(other) {
+                  Ok(sum) => sum,
+                  Err(e) => panic!("{e}"),
+              }
+          }
+      }
+
+      /// `a + b`, for when you don't need the operands any more.
+      impl<T: Copy + Add<Output = T>> Add for Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn add(self, other: Self) -> Matrix<T> {
+              &self + &other
+          }
+      }
+
+      /// `&m * k`: every entry times a scalar.
+      impl<T: Copy + Mul<Output = T>> Mul<T> for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn mul(self, k: T) -> Matrix<T> {
+              let mut data = Vec::with_capacity(self.data.len());
+              for x in &self.data {
+                  data.push(*x * k);
+              }
+              Matrix { rows: self.rows, cols: self.cols, data }
+          }
+      }
+
+      impl<T: Copy + Default + Add<Output = T> + Mul<Output = T>> Matrix<T> {
+          /// The matrix product, or an error if self.cols != other.rows.
+          fn checked_mul(&self, other: &Matrix<T>) -> Result<Matrix<T>, MatrixError> {
+              if self.cols != other.rows {
+                  return Err(MatrixError::ShapeMismatch {
+                      op: "multiply",
+                      left: (self.rows, self.cols),
+                      right: (other.rows, other.cols),
+                  });
+              }
+              let mut result = Matrix::filled(self.rows, other.cols, T::default());
+              for row in 0..self.rows {
+                  for col in 0..other.cols {
+                      let mut sum = T::default();
+                      for k in 0..self.cols {
+                          sum = sum + self[(row, k)] * other[(k, col)];
+                      }
+                      result[(row, col)] = sum;
+                  }
+              }
+              Ok(result)
+          }
+      }
+
+      /// `&a * &b`: the matrix product. Panics if the shapes don't fit.
+      impl<T: Copy + Default + Add<Output = T> + Mul<Output = T>> Mul for &Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn mul(self, other: Self) -> Matrix<T> {
+              match self.checked_mul(other) {
+                  Ok(product) => product,
+                  Err(e) => panic!("{e}"),
+              }
+          }
+      }
+
+      impl<T: Copy + Default + Add<Output = T> + Mul<Output = T>> Mul for Matrix<T> {
+          type Output = Matrix<T>;
+
+          fn mul(self, other: Self) -> Matrix<T> {
+              &self * &other
+          }
+      }
+
+      impl<T: Copy + From<u8>> Matrix<T> {
+          /// The n x n identity: 1 on the diagonal, 0 elsewhere.
+          fn identity(n: usize) -> Self {
+              let mut m = Matrix::filled(n, n, T::from(0));
+              for i in 0..n {
+                  m[(i, i)] = T::from(1);
+              }
+              m
+          }
+      }
+
+      impl<T: Copy + Default + From<u8> + Add<Output = T> + Mul<Output = T>> Matrix<T> {
+          /// self to the power n, by repeated squaring: about 2 * log2(n) multiplications instead of n.
+          fn pow(&self, mut n: u32) -> Result<Matrix<T>, MatrixError> {
+              if self.rows != self.cols {
+                  return Err(MatrixError::NotSquare { rows: self.rows, cols: self.cols });
+              }
+              let mut result = Matrix::identity(self.rows);
+              let mut base = self.clone();
+              while n > 0 {
+                  if n % 2 == 1 {
+                      result = &result * &base;
+                  }
+                  n /= 2;
+                  if n > 0 {
+                      base = &base * &base;
+                  }
+              }
+              Ok(result)
+          }
+
+          /// The sum of the diagonal.
+          fn trace(&self) -> Result<T, MatrixError> {
+              if self.rows != self.cols {
+                  return Err(MatrixError::NotSquare { rows: self.rows, cols: self.cols });
+              }
+              let mut sum = T::default();
+              for i in 0..self.rows {
+                  sum = sum + self[(i, i)];
+              }
+              Ok(sum)
+          }
+      }
+    harness: |
+      #[test]
+      fn pow_zero_is_the_identity() {
+          let m = Matrix::from_rows(vec![vec![2, 7], vec![1, 8]]).unwrap();
+          assert_eq!(m.pow(0), Ok(Matrix::identity(2)), "m.pow(0)");
+          assert_eq!(m.pow(1), Ok(m.clone()), "m.pow(1)");
+      }
+
+      #[test]
+      fn pow_matches_repeated_multiplication() {
+          let m = Matrix::from_rows(vec![vec![1, 1, 0], vec![0, 1, 1], vec![1, 0, 1]]).unwrap();
+          let cube = &(&m * &m) * &m;
+          assert_eq!(m.pow(3), Ok(cube.clone()), "m.pow(3)");
+          assert_eq!(m.pow(6), Ok(&cube * &cube), "m.pow(6)");
+      }
+
+      #[test]
+      fn fibonacci_numbers_from_matrix_powers() {
+          // [[1, 1], [1, 0]] to the power n holds the Fibonacci number F(n) at (0, 1).
+          let fib = Matrix::from_rows(vec![vec![1u64, 1], vec![1, 0]]).unwrap();
+          assert_eq!(fib.pow(10).unwrap()[(0, 1)], 55, "F(10)");
+          assert_eq!(fib.pow(90).unwrap()[(0, 1)], 2_880_067_194_370_816_120, "F(90)");
+      }
+
+      #[test]
+      fn pow_is_fast_for_huge_exponents() {
+          // A billion multiplications would take minutes; repeated squaring needs about 60.
+          let flip = Matrix::from_rows(vec![vec![1i64, 0], vec![0, -1]]).unwrap();
+          assert_eq!(flip.pow(1_000_000_001), Ok(flip.clone()), "flip.pow(1_000_000_001)");
+          assert_eq!(flip.pow(1_000_000_000), Ok(Matrix::identity(2)), "flip.pow(1_000_000_000)");
+      }
+
+      #[test]
+      fn trace_adds_the_diagonal() {
+          let m = Matrix::from_rows(vec![vec![1.5, 9.0], vec![9.0, 2.5]]).unwrap();
+          assert_eq!(m.trace(), Ok(4.0), "trace of [[1.5, 9], [9, 2.5]]");
+          assert_eq!(Matrix::<i32>::identity(5).trace(), Ok(5), "trace of identity(5)");
+      }
+
+      #[test]
+      fn pow_and_trace_need_a_square_matrix() {
+          let m = Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5, 6]]).unwrap();
+          assert_eq!(m.pow(2), Err(MatrixError::NotSquare { rows: 2, cols: 3 }), "pow of a 2x3 matrix");
+          assert_eq!(m.trace(), Err(MatrixError::NotSquare { rows: 2, cols: 3 }), "trace of a 2x3 matrix");
+          assert_eq!(MatrixError::NotSquare { rows: 2, cols: 3 }.to_string(), "a 2x3 matrix is not square", "the message");
+      }
+
+      #[test]
+      fn everything_else_still_works() {
+          let m = Matrix::from_rows(vec![vec![1, 2, 3], vec![4, 5, 6]]).unwrap();
+          let t = m.transpose();
+          assert_eq!(m.checked_mul(&t), Ok(&m * &t), "checked_mul agrees with *");
+          assert_eq!(m.checked_add(&Matrix::filled(2, 3, 1)), Ok(&m + &Matrix::filled(2, 3, 1)), "checked_add agrees with +");
+          assert_eq!((m.get(1, 2), m.rows(), m.cols()), (Some(&6), 2, 3), "get, rows, cols");
+          assert_eq!((&m * 2).to_string(), "[ 2  4  6]\n[ 8 10 12]", "display of m * 2");
+      }
+    hints:
+      - "Add `NotSquare { rows: usize, cols: usize }` to `MatrixError` and its message to `Display`."
+      - "Put `pow` and `trace` in an `impl` block with all the bounds they need: `T: Copy + Default + From<u8> + Add<Output = T> + Mul<Output = T>`."
+      - "`trace` starts from `T::default()` and adds `self[(i, i)]` for each `i`; `pow` is the repeated-squaring loop from the text, after the square check."

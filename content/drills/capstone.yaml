@@ -1,0 +1,319 @@
+topic: capstone
+drills:
+  - type: predict
+    pre: |
+      use std::str::FromStr;
+
+      #[derive(Debug)]
+      struct Celsius(f64);
+
+      impl FromStr for Celsius {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let number = s.strip_suffix('C').ok_or("missing unit")?;
+              number.parse().map(Celsius).map_err(|_| format!("bad number {number}"))
+          }
+      }
+    body: |
+      for s in ["21.5C", "21.5", "hotC"] {
+          match s.parse::<Celsius>() {
+              Ok(c) => println!("{c:?}"),
+              Err(e) => println!("error: {e}"),
+          }
+      }
+    why: The first parses fine. "21.5" has no C suffix, so ok_or gives the "missing unit" error (? converts the &str into the String error type). "hot" isn't a number.
+  - type: predict
+    pre: |
+      use std::collections::BTreeMap;
+    body: |
+      let log = [("/b", 30), ("/a", 10), ("/b", 50)];
+      let mut slowest: BTreeMap<&str, u32> = BTreeMap::new();
+      for (path, ms) in log {
+          let worst = slowest.entry(path).or_insert(0);
+          *worst = (*worst).max(ms);
+      }
+      println!("{:?}", slowest);
+    why: The entry API keeps one running maximum per path, and a BTreeMap prints its keys in sorted order.
+  - type: predict
+    body: |
+      let requests = [("a", 300), ("b", 120), ("c", 300)];
+      let last = requests.iter().max_by_key(|r| r.1).unwrap().0;
+      let first = requests.iter().rev().max_by_key(|r| r.1).unwrap().0;
+      println!("{last} {first}");
+    why: When several items share the maximum, max_by_key returns the last one. Reversing first makes it return the first one in the original order.
+  - type: predict
+    pre: |
+      #[derive(Debug, Clone, Copy)]
+      enum Light {
+          Red,
+          Green,
+          Yellow,
+      }
+
+      fn next(light: Light, emergency: bool) -> Light {
+          match (light, emergency) {
+              (_, true) => Light::Red,
+              (Light::Red, false) => Light::Green,
+              (Light::Green, false) => Light::Yellow,
+              (Light::Yellow, false) => Light::Red,
+          }
+      }
+    body: |
+      let mut light = Light::Red;
+      for emergency in [false, false, true, false] {
+          light = next(light, emergency);
+          print!("{light:?} ");
+      }
+      println!();
+    why: Matching on the (state, event) tuple decides each transition; the emergency arm comes first, so it wins whatever the current light is.
+  - type: predict
+    pre: |
+      use serde::Serialize;
+
+      #[derive(Serialize)]
+      struct Alert {
+          service: String,
+          #[serde(skip_serializing_if = "Option::is_none")]
+          runbook: Option<String>,
+          count: u32,
+      }
+    body: |
+      let alert = Alert { service: "api".to_string(), runbook: None, count: 3 };
+      println!("{}", serde_json::to_string(&alert).unwrap());
+    why: Fields are written in declaration order, and skip_serializing_if leaves out runbook because it is None.
+  - type: predict
+    pre: |
+      use thiserror::Error;
+
+      #[derive(Debug, Error)]
+      enum PayError {
+          #[error("card declined: {0}")]
+          Declined(String),
+          #[error("limit is {limit}, asked {asked}")]
+          OverLimit { limit: u32, asked: u32 },
+      }
+    body: |
+      println!("{}", PayError::OverLimit { limit: 100, asked: 250 });
+      println!("{}", PayError::Declined("expired".to_string()));
+    why: "thiserror generates Display from the #[error] messages; {0} is a tuple field and {limit} a named field."
+  - type: fill
+    prompt: Declare the error type of the parser.
+    pre: |
+      use std::str::FromStr;
+
+      struct Port(u16);
+
+      impl FromStr for Port {
+          type [[Err]] = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              s.parse().map(Port).map_err(|_| format!("bad port {s}"))
+          }
+      }
+    body: |
+      let p: Port = "8080".parse().unwrap();
+      println!("{}", p.0);
+    why: FromStr has an associated type Err that names what from_str returns on failure.
+  - type: fill
+    prompt: Let the field fall back to its type's default when the JSON leaves it out.
+    pre: |
+      use serde::Deserialize;
+
+      #[derive(Deserialize)]
+      struct Job {
+          name: String,
+          #[serde([[default]])]
+          retries: u32,
+      }
+    body: |
+      let job: Job = serde_json::from_str(r#"{"name": "backup"}"#).unwrap();
+      println!("{} {}", job.name, job.retries);
+    why: "#[serde(default)] uses Default::default() (0 for u32) when the key is missing; without it, a missing retries is an error."
+  - type: fill
+    prompt: Replace the library's parse error with our own message.
+    body: |
+      let raw = "12x";
+      let result: Result<u32, String> = raw.parse::<u32>().[[map_err]](|_| format!("not a number: {raw}"));
+      println!("{:?}", result);
+    why: map_err transforms only the error side of a Result, leaving an Ok value untouched.
+  - type: bug
+    body: |
+      let errors = 2;
+      let total = 7;
+      let percent = errors / total * 100; // BUG
+      println!("{percent:.1}%");
+    fix: "let percent = errors as f64 * 100.0 / total as f64;"
+    prompt: "This should print the error rate, `28.6%`. Click the line with the bug."
+    why: Integer division 2 / 7 is 0 before the multiplication. Convert to f64 first to keep the fraction.
+  - type: bug
+    body: |
+      let requests = [("/a", 300, "09:00:01"), ("/b", 120, "09:00:02"), ("/c", 300, "09:00:03")];
+      let slowest = requests.iter().max_by_key(|r| r.1).unwrap(); // BUG
+      println!("{} at {}", slowest.0, slowest.2);
+    fix: "let slowest = requests.iter().rev().max_by_key(|r| r.1).unwrap();"
+    prompt: "The report should name the first of the slowest requests: `/a at 09:00:01`. Click the line with the bug."
+    why: max_by_key returns the last of several equal maxima; iterating in reverse makes it return the first.
+  - type: compiles
+    answer: no
+    pre: |
+      #[derive(Debug)]
+      enum ConfigError {
+          Missing,
+      }
+
+      fn port(s: &str) -> Result<u16, ConfigError> {
+          let p: u16 = s.parse()?;
+          Ok(p)
+      }
+    body: |
+      println!("{:?}", port("8080"));
+    why: "? converts errors with From, and there is no From<ParseIntError> for ConfigError. Add that impl, or use map_err."
+  - type: compiles
+    answer: yes
+    pre: |
+      trait Discount {
+          fn off(&self, cents: u64) -> u64;
+      }
+
+      struct Flat(u64);
+      struct Percent(u64);
+
+      impl Discount for Flat {
+          fn off(&self, _cents: u64) -> u64 { self.0 }
+      }
+
+      impl Discount for Percent {
+          fn off(&self, cents: u64) -> u64 { cents * self.0 / 100 }
+      }
+    body: |
+      let rules: Vec<Box<dyn Discount>> = vec![Box::new(Flat(200)), Box::new(Percent(10))];
+      let total: u64 = rules.iter().map(|r| r.off(5000)).sum();
+      println!("{total}");
+    why: Different types implementing the same trait can live in one Vec as Box<dyn Discount>; each call is dispatched to the right impl at run time.
+  - type: compiles
+    answer: no
+    pre: |
+      enum State {
+          Draft,
+          Review,
+          Live,
+      }
+
+      enum Event {
+          Submit,
+          Approve,
+      }
+
+      fn step(s: State, e: Event) -> State {
+          match (s, e) {
+              (State::Draft, Event::Submit) => State::Review,
+              (State::Review, Event::Approve) => State::Live,
+          }
+      }
+    body: |
+      let _ = step(State::Draft, Event::Submit);
+    why: The match isn't exhaustive (for example (Live, Submit) isn't covered). The compiler insists that every state and event combination is handled, which is what makes enum state machines safe.
+  - type: choice
+    prompt: You're writing a library crate that other teams call. Its functions can fail in four distinct ways that callers handle differently. Which error type fits best?
+    choices: ["anyhow::Error", "An enum deriving thiserror::Error, one variant per failure", "String", "Panic with a clear message"]
+    answer: 2
+    why: Callers of a library need to match on what went wrong, so give them an enum. anyhow is for applications, where errors are mostly reported, not handled case by case.
+  - type: choice
+    prompt: A CI step validates a deploy config and finds several problems. What should it do?
+    choices: ["Stop at the first problem and report it", "Report every problem it found, then fail the step", "Fix the problems automatically and continue", "Log a warning and continue the deploy"]
+    answer: 2
+    why: Reporting all problems at once saves a CI round-trip per mistake, and failing the step keeps a broken config out of production.
+  - type: boss
+    prompt: |
+      Write `fn parse_settings(text: &str) -> Result<Settings, String>` for a small settings file with one `key = value` per line (spaces around `=` are optional). Skip blank lines and lines starting with `#`. Keys:
+
+      - `name` (required, any text)
+      - `threads` (default 4; must be a number from 1 to 64)
+      - `verbose` (default false; `true` or `false`)
+
+      Errors, with line numbers counted from 1: `line N: expected key = value`, `line N: unknown key KEY`, `line N: threads must be a number from 1 to 64`, `line N: verbose must be true or false`, and `missing name` when no name was given. Return the first error you meet.
+    seed: |
+      #[derive(Debug, PartialEq)]
+      struct Settings {
+          name: String,
+          threads: u32,
+          verbose: bool,
+      }
+
+      fn parse_settings(text: &str) -> Result<Settings, String> {
+          todo!()
+      }
+    solution: |
+      #[derive(Debug, PartialEq)]
+      struct Settings {
+          name: String,
+          threads: u32,
+          verbose: bool,
+      }
+
+      fn parse_settings(text: &str) -> Result<Settings, String> {
+          let mut name = None;
+          let mut threads = 4;
+          let mut verbose = false;
+          for (i, line) in text.lines().enumerate() {
+              let n = i + 1;
+              let line = line.trim();
+              if line.is_empty() || line.starts_with('#') {
+                  continue;
+              }
+              let (key, value) = line.split_once('=').ok_or_else(|| format!("line {n}: expected key = value"))?;
+              let value = value.trim();
+              match key.trim() {
+                  "name" => name = Some(value.to_string()),
+                  "threads" => {
+                      threads = value
+                          .parse()
+                          .ok()
+                          .filter(|t| (1..=64).contains(t))
+                          .ok_or_else(|| format!("line {n}: threads must be a number from 1 to 64"))?;
+                  }
+                  "verbose" => {
+                      verbose = value.parse().map_err(|_| format!("line {n}: verbose must be true or false"))?;
+                  }
+                  other => return Err(format!("line {n}: unknown key {other}")),
+              }
+          }
+          let name = name.ok_or("missing name")?;
+          Ok(Settings { name, threads, verbose })
+      }
+    harness: |
+      #[test]
+      fn reads_all_keys() {
+          let s = parse_settings("name = crawler\nthreads=8\nverbose = true\n").unwrap();
+          assert_eq!((s.name.as_str(), s.threads, s.verbose), ("crawler", 8, true), "parsed settings");
+      }
+
+      #[test]
+      fn uses_defaults_and_skips_comments() {
+          let s = parse_settings("# worker config\n\nname = indexer\n");
+          assert_eq!(s, Ok(Settings { name: "indexer".to_string(), threads: 4, verbose: false }), "settings with defaults");
+      }
+
+      #[test]
+      fn reports_bad_lines_with_numbers() {
+          assert_eq!(parse_settings("name = a\nthreads: 3\n"), Err("line 2: expected key = value".to_string()), "a line without =");
+          assert_eq!(parse_settings("name = a\n\ncolour = red\n"), Err("line 3: unknown key colour".to_string()), "an unknown key");
+      }
+
+      #[test]
+      fn validates_values() {
+          assert_eq!(parse_settings("threads = 0\nname = a\n"), Err("line 1: threads must be a number from 1 to 64".to_string()), "threads = 0");
+          assert_eq!(parse_settings("name = a\nthreads = many\n"), Err("line 2: threads must be a number from 1 to 64".to_string()), "threads = many");
+          assert_eq!(parse_settings("name = a\nverbose = yes\n"), Err("line 2: verbose must be true or false".to_string()), "verbose = yes");
+      }
+
+      #[test]
+      fn requires_a_name() {
+          assert_eq!(parse_settings("threads = 2\n"), Err("missing name".to_string()), "no name");
+      }
+    hints:
+      - "Keep `name: Option<String>`, `threads` and `verbose` with their defaults, and loop over `text.lines().enumerate()` (line number `i + 1`), skipping blank and `#` lines."
+      - "`line.split_once('=')` gives the key and value (trim both); `.ok_or_else(|| format!(...))?` turns a missing `=` into the error."
+      - "`match key.trim()` with one arm per key and `other => return Err(format!(\"line {n}: unknown key {other}\"))`. At the end, `name.ok_or(\"missing name\")?`."
+    why: Parsing settings combines everything in this phase on a small scale, line numbers, defaults, validation and precise error messages, so users can fix their file without guessing.
