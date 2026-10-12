@@ -1,0 +1,1164 @@
+id: task-scheduler
+title: A parallel task scheduler
+level: Advanced
+after: graphs
+summary: The core of every build system and CI pipeline. Parse tasks and their dependencies, order them with a topological sort, name the cycle when there is one, run independent tasks in parallel waves on scoped threads with deterministic output, and find the critical path.
+seed: |
+  use std::collections::{BTreeMap, BTreeSet};
+  use std::io::{self, Read};
+  use std::process::ExitCode;
+
+  #[derive(Debug)]
+  struct Task {
+      cost: u32,
+      deps: BTreeSet<String>,
+  }
+
+  /// Parses the whole task file. On failure, returns every problem found.
+  fn parse_tasks(input: &str) -> Result<BTreeMap<String, Task>, Vec<String>> {
+      todo!()
+  }
+
+  fn main() -> ExitCode {
+      let mut input = String::new();
+      io::stdin().read_to_string(&mut input).expect("failed to read input");
+
+      let tasks = match parse_tasks(&input) {
+          Ok(tasks) => tasks,
+          Err(errors) => {
+              for error in errors {
+                  println!("error: {error}");
+              }
+              return ExitCode::FAILURE;
+          }
+      };
+      for (name, task) in &tasks {
+          // Print "name (cost): dep, dep", or "name (cost): -" with no dependencies.
+      }
+      ExitCode::SUCCESS
+  }
+milestones:
+  - title: Parse the task file
+    text: |
+      `cargo build`, `make`, CI pipelines, data workflows and even a cooking recipe have the same structure: **tasks** that take some work, and **dependencies** between them (you can't test before you compile, you can't butter toast that isn't toasted). Under the hood, every one of these tools is a **scheduler**: it works out an order that respects the dependencies and runs as much as possible at the same time. In this project you'll build one.
+
+      Tasks come from standard input, one per line:
+
+      ```text
+      # A small build
+      fetch (2):
+      configure (1): fetch
+      compile (5): configure fetch
+      test (3): compile
+      docs (2): configure
+      package (1): compile test docs
+      ```
+
+      Each line is `name (cost): dependencies`. The **cost** is how much work the task takes (think seconds), and the dependencies are the tasks that must finish first, separated by spaces. Blank lines and lines starting with `#` are ignored.
+
+      For now, read the file and print every task in name order, with its dependencies in name order (or `-` for none):
+
+      ```text
+      compile (5): configure, fetch
+      configure (1): fetch
+      docs (2): configure
+      fetch (2): -
+      package (1): compile, docs, test
+      test (3): compile
+      ```
+
+      ### The data structure is the graph
+
+      ```rust
+      struct Task {
+          cost: u32,
+          deps: BTreeSet<String>,
+      }
+      ```
+
+      in a `BTreeMap<String, Task>` keyed by name. That map *is* a **directed graph** stored as an adjacency list: each task points at the tasks it depends on. Using `BTreeMap` and `BTreeSet` instead of the hash versions keeps every walk over them in sorted order, which will make the scheduler's output identical on every run. A set also quietly merges a dependency listed twice.
+
+      ### Report every problem
+
+      If anything is wrong, print every problem as `error: ...` and exit with code 1 (`ExitCode::FAILURE`), without printing the list:
+
+      | Problem | Message |
+      |---|---|
+      | no `:` or no `(cost)` | `line 4: expected "name (cost): dependencies"` |
+      | a name with characters other than letters, digits, `-` and `_` | `line 7: invalid task name "bad name"` |
+      | a cost that isn't a whole number above 0 | `line 3: invalid cost "x"` |
+      | a name used twice | `line 2: task "fetch" is defined twice` |
+      | a dependency that isn't defined anywhere | `task "deploy" depends on unknown task "package"` |
+
+      Line errors come in line order. Unknown dependencies are checked **after** reading every line, because a task may depend on one defined later in the file (forward references are normal in real build files); they're reported in task-name order, then dependency order. (The errors go to standard output so the tests can check them; a real tool would print them with `eprintln!`.)
+
+      Parsing a line is a chain of small steps that can each fail: `split_once(':')`, then `strip_suffix(')')` and `split_once('(')` on the part before the colon, then parsing the cost. Writing it as `fn parse_line(line: &str) -> Result<(String, Task), String>` with `?` and `ok_or_else` keeps it flat.
+    solution: |
+      use std::collections::{BTreeMap, BTreeSet};
+      use std::io::{self, Read};
+      use std::process::ExitCode;
+
+      #[derive(Debug)]
+      struct Task {
+          cost: u32,
+          deps: BTreeSet<String>,
+      }
+
+      /// "compile (5): configure fetch" -> ("compile", Task { cost: 5, deps: {"configure", "fetch"} })
+      fn parse_line(line: &str) -> Result<(String, Task), String> {
+          let format_error = || String::from("expected \"name (cost): dependencies\"");
+          let (head, deps) = line.split_once(':').ok_or_else(format_error)?;
+          let (name, cost) = head.trim().strip_suffix(')').and_then(|h| h.split_once('(')).ok_or_else(format_error)?;
+          let name = name.trim();
+          if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+              return Err(format!("invalid task name \"{name}\""));
+          }
+          let cost = match cost.trim().parse::<u32>() {
+              Ok(cost) if cost > 0 => cost,
+              _ => return Err(format!("invalid cost \"{}\"", cost.trim())),
+          };
+          let deps = deps.split_whitespace().map(String::from).collect();
+          Ok((name.to_string(), Task { cost, deps }))
+      }
+
+      /// Parses the whole task file. On failure, returns every problem found.
+      fn parse_tasks(input: &str) -> Result<BTreeMap<String, Task>, Vec<String>> {
+          let mut tasks = BTreeMap::new();
+          let mut errors = Vec::new();
+          for (i, line) in input.lines().enumerate() {
+              let line = line.trim();
+              if line.is_empty() || line.starts_with('#') {
+                  continue;
+              }
+              match parse_line(line) {
+                  Ok((name, _)) if tasks.contains_key(&name) => {
+                      errors.push(format!("line {}: task \"{name}\" is defined twice", i + 1));
+                  }
+                  Ok((name, task)) => {
+                      tasks.insert(name, task);
+                  }
+                  Err(e) => errors.push(format!("line {}: {e}", i + 1)),
+              }
+          }
+          for (name, task) in &tasks {
+              for dep in &task.deps {
+                  if !tasks.contains_key(dep) {
+                      errors.push(format!("task \"{name}\" depends on unknown task \"{dep}\""));
+                  }
+              }
+          }
+          if errors.is_empty() { Ok(tasks) } else { Err(errors) }
+      }
+
+      fn main() -> ExitCode {
+          let mut input = String::new();
+          io::stdin().read_to_string(&mut input).expect("failed to read input");
+
+          let tasks = match parse_tasks(&input) {
+              Ok(tasks) => tasks,
+              Err(errors) => {
+                  for error in errors {
+                      println!("error: {error}");
+                  }
+                  return ExitCode::FAILURE;
+              }
+          };
+          for (name, task) in &tasks {
+              let deps: Vec<&str> = task.deps.iter().map(String::as_str).collect();
+              let deps = if deps.is_empty() { String::from("-") } else { deps.join(", ") };
+              println!("{name} ({}): {deps}", task.cost);
+          }
+          ExitCode::SUCCESS
+      }
+    tests:
+      - stdin: "# A small build\nfetch (2):\nconfigure (1): fetch\ncompile (5): configure fetch\ntest (3): compile\ndocs (2): configure\npackage (1): compile test docs\n"
+      - stdin: "fetch (2):\nfetch (3):\ncompile (x): fetch\ntest 3: compile\nlint (0):\ndeploy (1): package\nbad name (1):\n"
+        exit: 1
+      - stdin: "# Sunday breakfast\nboil-water (3):\ngrind-coffee (1):\nbrew-coffee (4): boil-water grind-coffee\ntoast-bread (2):\nbutter-toast (1): toast-bread\nbreakfast (1): brew-coffee butter-toast\n"
+        hidden: true
+      - stdin: "app (1): lib lib util\n\nlib (2): util\nutil (3):\nweb (1): app api\n"
+        exit: 1
+        hidden: true
+    hints:
+      - "`parse_line`: `let (head, deps) = line.split_once(':').ok_or_else(...)?;` then `head.trim().strip_suffix(')').and_then(|h| h.split_once('('))` gives the name and the cost text."
+      - "In `parse_tasks`, loop over `input.lines().enumerate()`, skip blank and `#` lines, and push `format!(\"line {}: {e}\", i + 1)` for every error; check `tasks.contains_key(&name)` before inserting."
+      - "After the loop, check every dependency of every task with `tasks.contains_key(dep)`. Return `Ok(tasks)` only if `errors` is empty."
+
+  - title: An order that respects the dependencies
+    text: |
+      A scheduler's first job is an order to run things in, where every task comes **after** all of its dependencies. That's called a **topological order**, and there are usually many: in the example, `docs` could run before or after `compile`. Your tool must always pick the same one, so define the tie-break: whenever several tasks are ready, take the **alphabetically first**.
+
+      Replace the list with the order and the total cost of all tasks:
+
+      ```text
+      order: fetch, configure, compile, docs, test, package
+      total cost: 14
+      ```
+
+      ### Kahn's algorithm
+
+      1. For every task, count how many dependencies it's still waiting for.
+      2. Every task waiting for 0 is **ready**.
+      3. Repeatedly take a ready task, append it to the order, and tell each task that depends on it that one of its dependencies is done (decrease its count). A task whose count reaches 0 becomes ready.
+
+      Step 3 needs the edges the other way round: not "what does `compile` depend on" but "who depends on `fetch`". Build that **reversed adjacency list** first, `BTreeMap<&str, Vec<&str>>`. And make the ready list a `BTreeSet<&str>`: `pop_first()` removes the smallest element, which is exactly the alphabetical tie-break, at O(log n) per step.
+
+      ```rust
+      while let Some(name) = ready.pop_first() {
+          order.push(name);
+          // decrease the count of every task that depends on `name`...
+      }
+      ```
+
+      The maps borrow the names from the task map (`&str`, not `String`), so the whole algorithm allocates no new strings, and the returned order is a `Vec<&str>` borrowing from the tasks.
+
+      ### What if it never finishes?
+
+      If tasks depend on each other in a circle (`a` needs `c`, `c` needs `b`, `b` needs `a`), none of them ever reaches 0: the loop ends with tasks left over. So Kahn's algorithm detects cycles for free: if the order is shorter than the number of tasks, there's a **cycle**. Return `Option<Vec<&str>>` and, on `None`, print `error: the tasks contain a cycle` and exit with code 1. (The next milestone names the cycle.)
+
+      If the file defines no tasks at all, print `no tasks` and exit successfully.
+    solution: |
+      use std::collections::{BTreeMap, BTreeSet};
+      use std::io::{self, Read};
+      use std::process::ExitCode;
+
+      #[derive(Debug)]
+      struct Task {
+          cost: u32,
+          deps: BTreeSet<String>,
+      }
+
+      /// "compile (5): configure fetch" -> ("compile", Task { cost: 5, deps: {"configure", "fetch"} })
+      fn parse_line(line: &str) -> Result<(String, Task), String> {
+          let format_error = || String::from("expected \"name (cost): dependencies\"");
+          let (head, deps) = line.split_once(':').ok_or_else(format_error)?;
+          let (name, cost) = head.trim().strip_suffix(')').and_then(|h| h.split_once('(')).ok_or_else(format_error)?;
+          let name = name.trim();
+          if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+              return Err(format!("invalid task name \"{name}\""));
+          }
+          let cost = match cost.trim().parse::<u32>() {
+              Ok(cost) if cost > 0 => cost,
+              _ => return Err(format!("invalid cost \"{}\"", cost.trim())),
+          };
+          let deps = deps.split_whitespace().map(String::from).collect();
+          Ok((name.to_string(), Task { cost, deps }))
+      }
+
+      /// Parses the whole task file. On failure, returns every problem found.
+      fn parse_tasks(input: &str) -> Result<BTreeMap<String, Task>, Vec<String>> {
+          let mut tasks = BTreeMap::new();
+          let mut errors = Vec::new();
+          for (i, line) in input.lines().enumerate() {
+              let line = line.trim();
+              if line.is_empty() || line.starts_with('#') {
+                  continue;
+              }
+              match parse_line(line) {
+                  Ok((name, _)) if tasks.contains_key(&name) => {
+                      errors.push(format!("line {}: task \"{name}\" is defined twice", i + 1));
+                  }
+                  Ok((name, task)) => {
+                      tasks.insert(name, task);
+                  }
+                  Err(e) => errors.push(format!("line {}: {e}", i + 1)),
+              }
+          }
+          for (name, task) in &tasks {
+              for dep in &task.deps {
+                  if !tasks.contains_key(dep) {
+                      errors.push(format!("task \"{name}\" depends on unknown task \"{dep}\""));
+                  }
+              }
+          }
+          if errors.is_empty() { Ok(tasks) } else { Err(errors) }
+      }
+
+      /// Kahn's algorithm. Among the tasks that are ready, the alphabetically first one goes next,
+      /// so the order is the same on every run. Returns None if some tasks can never become ready.
+      fn topo_order(tasks: &BTreeMap<String, Task>) -> Option<Vec<&str>> {
+          // How many unfinished dependencies each task is still waiting for.
+          let mut waiting: BTreeMap<&str, usize> = tasks.iter().map(|(name, task)| (name.as_str(), task.deps.len())).collect();
+          // The edges reversed: for each task, the tasks that depend on it.
+          let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+          for (name, task) in tasks {
+              for dep in &task.deps {
+                  dependents.entry(dep.as_str()).or_default().push(name.as_str());
+              }
+          }
+          let mut ready: BTreeSet<&str> = waiting.iter().filter(|(_, n)| **n == 0).map(|(name, _)| *name).collect();
+          let mut order = Vec::with_capacity(tasks.len());
+          while let Some(name) = ready.pop_first() {
+              order.push(name);
+              for &next in dependents.get(name).into_iter().flatten() {
+                  let n = waiting.get_mut(next).expect("every task has a count");
+                  *n -= 1;
+                  if *n == 0 {
+                      ready.insert(next);
+                  }
+              }
+          }
+          if order.len() == tasks.len() { Some(order) } else { None }
+      }
+
+      fn main() -> ExitCode {
+          let mut input = String::new();
+          io::stdin().read_to_string(&mut input).expect("failed to read input");
+
+          let tasks = match parse_tasks(&input) {
+              Ok(tasks) => tasks,
+              Err(errors) => {
+                  for error in errors {
+                      println!("error: {error}");
+                  }
+                  return ExitCode::FAILURE;
+              }
+          };
+          if tasks.is_empty() {
+              println!("no tasks");
+              return ExitCode::SUCCESS;
+          }
+
+          let Some(order) = topo_order(&tasks) else {
+              println!("error: the tasks contain a cycle");
+              return ExitCode::FAILURE;
+          };
+          println!("order: {}", order.join(", "));
+          let total: u32 = tasks.values().map(|task| task.cost).sum();
+          println!("total cost: {total}");
+          ExitCode::SUCCESS
+      }
+    tests:
+      - stdin: "# A small build\nfetch (2):\nconfigure (1): fetch\ncompile (5): configure fetch\ntest (3): compile\ndocs (2): configure\npackage (1): compile test docs\n"
+      - stdin: "a (1): c\nb (1): a\nc (1): b\nd (1):\n"
+        exit: 1
+      - stdin: "zeta (1):\nalpha (2):\nmid (3): alpha\n"
+      - stdin: "# Sunday breakfast\nboil-water (3):\ngrind-coffee (1):\nbrew-coffee (4): boil-water grind-coffee\ntoast-bread (2):\nbutter-toast (1): toast-bread\nbreakfast (1): brew-coffee butter-toast\n"
+        hidden: true
+      - stdin: "# nothing to do\n"
+        hidden: true
+    hints:
+      - "Build `waiting: BTreeMap<&str, usize>` (each task's number of dependencies) and `dependents: BTreeMap<&str, Vec<&str>>` (for each dependency, who needs it)."
+      - "Start `ready` as a `BTreeSet<&str>` of the tasks waiting for 0, then `while let Some(name) = ready.pop_first()`: push it, and for each dependent decrease its count and insert it into `ready` when it hits 0."
+      - "Return `Some(order)` if `order.len() == tasks.len()`, else `None`. In `main`, use `let Some(order) = topo_order(&tasks) else { ... };`."
+
+  - title: Name the cycle
+    text: |
+      "The tasks contain a cycle" is true but useless: in a real build file with hundreds of tasks, which ones? Print the cycle itself, following the dependencies:
+
+      ```text
+      error: cycle: a -> c -> b -> a
+      ```
+
+      Read `->` as "depends on": `a` depends on `c`, which depends on `b`, which depends on `a` again. A task that depends on itself is the shortest cycle: `error: cycle: lint -> lint`.
+
+      ### Depth-first search with three colors
+
+      Kahn's algorithm can tell you a cycle exists, but not where. **Depth-first search** can. Walk the graph from a task, following dependencies as deep as possible, and keep the current path on a stack. Each task is in one of three states:
+
+      - **not visited** yet (not in the map),
+      - **visiting**: on the current path, its dependencies are being explored right now,
+      - **done**: it and everything below it was explored, and no cycle was found there.
+
+      Reaching a *visiting* task means you've walked in a circle: the cycle is the part of the path from that task to the end, plus the task again. Reaching a *done* task means nothing new is down there, so you can return immediately; that's what keeps the search linear in the size of the graph instead of exponential.
+
+      ```rust
+      enum Mark {
+          Visiting,
+          Done,
+      }
+
+      fn visit<'a>(
+          name: &'a str,
+          tasks: &'a BTreeMap<String, Task>,
+          marks: &mut BTreeMap<&'a str, Mark>,
+          path: &mut Vec<&'a str>,
+      ) -> Option<Vec<&'a str>>
+      ```
+
+      The lifetime `'a` says that every name in `marks`, `path` and the returned cycle borrows from the task map (or is the `name` argument, which has the same lifetime). The compiler needs to hear it: with two reference parameters in and references out, elision can't guess where the output borrows from.
+
+      `visit` marks the task as visiting, pushes it on the path, recursively visits each dependency (returning a cycle as soon as one is found), then pops it and marks it done. `find_cycle` calls `visit` for every task in name order, so the cycle you report is always the same one.
+
+      Keep Kahn's algorithm for the order, and call `find_cycle` only when it returns `None`: then there must be a cycle, so `find_cycle(&tasks).expect(...)` is a fine use of `expect` (it documents a guarantee rather than ignoring an error).
+    solution: |
+      use std::collections::{BTreeMap, BTreeSet};
+      use std::io::{self, Read};
+      use std::process::ExitCode;
+
+      #[derive(Debug)]
+      struct Task {
+          cost: u32,
+          deps: BTreeSet<String>,
+      }
+
+      /// "compile (5): configure fetch" -> ("compile", Task { cost: 5, deps: {"configure", "fetch"} })
+      fn parse_line(line: &str) -> Result<(String, Task), String> {
+          let format_error = || String::from("expected \"name (cost): dependencies\"");
+          let (head, deps) = line.split_once(':').ok_or_else(format_error)?;
+          let (name, cost) = head.trim().strip_suffix(')').and_then(|h| h.split_once('(')).ok_or_else(format_error)?;
+          let name = name.trim();
+          if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+              return Err(format!("invalid task name \"{name}\""));
+          }
+          let cost = match cost.trim().parse::<u32>() {
+              Ok(cost) if cost > 0 => cost,
+              _ => return Err(format!("invalid cost \"{}\"", cost.trim())),
+          };
+          let deps = deps.split_whitespace().map(String::from).collect();
+          Ok((name.to_string(), Task { cost, deps }))
+      }
+
+      /// Parses the whole task file. On failure, returns every problem found.
+      fn parse_tasks(input: &str) -> Result<BTreeMap<String, Task>, Vec<String>> {
+          let mut tasks = BTreeMap::new();
+          let mut errors = Vec::new();
+          for (i, line) in input.lines().enumerate() {
+              let line = line.trim();
+              if line.is_empty() || line.starts_with('#') {
+                  continue;
+              }
+              match parse_line(line) {
+                  Ok((name, _)) if tasks.contains_key(&name) => {
+                      errors.push(format!("line {}: task \"{name}\" is defined twice", i + 1));
+                  }
+                  Ok((name, task)) => {
+                      tasks.insert(name, task);
+                  }
+                  Err(e) => errors.push(format!("line {}: {e}", i + 1)),
+              }
+          }
+          for (name, task) in &tasks {
+              for dep in &task.deps {
+                  if !tasks.contains_key(dep) {
+                      errors.push(format!("task \"{name}\" depends on unknown task \"{dep}\""));
+                  }
+              }
+          }
+          if errors.is_empty() { Ok(tasks) } else { Err(errors) }
+      }
+
+      /// Kahn's algorithm. Among the tasks that are ready, the alphabetically first one goes next,
+      /// so the order is the same on every run. Returns None if some tasks can never become ready.
+      fn topo_order(tasks: &BTreeMap<String, Task>) -> Option<Vec<&str>> {
+          // How many unfinished dependencies each task is still waiting for.
+          let mut waiting: BTreeMap<&str, usize> = tasks.iter().map(|(name, task)| (name.as_str(), task.deps.len())).collect();
+          // The edges reversed: for each task, the tasks that depend on it.
+          let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+          for (name, task) in tasks {
+              for dep in &task.deps {
+                  dependents.entry(dep.as_str()).or_default().push(name.as_str());
+              }
+          }
+          let mut ready: BTreeSet<&str> = waiting.iter().filter(|(_, n)| **n == 0).map(|(name, _)| *name).collect();
+          let mut order = Vec::with_capacity(tasks.len());
+          while let Some(name) = ready.pop_first() {
+              order.push(name);
+              for &next in dependents.get(name).into_iter().flatten() {
+                  let n = waiting.get_mut(next).expect("every task has a count");
+                  *n -= 1;
+                  if *n == 0 {
+                      ready.insert(next);
+                  }
+              }
+          }
+          if order.len() == tasks.len() { Some(order) } else { None }
+      }
+
+      #[derive(Clone, Copy, PartialEq)]
+      enum Mark {
+          Visiting,
+          Done,
+      }
+
+      /// Depth-first search for a dependency cycle, as a path that starts and ends with the same task.
+      fn find_cycle(tasks: &BTreeMap<String, Task>) -> Option<Vec<&str>> {
+          let mut marks = BTreeMap::new();
+          let mut path = Vec::new();
+          for name in tasks.keys() {
+              if let Some(cycle) = visit(name, tasks, &mut marks, &mut path) {
+                  return Some(cycle);
+              }
+          }
+          None
+      }
+
+      fn visit<'a>(
+          name: &'a str,
+          tasks: &'a BTreeMap<String, Task>,
+          marks: &mut BTreeMap<&'a str, Mark>,
+          path: &mut Vec<&'a str>,
+      ) -> Option<Vec<&'a str>> {
+          match marks.get(name) {
+              Some(Mark::Done) => return None,
+              Some(Mark::Visiting) => {
+                  // `name` is already on the current path: the cycle runs from there back to here.
+                  let start = path.iter().position(|&n| n == name).expect("a visiting task is on the path");
+                  let mut cycle = path[start..].to_vec();
+                  cycle.push(name);
+                  return Some(cycle);
+              }
+              None => {}
+          }
+          marks.insert(name, Mark::Visiting);
+          path.push(name);
+          for dep in &tasks[name].deps {
+              if let Some(cycle) = visit(dep, tasks, marks, path) {
+                  return Some(cycle);
+              }
+          }
+          path.pop();
+          marks.insert(name, Mark::Done);
+          None
+      }
+
+      fn main() -> ExitCode {
+          let mut input = String::new();
+          io::stdin().read_to_string(&mut input).expect("failed to read input");
+
+          let tasks = match parse_tasks(&input) {
+              Ok(tasks) => tasks,
+              Err(errors) => {
+                  for error in errors {
+                      println!("error: {error}");
+                  }
+                  return ExitCode::FAILURE;
+              }
+          };
+          if tasks.is_empty() {
+              println!("no tasks");
+              return ExitCode::SUCCESS;
+          }
+
+          let Some(order) = topo_order(&tasks) else {
+              let cycle = find_cycle(&tasks).expect("an incomplete order means there is a cycle");
+              println!("error: cycle: {}", cycle.join(" -> "));
+              return ExitCode::FAILURE;
+          };
+          println!("order: {}", order.join(", "));
+          let total: u32 = tasks.values().map(|task| task.cost).sum();
+          println!("total cost: {total}");
+          ExitCode::SUCCESS
+      }
+    tests:
+      - stdin: "a (1): c\nb (1): a\nc (1): b\nd (1):\n"
+        exit: 1
+      - stdin: "lint (2): lint\n"
+        exit: 1
+      - stdin: "# A small build\nfetch (2):\nconfigure (1): fetch\ncompile (5): configure fetch\ntest (3): compile\ndocs (2): configure\npackage (1): compile test docs\n"
+      - stdin: "build (1): gen\ngen (1): schema\nschema (1): gen\napp (1): build\n"
+        exit: 1
+        hidden: true
+      - stdin: "x (1): y z\ny (1): z\nz (1): w\nw (1): y\n"
+        exit: 1
+        hidden: true
+    hints:
+      - "In `visit`, first `match marks.get(name)`: `Some(Mark::Done)` returns `None`; `Some(Mark::Visiting)` finds `name` in `path` with `position`, and returns `path[start..]` plus `name`."
+      - "Otherwise: `marks.insert(name, Mark::Visiting); path.push(name);`, visit each of `tasks[name].deps` (return early on `Some`), then `path.pop();` and mark it `Done`."
+      - "In `main`'s `else` branch, print `error: cycle: {}` with `cycle.join(\" -> \")`."
+
+  - title: Run in parallel waves
+    text: |
+      An order is enough to run tasks one by one. But `compile` and `docs` don't depend on each other, so a machine with several cores could run them **at the same time**. Group the tasks into **waves**: a task goes in the wave right after the last of its dependencies. Tasks with no dependencies form wave 1:
+
+      ```text
+      wave 1: fetch
+      wave 2: configure
+      wave 3: compile, docs
+      wave 4: test
+      wave 5: package
+      ```
+
+      Everything in a wave can run in parallel, because all of its dependencies finished in earlier waves. Computing the waves is one pass over the topological order: a task's wave number is 1 + the largest wave number among its dependencies (and those are already known, because they come earlier in the order). List each wave's tasks in name order.
+
+      ### Running a wave on threads
+
+      The "work" here stands in for compiling or testing: a deterministic hash that takes time proportional to the cost. Copy this function into your program exactly, so your results match the tests:
+
+      ```rust
+      /// Stands in for real work (compiling, testing, packaging): a hash of the task's name that
+      /// takes time proportional to `cost`. The same task always gives the same result.
+      fn work(name: &str, cost: u32) -> u64 {
+          let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+          for _ in 0..cost * 1000 {
+              for byte in name.bytes() {
+                  hash ^= byte as u64;
+                  hash = hash.wrapping_mul(0x0100_0000_01b3);
+              }
+          }
+          hash
+      }
+      ```
+
+      For each wave, print `wave N: ...`, run every task of the wave on its own thread, wait for all of them, and then print each result as 16 hex digits (`{hash:016x}`), in the wave's (name) order:
+
+      ```text
+      wave 3: compile, docs
+        compile: 6473b0d92f53a73d
+        docs: bb4fc9d65872bbe5
+      ```
+
+      `std::thread::scope` is the right tool: threads spawned inside the scope may **borrow** local data (here, the task map and the names), because the scope guarantees they all finish before it returns:
+
+      ```rust
+      let hashes: Vec<u64> = thread::scope(|s| {
+          let handles: Vec<_> = wave.iter().map(|&name| s.spawn(move || work(name, tasks[name].cost))).collect();
+          handles.into_iter().map(|h| h.join().expect("a task thread panicked")).collect()
+      });
+      ```
+
+      ### Deterministic output from parallel code
+
+      Threads finish in whatever order the operating system likes. If each thread printed its own result, the lines would come out in a different order from run to run, which is maddening to read and impossible to test. So threads only **compute**; the main thread prints, after joining, in a fixed order. Joining the handles in the order they were spawned gives you the results in that same order no matter which thread finished first. Collect, then print: remember that rule for every concurrent program you write.
+    solution: |
+      use std::collections::{BTreeMap, BTreeSet};
+      use std::io::{self, Read};
+      use std::process::ExitCode;
+      use std::thread;
+
+      #[derive(Debug)]
+      struct Task {
+          cost: u32,
+          deps: BTreeSet<String>,
+      }
+
+      /// "compile (5): configure fetch" -> ("compile", Task { cost: 5, deps: {"configure", "fetch"} })
+      fn parse_line(line: &str) -> Result<(String, Task), String> {
+          let format_error = || String::from("expected \"name (cost): dependencies\"");
+          let (head, deps) = line.split_once(':').ok_or_else(format_error)?;
+          let (name, cost) = head.trim().strip_suffix(')').and_then(|h| h.split_once('(')).ok_or_else(format_error)?;
+          let name = name.trim();
+          if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+              return Err(format!("invalid task name \"{name}\""));
+          }
+          let cost = match cost.trim().parse::<u32>() {
+              Ok(cost) if cost > 0 => cost,
+              _ => return Err(format!("invalid cost \"{}\"", cost.trim())),
+          };
+          let deps = deps.split_whitespace().map(String::from).collect();
+          Ok((name.to_string(), Task { cost, deps }))
+      }
+
+      /// Parses the whole task file. On failure, returns every problem found.
+      fn parse_tasks(input: &str) -> Result<BTreeMap<String, Task>, Vec<String>> {
+          let mut tasks = BTreeMap::new();
+          let mut errors = Vec::new();
+          for (i, line) in input.lines().enumerate() {
+              let line = line.trim();
+              if line.is_empty() || line.starts_with('#') {
+                  continue;
+              }
+              match parse_line(line) {
+                  Ok((name, _)) if tasks.contains_key(&name) => {
+                      errors.push(format!("line {}: task \"{name}\" is defined twice", i + 1));
+                  }
+                  Ok((name, task)) => {
+                      tasks.insert(name, task);
+                  }
+                  Err(e) => errors.push(format!("line {}: {e}", i + 1)),
+              }
+          }
+          for (name, task) in &tasks {
+              for dep in &task.deps {
+                  if !tasks.contains_key(dep) {
+                      errors.push(format!("task \"{name}\" depends on unknown task \"{dep}\""));
+                  }
+              }
+          }
+          if errors.is_empty() { Ok(tasks) } else { Err(errors) }
+      }
+
+      /// Kahn's algorithm. Among the tasks that are ready, the alphabetically first one goes next,
+      /// so the order is the same on every run. Returns None if some tasks can never become ready.
+      fn topo_order(tasks: &BTreeMap<String, Task>) -> Option<Vec<&str>> {
+          // How many unfinished dependencies each task is still waiting for.
+          let mut waiting: BTreeMap<&str, usize> = tasks.iter().map(|(name, task)| (name.as_str(), task.deps.len())).collect();
+          // The edges reversed: for each task, the tasks that depend on it.
+          let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+          for (name, task) in tasks {
+              for dep in &task.deps {
+                  dependents.entry(dep.as_str()).or_default().push(name.as_str());
+              }
+          }
+          let mut ready: BTreeSet<&str> = waiting.iter().filter(|(_, n)| **n == 0).map(|(name, _)| *name).collect();
+          let mut order = Vec::with_capacity(tasks.len());
+          while let Some(name) = ready.pop_first() {
+              order.push(name);
+              for &next in dependents.get(name).into_iter().flatten() {
+                  let n = waiting.get_mut(next).expect("every task has a count");
+                  *n -= 1;
+                  if *n == 0 {
+                      ready.insert(next);
+                  }
+              }
+          }
+          if order.len() == tasks.len() { Some(order) } else { None }
+      }
+
+      #[derive(Clone, Copy, PartialEq)]
+      enum Mark {
+          Visiting,
+          Done,
+      }
+
+      /// Depth-first search for a dependency cycle, as a path that starts and ends with the same task.
+      fn find_cycle(tasks: &BTreeMap<String, Task>) -> Option<Vec<&str>> {
+          let mut marks = BTreeMap::new();
+          let mut path = Vec::new();
+          for name in tasks.keys() {
+              if let Some(cycle) = visit(name, tasks, &mut marks, &mut path) {
+                  return Some(cycle);
+              }
+          }
+          None
+      }
+
+      fn visit<'a>(
+          name: &'a str,
+          tasks: &'a BTreeMap<String, Task>,
+          marks: &mut BTreeMap<&'a str, Mark>,
+          path: &mut Vec<&'a str>,
+      ) -> Option<Vec<&'a str>> {
+          match marks.get(name) {
+              Some(Mark::Done) => return None,
+              Some(Mark::Visiting) => {
+                  // `name` is already on the current path: the cycle runs from there back to here.
+                  let start = path.iter().position(|&n| n == name).expect("a visiting task is on the path");
+                  let mut cycle = path[start..].to_vec();
+                  cycle.push(name);
+                  return Some(cycle);
+              }
+              None => {}
+          }
+          marks.insert(name, Mark::Visiting);
+          path.push(name);
+          for dep in &tasks[name].deps {
+              if let Some(cycle) = visit(dep, tasks, marks, path) {
+                  return Some(cycle);
+              }
+          }
+          path.pop();
+          marks.insert(name, Mark::Done);
+          None
+      }
+
+      /// Groups the tasks into waves: each task runs in the wave right after its last dependency.
+      /// Tasks in the same wave don't depend on each other, so they can run at the same time.
+      fn waves<'a>(tasks: &BTreeMap<String, Task>, order: &[&'a str]) -> Vec<Vec<&'a str>> {
+          let mut level: BTreeMap<&str, usize> = BTreeMap::new();
+          let mut waves: Vec<Vec<&str>> = Vec::new();
+          for &name in order {
+              let l = tasks[name].deps.iter().map(|dep| level[dep.as_str()] + 1).max().unwrap_or(0);
+              level.insert(name, l);
+              if l == waves.len() {
+                  waves.push(Vec::new());
+              }
+              waves[l].push(name);
+          }
+          for wave in &mut waves {
+              wave.sort();
+          }
+          waves
+      }
+
+      /// Stands in for real work (compiling, testing, packaging): a hash of the task's name that
+      /// takes time proportional to `cost`. The same task always gives the same result.
+      fn work(name: &str, cost: u32) -> u64 {
+          let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+          for _ in 0..cost * 1000 {
+              for byte in name.bytes() {
+                  hash ^= byte as u64;
+                  hash = hash.wrapping_mul(0x0100_0000_01b3);
+              }
+          }
+          hash
+      }
+
+      /// Runs the waves one after another; the tasks of a wave run on parallel threads.
+      fn run_waves(tasks: &BTreeMap<String, Task>, waves: &[Vec<&str>]) {
+          for (i, wave) in waves.iter().enumerate() {
+              println!("wave {}: {}", i + 1, wave.join(", "));
+              let hashes: Vec<u64> = thread::scope(|s| {
+                  let handles: Vec<_> = wave
+                      .iter()
+                      .map(|&name| s.spawn(move || work(name, tasks[name].cost)))
+                      .collect();
+                  handles.into_iter().map(|h| h.join().expect("a task thread panicked")).collect()
+              });
+              // Every thread has finished: print in a fixed order.
+              for (name, hash) in wave.iter().zip(hashes) {
+                  println!("  {name}: {hash:016x}");
+              }
+          }
+      }
+
+      fn main() -> ExitCode {
+          let mut input = String::new();
+          io::stdin().read_to_string(&mut input).expect("failed to read input");
+
+          let tasks = match parse_tasks(&input) {
+              Ok(tasks) => tasks,
+              Err(errors) => {
+                  for error in errors {
+                      println!("error: {error}");
+                  }
+                  return ExitCode::FAILURE;
+              }
+          };
+          if tasks.is_empty() {
+              println!("no tasks");
+              return ExitCode::SUCCESS;
+          }
+
+          let Some(order) = topo_order(&tasks) else {
+              let cycle = find_cycle(&tasks).expect("an incomplete order means there is a cycle");
+              println!("error: cycle: {}", cycle.join(" -> "));
+              return ExitCode::FAILURE;
+          };
+          println!("order: {}", order.join(", "));
+          let total: u32 = tasks.values().map(|task| task.cost).sum();
+          println!("total cost: {total}");
+
+          run_waves(&tasks, &waves(&tasks, &order));
+          ExitCode::SUCCESS
+      }
+    require:
+      - pattern: '\bscope\s*\('
+        message: Run each wave's tasks on scoped threads with `std::thread::scope`.
+      - pattern: '\.spawn\s*\('
+        message: Spawn one thread per task in the wave (`s.spawn(...)` inside the scope).
+    tests:
+      - stdin: "# A small build\nfetch (2):\nconfigure (1): fetch\ncompile (5): configure fetch\ntest (3): compile\ndocs (2): configure\npackage (1): compile test docs\n"
+      - stdin: "# Sunday breakfast\nboil-water (3):\ngrind-coffee (1):\nbrew-coffee (4): boil-water grind-coffee\ntoast-bread (2):\nbutter-toast (1): toast-bread\nbreakfast (1): brew-coffee butter-toast\n"
+      - stdin: "a (1): c\nb (1): a\nc (1): b\nd (1):\n"
+        exit: 1
+        hidden: true
+      - stdin: "lint (1):\nfmt (1):\nunit (2):\nclippy (2):\nci (1): lint fmt unit clippy\n"
+        hidden: true
+    hints:
+      - "`waves`: for each `name` in the order, `let l = tasks[name].deps.iter().map(|dep| level[dep.as_str()] + 1).max().unwrap_or(0);`, record it in `level`, and push the name into `waves[l]` (adding a new wave when `l == waves.len()`). Sort each wave at the end."
+      - "In `run_waves`, print the wave line, then use `thread::scope` with one `s.spawn(move || work(name, tasks[name].cost))` per task, and join the handles in order."
+      - "Print the results only after the scope has returned: `for (name, hash) in wave.iter().zip(hashes) { println!(\"  {name}: {hash:016x}\"); }`."
+
+  - title: "Polish: results flow downstream, and the critical path"
+    text: |
+      Two final touches turn this into the core of a real build tool.
+
+      ### Results that depend on inputs
+
+      In a real build, `package` consumes what `compile`, `test` and `docs` produced, and build tools like Bazel or Nix identify each result by a hash of its **inputs**: change anything upstream and everything downstream gets a new hash (and is rebuilt), while untouched branches keep theirs (and are reused from cache). Make your work do the same. Replace `work` with this version, which also mixes in the results of the task's dependencies:
+
+      ```rust
+      /// Stands in for real work (compiling, testing, packaging): a hash of the task's name and its
+      /// inputs that takes time proportional to `cost`. The same inputs always give the same result.
+      fn work(name: &str, cost: u32, inputs: &[u64]) -> u64 {
+          let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+          for _ in 0..cost * 1000 {
+              for byte in name.bytes() {
+                  hash ^= byte as u64;
+                  hash = hash.wrapping_mul(0x0100_0000_01b3);
+              }
+              for input in inputs {
+                  hash ^= input;
+                  hash = hash.wrapping_mul(0x0100_0000_01b3);
+              }
+          }
+          hash
+      }
+      ```
+
+      The inputs are the dependencies' results **in dependency-name order** (the order of the `BTreeSet`). Tasks without dependencies pass an empty slice, so their hashes don't change.
+
+      Keep the results in a `BTreeMap<&str, u64>` that grows wave by wave. Here's the neat part: while a wave runs, its threads only **read** the results of earlier waves, and nobody writes to the map until the wave has finished. So the threads can share a plain `&` reference to it: no `Mutex`, no `Arc`. Take `let finished = &results;` before the scope, use `finished[dep.as_str()]` inside the threads, and insert the new results after the scope returns. The borrow checker verifies the whole arrangement: if you tried to insert while the threads might still be reading, it wouldn't compile.
+
+      ### The critical path
+
+      Finally, answer the question everyone asks about a build: how fast *could* it be? Even with unlimited cores, a task can't start before its slowest dependency finishes. The **critical path** is the chain of dependencies with the largest total cost, and its length is the fastest possible build time. After the waves, print it:
+
+      ```text
+      critical path: 12 (fetch -> configure -> compile -> test -> package)
+      ```
+
+      Here the work totals 14, but no amount of parallelism gets below 12: to speed this build up, make one of *those* five tasks faster. Speeding up `docs` would change nothing.
+
+      It's a dynamic-programming pass over the topological order (which guarantees dependencies are handled first): a task's **finish time** is its cost plus the latest finish time among its dependencies (0 if none). Remember which dependency was the latest (the first in name order on a tie): that's the one the task really waits for. The task with the largest finish time (the first in name order on a tie) ends the critical path; follow the "waits for" links back from it and reverse.
+    solution: |
+      use std::collections::{BTreeMap, BTreeSet};
+      use std::io::{self, Read};
+      use std::process::ExitCode;
+      use std::thread;
+
+      #[derive(Debug)]
+      struct Task {
+          cost: u32,
+          deps: BTreeSet<String>,
+      }
+
+      /// "compile (5): configure fetch" -> ("compile", Task { cost: 5, deps: {"configure", "fetch"} })
+      fn parse_line(line: &str) -> Result<(String, Task), String> {
+          let format_error = || String::from("expected \"name (cost): dependencies\"");
+          let (head, deps) = line.split_once(':').ok_or_else(format_error)?;
+          let (name, cost) = head.trim().strip_suffix(')').and_then(|h| h.split_once('(')).ok_or_else(format_error)?;
+          let name = name.trim();
+          if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+              return Err(format!("invalid task name \"{name}\""));
+          }
+          let cost = match cost.trim().parse::<u32>() {
+              Ok(cost) if cost > 0 => cost,
+              _ => return Err(format!("invalid cost \"{}\"", cost.trim())),
+          };
+          let deps = deps.split_whitespace().map(String::from).collect();
+          Ok((name.to_string(), Task { cost, deps }))
+      }
+
+      /// Parses the whole task file. On failure, returns every problem found.
+      fn parse_tasks(input: &str) -> Result<BTreeMap<String, Task>, Vec<String>> {
+          let mut tasks = BTreeMap::new();
+          let mut errors = Vec::new();
+          for (i, line) in input.lines().enumerate() {
+              let line = line.trim();
+              if line.is_empty() || line.starts_with('#') {
+                  continue;
+              }
+              match parse_line(line) {
+                  Ok((name, _)) if tasks.contains_key(&name) => {
+                      errors.push(format!("line {}: task \"{name}\" is defined twice", i + 1));
+                  }
+                  Ok((name, task)) => {
+                      tasks.insert(name, task);
+                  }
+                  Err(e) => errors.push(format!("line {}: {e}", i + 1)),
+              }
+          }
+          for (name, task) in &tasks {
+              for dep in &task.deps {
+                  if !tasks.contains_key(dep) {
+                      errors.push(format!("task \"{name}\" depends on unknown task \"{dep}\""));
+                  }
+              }
+          }
+          if errors.is_empty() { Ok(tasks) } else { Err(errors) }
+      }
+
+      /// Kahn's algorithm. Among the tasks that are ready, the alphabetically first one goes next,
+      /// so the order is the same on every run. Returns None if some tasks can never become ready.
+      fn topo_order(tasks: &BTreeMap<String, Task>) -> Option<Vec<&str>> {
+          // How many unfinished dependencies each task is still waiting for.
+          let mut waiting: BTreeMap<&str, usize> = tasks.iter().map(|(name, task)| (name.as_str(), task.deps.len())).collect();
+          // The edges reversed: for each task, the tasks that depend on it.
+          let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+          for (name, task) in tasks {
+              for dep in &task.deps {
+                  dependents.entry(dep.as_str()).or_default().push(name.as_str());
+              }
+          }
+          let mut ready: BTreeSet<&str> = waiting.iter().filter(|(_, n)| **n == 0).map(|(name, _)| *name).collect();
+          let mut order = Vec::with_capacity(tasks.len());
+          while let Some(name) = ready.pop_first() {
+              order.push(name);
+              for &next in dependents.get(name).into_iter().flatten() {
+                  let n = waiting.get_mut(next).expect("every task has a count");
+                  *n -= 1;
+                  if *n == 0 {
+                      ready.insert(next);
+                  }
+              }
+          }
+          if order.len() == tasks.len() { Some(order) } else { None }
+      }
+
+      #[derive(Clone, Copy, PartialEq)]
+      enum Mark {
+          Visiting,
+          Done,
+      }
+
+      /// Depth-first search for a dependency cycle, as a path that starts and ends with the same task.
+      fn find_cycle(tasks: &BTreeMap<String, Task>) -> Option<Vec<&str>> {
+          let mut marks = BTreeMap::new();
+          let mut path = Vec::new();
+          for name in tasks.keys() {
+              if let Some(cycle) = visit(name, tasks, &mut marks, &mut path) {
+                  return Some(cycle);
+              }
+          }
+          None
+      }
+
+      fn visit<'a>(
+          name: &'a str,
+          tasks: &'a BTreeMap<String, Task>,
+          marks: &mut BTreeMap<&'a str, Mark>,
+          path: &mut Vec<&'a str>,
+      ) -> Option<Vec<&'a str>> {
+          match marks.get(name) {
+              Some(Mark::Done) => return None,
+              Some(Mark::Visiting) => {
+                  // `name` is already on the current path: the cycle runs from there back to here.
+                  let start = path.iter().position(|&n| n == name).expect("a visiting task is on the path");
+                  let mut cycle = path[start..].to_vec();
+                  cycle.push(name);
+                  return Some(cycle);
+              }
+              None => {}
+          }
+          marks.insert(name, Mark::Visiting);
+          path.push(name);
+          for dep in &tasks[name].deps {
+              if let Some(cycle) = visit(dep, tasks, marks, path) {
+                  return Some(cycle);
+              }
+          }
+          path.pop();
+          marks.insert(name, Mark::Done);
+          None
+      }
+
+      /// Groups the tasks into waves: each task runs in the wave right after its last dependency.
+      /// Tasks in the same wave don't depend on each other, so they can run at the same time.
+      fn waves<'a>(tasks: &BTreeMap<String, Task>, order: &[&'a str]) -> Vec<Vec<&'a str>> {
+          let mut level: BTreeMap<&str, usize> = BTreeMap::new();
+          let mut waves: Vec<Vec<&str>> = Vec::new();
+          for &name in order {
+              let l = tasks[name].deps.iter().map(|dep| level[dep.as_str()] + 1).max().unwrap_or(0);
+              level.insert(name, l);
+              if l == waves.len() {
+                  waves.push(Vec::new());
+              }
+              waves[l].push(name);
+          }
+          for wave in &mut waves {
+              wave.sort();
+          }
+          waves
+      }
+
+      /// Stands in for real work (compiling, testing, packaging): a hash of the task's name and its
+      /// inputs that takes time proportional to `cost`. The same inputs always give the same result.
+      fn work(name: &str, cost: u32, inputs: &[u64]) -> u64 {
+          let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+          for _ in 0..cost * 1000 {
+              for byte in name.bytes() {
+                  hash ^= byte as u64;
+                  hash = hash.wrapping_mul(0x0100_0000_01b3);
+              }
+              for input in inputs {
+                  hash ^= input;
+                  hash = hash.wrapping_mul(0x0100_0000_01b3);
+              }
+          }
+          hash
+      }
+
+      /// Runs the waves one after another; the tasks of a wave run on parallel threads.
+      /// Returns each task's result.
+      fn run_waves<'a>(tasks: &BTreeMap<String, Task>, waves: &[Vec<&'a str>]) -> BTreeMap<&'a str, u64> {
+          let mut results: BTreeMap<&str, u64> = BTreeMap::new();
+          for (i, wave) in waves.iter().enumerate() {
+              println!("wave {}: {}", i + 1, wave.join(", "));
+              let finished = &results;
+              let hashes: Vec<u64> = thread::scope(|s| {
+                  let handles: Vec<_> = wave
+                      .iter()
+                      .map(|&name| {
+                          s.spawn(move || {
+                              let task = &tasks[name];
+                              let inputs: Vec<u64> = task.deps.iter().map(|dep| finished[dep.as_str()]).collect();
+                              work(name, task.cost, &inputs)
+                          })
+                      })
+                      .collect();
+                  handles.into_iter().map(|h| h.join().expect("a task thread panicked")).collect()
+              });
+              // Every thread has finished: print in a fixed order, then record the results.
+              for (&name, hash) in wave.iter().zip(hashes) {
+                  println!("  {name}: {hash:016x}");
+                  results.insert(name, hash);
+              }
+          }
+          results
+      }
+
+      /// The longest chain of dependencies, weighted by cost. No number of workers can finish faster.
+      fn critical_path<'a>(tasks: &BTreeMap<String, Task>, order: &[&'a str]) -> (u32, Vec<&'a str>) {
+          let mut finish: BTreeMap<&str, u32> = BTreeMap::new();
+          // For each task, the dependency that finishes last: the one it really waits for.
+          let mut waits_for: BTreeMap<&str, &str> = BTreeMap::new();
+          for &name in order {
+              let task = &tasks[name];
+              let mut start = 0;
+              for dep in &task.deps {
+                  let (&dep, &dep_finish) = finish.get_key_value(dep.as_str()).expect("dependencies come first");
+                  if dep_finish > start {
+                      start = dep_finish;
+                      waits_for.insert(name, dep);
+                  }
+              }
+              finish.insert(name, start + task.cost);
+          }
+          // The task that finishes last (alphabetically first on a tie) ends the path.
+          let mut last = order[0];
+          for (&name, &f) in &finish {
+              if f > finish[last] {
+                  last = name;
+              }
+          }
+          let length = finish[last];
+          let mut path = vec![last];
+          while let Some(&prev) = waits_for.get(last) {
+              path.push(prev);
+              last = prev;
+          }
+          path.reverse();
+          (length, path)
+      }
+
+      fn main() -> ExitCode {
+          let mut input = String::new();
+          io::stdin().read_to_string(&mut input).expect("failed to read input");
+
+          let tasks = match parse_tasks(&input) {
+              Ok(tasks) => tasks,
+              Err(errors) => {
+                  for error in errors {
+                      println!("error: {error}");
+                  }
+                  return ExitCode::FAILURE;
+              }
+          };
+          if tasks.is_empty() {
+              println!("no tasks");
+              return ExitCode::SUCCESS;
+          }
+
+          let Some(order) = topo_order(&tasks) else {
+              let cycle = find_cycle(&tasks).expect("an incomplete order means there is a cycle");
+              println!("error: cycle: {}", cycle.join(" -> "));
+              return ExitCode::FAILURE;
+          };
+          println!("order: {}", order.join(", "));
+          let total: u32 = tasks.values().map(|task| task.cost).sum();
+          println!("total cost: {total}");
+
+          run_waves(&tasks, &waves(&tasks, &order));
+
+          let (length, path) = critical_path(&tasks, &order);
+          println!("critical path: {length} ({})", path.join(" -> "));
+          ExitCode::SUCCESS
+      }
+    require:
+      - pattern: '\bscope\s*\('
+        message: Run each wave's tasks on scoped threads with `std::thread::scope`.
+      - pattern: '\.spawn\s*\('
+        message: Spawn one thread per task in the wave (`s.spawn(...)` inside the scope).
+    tests:
+      - stdin: "# A small build\nfetch (2):\nconfigure (1): fetch\ncompile (5): configure fetch\ntest (3): compile\ndocs (2): configure\npackage (1): compile test docs\n"
+      - stdin: "# Sunday breakfast\nboil-water (3):\ngrind-coffee (1):\nbrew-coffee (4): boil-water grind-coffee\ntoast-bread (2):\nbutter-toast (1): toast-bread\nbreakfast (1): brew-coffee butter-toast\n"
+      - stdin: "lint (1):\nfmt (1):\nunit (2):\nclippy (2):\nci (1): lint fmt unit clippy\n"
+        hidden: true
+      - stdin: "a (3):\nb (3):\nc (1): a b\nd (2): a\ne (1): c d\n"
+        hidden: true
+    hints:
+      - "Give `work` an `inputs: &[u64]` parameter, and inside each thread build `let inputs: Vec<u64> = task.deps.iter().map(|dep| finished[dep.as_str()]).collect();` with `let finished = &results;` taken before the scope."
+      - "After each scope, zip the wave with its hashes, print each line and `results.insert(name, hash)`."
+      - "`critical_path`: walk the order keeping `finish: BTreeMap<&str, u32>` and `waits_for: BTreeMap<&str, &str>` (update only on a strictly later dependency), pick the latest-finishing task, then follow `waits_for` back and `reverse()` the path."
