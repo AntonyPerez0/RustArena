@@ -42,7 +42,7 @@ steps:
       (0, "", [], false, None)
       ```
 
-      `..Default::default()` fills every field you didn't write from `Settings::default()`. Most std types implement `Default` (0, empty string, empty collections, `false`, `None`), so `#[derive(Default)]` works whenever those zero values are right; write the impl by hand when they aren't. Clippy's `new_without_default` lint asks for a `Default` impl whenever you write a `new()` without arguments, because generic code (and `..Default::default()`) can use it.
+      `..Default::default()` fills every field you didn't write from `Settings::default()`. Most std types implement `Default` (0, empty string, empty collections, `false`, `None`), so `#[derive(Default)]` works whenever those zero values are right; write the impl by hand when they aren't. Clippy's `new_without_default` lint asks for a `Default` impl whenever you write a public `new()` without arguments, because generic code (and `..Default::default()`) can use it.
 
       ### Builders
 
@@ -120,7 +120,7 @@ steps:
       - Each setter takes `mut self` **by value** and returns `Self`, so calls chain: `new(..).method(..).timeout(..)`. This is the **consuming builder**, the most common style.
       - `build(self)` checks the combination and returns `Result`, so an invalid `Request` can never exist. Validation lives in one place.
       - Defaults (`GET`, 30 seconds) live in `new`, and the call site only mentions what differs.
-      - You've used builders already: `std::process::Command::new("ls").arg("-l")`, `std::thread::Builder`, `OpenOptions::new().append(true).open(..)`. Those use the **`&mut self` style** (`fn arg(&mut self, ..) -> &mut Self`), which also lets you configure conditionally: `if verbose { cmd.arg("-v"); }`.
+      - The standard library has builders too. `std::thread::Builder` is consuming, like this one. `std::process::Command::new("ls").arg("-l")` and `OpenOptions::new().append(true).open(..)` use the **`&mut self` style** (`fn arg(&mut self, ..) -> &mut Self`), which also lets you configure conditionally: `if verbose { cmd.arg("-v"); }`.
 
       ### Common mistakes
 
@@ -487,7 +487,7 @@ steps:
       - **A public field** (`pub struct Email(pub String)`) lets anyone build an unchecked value, defeating the point.
       - **`.0` everywhere**: if callers constantly unwrap the newtype, give it the methods they need instead.
 
-      **Your turn:** write `Cents`, a money type. `Cents::parse(s)` accepts dollar amounts like `"12.34"`, `"12.3"`, `"5"` or `"$5"` (an optional leading `$`) and returns the amount in cents. Anything else (empty, a minus sign, more than two decimals, letters) is `Err(format!("invalid amount {s:?}"))`. Implement `Add` so two `Cents` can be added, and `Display` so `Cents(1234)` prints `$12.34`.
+      **Your turn:** write `Cents`, a money type. `Cents::parse(s)` accepts dollar amounts like `"12.34"`, `"12.3"`, `"5"` or `"$5"` (an optional leading `$`) and returns the amount in cents. Anything else (empty, a minus sign, no digit before the `.`, more than two decimals, letters) is `Err(format!("invalid amount {s:?}"))`. Implement `Add` so two `Cents` can be added, and `Display` so `Cents(1234)` prints `$12.34`.
     seed: |
       use std::fmt;
       use std::ops::Add;
@@ -1909,7 +1909,7 @@ steps:
       - **Returning an iterator over a local `Vec`**: the `Vec` is dropped when the function returns, so a borrowing iterator can't outlive it (`returns a value referencing data owned by the current function`). Return `vec.into_iter()`, which takes ownership, instead.
       - **Forgetting it's lazy**: `team.active().map(|u| println!("{}", u.name));` prints nothing (and the compiler warns `unused Map that must be used`). Use a `for` loop for side effects.
 
-      **Your turn:** give `Log` three methods that return iterators (no `Vec` in their return types): `errors()` yields the lines that start with `ERROR`; `with_level(level)` yields the **message part** (after `LEVEL `) of lines with that level, so `with_level("WARN")` on `WARN disk 91%` yields `disk 91%`; `numbered()` yields `(line_number, line)` pairs counting from 1.
+      **Your turn:** give `Log` three methods that return iterators (no `Vec` in their return types): `errors()` yields the lines that start with `ERROR`; `with_level(level)` yields the **message part** of the lines that start with exactly that level followed by a space, so `with_level("WARN")` on `WARN disk 91%` yields `disk 91%` (and skips `WARNING ...`); `numbered()` yields `(line_number, line)` pairs counting from 1.
     seed: |
       struct Log {
           lines: Vec<String>,
@@ -1927,7 +1927,7 @@ steps:
               self.lines.iter().map(|l| l.as_str()).filter(|l| l.starts_with("ERROR"))
           }
 
-          fn with_level<'a>(&'a self, level: &'a str) -> impl Iterator<Item = &'a str> {
+          fn with_level(&self, level: &str) -> impl Iterator<Item = &str> {
               self.lines
                   .iter()
                   .filter_map(move |l| l.strip_prefix(level))
@@ -1975,7 +1975,7 @@ steps:
       }
     hints:
       - "`fn errors(&self) -> impl Iterator<Item = &str> { self.lines.iter().map(|l| l.as_str()).filter(...) }`"
-      - "`with_level` needs both borrows to live as long as the iterator: `fn with_level<'a>(&'a self, level: &'a str) -> impl Iterator<Item = &'a str>`. Inside, a `move` closure with `l.strip_prefix(level)` and then `strip_prefix(' ')`."
+      - "The iterator borrows both `self` and `level`; in edition 2024 `fn with_level(&self, level: &str) -> impl Iterator<Item = &str>` captures both automatically. Inside, a `move` closure with `l.strip_prefix(level)` and then `strip_prefix(' ')`."
       - "`numbered`: `self.lines.iter().enumerate().map(|(i, l)| (i + 1, l.as_str()))`."
     more:
       - task: |
@@ -2174,7 +2174,7 @@ steps:
       4. **Turning panics into errors** does change the signature (`-> Result<..>`). That's an improvement, but it's an API change your callers must know about.
 
       **Your turn:** this order-processing code works on valid input, but it failed review. Refactor it:
-      - `parse_orders` takes `&str` and returns `Result<Vec<Order>, String>` instead of panicking. Errors name the line: `line 2: bad id`, `line 1: missing customer`, `line 3: unknown status "lost"`, `line 1: bad price "abc"`.
+      - `parse_orders` takes `&str` and returns `Result<Vec<Order>, String>` instead of panicking. Errors name the line: `line 2: bad id`, `line 1: missing customer` (also for an empty customer field), `line 3: unknown status "lost"`, `line 1: bad price "abc"`.
       - The status becomes `enum Status { Pending, Shipped, Cancelled }` (derive `Debug, Clone, Copy, PartialEq`); the text values stay `pending`, `shipped`, `cancelled`.
       - Slices instead of `&Vec`, iterators instead of index loops, no `.clone()`, no `.unwrap()`, no `== true`/`== false`.
 

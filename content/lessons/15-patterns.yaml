@@ -97,7 +97,7 @@ steps:
 
       ### Common mistakes
 
-      - **General arms before specific ones.** If `400..=499` came before `404`, the `404` arm could never run. The compiler warns `unreachable pattern`; that warning always means a bug.
+      - **General arms before specific ones.** If `400..=499` came before `404`, the `404` arm could never run. The compiler warns `unreachable pattern`; that warning almost always means a bug.
       - **`..` instead of `..=`.** `1..9` stops at 8. Grades, ages and percentages usually want both ends: `90..=100`.
       - **Expecting a variable name to compare.** `match code { limit => ... }` does *not* compare with a variable called `limit`: a plain name in a pattern is a new variable that matches everything. The next step shows how to compare with a variable.
 
@@ -174,7 +174,7 @@ steps:
         require:
           - pattern: '\bmatch\b'
             message: Use a `match` on the age.
-          - pattern: '\.\.='
+          - pattern: '\d\s*\.\.'
             message: "Use range patterns such as `13..=17`."
         hints:
           - "Each arm is a range: `0..=12 => 5,`"
@@ -632,7 +632,7 @@ steps:
           - express orders: `"order ID: TOTAL cents (express)"`, where TOTAL is `quantity * unit_cents + 500`
           - other orders: `"order ID: TOTAL cents"`, where TOTAL is `quantity * unit_cents`
 
-          Because you match on `&Order`, the bound fields are references; `quantity * unit_cents` still works on them.
+          Use `..` in at least one arm to skip the fields it doesn't need. Because you match on `&Order`, the bound fields are references; `quantity * unit_cents` still works on them.
         seed: |
           struct Order {
               id: u32,
@@ -800,7 +800,7 @@ steps:
       - `Event::Click { button: Button::Right, .. }` looks *inside* the click at its `button` field and checks it's `Button::Right`. The `..` ignores `x` and `y`.
       - `Event::Click { x, y, button: Button::Left }` binds `x` and `y` and requires a left button.
       - `Event::Scroll(n) if *n > 0`: since `handle` takes `&Event`, `n` is a `&i32`. Comparing needs the number itself, so the guard says `*n`. Printing works on the reference directly.
-      - The compiler checks the whole nested structure for exhaustiveness: remove the `Button::Left` arm and it tells you that `Event::Click { button: Button::Left, .. }` isn't covered.
+      - The compiler checks the whole nested structure for exhaustiveness: remove the `Button::Left` arm and it tells you that `&Event::Click { button: Button::Left, .. }` isn't covered (with a `&`, because `handle` matches on a reference).
 
       ### `_`, `_name` and `..`
 
@@ -1393,9 +1393,9 @@ steps:
 
       A function parameter can be a pattern (`(name, points): (&str, u32)`), and so can the variable of a `for` loop. Both are irrefutable: a pair always has two parts.
 
-      The opposite mistake, using `if let` with a pattern that can't fail (`if let x = 5`), compiles but warns `irrefutable if let pattern`: the `if` is pointless.
+      The opposite mistake, using `if let` with a pattern that can't fail (`if let x = 5`), compiles but warns ``irrefutable `if let` pattern``: the `if` is pointless.
 
-      **Your turn:** write `fn parse_point(text: &str) -> Option<(i32, i32)>` that reads a point written as `"x,y"` (spaces around the numbers are allowed). Return `None` if there's no comma or either number doesn't parse. Use `let ... else` for each step that can fail.
+      **Your turn:** write `fn parse_point(text: &str) -> Option<(i32, i32)>` that reads a point written as `"x,y"` (spaces around the numbers are allowed). Return `None` if there's no comma or either number doesn't parse (so `"1,2,3"` is `None` too: everything after the first comma must be one number). Use `let ... else` for each step that can fail.
     seed: |
       fn parse_point(text: &str) -> Option<(i32, i32)> {
           todo!()

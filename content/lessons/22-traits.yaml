@@ -124,8 +124,8 @@ steps:
       error[E0046]: not all trait items implemented, missing: `short`
       ```
 
-      - **A different signature.** Writing `fn summarize(self)` when the trait says `&self` gives `error[E0053]: method summarize has an incompatible type for trait`. Copy the signature from the trait exactly.
-      - **Extra methods in the trait impl.** `impl Summary for Post` may only contain `Summary`'s methods (`error[E0407]: method ... is not a member of trait`). Put the type's other methods in a plain `impl Post` block.
+      - **A different signature.** Writing `fn summarize(self)` when the trait says `&self` gives ``error[E0053]: method `summarize` has an incompatible type for trait``. Copy the signature from the trait exactly.
+      - **Extra methods in the trait impl.** `impl Summary for Post` may only contain `Summary`'s methods. Adding a `fn extra(&self)` there gives ``error[E0407]: method `extra` is not a member of trait `Summary` ``. Put the type's other methods in a plain `impl Post` block.
 
       **Your turn:** fill in the blanks. Define a trait `Describe` with one method, and implement it for `Book` and `Movie`, so the program prints:
 
@@ -716,7 +716,7 @@ steps:
       ```
 
       - `item: &impl Summary` reads "a reference to some type that implements `Summary`". It's called **impl Trait in argument position**, and it's short for the generic version `fn preview<T: Summary>(item: &T)`.
-      - `fn feed<T: Summary>(items: &[T])` is the longer form: a type parameter `T` with a bound. Use it when you need to name the type, like here, where `T` appears inside `&[T]`.
+      - `fn feed<T: Summary>(items: &[T])` is the longer form: a type parameter `T` with a bound. (`items: &[impl Summary]` would work here too.) You need the named form when the same type must appear in more than one place, as the next section shows.
       - Inside the function you may only use what the bound promises. `item.summarize()` is fine; `item.title` is not, because not every `Summary` type has a title.
 
       Like all generics, this is **monomorphized**: the compiler writes a separate copy of `preview` for `Article` and one for `Post`. Calling through a trait bound is exactly as fast as calling the method directly.
@@ -758,7 +758,7 @@ steps:
       5 | fn feed<T: Summary>(items: &[T]) {
       ```
 
-      - **Using a field through the bound**: `item.title` on an `&impl Summary` gives `error[E0609]: no field title on type &impl Summary`. Add a method to the trait if every type should provide it.
+      - **Using a field through the bound**: `item.title` on an `&impl Summary` gives ``error[E0609]: no field `title` on type `&impl Summary` ``. Add a method to the trait if every type should provide it.
 
       **Your turn:** a café's menu items implement `Priced`. Write two functions:
 
@@ -1767,7 +1767,7 @@ steps:
         tests:
           - expect: "3 false \"\""
       - task: |
-          A ladder ranks players by `rank` first and then by `name` (alphabetically). Add the derives `Rank` and `Player` need, then write `fn top_player(players: &[Player]) -> Option<Player>` that returns a clone of the highest player, or `None` for an empty slice. Use the derived comparison (`>`) rather than comparing fields yourself.
+          A ladder ranks players by `rank` first and then by `name` (alphabetically). Add the derives `Rank` and `Player` need, then write `fn top_player(players: &[Player]) -> Option<Player>` that returns a clone of the highest player, or `None` for an empty slice. Use the derived comparison (`>`) rather than comparing fields yourself. With the derived order, between two players of the same rank the name that sorts **later** counts as higher: a Gold `cal` beats a Gold `bea`.
         seed: |
           enum Rank {
               Bronze,

@@ -50,7 +50,7 @@ steps:
 
       Each call gets its own **stack frame** holding its parameters and local variables. `factorial(5)` can't finish until `factorial(4)` returns, which waits for `factorial(3)`, and so on: five frames stacked up, then unwinding as each returns its answer to the one below. The depth of recursion is how many frames pile up at once.
 
-      The stack is small (8 MB for the main thread on Linux) and Rust doesn't promise **tail-call optimization** (reusing the frame when the recursive call is the last thing a function does). Recursing a few hundred thousand levels deep crashes the program with `thread 'main' has overflowed its stack`. That's an abort, not a panic you can recover from. So:
+      The stack is small (8 MB for the main thread on Linux) and Rust doesn't promise **tail-call optimization** (reusing the frame when the recursive call is the last thing a function does). Recursing a few hundred thousand levels deep crashes the program with ``thread 'main' (4242) has overflowed its stack``. That's an abort, not a panic you can recover from. So:
 
       - Recursion is a great fit when the depth stays small: halving problems (depth log n), trees, nested folders, parsing nested expressions, trying choices.
       - For simple "do this for each of n items" work, use a loop or an iterator.
@@ -192,7 +192,7 @@ steps:
           - `exp == 0`: the answer is `1 % m`
           - otherwise compute `half = pow_mod(base, exp / 2, m)`; the answer is `half * half % m`, times one more `base % m` (then `% m`) if `exp` is odd
 
-          That's O(log exp) multiplications: about 60 for 10^18. Write `fn pow_mod(base: u64, exp: u64, m: u64) -> u64`. The modulus is between 1 and 1,000,000,007, so the product of two numbers below `m` fits in a `u64`. Reduce `base` with `% m` before multiplying, since it can be bigger than `m`.
+          That's O(log exp) work: about 60 halvings (at most two multiplications each) for 10^18. Write `fn pow_mod(base: u64, exp: u64, m: u64) -> u64`. The modulus is between 1 and 1,000,000,007, so the product of two numbers below `m` fits in a `u64`. Reduce `base` with `% m` before multiplying, since it can be bigger than `m`.
         seed: |
           fn pow_mod(base: u64, exp: u64, m: u64) -> u64 {
               todo!()
@@ -1433,7 +1433,7 @@ steps:
           value: 40
           ```
 
-          If nothing fits, print `take: nothing`. The tests always have exactly one best choice.
+          If nothing fits, the first line is `take: nothing` (the `weight:` and `value:` lines still follow, with 0s). The tests always have exactly one best choice.
 
           Build the full 2D table from the lesson, then walk it backwards: starting at `i = n` and `w = capacity`, if `best[i][w]` differs from `best[i - 1][w]`, item `i - 1` was taken (subtract its weight from `w`). Reverse the list you collect to get input order.
         seed: |

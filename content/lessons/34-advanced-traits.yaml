@@ -92,7 +92,7 @@ steps:
       | associated type | each implementing type has **one** natural answer | `Iterator::Item`, `Deref::Target`, `FromStr::Err` |
       | generic parameter | a type should implement the trait **several times**, for different types | `From<T>`, `AsRef<T>`, `PartialEq<Rhs>` |
 
-      A `Vec<u8>` yields one kind of item, so `Item` is associated. A `String` can be built `From<&str>`, `From<char>` and `From<Box<str>>`, so `From<T>` is generic. Some traits use both, as you'll see in the next step.
+      An iterator over bytes yields one kind of item (`u8`), so `Item` is associated. A `String` can be built `From<&str>`, `From<char>` and `From<Box<str>>`, so `From<T>` is generic. Some traits use both, as you'll see in the next step.
 
       ### Common mistakes
 
@@ -282,7 +282,7 @@ steps:
               assert_eq!(c, Centimeters(1000.0), "Meters(10.0) as Centimeters");
           }
         require:
-          - pattern: 'trait\s+ConvertTo\s*<\s*T\s*>'
+          - pattern: 'trait\s+ConvertTo\s*<\s*\w+\s*>'
             message: "Declare the trait with a generic parameter: `trait ConvertTo<T>`."
         hints:
           - "`trait ConvertTo<T> { fn convert(&self) -> T; }`"
@@ -1137,7 +1137,7 @@ steps:
           assert_eq!(Ticket { id: 7 }.pretty(), "<Ticket { id: 7 }>", "Ticket with id 7, pretty()");
       }
     require:
-      - pattern: 'impl\s*<[^>]*>\s*Pretty\s+for\s+[A-Z]\w*'
+      - pattern: 'impl\s*<[\s\S]*?>\s*Pretty\s+for\s+[A-Z]\w*'
         message: "Write one blanket impl for a type parameter: `impl<T: Debug> Pretty for T`."
     hints:
       - "The impl is generic: `impl<T: Debug> Pretty for T { ... }`."
@@ -1186,7 +1186,7 @@ steps:
               assert_eq!("m".between(&"a", &"z"), true, "\"m\".between(&\"a\", &\"z\")");
           }
         require:
-          - pattern: 'impl\s*<[^>]*>\s*Between\s+for\s+[A-Z]\w*'
+          - pattern: 'impl\s*<[\s\S]*?>\s*Between\s+for\s+[A-Z]\w*'
             message: "Write one blanket impl: `impl<T: PartialOrd> Between for T`."
         hints:
           - "`impl<T: PartialOrd> Between for T { fn between(&self, low: &Self, high: &Self) -> bool { ... } }`"
@@ -1238,7 +1238,7 @@ steps:
               assert_eq!(Vec::<String>::new().total_len(), 0, "Vec::<String>::new().total_len()");
           }
         require:
-          - pattern: 'impl\s*<[^>]*>\s*TotalLen\s+for\s+[A-Z]\w*'
+          - pattern: 'impl\s*<[\s\S]*?>\s*TotalLen\s+for\s+[A-Z]\w*'
             message: "Use one blanket impl over a type parameter, like `impl<I, S> TotalLen for I where ...`."
         hints:
           - "Two type parameters: `I` for the collection and `S` for its items. `impl<I, S> TotalLen for I where I: IntoIterator<Item = S>, S: AsRef<str> { ... }`"
@@ -2050,7 +2050,7 @@ steps:
 
       ### `Sized` and `?Sized`
 
-      Most types have a size known at compile time (`i32` is 4 bytes, `String` is 24). A few don't: **`str`**, slices **`[T]`** and trait objects **`dyn Trait`** can be any length. These are **dynamically sized types** (DSTs), and they can only live behind a pointer: `&str`, `&[T]`, `Box<dyn Trait>`. Such a pointer is "fat": it stores the address **plus** the length or a vtable pointer.
+      Most types have a size known at compile time (`i32` is 4 bytes, `String` is 24 on a 64-bit machine). A few don't: **`str`**, slices **`[T]`** and trait objects **`dyn Trait`** can be any length. These are **dynamically sized types** (DSTs), and they can only live behind a pointer: `&str`, `&[T]`, `Box<dyn Trait>`. Such a pointer is "fat": it stores the address **plus** the length or a vtable pointer.
 
       Every generic parameter has an invisible bound `T: Sized`. Usually that's what you want, but it means this rejects `str`:
 
@@ -2097,7 +2097,7 @@ steps:
       8 16 16
       ```
 
-      The last line shows the fat pointers: a plain reference is 8 bytes, while `&str` and `&dyn Display` are 16 (address plus length or vtable). std uses `?Sized` wherever it only needs a reference: `impl<T: Display + ?Sized> ToString for T`, `Box<T: ?Sized>`, `AsRef<str>`.
+      The last line shows the fat pointers: a plain reference is 8 bytes, while `&str` and `&dyn Display` are 16 (address plus length or vtable). std uses `?Sized` wherever it only needs a reference: `impl<T: Display + ?Sized> ToString for T`, `Box<T: ?Sized>`, and `AsRef<T: ?Sized>` (which is why `AsRef<str>` is possible).
 
       ### Common mistakes
 

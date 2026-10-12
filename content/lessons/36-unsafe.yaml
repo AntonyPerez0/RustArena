@@ -17,7 +17,7 @@ steps:
       4. Implement an `unsafe` trait (like `Send`), written `unsafe impl`.
       5. Read a field of a `union`.
 
-      All but the fourth happen inside an `unsafe { ... }` block.
+      All but the fourth happen inside an `unsafe { ... }` block. (Edition 2024 also uses the keyword to mark declarations the compiler can't check, like `unsafe extern "C"` blocks and `#[unsafe(no_mangle)]`; step 3 shows them. They unlock nothing new: you're vouching that the declaration is right.)
 
       That's the whole list. `unsafe` does **not** turn off the borrow checker, type checking or bounds checks on normal indexing. It marks a spot where **you** promise to uphold rules the compiler can't verify. If you break them, the result is **undefined behavior** (UB): the program may crash, compute garbage or seem to work until it doesn't. Step 5 is all about UB.
 
@@ -74,7 +74,7 @@ steps:
       100
       ```
 
-      This is what `scores.iter().sum()` does under the hood, minus all the checks. In real code you'd write the iterator version: it's just as fast and can't go wrong.
+      This is roughly what `scores.iter().sum()` does under the hood, except that the iterator's safe API guarantees the pointer never leaves the array. In real code you'd write the iterator version: it's just as fast and can't go wrong.
 
       ### Common mistakes
 
@@ -591,6 +591,7 @@ steps:
       - Calling a foreign function is unsafe too: the compiler can't know what the C code does with your arguments.
       - C types have Rust names in `std::ffi`: `c_int`, `c_char`, `c_double`, and so on. C's `size_t` is `usize`.
       - C strings are a pointer to bytes ending in a NUL (`\0`) byte. Rust strings store their length instead and have no NUL. **`CString`** makes an owned, NUL-terminated copy of a Rust string (`CString::new` fails if the text contains a `\0`), and `.as_ptr()` gives C the `*const c_char` it wants. **`CStr`** is the borrowed view in the other direction, for strings C gives you.
+      - `b"crab\0"` is a **byte string literal**: a `&[u8; 5]` holding the bytes of the text, here with a NUL byte written as `\0` at the end.
 
       If a foreign function really is safe for **every** possible argument, you can declare it `safe fn` inside the block and call it without `unsafe`. `abs` doesn't qualify: in C, `abs(INT_MIN)` is undefined behavior, because the positive value doesn't fit in an `int`.
 
@@ -613,7 +614,7 @@ steps:
 
       - The **`libc`** crate already declares the whole C library for every platform; use it instead of writing declarations by hand.
       - **`bindgen`** generates the `extern` declarations from a C header file, and the **`cc`** crate compiles C code from a `build.rs` script. `#[link(name = "z")]` on an extern block links a system library.
-      - Going the other way, `#[unsafe(no_mangle)] pub extern "C" fn add(a: i32, b: i32) -> i32` exports a Rust function C can call. **`cbindgen`** writes the C header, and **PyO3** does the same job for Python.
+      - Going the other way, `#[unsafe(no_mangle)] pub extern "C" fn add(a: i32, b: i32) -> i32` exports a Rust function C can call. **`cbindgen`** writes the C header for it, and **PyO3** exposes Rust functions to Python.
       - The usual shape is a small `-sys` crate with the raw declarations, plus a safe wrapper crate on top: exactly the safe-abstraction pattern from the last step.
 
       **Your turn:** write `c_len`, which measures a Rust string with C's `strlen` (declared for you). Convert it with `CString::new`; if the text contains a NUL byte, return `None`. Don't use Rust's `.len()`.
@@ -906,7 +907,7 @@ steps:
       0x3f800000
       ```
 
-      Unions exist mainly to match C structs in FFI. For everything else there's a safe method: `f32::to_bits`, `u32::from_le_bytes` and an `enum` (a union with a tag that Rust checks for you).
+      Unions exist mainly to match C structs in FFI. For everything else there are safe tools: `f32::to_bits`, `u32::from_le_bytes` and an `enum` (a union with a tag that Rust checks for you).
 
       **Your turn:** `next_ticket` hands out ticket numbers 1, 2, 3, ... and is called from many threads, but it's built on a `static mut`, which races. Rewrite it with a `static` `AtomicU32` and `fetch_add`, with no `unsafe` and no `static mut`.
     seed: |
@@ -1081,14 +1082,15 @@ steps:
       ```
 
       ```text
-      thread 'main' panicked at src/main.rs:3:24:
+      thread 'main' (4242) panicked at src/main.rs:3:25:
       unsafe precondition(s) violated: slice::get_unchecked requires that the index is within the slice
 
       This indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.
+      note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
       thread caused non-unwinding panic. aborting.
       ```
 
-      Similar checks catch misaligned pointer reads and invalid `char` and enum values. Read the message's last sentence again: release builds remove these checks, and many kinds of UB are never checked at all. They're a safety net, not a guarantee.
+      Similar checks catch misaligned pointer reads and invalid `char` and enum values. Read the warning in the message again ("optional, and cannot be relied on"): release builds remove these checks, and many kinds of UB are never checked at all. They're a safety net, not a guarantee.
 
       ### Miri: the UB detector
 
@@ -1104,7 +1106,7 @@ steps:
         |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
       ```
 
-      Run it on the tests of any module that contains unsafe code, ideally in CI. It's slow (often 100 times slower than a normal run) and can't run calls into C, so keep those tests small. The Rust Playground has it under **Tools > Miri**. For FFI-heavy code, sanitizers like AddressSanitizer fill the gap.
+      Run it on the tests of any module that contains unsafe code, ideally in CI. It's slow (often 100 times slower than a normal run) and can't run most calls into C, so keep those tests small. The Rust Playground has it under **Tools > Miri**. For FFI-heavy code, sanitizers like AddressSanitizer fill the gap.
 
       ### Fixing UB
 

@@ -312,7 +312,7 @@ steps:
   - title: "Display: messages for people"
     id: custom-errors-2
     text: |
-      `{:?}` prints `InsufficientFunds { balance: 70, requested: 500 }`. That's useful in a log for developers, but a customer should see `insufficient funds: balance 70, requested 500`. The `{}` placeholder uses a different format, called **Display**, and for your own types you write it yourself.
+      `{:?}` prints `InsufficientFunds { balance: 70, requested: 500 }`. That's useful in a log for developers, but a customer should see `insufficient funds: balance 70, requested 500`. The `{}` placeholder uses a different format, called **Display**, and for your own types you write it yourself (you did it for `Money` in module 18). Error types work the same way.
 
       Display is a **trait**: a named set of methods that a type promises to have (module 22 covers traits properly). You make `{}` work for your type by **implementing** the Display trait for it. The recipe always has the same shape:
 
@@ -365,7 +365,7 @@ steps:
 
       - `use std::fmt;` brings the formatting module into scope, so you can write `fmt::Display` instead of `std::fmt::Display`.
       - `impl fmt::Display for WithdrawError { ... }` reads "here's how a `WithdrawError` is displayed".
-      - `fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result` is the one method Display requires. The signature is fixed by the trait: copy it exactly. (In the standard docs you'll see `fmt::Formatter<'_>`; that's the same thing written with a lifetime, which module 24 explains.)
+      - `fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result` is the one method Display requires. The signature is fixed by the trait: copy it exactly. (Module 18 and the standard docs write `fmt::Formatter<'_>`; the `'_` is a lifetime placeholder, which module 24 explains. Both forms compile and mean the same thing.)
       - `write!(f, ...)` works like `format!`, but writes the text into the formatter `f`. It returns a `fmt::Result`, so it's the value of each `match` arm, and of the whole method.
       - Once Display exists, `{}`, `format!` and `.to_string()` all work. `{:?}` still uses the derived Debug.
 
@@ -391,7 +391,7 @@ steps:
       error[E0277]: `WithdrawError` doesn't implement `std::fmt::Display`
       ```
 
-      - **A `;` after `write!` in a match arm.** The arm must *return* the `fmt::Result`; with a semicolon it returns `()` and you get `mismatched types`.
+      - **A `;` after `write!` in a match arm.** The arm must *return* the `fmt::Result`. In an arm without braces the `;` is a syntax error (`` `match` arm body without braces ``); inside braces, `{ write!(...); }` returns `()` and you get `mismatched types`.
       - **Using `println!` inside `fmt`.** That prints to the screen right away instead of producing the text. Always `write!(f, ...)`.
       - **Forgetting `use std::fmt;`** gives ``cannot find module or crate `fmt` ``. Either add the `use` or write the full path `std::fmt::Display`.
 
@@ -881,7 +881,7 @@ steps:
           A map app reads coordinates as `LAT,LON`, like `52.52,13.40`. Write `fn parse_coordinates(text: &str) -> Result<(f64, f64), Box<dyn Error>>`:
 
           - no comma: the error message is `expected LAT,LON`
-          - either number invalid: pass on the `ParseFloatError` (its message is `invalid float literal`)
+          - either number invalid: pass on the `ParseFloatError` unchanged (its message is `invalid float literal`, or `cannot parse float from empty string` for an empty part)
           - latitude outside -90 to 90: `latitude <lat> is out of range` (build it with `format!` and `.into()`)
 
           Trim the parts around the comma.
@@ -981,7 +981,7 @@ steps:
       }
       ```
 
-      `From` is the standard trait for "make one type out of another". When you call `?`, Rust looks for a way to make the function's error type from the error it got. `String` has `From<&str>`, and `Box<dyn Error>` has `From` for every error type: that's why those conversions worked in the last step. For your own enum, you write the conversion:
+      `From` is the standard trait for "make one type out of another". When you call `?`, Rust looks for a way to make the function's error type from the error it got. `Box<dyn Error>` has `From` for every error type, and also for `&str` and `String` messages: that's why those conversions worked in the last step. For your own enum, you write the conversion:
 
       ```rust run
       use std::fmt;
@@ -1092,7 +1092,7 @@ steps:
           Ok((name.trim().to_string(), points))
       }
     require:
-      - pattern: 'impl\s+From<ParseIntError>\s+for\s+ScoreError'
+      - pattern: 'impl\s+From<(std::num::)?ParseIntError>\s+for\s+ScoreError'
         message: "Write `impl From<ParseIntError> for ScoreError`."
     forbid:
       - pattern: '\.map_err\('

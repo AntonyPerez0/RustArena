@@ -305,8 +305,8 @@ steps:
       ### Common mistakes
 
       - **Binary search on unsorted data.** No error, just wrong answers. Sort first, or keep the data sorted.
-      - **Mixing inclusive and half-open bounds.** `hi = len - 1` with `while lo < hi` misses the last item; `hi = mid - 1` with `usize` panics with `attempt to subtract with overflow` when `mid` is 0. Pick half-open and use `hi = mid`.
-      - **`(lo + hi) / 2`** can overflow for huge indices; `lo + (hi - lo) / 2` can't.
+      - **Mixing inclusive and half-open bounds.** `hi = len - 1` with `while lo < hi` stops without ever checking the last remaining candidate; `hi = mid - 1` with `usize` panics with `attempt to subtract with overflow` when `mid` is 0. Pick half-open and use `hi = mid`.
+      - **`(lo + hi) / 2`** can overflow when `lo` and `hi` are big values of a small type, like the `u32` capacities in the last challenge of this step; `lo + (hi - lo) / 2` can't, so make it a habit.
       - **A `partition_point` condition that isn't "true then false".** For a sorted slice, `|&y| y < x` is fine; `|&y| y == x` is not.
 
       **Your turn:** write `fn find(sorted: &[i32], target: i32) -> Option<usize>` by hand with a half-open range (no `binary_search` or `partition_point`). The values are sorted and all different; return the index of `target`, or `None`. The tests look up 200,000 values in a slice of 200,000, so a linear scan is too slow.
@@ -440,7 +440,7 @@ steps:
           - "`sorted.partition_point(|&x| x <= high)` is the index of the first value `> high`."
           - "The count is `end - start`; use `end.saturating_sub(start)` so a backwards range gives 0 instead of panicking."
       - task: |
-          **Binary search on the answer.** A warehouse ships packages along a conveyor in a fixed order. Each day the truck is loaded with packages in order until the next one wouldn't fit under its capacity; packages are never split. Write `fn min_capacity(packages: &[u32], days: u32) -> u32`: the smallest truck capacity that ships everything within `days` days (`days` is at least 1). Return 0 for no packages.
+          **Binary search on the answer.** A warehouse ships packages along a conveyor in a fixed order. Each day the truck is loaded with packages in order for as long as the load stays within its capacity (a load exactly equal to the capacity is fine); packages are never split. Write `fn min_capacity(packages: &[u32], days: u32) -> u32`: the smallest truck capacity that ships everything within `days` days (`days` is at least 1). Return 0 for no packages.
 
           The trick: if capacity `c` is enough, every bigger capacity is too. So "is `c` enough?" is false, false, ..., true, true over the capacities, and you can binary search for the first true between `max(package)` (the smallest that can carry everything) and `sum(packages)` (one day). Write a helper that counts the days a capacity needs. The tests have 100,000 packages, so trying capacities one by one is too slow.
         seed: |
@@ -520,7 +520,7 @@ steps:
       You've used `sort` since the vectors module. Here's what's behind it, and how to sort by anything.
 
       - `v.sort()` is **stable**: items that compare equal keep their original order. It's O(n log n) and uses some extra memory.
-      - `v.sort_unstable()` may reorder equal items, but it's usually faster and needs no extra memory. For plain numbers, where equal items are indistinguishable, it's the idiomatic choice (clippy suggests it).
+      - `v.sort_unstable()` may reorder equal items, but it's usually faster and needs no extra memory. For plain numbers, where equal items are indistinguishable, it's the idiomatic choice (clippy's pedantic `stable_sort_primitive` lint suggests it).
       - Both need `T: Ord`. For anything else, say how to compare:
 
       | Method | Use it when |
@@ -879,7 +879,7 @@ steps:
 
       ### Common mistakes
 
-      - **A missing or unreachable base case.** If a 1-item slice still gets split, `split_at(0)` gives an empty half and the same 1-item half again, forever, until `thread 'main' has overflowed its stack`.
+      - **A missing or unreachable base case.** If a 1-item slice still gets split, `split_at(0)` gives an empty half and the same 1-item half again, forever, until the program aborts with ``thread 'main' (4242) has overflowed its stack``.
       - **Forgetting the leftovers** after the merge loop: one of the two slices still has items.
       - **`<` instead of `<=`** in the merge. Taking from the right half on ties still sorts, but it's no longer stable.
 
@@ -1415,7 +1415,7 @@ steps:
 
       - **`if` instead of `while`** when shrinking: one step may not be enough to fix the window.
       - **Negative numbers.** Shrinking a window with negative numbers can *increase* its sum, so the "shrink while too big" logic breaks. Use prefix sums (next step) for those.
-      - **Off by one in the length.** With an inclusive `right`, the window `left..=right` has `right + 1 - left` items. (Write it in that order: `right - left + 1` is the same number, but `+ 1 - left` reads naturally as "count of indices".)
+      - **Off by one in the length.** With an inclusive `right`, the window `left..=right` has `right + 1 - left` items. Write it in that order: after shrinking, the window can be empty (`left == right + 1`), and then `right - left + 1` panics with `attempt to subtract with overflow` on `usize`, while `right + 1 - left` is simply 0.
 
       **Your turn:** write `fn max_window_sum(values: &[i64], k: usize) -> Option<i64>`: the largest total of `k` consecutive values, or `None` if `k` is 0 or larger than the slice. Slide the window. The tests use 200,000 values with `k` = 100,000, so summing each window from scratch is too slow.
     seed: |

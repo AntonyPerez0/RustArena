@@ -526,7 +526,7 @@ steps:
       fn main() {
           env_logger::init(); // reads the RUST_LOG environment variable
           info!("server starting on port {}", 8080);
-          debug!("config loaded: {:?}", config);
+          debug!("config loaded from {}", "shop.toml");
           warn!("disk is {}% full", 91);
       }
       ```
@@ -542,7 +542,7 @@ steps:
       ```rust
       use tracing::{info, instrument};
 
-      #[instrument] // every log line inside gets the order_id field
+      #[instrument] // log lines inside get the order_id and items fields
       fn ship(order_id: u64, items: usize) {
           info!(items, "packing order");
       }
@@ -840,7 +840,7 @@ steps:
 
       ### Doc tests
 
-      Code blocks in doc comments are **doc tests**: `cargo test` compiles and runs each one as a small program that uses your crate from the outside. If the code panics (say, an `assert_eq!` fails) or no longer compiles, the test fails, so examples can't quietly go out of date. Mark a block ` ```no_run ` to compile it without running (it talks to a network, say), or ` ```ignore ` to skip it. Lines starting with `# ` are compiled but hidden from the rendered docs, handy for setup code. (Doc tests need a Cargo project; on this site the single-file compiler treats them as plain comments.)
+      Code blocks in the doc comments of a **library** crate are **doc tests**: `cargo test` compiles and runs each one as a small program that uses your crate from the outside. So an example can only use public items, and it names them through the crate, usually with a `use` line (`use shop::shipping_cost;`). If the code panics (say, an `assert_eq!` fails) or no longer compiles, the test fails, so examples can't quietly go out of date. Mark a block ` ```no_run ` to compile it without running (it talks to a network, say), or ` ```ignore ` to skip it. Lines starting with `# ` are compiled but hidden from the rendered docs, handy for setup code like that `use` line. (Doc tests need a Cargo library project; on this site the single-file compiler treats them as plain comments, so the examples here leave out the `use` line.)
 
       ### Building the docs
 
@@ -944,6 +944,15 @@ steps:
     require:
       - pattern: '#!\[deny\(missing_docs\)\]'
         message: "Keep `#![deny(missing_docs)]` at the top: it's what checks your docs."
+      - pattern: '///\s*#\s*Errors'
+        raw: true
+        message: "Give `take` an `# Errors` section: a `/// # Errors` line in its doc comment."
+      - pattern: '///\s*#\s*Examples'
+        raw: true
+        message: "Give `take` an `# Examples` section: a `/// # Examples` line in its doc comment."
+      - pattern: '///\s*```'
+        raw: true
+        message: "Put the example in a fenced code block inside the doc comment (`///` followed by three backticks)."
     harness: |
       #[test]
       fn take_removes_items() {
@@ -999,6 +1008,12 @@ steps:
         require:
           - pattern: '#!\[deny\(missing_docs\)\]'
             message: "Keep `#![deny(missing_docs)]` at the top."
+          - pattern: '///\s*#\s*Examples'
+            raw: true
+            message: "Give `split_bill` an `# Examples` section: a `/// # Examples` line in its doc comment."
+          - pattern: '///\s*#\s*Panics'
+            raw: true
+            message: "Give `split_bill` a `# Panics` section: a `/// # Panics` line in its doc comment."
         harness: |
           #[test]
           fn splits_evenly_when_possible() {
@@ -1150,7 +1165,7 @@ steps:
 
       Why `&[T]` over `&Vec<T>`? A slice parameter accepts a `Vec`, an array, or part of either; `&Vec<T>` only accepts a whole `Vec`, and adds an extra pointer hop. Same for `&str` over `&String`.
 
-      Here's a function with five of those warnings, and its clippy-clean version:
+      Here's a function with four of those warnings, and its clippy-clean version:
 
       ```rust
       fn total(prices: &Vec<u32>) -> u32 {
@@ -1240,7 +1255,7 @@ steps:
       - "`fn total_weight(weights: &[u32]) -> u32 { weights.iter().sum() }`"
     more:
       - task: |
-          `display_name` gets four clippy warnings: `ptr_arg` (`&String` parameter), `unwrap_or_default`, `bool_comparison` (`== true`) and `useless_format` (`format!("{}", x)`), plus `needless_return`. Rewrite it without them. It shows `nick (full name)`, or just the full name when there's no nickname or the nickname is empty.
+          Clippy flags `display_name` with `unwrap_or_default`, `bool_comparison` (`== true`) and `useless_format` (`format!("{}", x)`), and a reviewer adds two more: take `&str` instead of `&String` (what `ptr_arg` asks for), and make the body an `if`/`else` expression instead of using an early `return`. Rewrite it with all five fixes. It shows `nick (full name)`, or just the full name when there's no nickname or the nickname is empty.
         seed: |
           fn display_name(nickname: Option<String>, full: &String) -> String {
               let nick = nickname.unwrap_or(String::new());
@@ -1268,7 +1283,7 @@ steps:
           - pattern: 'format!\(\s*""\s*,\s*\w+\s*\)'
             message: "useless_format: use `.to_string()` instead of `format!(\"{}\", x)`."
           - pattern: '\breturn\b'
-            message: "needless_return: use an `if`/`else` expression instead of `return`."
+            message: "Use an `if`/`else` expression instead of an early `return`."
         harness: |
           #[test]
           fn shows_nickname_and_full_name() {
@@ -1939,6 +1954,9 @@ steps:
         require:
           - pattern: '#!\[deny\(missing_docs\)\]'
             message: "Keep `#![deny(missing_docs)]` at the top: CI uses it to require docs."
+          - pattern: '///\s*#\s*Examples'
+            raw: true
+            message: "Give `slugify` an `# Examples` section: a `/// # Examples` line in its doc comment."
         mutants:
           - name: capitals are kept
             find: "slug.push(c.to_ascii_lowercase());"

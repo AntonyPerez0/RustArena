@@ -112,7 +112,7 @@ steps:
       **Your turn:** complete `TransferError` (derive `Error`, add a message to each variant) and write `check_transfer`, which returns the balance left after the transfer. Check in this order, with these exact messages:
       - `from == to`: `SameAccount`, message `cannot transfer to the same account`
       - `amount > 1000`: `OverLimit { limit: 1000 }`, message `amount exceeds the daily limit of 1000` (use `{limit}`)
-      - `amount > balance`: `InsufficientFunds { needed, available }`, message `insufficient funds: need 250, have 100`
+      - `amount > balance`: `InsufficientFunds { needed: amount, available: balance }`, message like `insufficient funds: need 250, have 100`
     seed: |
       use thiserror::Error;
 
@@ -961,9 +961,13 @@ steps:
       Forgetting the import. The methods come from the trait, so without `use anyhow::Context;`:
 
       ```rust compile_fail
+      fn read_count(text: &str) -> anyhow::Result<u32> {
+          let n = text.trim().parse::<u32>().context("reading the count")?;
+          Ok(n)
+      }
+
       fn main() {
-          let r: Result<u32, std::num::ParseIntError> = "x".parse();
-          let _ = r.context("reading the count");
+          println!("{}", read_count("x").is_err());
       }
       ```
 
@@ -1460,7 +1464,7 @@ steps:
 
       **Your turn:** finish this inventory tool. First give `InventoryError` the thiserror derive and messages: `UnknownItem` prints `unknown item "lamp"` (Debug-format the name) and `OutOfStock` prints `only 1 mug left, asked for 5`. Then write `apply`, which runs one command line and returns a message:
       - `add <item> <qty>` adds stock and returns `added 3 mug`
-      - `take <item> <qty>` returns `took 2 mug, 1 left`
+      - `take <item> <qty>` returns `took 2 mug, 1 left`; its `InventoryError` goes up with a plain `?` (no extra context)
       - anything else: `bail!("unknown command {cmd:?}")`; a missing part: `bail!("expected: <command> <item> <qty>")`; a bad quantity: `?` with context `bad quantity "x"`
 
       `main` is written: it prints `backorder: ...` when the error is an `OutOfStock` and `error: ...` otherwise.
@@ -1672,7 +1676,7 @@ steps:
           - "`e.downcast_ref::<ConfigError>()` returns `Some(&ConfigError)` if that's the error inside, even under context layers."
           - "Chain `if e.downcast_ref::<T>().is_some() { code } else if ...` in the order given."
       - task: |
-          Code review: this library function **panics** on bad input, which a library must never do. Make it return `Result<Rgb, ColorError>` instead. Define `ColorError` with thiserror: `MissingHash` (`color must start with #`), `WrongLength(usize)` (`expected 6 hex digits, got 4`), and `BadDigit` wrapping a `std::num::ParseIntError` with `#[from]` (`invalid hex digit`). No `unwrap`, `expect` or `panic!` left.
+          Code review: this library function **panics** on bad input, which a library must never do. Make it return `Result<Rgb, ColorError>` instead. Define `ColorError` with thiserror: `MissingHash` (`color must start with #`), `WrongLength(usize)` (`expected 6 hex digits, got 4`), and `BadDigit` wrapping a `std::num::ParseIntError` with `#[from]` (`invalid hex digit`). No `unwrap`, `expect` or `panic!` left. (You may assume the input is ASCII, so slicing `hex[0..2]` is safe.)
         seed: |
           #[derive(Debug, PartialEq)]
           struct Rgb(u8, u8, u8);

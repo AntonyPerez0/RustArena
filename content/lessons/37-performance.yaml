@@ -299,7 +299,7 @@ steps:
       - **`.iter().cloned().filter(...)`**: clones everything, then throws most of it away. Filter first, clone the survivors.
       - **Over-correcting**: a clone of a short string at startup costs nothing that matters. Keep clones out of hot loops; elsewhere, readability wins. Cloning an `Rc` or `Arc` is cheap (it just bumps a counter).
 
-      clippy helps: `redundant_clone`, `unnecessary_to_owned` and `needless_pass_by_value` (in the `clippy::pedantic` group) flag many of these.
+      clippy helps: `unnecessary_to_owned` (on by default), `needless_pass_by_value` (in the opt-in `clippy::pedantic` group) and `redundant_clone` (in the opt-in `clippy::nursery` group) flag many of these.
 
       **Your turn:** `orders_for` takes ownership of everything and clones on every step. Change it to `fn orders_for<'a>(orders: &'a [Order], customer: &str) -> Vec<&'a Order>`: borrow the orders, borrow the name, and return references to the matching orders, with no clones or string conversions at all.
     seed: |
@@ -733,11 +733,11 @@ steps:
       5 5
       ```
 
-      Same answer, but the first version builds two vectors it immediately throws away. The chain walks the words once and allocates nothing. clippy's `needless_collect` lint points these out.
+      Same answer, but the first version builds two vectors it immediately throws away. The chain walks the words once and allocates nothing. clippy's `needless_collect` lint (in the opt-in `clippy::nursery` group) points these out.
 
       ### Laziness lets you stop early
 
-      Adapters do nothing until a consumer pulls items, and consumers like `any`, `all`, `find`, `position` and `take` **stop as soon as they have the answer**:
+      Adapters do nothing until a consumer pulls items, and consumers like `any`, `all`, `find` and `position` **stop as soon as they have the answer** (so does any chain with `take(n)` in it, after `n` items):
 
       ```rust run
       fn main() {
