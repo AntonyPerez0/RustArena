@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tower::ServiceExt;
 
-const PUBLIC_URL: &str = "https://sho.rt";
+const PUBLIC_URL: &str = "https://example.com";
 const RUST: &str = "https://www.rust-lang.org/learn";
 
 async fn test_app() -> Router {

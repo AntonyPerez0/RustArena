@@ -6,8 +6,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/../../tools/lib.sh"
 
 tests_unchanged() {
-  unchanged "$HERE/tests/api.rs" 8b9cf2e877d3dbb954a331d794f8eb7dfe525a45f6e7ee45144fefeef031e65d &&
-    unchanged "$HERE/tests/config.rs" aac8d2b7ac295589d438981be65d2e9745c15a4e9983e0b658d868507a6cc12f
+  unchanged "$HERE/tests/api.rs" eac329bbfda95e8bd5337e4db547b10249473d93b29d226d96b68fdc8395d201 &&
+    unchanged "$HERE/tests/config.rs" 98ae6562648b0057fecab4b834a544d825de70e511fab91a5fb2e02fa886d0d0
 }
 
 # Starts the real binary on a free-ish port with a database file in a temporary folder,

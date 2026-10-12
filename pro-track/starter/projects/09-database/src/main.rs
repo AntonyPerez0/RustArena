@@ -39,7 +39,14 @@ async fn run(url: &str, args: &[String]) -> Result<(), String> {
     let pool = db::connect(url)
         .await
         .map_err(|e| format!("can't open {url}: {e}"))?;
-    let repo = SqliteInventory::new(pool);
+    let result = execute(&SqliteInventory::new(pool.clone()), args).await;
+    // Closing the pool lets SQLite fold its write-ahead log back into inventory.db and
+    // delete the inventory.db-wal and inventory.db-shm files.
+    pool.close().await;
+    result
+}
+
+async fn execute(repo: &SqliteInventory, args: &[String]) -> Result<(), String> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["add-product", sku, name, price] => {
@@ -56,8 +63,8 @@ async fn run(url: &str, args: &[String]) -> Result<(), String> {
             println!("added warehouse {} (id {})", warehouse.name, warehouse.id);
         }
         ["receive", warehouse, sku, quantity] => {
-            let w = warehouse_id(&repo, warehouse).await?;
-            let p = product_id(&repo, sku).await?;
+            let w = warehouse_id(repo, warehouse).await?;
+            let p = product_id(repo, sku).await?;
             let now = repo
                 .add_stock(w, p, number(quantity)?)
                 .await
@@ -65,10 +72,10 @@ async fn run(url: &str, args: &[String]) -> Result<(), String> {
             println!("{warehouse} now holds {now} x {sku}");
         }
         ["transfer", sku, from, to, quantity] => {
-            let p = product_id(&repo, sku).await?;
+            let p = product_id(repo, sku).await?;
             let (f, t) = (
-                warehouse_id(&repo, from).await?,
-                warehouse_id(&repo, to).await?,
+                warehouse_id(repo, from).await?,
+                warehouse_id(repo, to).await?,
             );
             repo.transfer(p, f, t, number(quantity)?)
                 .await

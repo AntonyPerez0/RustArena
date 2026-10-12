@@ -2,10 +2,13 @@
 //!
 //! - [`config`]: settings from environment variables.
 //! - [`telemetry`]: logging with `tracing`.
-//! - [`db`]: the SQLite pool and migrations.
+//! - [`db`]: the SQLite pool and migrations (provided).
 //! - [`links`]: validation and the SQL for links.
 //! - [`error`]: the error type, and how each error becomes an HTTP response.
 //! - [`routes`]: the HTTP handlers and the router.
+//!
+//! The tests use the public items in this file and in `config`, so keep their names
+//! and signatures. Everything else is yours to design.
 
 pub mod config;
 pub mod db;

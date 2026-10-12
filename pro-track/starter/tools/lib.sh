@@ -40,10 +40,19 @@ tests_ok() {
   (cd "$dir" && cargo test --quiet "$@")
 }
 
+# sha256_hex: the SHA-256 of standard input, as hex (sha256sum on Linux, shasum on macOS).
+sha256_hex() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d" " -f1
+  else
+    shasum -a 256 | cut -d" " -f1
+  fi
+}
+
 # unchanged <file> <sha256>: a file the grader relies on (usually a provided test) is untouched.
 unchanged() {
   local got
-  got=$(sha256sum "$1" | cut -d" " -f1)
+  got=$(sha256_hex <"$1")
   [ "$got" = "$2" ] || { echo "$1 was changed. Restore it with: git checkout -- $1"; return 1; }
 }
 

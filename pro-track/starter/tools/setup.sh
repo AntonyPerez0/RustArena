@@ -21,7 +21,7 @@ if command -v apt-get >/dev/null 2>&1; then
   SUDO=""
   if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi
   $SUDO apt-get update -qq
-  $SUDO apt-get install -y -qq git sqlite3 build-essential pkg-config >/dev/null
+  $SUDO apt-get install -y -qq git sqlite3 curl build-essential pkg-config >/dev/null
 elif command -v brew >/dev/null 2>&1; then
   brew install git sqlite >/dev/null || true
 fi

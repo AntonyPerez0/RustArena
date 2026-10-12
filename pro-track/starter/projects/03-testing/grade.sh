@@ -12,7 +12,7 @@ REAL_OK=0
 
 frozen_ok() {
   local h
-  h=$(cd "$HERE" && cat src/money.rs src/account.rs mutants/*.patch | sha256sum | cut -d" " -f1)
+  h=$(cd "$HERE" && cat src/money.rs src/account.rs mutants/*.patch | sha256_hex)
   [ "$h" = "7e22bad0788360a585769e3efce6b64b944ed3744c407722c18f0718af8b2a8e" ] || {
     echo "src/money.rs, src/account.rs or mutants/ changed. Restore them with:"
     echo "  git checkout -- projects/03-testing/src/money.rs projects/03-testing/src/account.rs projects/03-testing/mutants"

@@ -11,7 +11,7 @@ pub struct Config {
     /// `DATABASE_URL` (default `sqlite:shortener.db`).
     pub database_url: String,
     /// `PUBLIC_URL` (default `http://localhost:{PORT}`): the address users see, used to
-    /// build short links. Stored without a trailing slash.
+    /// build short links. Must be an http(s) URL. Stored without a trailing slash.
     pub public_url: String,
     /// `LOG_FORMAT`: `text` (default) or `json`.
     pub log_format: LogFormat,

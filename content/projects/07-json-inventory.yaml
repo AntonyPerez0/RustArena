@@ -1,0 +1,1207 @@
+id: json-inventory
+title: A JSON inventory tool
+level: Advanced
+after: serde
+summary: A command-line tool around a JSON file, the way real back-office tools work. Load it with serde, survive format changes, validate what the types can't, apply a batch of changes described by a tagged enum, save the result and publish a JSON summary.
+seed: |
+  use serde::Deserialize;
+  use std::error::Error;
+  use std::fs;
+
+  const INVENTORY: &str = "inventory.json";
+
+  // Define Inventory and Item here, deriving Deserialize.
+
+  fn money(cents: u64) -> String {
+      format!("${}.{:02}", cents / 100, cents % 100)
+  }
+
+  fn run() -> Result<(), Box<dyn Error>> {
+      // 1. Read inventory.json into a String.
+      // 2. Parse it into an Inventory with serde_json::from_str.
+      // 3. Print the table, sorted by sku, and the total value.
+      todo!()
+  }
+
+  fn main() {
+      if let Err(e) = run() {
+          eprintln!("error: {e}");
+          std::process::exit(1);
+      }
+  }
+milestones:
+  - title: Load and list
+    text: |
+      A huge amount of work-day Rust is exactly this: read a JSON file (an export, a config, an API response), check it, change it, write it back, and report. In this project you'll build such a tool for a warehouse inventory stored in `inventory.json`:
+
+      ```json
+      {
+        "warehouse": "North",
+        "items": [
+          {"sku": "NUT-10", "name": "Hex nut M10", "qty": 100, "price_cents": 8},
+          {"sku": "BOLT-10", "name": "Hex bolt M10", "qty": 120, "price_cents": 25},
+          {"sku": "WASH-10", "name": "Washer M10", "qty": 12, "price_cents": 5}
+        ]
+      }
+      ```
+
+      The tests put `inventory.json` in the program's working directory, so `std::fs::read_to_string("inventory.json")` reads it (the file name is the `INVENTORY` constant in the starter code). Print the warehouse and item count, one line per item **sorted by SKU**, and the total stock value:
+
+      ```
+      North: 3 items
+      BOLT-10    Hex bolt M10           120 x $0.25
+      NUT-10     Hex nut M10            100 x $0.08
+      WASH-10    Washer M10              12 x $0.05
+      total value: $38.60
+      ```
+
+      Item lines are `"{:<10} {:<20} {:>5} x {}"` with the SKU, name, quantity and `money(price_cents)`.
+
+      ### The structs are the schema
+
+      With serde you don't walk the JSON by hand. You describe the shape you expect as Rust types, derive `Deserialize`, and `serde_json::from_str` fills them in or tells you exactly what didn't match:
+
+      ```rust
+      #[derive(Debug, Deserialize)]
+      struct Inventory {
+          warehouse: String,
+          items: Vec<Item>,
+      }
+      ```
+
+      Each field name matches a JSON key, a `Vec<Item>` matches an array of objects, and the types do the first round of validation for free: `"qty": -5` fails to load because `qty` is a `u32`, and a missing `price_cents` fails with `missing field`. You'll still need to say which type to parse into: `let inventory: Inventory = serde_json::from_str(&text)?;` (or let the function's return type say it).
+
+      ### Errors at the top, once
+
+      The starter code uses the shape every command-line tool should have. All the work happens in `run() -> Result<(), Box<dyn Error>>`, where `?` passes any error up. `main` handles it once: it prints `error: ...` with `eprintln!` and ends the program with `std::process::exit(1)`.
+
+      - `eprintln!` writes to **standard error**, a second output stream meant for problems. When someone redirects the tool's output into a file or another program, the error messages still reach their terminal instead of corrupting the data.
+      - The **exit code** is how scripts and CI pipelines know a command failed: 0 means success, anything else means failure. Tests in this project check it.
+
+      A raw `No such file or directory (os error 2)` doesn't say *which* file. Add context as the error passes by: `.map_err(|e| format!("cannot read {path}: {e}"))?` turns the error into a `String` with a better message, and `?` converts that `String` into a `Box<dyn Error>` for you. Do the same for the parse error (`"{path} is not a valid inventory: {e}"`). The tests check the exit code; read the message in your own runs.
+    solution: |
+      use serde::Deserialize;
+      use std::error::Error;
+      use std::fs;
+
+      const INVENTORY: &str = "inventory.json";
+
+      #[derive(Debug, Deserialize)]
+      struct Inventory {
+          warehouse: String,
+          items: Vec<Item>,
+      }
+
+      #[derive(Debug, Deserialize)]
+      struct Item {
+          sku: String,
+          name: String,
+          qty: u32,
+          price_cents: u64,
+      }
+
+      fn money(cents: u64) -> String {
+          format!("${}.{:02}", cents / 100, cents % 100)
+      }
+
+      fn load(path: &str) -> Result<Inventory, Box<dyn Error>> {
+          let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+          let inventory = serde_json::from_str(&text).map_err(|e| format!("{path} is not a valid inventory: {e}"))?;
+          Ok(inventory)
+      }
+
+      fn print_table(inventory: &Inventory) {
+          let mut items: Vec<&Item> = inventory.items.iter().collect();
+          items.sort_by(|a, b| a.sku.cmp(&b.sku));
+          let noun = if items.len() == 1 { "item" } else { "items" };
+          println!("{}: {} {noun}", inventory.warehouse, items.len());
+          let mut total = 0;
+          for item in &items {
+              println!("{:<10} {:<20} {:>5} x {}", item.sku, item.name, item.qty, money(item.price_cents));
+              total += item.price_cents * item.qty as u64;
+          }
+          println!("total value: {}", money(total));
+      }
+
+      fn run() -> Result<(), Box<dyn Error>> {
+          let inventory = load(INVENTORY)?;
+
+          print_table(&inventory);
+          Ok(())
+      }
+
+      fn main() {
+          if let Err(e) = run() {
+              eprintln!("error: {e}");
+              std::process::exit(1);
+          }
+      }
+    tests:
+      - files:
+          inventory.json: |
+            {
+              "warehouse": "North",
+              "items": [
+                {"sku": "NUT-10", "name": "Hex nut M10", "qty": 100, "price_cents": 8},
+                {"sku": "BOLT-10", "name": "Hex bolt M10", "qty": 120, "price_cents": 25},
+                {"sku": "WASH-10", "name": "Washer M10", "qty": 12, "price_cents": 5}
+              ]
+            }
+      - files:
+          inventory.json: |
+            {"warehouse": "Harbor", "items": [
+              {"sku": "ROPE-50", "name": "Rope 50 m", "qty": 0, "price_cents": 4999},
+              {"sku": "HOOK-2", "name": "Cargo hook", "qty": 7, "price_cents": 1250}
+            ]}
+      - files:
+          inventory.json: |
+            {"warehouse": "North", "items": [
+              {"sku": "NUT-10", "name": "Hex nut M10", "qty": -5, "price_cents": 8}
+            ]}
+        exit: 1
+        allowEmpty: true
+      - files:
+          inventory.json: |
+            {"warehouse": "Depot", "items": [
+              {"sku": "GEAR-2", "name": "Spur gear", "qty": 4, "price_cents": 1250},
+              {"sku": "AXLE-1", "name": "Axle", "qty": 30, "price_cents": 899},
+              {"sku": "CHAIN-8", "name": "Roller chain", "qty": 2, "price_cents": 2475}
+            ]}
+        hidden: true
+      - files:
+          inventory.json: |
+            {"warehouse": "Depot", "items": [
+              {"sku": "GEAR-2", "name": "Spur gear", "qty": 4}
+            ]}
+        exit: 1
+        allowEmpty: true
+        hidden: true
+      - exit: 1
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "Define `Inventory { warehouse: String, items: Vec<Item> }` and `Item { sku: String, name: String, qty: u32, price_cents: u64 }`, both with `#[derive(Debug, Deserialize)]`."
+      - "In `run`: `let text = fs::read_to_string(INVENTORY).map_err(|e| format!(\"cannot read {INVENTORY}: {e}\"))?;` then `let inventory: Inventory = serde_json::from_str(&text)?;`."
+      - "Sort references instead of the items themselves: `let mut items: Vec<&Item> = inventory.items.iter().collect(); items.sort_by(|a, b| a.sku.cmp(&b.sku));`. Add up `price_cents * qty as u64` for the total."
+
+  - title: Renames, optional fields and defaults
+    text: |
+      The inventory is now exported by the purchasing team's web service, which is written in JavaScript, and the format changed:
+
+      ```json
+      {"sku": "NUT-10", "name": "Hex nut M10", "qty": 40, "priceCents": 8, "reorderLevel": 50, "supplier": "Acme"}
+      ```
+
+      - Keys are **camelCase** (`priceCents`), the JavaScript convention.
+      - `reorderLevel` is new and **optional**: when stock is at or below it, it's time to order more. Missing means 10.
+      - `supplier` is new and optional too: it may be missing, or `null`.
+
+      Rust field names stay snake_case; you tell serde how the JSON spells them. After the total, print a line for every item (in SKU order) whose quantity is at or below its reorder level:
+
+      ```
+      reorder GEAR-2: 4 left (reorder level 10), no supplier
+      reorder NUT-10: 40 left (reorder level 50), supplier Acme
+      ```
+
+      ### Three attributes do all of it
+
+      ```rust
+      #[derive(Debug, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Item {
+          sku: String,
+          name: String,
+          qty: u32,
+          price_cents: u64,                 // reads "priceCents"
+          #[serde(default = "default_reorder_level")]
+          reorder_level: u32,               // missing -> default_reorder_level()
+          supplier: Option<String>,         // missing or null -> None
+      }
+
+      fn default_reorder_level() -> u32 {
+          10
+      }
+      ```
+
+      - `rename_all = "camelCase"` renames every field at once. Use `#[serde(rename = "...")]` on a single field when only one is odd.
+      - An `Option` field may be missing or `null`; both become `None`. That's how JSON's "maybe there's a value" maps onto Rust's.
+      - `default = "path"` calls a function when the key is missing. Plain `#[serde(default)]` would use `Default::default()`, which is 0, the wrong business rule here: an item with no reorder level would never be reordered.
+
+      Decide deliberately what a missing field *means*. "Missing means 10" is a business rule, and the struct definition is now the one place where it's written down.
+
+      By default serde **ignores** keys it doesn't know, so a newer export with extra fields still loads. If you'd rather fail loudly on typos like `"qtty"`, add `#[serde(deny_unknown_fields)]` to the struct. Teams choose per format: ignore for data from other systems, deny for config files people type by hand.
+
+      Note that old files (with `price_cents`) no longer load: the tool now speaks only the new format, and says so with a `missing field` error.
+    solution: |
+      use serde::Deserialize;
+      use std::error::Error;
+      use std::fs;
+
+      const INVENTORY: &str = "inventory.json";
+
+      #[derive(Debug, Deserialize)]
+      struct Inventory {
+          warehouse: String,
+          items: Vec<Item>,
+      }
+
+      #[derive(Debug, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Item {
+          sku: String,
+          name: String,
+          qty: u32,
+          price_cents: u64,
+          #[serde(default = "default_reorder_level")]
+          reorder_level: u32,
+          supplier: Option<String>,
+      }
+
+      fn default_reorder_level() -> u32 {
+          10
+      }
+
+      fn money(cents: u64) -> String {
+          format!("${}.{:02}", cents / 100, cents % 100)
+      }
+
+      fn load(path: &str) -> Result<Inventory, Box<dyn Error>> {
+          let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+          let inventory = serde_json::from_str(&text).map_err(|e| format!("{path} is not a valid inventory: {e}"))?;
+          Ok(inventory)
+      }
+
+      fn print_table(inventory: &Inventory) {
+          let mut items: Vec<&Item> = inventory.items.iter().collect();
+          items.sort_by(|a, b| a.sku.cmp(&b.sku));
+          let noun = if items.len() == 1 { "item" } else { "items" };
+          println!("{}: {} {noun}", inventory.warehouse, items.len());
+          let mut total = 0;
+          for item in &items {
+              println!("{:<10} {:<20} {:>5} x {}", item.sku, item.name, item.qty, money(item.price_cents));
+              total += item.price_cents * item.qty as u64;
+          }
+          println!("total value: {}", money(total));
+          for item in &items {
+              if item.qty <= item.reorder_level {
+                  let supplier = match &item.supplier {
+                      Some(name) => format!("supplier {name}"),
+                      None => String::from("no supplier"),
+                  };
+                  println!("reorder {}: {} left (reorder level {}), {supplier}", item.sku, item.qty, item.reorder_level);
+              }
+          }
+      }
+
+      fn run() -> Result<(), Box<dyn Error>> {
+          let inventory = load(INVENTORY)?;
+
+          print_table(&inventory);
+          Ok(())
+      }
+
+      fn main() {
+          if let Err(e) = run() {
+              eprintln!("error: {e}");
+              std::process::exit(1);
+          }
+      }
+    tests:
+      - files:
+          inventory.json: |
+            {
+              "warehouse": "North",
+              "items": [
+                {"sku": "NUT-10", "name": "Hex nut M10", "qty": 40, "priceCents": 8, "reorderLevel": 50, "supplier": "Acme"},
+                {"sku": "BOLT-10", "name": "Hex bolt M10", "qty": 120, "priceCents": 25, "supplier": "Acme"},
+                {"sku": "GEAR-2", "name": "Spur gear", "qty": 4, "priceCents": 1250}
+              ]
+            }
+      - files:
+          inventory.json: |
+            {"warehouse": "Harbor", "items": [
+              {"sku": "ROPE-50", "name": "Rope 50 m", "qty": 10, "priceCents": 4999, "supplier": null},
+              {"sku": "HOOK-2", "name": "Cargo hook", "qty": 11, "priceCents": 1250, "supplier": "Hookworks"},
+              {"sku": "TARP-4", "name": "Tarp 4x6", "qty": 3, "priceCents": 2200, "reorderLevel": 2, "supplier": "Canvas Co"}
+            ]}
+      - files:
+          inventory.json: |
+            {"warehouse": "North", "items": [
+              {"sku": "NUT-10", "name": "Hex nut M10", "qty": 100, "price_cents": 8}
+            ]}
+        exit: 1
+        allowEmpty: true
+        hidden: true
+      - files:
+          inventory.json: |
+            {"warehouse": "Depot", "items": [
+              {"sku": "GEAR-2", "name": "Spur gear", "qty": 0, "priceCents": 1250, "reorderLevel": 0, "supplier": "Geary"},
+              {"sku": "AXLE-1", "name": "Axle", "qty": 30, "priceCents": 899, "reorderLevel": 30, "color": "red"}
+            ]}
+        hidden: true
+    hints:
+      - "Put `#[serde(rename_all = \"camelCase\")]` under the derive on `Item`, add `reorder_level: u32` with `#[serde(default = \"default_reorder_level\")]`, and `supplier: Option<String>`."
+      - "`fn default_reorder_level() -> u32 { 10 }` is the function serde calls for a missing key."
+      - "After the total, loop over the sorted items again and print the ones with `item.qty <= item.reorder_level`, matching on `&item.supplier` for the last part."
+
+  - title: Validate before you trust
+    text: |
+      serde guarantees the file has the right **shape**: every field present, every number a number. It can't know what the values **mean**. An empty name, a price of zero or two items with the same SKU all load perfectly, and then quietly break everything downstream (orders for the wrong item, revenue of $0).
+
+      Check the meaning after loading. Every SKU must look like `BOLT-10`: one or more uppercase ASCII letters, a dash, one or more digits. Names can't be empty (or only spaces), prices must be above 0, and SKUs must be unique. Report **every** problem, in item order (and for one item, in that order of rules), not just the first:
+
+      ```
+      problem: item 1 (bolt10): invalid sku
+      problem: item 2 (PIN-3): name is empty
+      problem: item 2 (PIN-3): price must be positive
+      problem: item 3 (PIN-3): duplicate sku
+      ```
+
+      Items are numbered from 1 in file order. If there are any problems, don't print the table: return an error from `run` (`inventory.json has 4 problem(s), nothing was changed`), so the tool exits with code 1. A valid file prints the same report as before.
+
+      ### Collect, don't stop
+
+      Stopping at the first problem is fine for a compiler error you fix in a second. For a data file someone exported from another system, it's maddening: fix one problem, run again, find the next, and so on twenty times. Collect them all:
+
+      ```rust
+      fn validate(inventory: &Inventory) -> Vec<String>
+      ```
+
+      returns every problem; an empty `Vec` means valid. Keeping validation a separate function that only *returns* problems also means you can test it, or reuse it in a web form, without any printing.
+
+      For duplicates, remember the SKUs you've seen in a `BTreeSet<&str>`. `insert` returns `false` when the value was already there, so detection and recording are one call:
+
+      ```rust
+      if !seen.insert(item.sku.as_str()) {
+          problems.push(format!("{at}: duplicate sku"));
+      }
+      ```
+
+      For the SKU format, `split_once('-')` gives the two halves, and `chars().all(|c| c.is_ascii_uppercase())` checks every character of one. (The `regex` crate would do this in one line, `^[A-Z]+-[0-9]+$`. For a rule this small, plain code is just as clear and has no dependency.)
+    solution: |
+      use serde::Deserialize;
+      use std::collections::BTreeSet;
+      use std::error::Error;
+      use std::fs;
+
+      const INVENTORY: &str = "inventory.json";
+
+      #[derive(Debug, Deserialize)]
+      struct Inventory {
+          warehouse: String,
+          items: Vec<Item>,
+      }
+
+      #[derive(Debug, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Item {
+          sku: String,
+          name: String,
+          qty: u32,
+          price_cents: u64,
+          #[serde(default = "default_reorder_level")]
+          reorder_level: u32,
+          supplier: Option<String>,
+      }
+
+      fn default_reorder_level() -> u32 {
+          10
+      }
+
+      fn money(cents: u64) -> String {
+          format!("${}.{:02}", cents / 100, cents % 100)
+      }
+
+      /// One or more uppercase letters, a dash, one or more digits: "BOLT-10".
+      fn valid_sku(sku: &str) -> bool {
+          match sku.split_once('-') {
+              Some((letters, digits)) => {
+                  !letters.is_empty()
+                      && !digits.is_empty()
+                      && letters.chars().all(|c| c.is_ascii_uppercase())
+                      && digits.chars().all(|c| c.is_ascii_digit())
+              }
+              None => false,
+          }
+      }
+
+      /// Every problem in the inventory, in item order. Empty means valid.
+      fn validate(inventory: &Inventory) -> Vec<String> {
+          let mut problems = Vec::new();
+          let mut seen = BTreeSet::new();
+          for (i, item) in inventory.items.iter().enumerate() {
+              let at = format!("item {} ({})", i + 1, item.sku);
+              if !valid_sku(&item.sku) {
+                  problems.push(format!("{at}: invalid sku"));
+              }
+              // insert returns false if the sku was already in the set.
+              if !seen.insert(item.sku.as_str()) {
+                  problems.push(format!("{at}: duplicate sku"));
+              }
+              if item.name.trim().is_empty() {
+                  problems.push(format!("{at}: name is empty"));
+              }
+              if item.price_cents == 0 {
+                  problems.push(format!("{at}: price must be positive"));
+              }
+          }
+          problems
+      }
+
+      fn load(path: &str) -> Result<Inventory, Box<dyn Error>> {
+          let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+          let inventory = serde_json::from_str(&text).map_err(|e| format!("{path} is not a valid inventory: {e}"))?;
+          Ok(inventory)
+      }
+
+      fn print_table(inventory: &Inventory) {
+          let mut items: Vec<&Item> = inventory.items.iter().collect();
+          items.sort_by(|a, b| a.sku.cmp(&b.sku));
+          let noun = if items.len() == 1 { "item" } else { "items" };
+          println!("{}: {} {noun}", inventory.warehouse, items.len());
+          let mut total = 0;
+          for item in &items {
+              println!("{:<10} {:<20} {:>5} x {}", item.sku, item.name, item.qty, money(item.price_cents));
+              total += item.price_cents * item.qty as u64;
+          }
+          println!("total value: {}", money(total));
+          for item in &items {
+              if item.qty <= item.reorder_level {
+                  let supplier = match &item.supplier {
+                      Some(name) => format!("supplier {name}"),
+                      None => String::from("no supplier"),
+                  };
+                  println!("reorder {}: {} left (reorder level {}), {supplier}", item.sku, item.qty, item.reorder_level);
+              }
+          }
+      }
+
+      fn run() -> Result<(), Box<dyn Error>> {
+          let inventory = load(INVENTORY)?;
+
+          let problems = validate(&inventory);
+          if !problems.is_empty() {
+              for problem in &problems {
+                  println!("problem: {problem}");
+              }
+              return Err(format!("{INVENTORY} has {} problem(s), nothing was changed", problems.len()).into());
+          }
+
+          print_table(&inventory);
+          Ok(())
+      }
+
+      fn main() {
+          if let Err(e) = run() {
+              eprintln!("error: {e}");
+              std::process::exit(1);
+          }
+      }
+    tests:
+      - files:
+          inventory.json: |
+            {"warehouse": "South", "items": [
+              {"sku": "bolt10", "name": "Bolt", "qty": 1, "priceCents": 10},
+              {"sku": "PIN-3", "name": "  ", "qty": 5, "priceCents": 0},
+              {"sku": "PIN-3", "name": "Pin", "qty": 5, "priceCents": 3},
+              {"sku": "CAP-", "name": "Cap", "qty": 2, "priceCents": 40}
+            ]}
+        exit: 1
+      - files:
+          inventory.json: |
+            {
+              "warehouse": "North",
+              "items": [
+                {"sku": "NUT-10", "name": "Hex nut M10", "qty": 40, "priceCents": 8, "reorderLevel": 50, "supplier": "Acme"},
+                {"sku": "BOLT-10", "name": "Hex bolt M10", "qty": 120, "priceCents": 25, "supplier": "Acme"},
+                {"sku": "GEAR-2", "name": "Spur gear", "qty": 4, "priceCents": 1250}
+              ]
+            }
+      - files:
+          inventory.json: |
+            {"warehouse": "Depot", "items": [
+              {"sku": "AXLE-1", "name": "Axle", "qty": 30, "priceCents": 899},
+              {"sku": "AX-LE-2", "name": "Axle (long)", "qty": 3, "priceCents": 1299},
+              {"sku": "-7", "name": "", "qty": 9, "priceCents": 1},
+              {"sku": "AXLE-1", "name": "Axle again", "qty": 1, "priceCents": 0}
+            ]}
+        exit: 1
+        hidden: true
+      - files:
+          inventory.json: |
+            {"warehouse": "Tiny", "items": [
+              {"sku": "Z-0", "name": "Zero", "qty": 0, "priceCents": 1}
+            ]}
+        hidden: true
+    hints:
+      - "`valid_sku`: `match sku.split_once('-')` and check both halves are non-empty, `letters.chars().all(|c| c.is_ascii_uppercase())` and `digits.chars().all(|c| c.is_ascii_digit())`."
+      - "In `validate`, loop with `for (i, item) in inventory.items.iter().enumerate()`, build `let at = format!(\"item {} ({})\", i + 1, item.sku);` and push one message per broken rule."
+      - "In `run`, if the problems aren't empty, print each as `problem: {problem}` and `return Err(format!(...).into());`."
+
+  - title: A batch of changes
+    text: |
+      Now let the tool change the inventory. Changes arrive as a second file, `changes.json`: a list of operations, each tagged with `"op"`:
+
+      ```json
+      [
+        {"op": "sell", "sku": "NUT-10", "qty": 30},
+        {"op": "restock", "sku": "GEAR-2", "qty": 20},
+        {"op": "add", "item": {"sku": "CHAIN-8", "name": "Roller chain", "qty": 5, "priceCents": 2475}},
+        {"op": "remove", "sku": "BOLT-10"}
+      ]
+      ```
+
+      After validating, apply them in order, printing one line each, then print the report (which now shows the state *after* the changes):
+
+      | Change | Prints |
+      |---|---|
+      | `restock` | `restocked GEAR-2: 4 -> 24` |
+      | `sell` | `sold 30 of NUT-10: 40 -> 10` |
+      | `add` | `added CHAIN-8 (Roller chain)` |
+      | `remove` | `removed BOLT-10` |
+
+      A change that can't be applied is skipped with its number (from 1): `change 3 skipped: no item with sku "GEAR-9"`, `change 2 skipped: cannot sell 500 of BOLT-10: only 120 in stock`, `change 5 skipped: sku "NUT-10" already exists` (for an `add`). If `changes.json` doesn't exist, there's simply nothing to apply. If it exists but isn't valid (an unknown `op`, a missing field), that's an error: exit 1 without changing anything.
+
+      ### An internally tagged enum
+
+      Each change is one of four shapes, chosen by `"op"`: an enum. serde supports several JSON layouts for enums; this one, with the variant name *inside* the object, is called **internally tagged**:
+
+      ```rust
+      #[derive(Debug, Deserialize)]
+      #[serde(tag = "op", rename_all = "lowercase")]
+      enum Change {
+          Restock { sku: String, qty: u32 },
+          Sell { sku: String, qty: u32 },
+          Add { item: Item },
+          Remove { sku: String },
+      }
+      ```
+
+      `tag = "op"` says which key holds the variant name, and `rename_all = "lowercase"` maps `Restock` to `"restock"`. An unknown op like `"steal"` fails to load with a clear message, and a `Sell` without `qty` can't exist. Then a plain `match` applies each change. `Add { item: Item }` reuses your `Item` type, defaults and all.
+
+      ### Typed errors with thiserror
+
+      Applying a change has its own failure modes. Give them a small error type; `thiserror` writes the `Display` and `Error` impls from the `#[error]` messages:
+
+      ```rust
+      #[derive(Debug, thiserror::Error)]
+      enum ChangeError {
+          #[error("no item with sku \"{0}\"")]
+          UnknownSku(String),
+          #[error("cannot sell {wanted} of {sku}: only {available} in stock")]
+          NotEnough { sku: String, wanted: u32, available: u32 },
+          #[error("sku \"{0}\" already exists")]
+          Duplicate(String),
+      }
+      ```
+
+      `fn apply(inventory: &mut Inventory, change: Change) -> Result<String, ChangeError>` returns the line to print. A helper `find_mut` that returns `Result<&mut Item, ChangeError>` makes restock and sell two lines each: `inventory.items.iter_mut().find(|item| item.sku == sku).ok_or_else(...)`.
+
+      To check whether the changes file exists, use `std::path::Path::new(CHANGES).exists()`. A missing optional file isn't an error; a broken one is.
+    solution: |
+      use serde::Deserialize;
+      use std::collections::BTreeSet;
+      use std::error::Error;
+      use std::fs;
+      use std::path::Path;
+
+      const INVENTORY: &str = "inventory.json";
+      const CHANGES: &str = "changes.json";
+
+      #[derive(Debug, Deserialize)]
+      struct Inventory {
+          warehouse: String,
+          items: Vec<Item>,
+      }
+
+      #[derive(Debug, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Item {
+          sku: String,
+          name: String,
+          qty: u32,
+          price_cents: u64,
+          #[serde(default = "default_reorder_level")]
+          reorder_level: u32,
+          supplier: Option<String>,
+      }
+
+      fn default_reorder_level() -> u32 {
+          10
+      }
+
+      /// One entry of changes.json, like {"op": "sell", "sku": "NUT-10", "qty": 30}.
+      #[derive(Debug, Deserialize)]
+      #[serde(tag = "op", rename_all = "lowercase")]
+      enum Change {
+          Restock { sku: String, qty: u32 },
+          Sell { sku: String, qty: u32 },
+          Add { item: Item },
+          Remove { sku: String },
+      }
+
+      #[derive(Debug, thiserror::Error)]
+      enum ChangeError {
+          #[error("no item with sku \"{0}\"")]
+          UnknownSku(String),
+          #[error("cannot sell {wanted} of {sku}: only {available} in stock")]
+          NotEnough { sku: String, wanted: u32, available: u32 },
+          #[error("sku \"{0}\" already exists")]
+          Duplicate(String),
+      }
+
+      fn money(cents: u64) -> String {
+          format!("${}.{:02}", cents / 100, cents % 100)
+      }
+
+      /// One or more uppercase letters, a dash, one or more digits: "BOLT-10".
+      fn valid_sku(sku: &str) -> bool {
+          match sku.split_once('-') {
+              Some((letters, digits)) => {
+                  !letters.is_empty()
+                      && !digits.is_empty()
+                      && letters.chars().all(|c| c.is_ascii_uppercase())
+                      && digits.chars().all(|c| c.is_ascii_digit())
+              }
+              None => false,
+          }
+      }
+
+      /// Every problem in the inventory, in item order. Empty means valid.
+      fn validate(inventory: &Inventory) -> Vec<String> {
+          let mut problems = Vec::new();
+          let mut seen = BTreeSet::new();
+          for (i, item) in inventory.items.iter().enumerate() {
+              let at = format!("item {} ({})", i + 1, item.sku);
+              if !valid_sku(&item.sku) {
+                  problems.push(format!("{at}: invalid sku"));
+              }
+              // insert returns false if the sku was already in the set.
+              if !seen.insert(item.sku.as_str()) {
+                  problems.push(format!("{at}: duplicate sku"));
+              }
+              if item.name.trim().is_empty() {
+                  problems.push(format!("{at}: name is empty"));
+              }
+              if item.price_cents == 0 {
+                  problems.push(format!("{at}: price must be positive"));
+              }
+          }
+          problems
+      }
+
+      fn find_mut<'a>(inventory: &'a mut Inventory, sku: &str) -> Result<&'a mut Item, ChangeError> {
+          inventory
+              .items
+              .iter_mut()
+              .find(|item| item.sku == sku)
+              .ok_or_else(|| ChangeError::UnknownSku(sku.to_string()))
+      }
+
+      /// Applies one change and describes what happened.
+      fn apply(inventory: &mut Inventory, change: Change) -> Result<String, ChangeError> {
+          match change {
+              Change::Restock { sku, qty } => {
+                  let item = find_mut(inventory, &sku)?;
+                  let before = item.qty;
+                  item.qty += qty;
+                  Ok(format!("restocked {sku}: {before} -> {}", item.qty))
+              }
+              Change::Sell { sku, qty } => {
+                  let item = find_mut(inventory, &sku)?;
+                  if qty > item.qty {
+                      return Err(ChangeError::NotEnough { sku, wanted: qty, available: item.qty });
+                  }
+                  let before = item.qty;
+                  item.qty -= qty;
+                  Ok(format!("sold {qty} of {sku}: {before} -> {}", item.qty))
+              }
+              Change::Add { item } => {
+                  if inventory.items.iter().any(|existing| existing.sku == item.sku) {
+                      return Err(ChangeError::Duplicate(item.sku));
+                  }
+                  let message = format!("added {} ({})", item.sku, item.name);
+                  inventory.items.push(item);
+                  Ok(message)
+              }
+              Change::Remove { sku } => {
+                  let before = inventory.items.len();
+                  inventory.items.retain(|item| item.sku != sku);
+                  if inventory.items.len() == before {
+                      return Err(ChangeError::UnknownSku(sku));
+                  }
+                  Ok(format!("removed {sku}"))
+              }
+          }
+      }
+
+      fn load(path: &str) -> Result<Inventory, Box<dyn Error>> {
+          let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+          let inventory = serde_json::from_str(&text).map_err(|e| format!("{path} is not a valid inventory: {e}"))?;
+          Ok(inventory)
+      }
+
+      fn load_changes(path: &str) -> Result<Vec<Change>, Box<dyn Error>> {
+          if !Path::new(path).exists() {
+              return Ok(Vec::new());
+          }
+          let text = fs::read_to_string(path)?;
+          let changes = serde_json::from_str(&text).map_err(|e| format!("{path} is not a valid list of changes: {e}"))?;
+          Ok(changes)
+      }
+
+      fn print_table(inventory: &Inventory) {
+          let mut items: Vec<&Item> = inventory.items.iter().collect();
+          items.sort_by(|a, b| a.sku.cmp(&b.sku));
+          let noun = if items.len() == 1 { "item" } else { "items" };
+          println!("{}: {} {noun}", inventory.warehouse, items.len());
+          let mut total = 0;
+          for item in &items {
+              println!("{:<10} {:<20} {:>5} x {}", item.sku, item.name, item.qty, money(item.price_cents));
+              total += item.price_cents * item.qty as u64;
+          }
+          println!("total value: {}", money(total));
+          for item in &items {
+              if item.qty <= item.reorder_level {
+                  let supplier = match &item.supplier {
+                      Some(name) => format!("supplier {name}"),
+                      None => String::from("no supplier"),
+                  };
+                  println!("reorder {}: {} left (reorder level {}), {supplier}", item.sku, item.qty, item.reorder_level);
+              }
+          }
+      }
+
+      fn run() -> Result<(), Box<dyn Error>> {
+          let mut inventory = load(INVENTORY)?;
+
+          let problems = validate(&inventory);
+          if !problems.is_empty() {
+              for problem in &problems {
+                  println!("problem: {problem}");
+              }
+              return Err(format!("{INVENTORY} has {} problem(s), nothing was changed", problems.len()).into());
+          }
+
+          let changes = load_changes(CHANGES)?;
+          for (i, change) in changes.into_iter().enumerate() {
+              match apply(&mut inventory, change) {
+                  Ok(message) => println!("{message}"),
+                  Err(e) => println!("change {} skipped: {e}", i + 1),
+              }
+          }
+
+          print_table(&inventory);
+          Ok(())
+      }
+
+      fn main() {
+          if let Err(e) = run() {
+              eprintln!("error: {e}");
+              std::process::exit(1);
+          }
+      }
+    tests:
+      - files:
+          inventory.json: |
+            {
+              "warehouse": "North",
+              "items": [
+                {"sku": "NUT-10", "name": "Hex nut M10", "qty": 40, "priceCents": 8, "reorderLevel": 50, "supplier": "Acme"},
+                {"sku": "BOLT-10", "name": "Hex bolt M10", "qty": 120, "priceCents": 25, "supplier": "Acme"},
+                {"sku": "GEAR-2", "name": "Spur gear", "qty": 4, "priceCents": 1250}
+              ]
+            }
+          changes.json: |
+            [
+              {"op": "sell", "sku": "NUT-10", "qty": 30},
+              {"op": "sell", "sku": "BOLT-10", "qty": 500},
+              {"op": "restock", "sku": "GEAR-2", "qty": 20},
+              {"op": "add", "item": {"sku": "CHAIN-8", "name": "Roller chain", "qty": 5, "priceCents": 2475}},
+              {"op": "add", "item": {"sku": "NUT-10", "name": "Another nut", "qty": 1, "priceCents": 1}},
+              {"op": "remove", "sku": "GEAR-9"},
+              {"op": "remove", "sku": "BOLT-10"}
+            ]
+      - files:
+          inventory.json: |
+            {"warehouse": "Harbor", "items": [
+              {"sku": "ROPE-50", "name": "Rope 50 m", "qty": 10, "priceCents": 4999}
+            ]}
+      - files:
+          inventory.json: |
+            {"warehouse": "Harbor", "items": [
+              {"sku": "ROPE-50", "name": "Rope 50 m", "qty": 10, "priceCents": 4999}
+            ]}
+          changes.json: |
+            [{"op": "steal", "sku": "ROPE-50", "qty": 10}]
+        exit: 1
+        allowEmpty: true
+      - files:
+          inventory.json: |
+            {"warehouse": "Depot", "items": [
+              {"sku": "AXLE-1", "name": "Axle", "qty": 30, "priceCents": 899, "reorderLevel": 5},
+              {"sku": "PIN-3", "name": "Pin", "qty": 8, "priceCents": 3}
+            ]}
+          changes.json: |
+            [
+              {"op": "sell", "sku": "AXLE-1", "qty": 30},
+              {"op": "sell", "sku": "AXLE-1", "qty": 1},
+              {"op": "restock", "sku": "PIN-3", "qty": 2},
+              {"op": "remove", "sku": "PIN-3"},
+              {"op": "restock", "sku": "PIN-3", "qty": 2}
+            ]
+        hidden: true
+      - files:
+          inventory.json: |
+            {"warehouse": "Depot", "items": [
+              {"sku": "axle", "name": "Axle", "qty": 30, "priceCents": 899}
+            ]}
+          changes.json: |
+            [{"op": "remove", "sku": "axle"}]
+        exit: 1
+        hidden: true
+    hints:
+      - "Derive `Deserialize` on `enum Change` with `#[serde(tag = \"op\", rename_all = \"lowercase\")]`, and load it with a `load_changes` function that returns an empty `Vec` when `!Path::new(CHANGES).exists()`."
+      - "`apply` is a `match change { Change::Restock { sku, qty } => { let item = find_mut(inventory, &sku)?; ... } ... }`; for `Remove`, compare the length before and after `retain`."
+      - "In `run`, after validation: `for (i, change) in changes.into_iter().enumerate()` and print either the message or `change {} skipped: {e}` with `i + 1`. Then print the table as before (make `inventory` mutable)."
+
+  - title: "Polish: save it, and speak JSON"
+    text: |
+      Two things turn this into a tool other people can build on: it should **save** its changes, and it should publish a summary that **other programs** can read.
+
+      ### Saving
+
+      When changes were applied, write the inventory back to `inventory.json` with `serde_json::to_string_pretty` (plus a final newline) and `fs::write`, then print `saved inventory.json`. With no changes, don't touch the file: rewriting a file that didn't change confuses backups and version control.
+
+      Saving needs `Serialize` on `Inventory` and `Item`, and two attributes keep the file tidy: an item with no supplier shouldn't gain `"supplier": null`, and an item with no tags shouldn't gain `"tags": []`:
+
+      ```rust
+      #[serde(skip_serializing_if = "Option::is_none")]
+      supplier: Option<String>,
+      #[serde(default, skip_serializing_if = "Vec::is_empty")]
+      tags: Vec<String>,
+      ```
+
+      (Items now have an optional `tags` list, like `["fastener", "steel"]`; missing means empty.) The output keeps field order, so `rename_all` and the defaults round-trip: a file you save loads back exactly the same.
+
+      Then **read the file back** with your own `load` function and use what you read for the report. It costs one extra parse and proves the file you just wrote is valid. Finding that out now beats finding it tomorrow morning when the next run fails.
+
+      ### A JSON summary for other programs
+
+      After the human-readable report, print a summary as pretty JSON. A dashboard or a purchasing script can parse this instead of scraping your table (the table's layout is for people and may change; a JSON format is a contract):
+
+      ```json
+      {
+        "warehouse": "North",
+        "itemCount": 4,
+        "totalUnits": 276,
+        "totalValueCents": 8880,
+        "reorder": [
+          "GEAR-2",
+          "NUT-10"
+        ],
+        "unitsByTag": {
+          "fastener": 272,
+          "steel": 160
+        }
+      }
+      ```
+
+      Build it as a struct deriving `Serialize` with `#[serde(rename_all = "camelCase")]`:
+
+      - `reorder` lists the SKUs at or below their reorder level, sorted, and is left out entirely when empty (`skip_serializing_if = "Vec::is_empty"`).
+      - `unitsByTag` adds up the quantities of the items carrying each tag. Use a `BTreeMap<String, u32>`: serde writes a map as a JSON object, and a `BTreeMap` makes the key order alphabetical and stable. (A `HashMap` would produce a different key order on every run: harmless to a parser, but it makes diffs and tests noisy.)
+
+      Money stays in integer cents in the JSON too (`totalValueCents`), for the same reason as in your structs: JSON numbers are usually read as floating point.
+    solution: |
+      use serde::{Deserialize, Serialize};
+      use std::collections::{BTreeMap, BTreeSet};
+      use std::error::Error;
+      use std::fs;
+      use std::path::Path;
+
+      const INVENTORY: &str = "inventory.json";
+      const CHANGES: &str = "changes.json";
+
+      #[derive(Debug, Serialize, Deserialize)]
+      struct Inventory {
+          warehouse: String,
+          items: Vec<Item>,
+      }
+
+      #[derive(Debug, Serialize, Deserialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Item {
+          sku: String,
+          name: String,
+          qty: u32,
+          price_cents: u64,
+          #[serde(default = "default_reorder_level")]
+          reorder_level: u32,
+          #[serde(skip_serializing_if = "Option::is_none")]
+          supplier: Option<String>,
+          #[serde(default, skip_serializing_if = "Vec::is_empty")]
+          tags: Vec<String>,
+      }
+
+      fn default_reorder_level() -> u32 {
+          10
+      }
+
+      /// One entry of changes.json, like {"op": "sell", "sku": "NUT-10", "qty": 30}.
+      #[derive(Debug, Deserialize)]
+      #[serde(tag = "op", rename_all = "lowercase")]
+      enum Change {
+          Restock { sku: String, qty: u32 },
+          Sell { sku: String, qty: u32 },
+          Add { item: Item },
+          Remove { sku: String },
+      }
+
+      #[derive(Debug, thiserror::Error)]
+      enum ChangeError {
+          #[error("no item with sku \"{0}\"")]
+          UnknownSku(String),
+          #[error("cannot sell {wanted} of {sku}: only {available} in stock")]
+          NotEnough { sku: String, wanted: u32, available: u32 },
+          #[error("sku \"{0}\" already exists")]
+          Duplicate(String),
+      }
+
+      /// What other programs (a dashboard, a purchasing script) read.
+      #[derive(Debug, Serialize)]
+      #[serde(rename_all = "camelCase")]
+      struct Summary {
+          warehouse: String,
+          item_count: usize,
+          total_units: u32,
+          total_value_cents: u64,
+          #[serde(skip_serializing_if = "Vec::is_empty")]
+          reorder: Vec<String>,
+          units_by_tag: BTreeMap<String, u32>,
+      }
+
+      fn money(cents: u64) -> String {
+          format!("${}.{:02}", cents / 100, cents % 100)
+      }
+
+      /// One or more uppercase letters, a dash, one or more digits: "BOLT-10".
+      fn valid_sku(sku: &str) -> bool {
+          match sku.split_once('-') {
+              Some((letters, digits)) => {
+                  !letters.is_empty()
+                      && !digits.is_empty()
+                      && letters.chars().all(|c| c.is_ascii_uppercase())
+                      && digits.chars().all(|c| c.is_ascii_digit())
+              }
+              None => false,
+          }
+      }
+
+      /// Every problem in the inventory, in item order. Empty means valid.
+      fn validate(inventory: &Inventory) -> Vec<String> {
+          let mut problems = Vec::new();
+          let mut seen = BTreeSet::new();
+          for (i, item) in inventory.items.iter().enumerate() {
+              let at = format!("item {} ({})", i + 1, item.sku);
+              if !valid_sku(&item.sku) {
+                  problems.push(format!("{at}: invalid sku"));
+              }
+              // insert returns false if the sku was already in the set.
+              if !seen.insert(item.sku.as_str()) {
+                  problems.push(format!("{at}: duplicate sku"));
+              }
+              if item.name.trim().is_empty() {
+                  problems.push(format!("{at}: name is empty"));
+              }
+              if item.price_cents == 0 {
+                  problems.push(format!("{at}: price must be positive"));
+              }
+          }
+          problems
+      }
+
+      fn find_mut<'a>(inventory: &'a mut Inventory, sku: &str) -> Result<&'a mut Item, ChangeError> {
+          inventory
+              .items
+              .iter_mut()
+              .find(|item| item.sku == sku)
+              .ok_or_else(|| ChangeError::UnknownSku(sku.to_string()))
+      }
+
+      /// Applies one change and describes what happened.
+      fn apply(inventory: &mut Inventory, change: Change) -> Result<String, ChangeError> {
+          match change {
+              Change::Restock { sku, qty } => {
+                  let item = find_mut(inventory, &sku)?;
+                  let before = item.qty;
+                  item.qty += qty;
+                  Ok(format!("restocked {sku}: {before} -> {}", item.qty))
+              }
+              Change::Sell { sku, qty } => {
+                  let item = find_mut(inventory, &sku)?;
+                  if qty > item.qty {
+                      return Err(ChangeError::NotEnough { sku, wanted: qty, available: item.qty });
+                  }
+                  let before = item.qty;
+                  item.qty -= qty;
+                  Ok(format!("sold {qty} of {sku}: {before} -> {}", item.qty))
+              }
+              Change::Add { item } => {
+                  if inventory.items.iter().any(|existing| existing.sku == item.sku) {
+                      return Err(ChangeError::Duplicate(item.sku));
+                  }
+                  let message = format!("added {} ({})", item.sku, item.name);
+                  inventory.items.push(item);
+                  Ok(message)
+              }
+              Change::Remove { sku } => {
+                  let before = inventory.items.len();
+                  inventory.items.retain(|item| item.sku != sku);
+                  if inventory.items.len() == before {
+                      return Err(ChangeError::UnknownSku(sku));
+                  }
+                  Ok(format!("removed {sku}"))
+              }
+          }
+      }
+
+      fn load(path: &str) -> Result<Inventory, Box<dyn Error>> {
+          let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+          let inventory = serde_json::from_str(&text).map_err(|e| format!("{path} is not a valid inventory: {e}"))?;
+          Ok(inventory)
+      }
+
+      fn load_changes(path: &str) -> Result<Vec<Change>, Box<dyn Error>> {
+          if !Path::new(path).exists() {
+              return Ok(Vec::new());
+          }
+          let text = fs::read_to_string(path)?;
+          let changes = serde_json::from_str(&text).map_err(|e| format!("{path} is not a valid list of changes: {e}"))?;
+          Ok(changes)
+      }
+
+      fn print_table(inventory: &Inventory) {
+          let mut items: Vec<&Item> = inventory.items.iter().collect();
+          items.sort_by(|a, b| a.sku.cmp(&b.sku));
+          let noun = if items.len() == 1 { "item" } else { "items" };
+          println!("{}: {} {noun}", inventory.warehouse, items.len());
+          let mut total = 0;
+          for item in &items {
+              println!("{:<10} {:<20} {:>5} x {}", item.sku, item.name, item.qty, money(item.price_cents));
+              total += item.price_cents * item.qty as u64;
+          }
+          println!("total value: {}", money(total));
+          for item in &items {
+              if item.qty <= item.reorder_level {
+                  let supplier = match &item.supplier {
+                      Some(name) => format!("supplier {name}"),
+                      None => String::from("no supplier"),
+                  };
+                  println!("reorder {}: {} left (reorder level {}), {supplier}", item.sku, item.qty, item.reorder_level);
+              }
+          }
+      }
+
+      fn summarize(inventory: &Inventory) -> Summary {
+          let mut summary = Summary {
+              warehouse: inventory.warehouse.clone(),
+              item_count: inventory.items.len(),
+              total_units: 0,
+              total_value_cents: 0,
+              reorder: Vec::new(),
+              units_by_tag: BTreeMap::new(),
+          };
+          for item in &inventory.items {
+              summary.total_units += item.qty;
+              summary.total_value_cents += item.price_cents * item.qty as u64;
+              if item.qty <= item.reorder_level {
+                  summary.reorder.push(item.sku.clone());
+              }
+              for tag in &item.tags {
+                  *summary.units_by_tag.entry(tag.clone()).or_insert(0) += item.qty;
+              }
+          }
+          summary.reorder.sort();
+          summary
+      }
+
+      fn run() -> Result<(), Box<dyn Error>> {
+          let mut inventory = load(INVENTORY)?;
+
+          let problems = validate(&inventory);
+          if !problems.is_empty() {
+              for problem in &problems {
+                  println!("problem: {problem}");
+              }
+              return Err(format!("{INVENTORY} has {} problem(s), nothing was changed", problems.len()).into());
+          }
+
+          let changes = load_changes(CHANGES)?;
+          if !changes.is_empty() {
+              for (i, change) in changes.into_iter().enumerate() {
+                  match apply(&mut inventory, change) {
+                      Ok(message) => println!("{message}"),
+                      Err(e) => println!("change {} skipped: {e}", i + 1),
+                  }
+              }
+              fs::write(INVENTORY, serde_json::to_string_pretty(&inventory)? + "\n")?;
+              // Read the file back: if what we wrote doesn't load, better to find out now.
+              inventory = load(INVENTORY)?;
+              println!("saved {INVENTORY}");
+          }
+
+          print_table(&inventory);
+          println!("{}", serde_json::to_string_pretty(&summarize(&inventory))?);
+          Ok(())
+      }
+
+      fn main() {
+          if let Err(e) = run() {
+              eprintln!("error: {e}");
+              std::process::exit(1);
+          }
+      }
+    tests:
+      - files:
+          inventory.json: |
+            {
+              "warehouse": "North",
+              "items": [
+                {"sku": "NUT-10", "name": "Hex nut M10", "qty": 100, "priceCents": 8, "reorderLevel": 50, "supplier": "Acme", "tags": ["fastener", "steel"]},
+                {"sku": "BOLT-10", "name": "Hex bolt M10", "qty": 120, "priceCents": 25, "supplier": "Acme", "tags": ["fastener", "steel"]},
+                {"sku": "WASH-10", "name": "Washer M10", "qty": 12, "priceCents": 5, "reorderLevel": 20, "tags": ["fastener"]}
+              ]
+            }
+          changes.json: |
+            [
+              {"op": "sell", "sku": "NUT-10", "qty": 60},
+              {"op": "restock", "sku": "WASH-10", "qty": 100},
+              {"op": "sell", "sku": "BOLT-10", "qty": 500},
+              {"op": "add", "item": {"sku": "GEAR-2", "name": "Spur gear", "qty": 4, "priceCents": 1250}}
+            ]
+      - files:
+          inventory.json: |
+            {"warehouse": "Harbor", "items": [
+              {"sku": "ROPE-50", "name": "Rope 50 m", "qty": 40, "priceCents": 4999, "tags": ["marine"]},
+              {"sku": "HOOK-2", "name": "Cargo hook", "qty": 25, "priceCents": 1250}
+            ]}
+      - files:
+          inventory.json: |
+            {"warehouse": "Depot", "items": [
+              {"sku": "AXLE-1", "name": "Axle", "qty": 30, "priceCents": 899, "reorderLevel": 5, "tags": ["drive"]},
+              {"sku": "PIN-3", "name": "Pin", "qty": 8, "priceCents": 3, "tags": ["fastener"]},
+              {"sku": "CHAIN-8", "name": "Roller chain", "qty": 2, "priceCents": 2475, "supplier": "Linkline", "tags": ["drive", "steel"]}
+            ]}
+          changes.json: |
+            [
+              {"op": "sell", "sku": "AXLE-1", "qty": 26},
+              {"op": "remove", "sku": "PIN-3"},
+              {"op": "restock", "sku": "CHAIN-8", "qty": 40},
+              {"op": "add", "item": {"sku": "BELT-9", "name": "V-belt", "qty": 12, "priceCents": 1599, "tags": ["drive"]}}
+            ]
+        hidden: true
+    hints:
+      - "Add `Serialize` to the derives on `Inventory` and `Item`, the `skip_serializing_if` attributes, and `#[serde(default, skip_serializing_if = \"Vec::is_empty\")] tags: Vec<String>`."
+      - "After applying a non-empty list of changes: `fs::write(INVENTORY, serde_json::to_string_pretty(&inventory)? + \"\\n\")?;`, then `inventory = load(INVENTORY)?;` and print `saved inventory.json`."
+      - "`struct Summary` derives `Serialize` with `rename_all = \"camelCase\"`; fill it in one loop over the items (`*summary.units_by_tag.entry(tag.clone()).or_insert(0) += item.qty;`), sort `reorder`, and print `serde_json::to_string_pretty(&summary)?`."

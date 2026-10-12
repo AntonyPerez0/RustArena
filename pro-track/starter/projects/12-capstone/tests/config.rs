@@ -29,14 +29,14 @@ fn every_setting_comes_from_the_environment() {
         ("HOST", "127.0.0.1"),
         ("PORT", "8080"),
         ("DATABASE_URL", "sqlite:///data/links.db"),
-        ("PUBLIC_URL", "https://sho.rt/"),
+        ("PUBLIC_URL", "https://example.com/"),
         ("LOG_FORMAT", "json"),
     ])
     .unwrap();
     assert_eq!(config.addr, "127.0.0.1:8080".parse::<SocketAddr>().unwrap());
     assert_eq!(config.database_url, "sqlite:///data/links.db");
     assert_eq!(
-        config.public_url, "https://sho.rt",
+        config.public_url, "https://example.com",
         "the trailing slash is removed"
     );
     assert_eq!(config.log_format, LogFormat::Json);

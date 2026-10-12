@@ -1,6 +1,6 @@
 # 12 · Capstone: a production-ready web service
 
-Time to put everything together. You'll build a **URL shortener**, a small service that turns `https://www.rust-lang.org/learn` into `https://sho.rt/Xy3k9Qa` and redirects visitors, and you'll build it the way it would ship at work: tested, configured from the environment, logging structured events, reporting its health, shutting down cleanly, packaged as a container image, and checked by CI.
+Time to put everything together. You'll build a **URL shortener**, a small service that turns `https://www.rust-lang.org/learn` into a short link like `sho.rt/Xy3k9Qa` and redirects visitors, and you'll build it the way it would ship at work: tested, configured from the environment, logging structured events, reporting its health, shutting down cleanly, packaged as a container image, and checked by CI.
 
 Only the skeleton is provided: the public signatures the tests use, the database setup from project 09, and the tests. The design of everything in between is yours.
 
@@ -16,7 +16,7 @@ Only the skeleton is provided: the public signatures the tests use, the database
 | `DELETE /api/links/{code}` | `204` | `404` |
 | `GET /{code}` | `307` with `Location:` the URL, and one more hit counted | `404` |
 
-A link as JSON: `{"code": "Xy3k9Qa", "url": "https://www.rust-lang.org/learn", "short_url": "https://sho.rt/Xy3k9Qa", "hits": 0, "created_at": "2026-05-04T10:00:00Z"}`. Every error response is JSON too: `{"error": "the code \"rust\" is already taken"}`.
+A link as JSON: `{"code": "Xy3k9Qa", "url": "https://www.rust-lang.org/learn", "short_url": "http://localhost:3000/Xy3k9Qa", "hits": 0, "created_at": "2026-05-04T10:00:00Z"}`. Every error response is JSON too: `{"error": "the code \"rust\" is already taken"}`.
 
 The rules:
 

@@ -13,8 +13,9 @@ use crate::config::LogFormat;
 ///
 /// - Which events are kept comes from `RUST_LOG` (for example `warn`, `debug` or
 ///   `info,orderd::orders=debug`), and is `info` when it isn't set.
-/// - `LogFormat::Text` writes readable lines; `LogFormat::Json` writes one JSON object per
-///   line, including the current span and the list of spans it's in.
+/// - `LogFormat::Text` writes readable lines (no color codes unless stderr is a
+///   terminal); `LogFormat::Json` writes one JSON object per line, including the current
+///   span and the list of spans it's in.
 /// - Logs go to stderr, so stdout stays free for the program's real output.
 pub fn init(format: LogFormat) {
     let filter = EnvFilter::builder()
