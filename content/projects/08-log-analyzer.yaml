@@ -1,0 +1,1603 @@
+id: log-analyzer
+title: A log analyzer for the command line
+level: Advanced
+after: cli
+summary: Build loglens, a small tool in the spirit of the ones every operations team writes. Parse access-log lines with FromStr, read the file named on the command line, aggregate statistics per endpoint, filter with flags, and report through exit codes that scripts and CI can act on.
+seed: |
+  use std::str::FromStr;
+  use thiserror::Error;
+
+  /// The HTTP methods this service uses.
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+  enum Method {
+      Get,
+      Post,
+      Put,
+      Delete,
+  }
+
+  /// One line of the access log.
+  #[derive(Debug, Clone, PartialEq)]
+  struct LogEntry {
+      timestamp: String,
+      method: Method,
+      path: String,
+      status: u16,
+      duration_ms: u32,
+  }
+
+  #[derive(Debug, PartialEq, Error)]
+  enum ParseError {
+      #[error("expected 5 fields, found {0}")]
+      FieldCount(usize),
+      #[error("unknown method \"{0}\"")]
+      Method(String),
+      #[error("invalid path \"{0}\"")]
+      Path(String),
+      #[error("invalid status \"{0}\"")]
+      Status(String),
+      #[error("invalid duration \"{0}\"")]
+      Duration(String),
+  }
+
+  impl FromStr for Method {
+      type Err = ParseError;
+
+      /// "GET" -> Method::Get, and so on. Anything else is ParseError::Method.
+      fn from_str(s: &str) -> Result<Self, Self::Err> {
+          todo!()
+      }
+  }
+
+  impl FromStr for LogEntry {
+      type Err = ParseError;
+
+      /// "2026-03-14T10:00:01Z GET /api/users 200 35ms"
+      fn from_str(line: &str) -> Result<Self, Self::Err> {
+          todo!()
+      }
+  }
+milestones:
+  - title: Parse a line with FromStr
+    text: |
+      Every web server writes an **access log**: one line per request, saying when it came in, what was asked for, how it ended and how long it took. When the site is slow or broken at 3 a.m., someone reads these logs, and the first thing they reach for is a tool that turns thousands of lines into a few useful numbers. In this project you'll write that tool, `loglens`.
+
+      The log format is:
+
+      ```
+      2026-03-14T10:00:01Z GET /api/users 200 35ms
+      ```
+
+      Five fields separated by whitespace: an ISO 8601 **timestamp** (in UTC, hence the `Z`), the HTTP **method**, the **path**, the **status code**, and the **duration** with an `ms` suffix.
+
+      Start with the core: turning one line into a `LogEntry`. This milestone has no `main` (hidden tests call your code), so you can focus on parsing.
+
+      ### FromStr: making your type work with parse
+
+      You've used `"42".parse::<u32>()` since the beginning. `parse` works for any type that implements `std::str::FromStr`, including yours:
+
+      ```rust
+      impl FromStr for LogEntry {
+          type Err = ParseError;
+
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              ...
+          }
+      }
+      ```
+
+      After that, `line.parse::<LogEntry>()` works like any other parse, and so does `?`. Implement it for `Method` too (`"GET"` becomes `Method::Get`; methods are uppercase, so `get` is an error); you'll reuse that impl for a command-line flag later. Implementing a standard trait instead of inventing `fn parse_log_line` is what makes your types feel native: code that knows `parse` already knows how to use them.
+
+      ### The rules
+
+      Check them in this order; the first that fails decides the error:
+
+      | Rule | Error |
+      |---|---|
+      | exactly 5 whitespace-separated fields | `ParseError::FieldCount(n)` with the number found |
+      | method is GET, POST, PUT or DELETE | `ParseError::Method(text)` |
+      | path starts with `/` | `ParseError::Path(text)` |
+      | status is a whole number from 100 to 599 | `ParseError::Status(text)` |
+      | duration is a whole number followed by `ms` | `ParseError::Duration(text)` |
+
+      The timestamp is kept as a `String`. (Parsing it into a real date type is what the `chrono` crate is for; you'll see in milestone 4 why the string is enough here.) The starter code already declares `ParseError` with **thiserror**, so each variant has its message, like `invalid status "2oo"`.
+
+      ### Destructuring the fields
+
+      A slice pattern with `let ... else` takes the five fields apart and handles "wrong count" in one statement:
+
+      ```rust
+      let fields: Vec<&str> = line.split_whitespace().collect();
+      let [timestamp, method, path, status, duration] = fields[..] else {
+          return Err(ParseError::FieldCount(fields.len()));
+      };
+      ```
+
+      For the duration, `strip_suffix("ms")` returns the text before `ms`, or `None` if it doesn't end with it. Chain it with `and_then` and `ok_or_else` to get a number or a `ParseError::Duration`. For the status, parse into `u16` and use a match guard to check the range.
+    solution: |
+      use std::str::FromStr;
+      use thiserror::Error;
+
+      /// The HTTP methods this service uses.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      /// One line of the access log.
+      #[derive(Debug, Clone, PartialEq)]
+      struct LogEntry {
+          timestamp: String,
+          method: Method,
+          path: String,
+          status: u16,
+          duration_ms: u32,
+      }
+
+      #[derive(Debug, PartialEq, Error)]
+      enum ParseError {
+          #[error("expected 5 fields, found {0}")]
+          FieldCount(usize),
+          #[error("unknown method \"{0}\"")]
+          Method(String),
+          #[error("invalid path \"{0}\"")]
+          Path(String),
+          #[error("invalid status \"{0}\"")]
+          Status(String),
+          #[error("invalid duration \"{0}\"")]
+          Duration(String),
+      }
+
+      impl FromStr for Method {
+          type Err = ParseError;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              match s {
+                  "GET" => Ok(Method::Get),
+                  "POST" => Ok(Method::Post),
+                  "PUT" => Ok(Method::Put),
+                  "DELETE" => Ok(Method::Delete),
+                  other => Err(ParseError::Method(other.to_string())),
+              }
+          }
+      }
+
+      impl FromStr for LogEntry {
+          type Err = ParseError;
+
+          /// "2026-03-14T10:00:01Z GET /api/users 200 35ms"
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, duration] = fields[..] else {
+                  return Err(ParseError::FieldCount(fields.len()));
+              };
+              let method: Method = method.parse()?;
+              if !path.starts_with('/') {
+                  return Err(ParseError::Path(path.to_string()));
+              }
+              let status = match status.parse::<u16>() {
+                  Ok(code) if (100..=599).contains(&code) => code,
+                  _ => return Err(ParseError::Status(status.to_string())),
+              };
+              let duration_ms = duration
+                  .strip_suffix("ms")
+                  .and_then(|ms| ms.parse().ok())
+                  .ok_or_else(|| ParseError::Duration(duration.to_string()))?;
+              Ok(LogEntry { timestamp: timestamp.to_string(), method, path: path.to_string(), status, duration_ms })
+          }
+      }
+    harness: |
+      #[test]
+      fn parses_a_get_request() {
+          let entry: LogEntry = "2026-03-14T10:00:01Z GET /api/users 200 35ms".parse().unwrap();
+          assert_eq!(entry.timestamp, "2026-03-14T10:00:01Z", "timestamp");
+          assert_eq!(entry.method, Method::Get, "method");
+          assert_eq!(entry.path, "/api/users", "path");
+          assert_eq!(entry.status, 200, "status");
+          assert_eq!(entry.duration_ms, 35, "duration_ms");
+      }
+
+      #[test]
+      fn parses_every_method() {
+          let cases = [("GET", Method::Get), ("POST", Method::Post), ("PUT", Method::Put), ("DELETE", Method::Delete)];
+          for (text, method) in cases {
+              let line = format!("2026-03-14T10:00:01Z {text} /api/orders/7 204 1ms");
+              let entry: LogEntry = line.parse().unwrap();
+              assert_eq!(entry.method, method, "{line}");
+          }
+      }
+
+      #[test]
+      fn allows_extra_spaces_between_fields() {
+          let entry: LogEntry = "  2026-03-14T10:02:00Z   POST  /api/orders 503   1200ms ".parse().unwrap();
+          assert_eq!(
+              (entry.path.as_str(), entry.status, entry.duration_ms),
+              ("/api/orders", 503, 1200),
+              "path, status and duration"
+          );
+      }
+
+      #[test]
+      fn rejects_the_wrong_number_of_fields() {
+          assert_eq!("2026-03-14T10:00:01Z GET /api/users 200".parse::<LogEntry>(), Err(ParseError::FieldCount(4)), "4 fields");
+          assert_eq!(
+              "2026-03-14T10:00:01Z GET /api/users 200 35ms extra".parse::<LogEntry>(),
+              Err(ParseError::FieldCount(6)),
+              "6 fields"
+          );
+          assert_eq!("".parse::<LogEntry>(), Err(ParseError::FieldCount(0)), "an empty line");
+      }
+
+      #[test]
+      fn rejects_unknown_methods() {
+          assert_eq!(
+              "2026-03-14T10:00:01Z get /api/users 200 35ms".parse::<LogEntry>(),
+              Err(ParseError::Method("get".to_string())),
+              "lowercase get"
+          );
+          assert_eq!("FETCH".parse::<Method>(), Err(ParseError::Method("FETCH".to_string())), "\"FETCH\".parse::<Method>()");
+      }
+
+      #[test]
+      fn rejects_paths_without_a_leading_slash() {
+          assert_eq!(
+              "2026-03-14T10:00:01Z GET api/users 200 35ms".parse::<LogEntry>(),
+              Err(ParseError::Path("api/users".to_string())),
+              "path api/users"
+          );
+      }
+
+      #[test]
+      fn rejects_status_codes_outside_100_to_599() {
+          for status in ["abc", "99", "600", "-200"] {
+              let line = format!("2026-03-14T10:00:01Z GET /api/users {status} 35ms");
+              assert_eq!(line.parse::<LogEntry>(), Err(ParseError::Status(status.to_string())), "{line}");
+          }
+      }
+
+      #[test]
+      fn durations_need_a_whole_number_and_ms() {
+          for duration in ["35", "35s", "ms", "-1ms", "3.5ms"] {
+              let line = format!("2026-03-14T10:00:01Z GET /api/users 200 {duration}");
+              assert_eq!(line.parse::<LogEntry>(), Err(ParseError::Duration(duration.to_string())), "{line}");
+          }
+      }
+
+      #[test]
+      fn error_messages_say_what_was_wrong() {
+          let err = "2026-03-14T10:00:01Z GET /api/users 2oo 35ms".parse::<LogEntry>().unwrap_err();
+          assert_eq!(err.to_string(), "invalid status \"2oo\"", "message for status 2oo");
+          let err = "2026-03-14T10:00:01Z GET".parse::<LogEntry>().unwrap_err();
+          assert_eq!(err.to_string(), "expected 5 fields, found 2", "message for a short line");
+      }
+    hints:
+      - "`Method::from_str` is a `match s { \"GET\" => Ok(Method::Get), ..., other => Err(ParseError::Method(other.to_string())) }`."
+      - "After the slice pattern, `let method: Method = method.parse()?;` checks the method first. Then `if !path.starts_with('/') { return Err(ParseError::Path(path.to_string())); }`."
+      - "Status: `match status.parse::<u16>() { Ok(code) if (100..=599).contains(&code) => code, _ => return Err(...) }`. Duration: `duration.strip_suffix(\"ms\").and_then(|ms| ms.parse().ok()).ok_or_else(|| ParseError::Duration(duration.to_string()))?`."
+
+  - title: Read the file named on the command line
+    text: |
+      Now `loglens` becomes a real command. It takes the log file as its argument:
+
+      ```text
+      $ loglens access.log
+      requests: 7
+      skipped: 1
+      period: 2026-03-14T10:00:01Z to 2026-03-14T10:04:59Z
+      slowest: POST /api/orders -> 503 in 1200ms
+      ```
+
+      - Read the file, skip blank lines, and parse every other line with your `FromStr`.
+      - A line that doesn't parse is **not** fatal (logs from real servers always contain some junk): print `warning: line 6: unknown method "FETCH"` to **standard error** and count it as skipped.
+      - Print the number of parsed requests and skipped lines, then (only if there is at least one request) the period covered, from the earliest to the latest timestamp, and the slowest request. If several are equally slow, the first one in the file wins.
+      - The method needs a `Display` impl to print as `POST`. Use `f.pad`, so widths work later.
+
+      ### Arguments, usage errors and exit codes
+
+      `std::env::args()` yields the program name first, then the arguments; `.skip(1)` drops the name. Turn the arguments into a `Config` struct in one place, `Config::from_args(&args) -> Result<Config, String>`, so the rest of the program never touches raw strings. A slice pattern makes it short:
+
+      ```rust
+      match args {
+          [file] => Ok(Config { file: file.clone() }),
+          [] => Err(String::from("missing log file")),
+          [_, extra, ..] => Err(format!("unexpected argument {extra}")),
+      }
+      ```
+
+      Command-line tools agree on a few conventions, and following them makes your tool play well with scripts:
+
+      | Situation | Exit code | stderr |
+      |---|---|---|
+      | success | 0 | warnings, if any |
+      | the command line itself is wrong | 2 | `error: missing log file` and the usage line |
+      | something failed while running (unreadable file) | 1 | `error: reading missing.log: No such file or directory (os error 2)` |
+
+      Make `main` return `std::process::ExitCode` (`ExitCode::SUCCESS`, `ExitCode::FAILURE`, `ExitCode::from(2)`), and put the real work in `fn run(config: &Config) -> anyhow::Result<()>`. In `run`, `.with_context(|| format!("reading {}", config.file))?` wraps the I/O error with what you were trying to do. In `main`, print it with `{e:#}`: the alternate format prints the whole chain on one line, `reading missing.log: No such file or directory (os error 2)`.
+
+      Only the report goes to standard output. Warnings and errors go to standard error, so `loglens access.log > report.txt` produces a clean report file while problems still show up in the terminal. (The tests here check standard output and the exit code.)
+
+      ### Earliest, latest, slowest
+
+      ISO 8601 timestamps in the same time zone sort correctly **as plain strings**: `2026-03-14T10:00:01Z` < `2026-03-14T10:04:59Z` character by character. That's not luck; the format was designed so. So `entries.iter().map(|e| e.timestamp.as_str()).min()` finds the earliest one, even if the lines are out of order.
+
+      For the slowest request, `reduce` keeps a running "best so far" and only replaces it when a request is *strictly* slower, so the first one wins ties: `entries.iter().reduce(|best, e| if e.duration_ms > best.duration_ms { e } else { best })`.
+    solution: |
+      use anyhow::Context;
+      use std::env;
+      use std::fmt;
+      use std::fs;
+      use std::process::ExitCode;
+      use std::str::FromStr;
+      use thiserror::Error;
+
+      const USAGE: &str = "usage: loglens <file>";
+
+      /// The HTTP methods this service uses.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      impl fmt::Display for Method {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Method::Get => "GET",
+                  Method::Post => "POST",
+                  Method::Put => "PUT",
+                  Method::Delete => "DELETE",
+              };
+              f.pad(name)
+          }
+      }
+
+      /// One line of the access log.
+      #[derive(Debug, Clone, PartialEq)]
+      struct LogEntry {
+          timestamp: String,
+          method: Method,
+          path: String,
+          status: u16,
+          duration_ms: u32,
+      }
+
+      #[derive(Debug, PartialEq, Error)]
+      enum ParseError {
+          #[error("expected 5 fields, found {0}")]
+          FieldCount(usize),
+          #[error("unknown method \"{0}\"")]
+          Method(String),
+          #[error("invalid path \"{0}\"")]
+          Path(String),
+          #[error("invalid status \"{0}\"")]
+          Status(String),
+          #[error("invalid duration \"{0}\"")]
+          Duration(String),
+      }
+
+      impl FromStr for Method {
+          type Err = ParseError;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              match s {
+                  "GET" => Ok(Method::Get),
+                  "POST" => Ok(Method::Post),
+                  "PUT" => Ok(Method::Put),
+                  "DELETE" => Ok(Method::Delete),
+                  other => Err(ParseError::Method(other.to_string())),
+              }
+          }
+      }
+
+      impl FromStr for LogEntry {
+          type Err = ParseError;
+
+          /// "2026-03-14T10:00:01Z GET /api/users 200 35ms"
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, duration] = fields[..] else {
+                  return Err(ParseError::FieldCount(fields.len()));
+              };
+              let method: Method = method.parse()?;
+              if !path.starts_with('/') {
+                  return Err(ParseError::Path(path.to_string()));
+              }
+              let status = match status.parse::<u16>() {
+                  Ok(code) if (100..=599).contains(&code) => code,
+                  _ => return Err(ParseError::Status(status.to_string())),
+              };
+              let duration_ms = duration
+                  .strip_suffix("ms")
+                  .and_then(|ms| ms.parse().ok())
+                  .ok_or_else(|| ParseError::Duration(duration.to_string()))?;
+              Ok(LogEntry { timestamp: timestamp.to_string(), method, path: path.to_string(), status, duration_ms })
+          }
+      }
+
+      /// Everything the command line asked for.
+      #[derive(Debug)]
+      struct Config {
+          file: String,
+      }
+
+      impl Config {
+          fn from_args(args: &[String]) -> Result<Config, String> {
+              match args {
+                  [file] => Ok(Config { file: file.clone() }),
+                  [] => Err(String::from("missing log file")),
+                  [_, extra, ..] => Err(format!("unexpected argument {extra}")),
+              }
+          }
+      }
+
+      fn print_report(entries: &[LogEntry]) {
+          let (Some(first), Some(last)) = (
+              entries.iter().map(|e| e.timestamp.as_str()).min(),
+              entries.iter().map(|e| e.timestamp.as_str()).max(),
+          ) else {
+              return;
+          };
+          println!("period: {first} to {last}");
+          if let Some(slow) = entries.iter().reduce(|best, e| if e.duration_ms > best.duration_ms { e } else { best }) {
+              println!("slowest: {} {} -> {} in {}ms", slow.method, slow.path, slow.status, slow.duration_ms);
+          }
+      }
+
+      fn run(config: &Config) -> anyhow::Result<()> {
+          let text = fs::read_to_string(&config.file).with_context(|| format!("reading {}", config.file))?;
+
+          let mut entries = Vec::new();
+          let mut skipped = 0;
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match line.parse::<LogEntry>() {
+                  Ok(entry) => entries.push(entry),
+                  Err(e) => {
+                      eprintln!("warning: line {}: {e}", i + 1);
+                      skipped += 1;
+                  }
+              }
+          }
+          println!("requests: {}", entries.len());
+          println!("skipped: {skipped}");
+          print_report(&entries);
+          Ok(())
+      }
+
+      /// Exit codes: 0 ok, 1 runtime error, 2 bad command line.
+      fn main() -> ExitCode {
+          let args: Vec<String> = env::args().skip(1).collect();
+          let config = match Config::from_args(&args) {
+              Ok(config) => config,
+              Err(message) => {
+                  eprintln!("error: {message}");
+                  eprintln!("{USAGE}");
+                  return ExitCode::from(2);
+              }
+          };
+          match run(&config) {
+              Ok(()) => ExitCode::SUCCESS,
+              Err(e) => {
+                  eprintln!("error: {e:#}");
+                  ExitCode::FAILURE
+              }
+          }
+      }
+    tests:
+      - args: ["access.log"]
+        files:
+          access.log: |
+            2026-03-14T10:00:01Z GET /api/users 200 35ms
+            2026-03-14T10:00:03Z POST /api/orders 201 120ms
+            2026-03-14T10:00:04Z GET /api/users 200 55ms
+            2026-03-14T10:01:10Z GET /api/users/42 404 8ms
+            2026-03-14T10:02:00Z POST /api/orders 503 1200ms
+            2026-03-14T10:02:30Z FETCH /api/users 200 10ms
+
+            2026-03-14T10:03:00Z GET /api/users 200 30ms
+            2026-03-14T10:04:59Z DELETE /api/orders/7 204 15ms
+      - args: []
+        exit: 2
+        allowEmpty: true
+      - args: ["missing.log"]
+        exit: 1
+        allowEmpty: true
+      - args: ["server.log"]
+        files:
+          server.log: |
+            2026-05-02T08:00:00Z GET /health 200 1ms
+            2026-05-02T08:00:05Z PUT /api/cart/9 200 42ms
+            2026-05-02T08:00:06Z PUT /api/cart/9 409 40ms
+            2026-05-02T07:59:58Z GET /health 200 2ms
+            2026-05-02T08:00:09Z POST /api/checkout 502 3000ms
+            2026-05-02T08:00:10Z POST /api/checkout 201 3000ms
+            2026-05-02T08:00:11Z GET /api/cart/9 200 12ms
+        hidden: true
+      - args: ["junk.log"]
+        files:
+          junk.log: |
+            this is not a log line
+            2026-05-02T08:00:00Z GET health 200 1ms
+            2026-05-02T08:00:00Z GET /health OK 1ms
+        hidden: true
+      - args: ["a.log", "b.log"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "`main`: `let args: Vec<String> = env::args().skip(1).collect();`, then match `Config::from_args(&args)`: on `Err`, `eprintln!` the error and `USAGE`, and `return ExitCode::from(2);`."
+      - "In `run`, loop over `text.lines().enumerate()`, skip blank lines, and on a parse error `eprintln!(\"warning: line {}: {e}\", i + 1)` and count it."
+      - "Print `period` and `slowest` only when there are entries: `if let (Some(first), Some(last)) = (min, max) { ... }` is one way."
+
+  - title: Statistics per endpoint
+    text: |
+      Totals tell you *that* something is wrong; a breakdown tells you *where*. After the overview, print a table with one row per **endpoint** (a method and a path), busiest first:
+
+      ```text
+      endpoint                  count   4xx   5xx   avg ms   max ms
+      GET /api/users                3     0     0     40.0       55
+      POST /api/orders              2     0     1    660.0     1200
+      DELETE /api/orders/7          1     0     0     15.0       15
+      GET /api/users/42             1     1     0      8.0        8
+      ```
+
+      - **count**: requests to that endpoint; **4xx** and **5xx**: how many ended with a client error (400 to 499) or a server error (500 to 599).
+      - **avg ms** with one decimal, and **max ms**.
+      - Busiest first. Endpoints with the same count are ordered by path, then by method (in the order GET, POST, PUT, DELETE).
+      - The header is `"{:<24}{:>7}{:>6}{:>6}{:>9}{:>9}"` with the column names, and each row uses the same widths with `"{method} {path}"` as the endpoint (and `.1` precision for the average). If there are no requests at all, print no table.
+
+      ### Aggregating with a map
+
+      Group the entries in a `BTreeMap` whose key is the endpoint and whose value accumulates the statistics:
+
+      ```rust
+      #[derive(Debug, Default)]
+      struct EndpointStats {
+          count: u32,
+          client_errors: u32,
+          server_errors: u32,
+          total_ms: u64,
+          max_ms: u32,
+      }
+
+      let mut by_endpoint: BTreeMap<(&str, Method), EndpointStats> = BTreeMap::new();
+      for entry in entries {
+          let stats = by_endpoint.entry((entry.path.as_str(), entry.method)).or_default();
+          stats.count += 1;
+          ...
+      }
+      ```
+
+      A few details doing real work here:
+
+      - The key is a **tuple**, and tuples compare element by element, so the map is ordered by path, then method. `Method` derives `Ord` (in declaration order), which is what makes it usable in a `BTreeMap` key at all.
+      - The key **borrows** the path from the entry (`&str`) instead of cloning it. On a million-line log that's a million allocations saved, and the borrow checker guarantees the entries outlive the map.
+      - `or_default()` creates a zeroed `EndpointStats` the first time a key is seen, thanks to `#[derive(Default)]`.
+      - `match entry.status { 400..=499 => ..., 500..=599 => ..., _ => {} }` counts the error classes with range patterns.
+
+      Then move the map into a `Vec` and sort by count, descending. `sort_by_key(|(_, stats)| Reverse(stats.count))` does it: `std::cmp::Reverse` wraps a value and flips its ordering. Rust's `sort_by_key` is **stable** (equal elements keep their order), so endpoints with equal counts stay in the map's path order: the tie-breaking comes for free.
+
+      Use `f64` for the average: `stats.total_ms as f64 / stats.count as f64`.
+    solution: |
+      use anyhow::Context;
+      use std::cmp::Reverse;
+      use std::collections::BTreeMap;
+      use std::env;
+      use std::fmt;
+      use std::fs;
+      use std::process::ExitCode;
+      use std::str::FromStr;
+      use thiserror::Error;
+
+      const USAGE: &str = "usage: loglens <file>";
+
+      /// The HTTP methods this service uses.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      impl fmt::Display for Method {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Method::Get => "GET",
+                  Method::Post => "POST",
+                  Method::Put => "PUT",
+                  Method::Delete => "DELETE",
+              };
+              f.pad(name)
+          }
+      }
+
+      /// One line of the access log.
+      #[derive(Debug, Clone, PartialEq)]
+      struct LogEntry {
+          timestamp: String,
+          method: Method,
+          path: String,
+          status: u16,
+          duration_ms: u32,
+      }
+
+      #[derive(Debug, PartialEq, Error)]
+      enum ParseError {
+          #[error("expected 5 fields, found {0}")]
+          FieldCount(usize),
+          #[error("unknown method \"{0}\"")]
+          Method(String),
+          #[error("invalid path \"{0}\"")]
+          Path(String),
+          #[error("invalid status \"{0}\"")]
+          Status(String),
+          #[error("invalid duration \"{0}\"")]
+          Duration(String),
+      }
+
+      impl FromStr for Method {
+          type Err = ParseError;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              match s {
+                  "GET" => Ok(Method::Get),
+                  "POST" => Ok(Method::Post),
+                  "PUT" => Ok(Method::Put),
+                  "DELETE" => Ok(Method::Delete),
+                  other => Err(ParseError::Method(other.to_string())),
+              }
+          }
+      }
+
+      impl FromStr for LogEntry {
+          type Err = ParseError;
+
+          /// "2026-03-14T10:00:01Z GET /api/users 200 35ms"
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, duration] = fields[..] else {
+                  return Err(ParseError::FieldCount(fields.len()));
+              };
+              let method: Method = method.parse()?;
+              if !path.starts_with('/') {
+                  return Err(ParseError::Path(path.to_string()));
+              }
+              let status = match status.parse::<u16>() {
+                  Ok(code) if (100..=599).contains(&code) => code,
+                  _ => return Err(ParseError::Status(status.to_string())),
+              };
+              let duration_ms = duration
+                  .strip_suffix("ms")
+                  .and_then(|ms| ms.parse().ok())
+                  .ok_or_else(|| ParseError::Duration(duration.to_string()))?;
+              Ok(LogEntry { timestamp: timestamp.to_string(), method, path: path.to_string(), status, duration_ms })
+          }
+      }
+
+      /// Everything the command line asked for.
+      #[derive(Debug)]
+      struct Config {
+          file: String,
+      }
+
+      impl Config {
+          fn from_args(args: &[String]) -> Result<Config, String> {
+              match args {
+                  [file] => Ok(Config { file: file.clone() }),
+                  [] => Err(String::from("missing log file")),
+                  [_, extra, ..] => Err(format!("unexpected argument {extra}")),
+              }
+          }
+      }
+
+      #[derive(Debug, Default)]
+      struct EndpointStats {
+          count: u32,
+          client_errors: u32,
+          server_errors: u32,
+          total_ms: u64,
+          max_ms: u32,
+      }
+
+      /// Statistics per (path, method), busiest first; equal counts in path order.
+      fn endpoint_stats(entries: &[LogEntry]) -> Vec<((&str, Method), EndpointStats)> {
+          let mut by_endpoint: BTreeMap<(&str, Method), EndpointStats> = BTreeMap::new();
+          for entry in entries {
+              let stats = by_endpoint.entry((entry.path.as_str(), entry.method)).or_default();
+              stats.count += 1;
+              match entry.status {
+                  400..=499 => stats.client_errors += 1,
+                  500..=599 => stats.server_errors += 1,
+                  _ => {}
+              }
+              stats.total_ms += entry.duration_ms as u64;
+              stats.max_ms = stats.max_ms.max(entry.duration_ms);
+          }
+          let mut rows: Vec<_> = by_endpoint.into_iter().collect();
+          // Busiest first. The sort is stable, so equal counts keep the map's (path, method) order.
+          rows.sort_by_key(|(_, stats)| Reverse(stats.count));
+          rows
+      }
+
+      fn print_report(entries: &[LogEntry]) {
+          let (Some(first), Some(last)) = (
+              entries.iter().map(|e| e.timestamp.as_str()).min(),
+              entries.iter().map(|e| e.timestamp.as_str()).max(),
+          ) else {
+              return;
+          };
+          println!("period: {first} to {last}");
+          if let Some(slow) = entries.iter().reduce(|best, e| if e.duration_ms > best.duration_ms { e } else { best }) {
+              println!("slowest: {} {} -> {} in {}ms", slow.method, slow.path, slow.status, slow.duration_ms);
+          }
+
+          println!("{:<24}{:>7}{:>6}{:>6}{:>9}{:>9}", "endpoint", "count", "4xx", "5xx", "avg ms", "max ms");
+          for ((path, method), stats) in endpoint_stats(entries) {
+              let avg = stats.total_ms as f64 / stats.count as f64;
+              let endpoint = format!("{method} {path}");
+              println!(
+                  "{endpoint:<24}{:>7}{:>6}{:>6}{avg:>9.1}{:>9}",
+                  stats.count, stats.client_errors, stats.server_errors, stats.max_ms
+              );
+          }
+      }
+
+      fn run(config: &Config) -> anyhow::Result<()> {
+          let text = fs::read_to_string(&config.file).with_context(|| format!("reading {}", config.file))?;
+
+          let mut entries = Vec::new();
+          let mut skipped = 0;
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match line.parse::<LogEntry>() {
+                  Ok(entry) => entries.push(entry),
+                  Err(e) => {
+                      eprintln!("warning: line {}: {e}", i + 1);
+                      skipped += 1;
+                  }
+              }
+          }
+          println!("requests: {}", entries.len());
+          println!("skipped: {skipped}");
+          print_report(&entries);
+          Ok(())
+      }
+
+      /// Exit codes: 0 ok, 1 runtime error, 2 bad command line.
+      fn main() -> ExitCode {
+          let args: Vec<String> = env::args().skip(1).collect();
+          let config = match Config::from_args(&args) {
+              Ok(config) => config,
+              Err(message) => {
+                  eprintln!("error: {message}");
+                  eprintln!("{USAGE}");
+                  return ExitCode::from(2);
+              }
+          };
+          match run(&config) {
+              Ok(()) => ExitCode::SUCCESS,
+              Err(e) => {
+                  eprintln!("error: {e:#}");
+                  ExitCode::FAILURE
+              }
+          }
+      }
+    tests:
+      - args: ["access.log"]
+        files:
+          access.log: |
+            2026-03-14T10:00:01Z GET /api/users 200 35ms
+            2026-03-14T10:00:03Z POST /api/orders 201 120ms
+            2026-03-14T10:00:04Z GET /api/users 200 55ms
+            2026-03-14T10:01:10Z GET /api/users/42 404 8ms
+            2026-03-14T10:02:00Z POST /api/orders 503 1200ms
+            2026-03-14T10:02:30Z FETCH /api/users 200 10ms
+
+            2026-03-14T10:03:00Z GET /api/users 200 30ms
+            2026-03-14T10:04:59Z DELETE /api/orders/7 204 15ms
+      - args: ["server.log"]
+        files:
+          server.log: |
+            2026-05-02T08:00:00Z GET /health 200 1ms
+            2026-05-02T08:00:05Z PUT /api/cart/9 200 42ms
+            2026-05-02T08:00:06Z PUT /api/cart/9 409 40ms
+            2026-05-02T07:59:58Z GET /health 200 2ms
+            2026-05-02T08:00:09Z POST /api/checkout 502 3000ms
+            2026-05-02T08:00:10Z POST /api/checkout 201 3000ms
+            2026-05-02T08:00:11Z GET /api/cart/9 200 12ms
+      - args: ["junk.log"]
+        files:
+          junk.log: |
+            this is not a log line
+        hidden: true
+      - args: ["mixed.log"]
+        files:
+          mixed.log: |
+            2026-06-01T12:00:00Z DELETE /items/1 500 7ms
+            2026-06-01T12:00:01Z GET /items/1 200 3ms
+            2026-06-01T12:00:02Z PUT /items/1 400 5ms
+            2026-06-01T12:00:03Z GET /items 200 20ms
+            2026-06-01T12:00:04Z GET /items/1 503 9ms
+        hidden: true
+    hints:
+      - "Derive `Default` on `EndpointStats` and use `by_endpoint.entry((entry.path.as_str(), entry.method)).or_default()`."
+      - "`let mut rows: Vec<_> = by_endpoint.into_iter().collect(); rows.sort_by_key(|(_, stats)| Reverse(stats.count));` keeps ties in map order."
+      - "Each row: `println!(\"{endpoint:<24}{:>7}{:>6}{:>6}{avg:>9.1}{:>9}\", ...)` with `let endpoint = format!(\"{method} {path}\");`."
+
+  - title: Filters from the command line
+    text: |
+      The question during an incident is never "how is everything?" but "how are the POSTs since 10:02?" or "show me only the 5xx". Add filter flags:
+
+      ```text
+      loglens access.log --method POST --since 2026-03-14T10:02:00Z
+      loglens access.log --status 5xx
+      ```
+
+      | Flag | Keeps requests... |
+      |---|---|
+      | `--method METHOD` | with that method (`GET`, `POST`, `PUT`, `DELETE`) |
+      | `--status CODE` or `--status Nxx` | with that exact status (`404`), or that class (`5xx`, from `1xx` to `5xx`) |
+      | `--since TIMESTAMP` | at or after that timestamp |
+
+      Flags can come in any order, before or after the file. After `skipped:`, print `matching: N`, the number of requests that pass every filter; the period, slowest request and table now describe **only the matching requests**.
+
+      Bad command lines are usage errors (exit code 2, message and usage line on stderr): an unknown flag (`unknown option --bogus`), a flag without its value (`--method needs a value`), an invalid value (`unknown method "FETCH"`, `invalid status filter "7xx" (use a code like 404 or a class like 5xx)`), or a second file.
+
+      ### A Config that holds what was asked
+
+      ```rust
+      #[derive(Debug, Default)]
+      struct Config {
+          file: String,
+          method: Option<Method>,
+          status: Option<StatusFilter>,
+          since: Option<String>,
+      }
+      ```
+
+      Each filter is an `Option`: `None` means "not given, don't filter". To read flags that take a value, walk the arguments with an iterator and call `next()` again inside the loop to grab the value:
+
+      ```rust
+      let mut args = args.iter();
+      while let Some(arg) = args.next() {
+          match arg.as_str() {
+              "--method" => {
+                  let value = args.next().ok_or("--method needs a value")?;
+                  config.method = Some(value.parse().map_err(|e: ParseError| e.to_string())?);
+              }
+              ...
+              flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
+              _ => ... // the file (only one allowed)
+          }
+      }
+      ```
+
+      Your `FromStr` for `Method` pays off here: the flag reuses it. Write one more, `impl FromStr for StatusFilter`, for `enum StatusFilter { Exact(u16), Class(u16) }`, with a `matches(&self, status: u16) -> bool` method (`status / 100 == class` for a class).
+
+      ### One method decides
+
+      Put the filtering logic on `Config`:
+
+      ```rust
+      fn matches(&self, entry: &LogEntry) -> bool {
+          self.method.is_none_or(|method| entry.method == method)
+              && self.status.is_none_or(|status| status.matches(entry.status))
+              && self.since.as_ref().is_none_or(|since| entry.timestamp >= *since)
+      }
+      ```
+
+      `Option::is_none_or` reads exactly like the rule: "no filter, or it matches". Then `entries.into_iter().filter(|e| config.matches(e)).collect()` is the whole filtering step. The `--since` comparison is the ISO 8601 string trick from milestone 2 again.
+
+      At work you'd likely let the **clap** crate generate this parsing (and `--help`) from a struct with `#[derive(Parser)]`. Writing it once by hand shows you what clap does for you, and the `Config` struct is the same idea either way.
+    solution: |
+      use anyhow::Context;
+      use std::cmp::Reverse;
+      use std::collections::BTreeMap;
+      use std::env;
+      use std::fmt;
+      use std::fs;
+      use std::process::ExitCode;
+      use std::str::FromStr;
+      use thiserror::Error;
+
+      const USAGE: &str = "usage: loglens <file> [--method METHOD] [--status CODE|Nxx] [--since TIMESTAMP]";
+
+      /// The HTTP methods this service uses.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      impl fmt::Display for Method {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Method::Get => "GET",
+                  Method::Post => "POST",
+                  Method::Put => "PUT",
+                  Method::Delete => "DELETE",
+              };
+              f.pad(name)
+          }
+      }
+
+      /// One line of the access log.
+      #[derive(Debug, Clone, PartialEq)]
+      struct LogEntry {
+          timestamp: String,
+          method: Method,
+          path: String,
+          status: u16,
+          duration_ms: u32,
+      }
+
+      #[derive(Debug, PartialEq, Error)]
+      enum ParseError {
+          #[error("expected 5 fields, found {0}")]
+          FieldCount(usize),
+          #[error("unknown method \"{0}\"")]
+          Method(String),
+          #[error("invalid path \"{0}\"")]
+          Path(String),
+          #[error("invalid status \"{0}\"")]
+          Status(String),
+          #[error("invalid duration \"{0}\"")]
+          Duration(String),
+      }
+
+      impl FromStr for Method {
+          type Err = ParseError;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              match s {
+                  "GET" => Ok(Method::Get),
+                  "POST" => Ok(Method::Post),
+                  "PUT" => Ok(Method::Put),
+                  "DELETE" => Ok(Method::Delete),
+                  other => Err(ParseError::Method(other.to_string())),
+              }
+          }
+      }
+
+      impl FromStr for LogEntry {
+          type Err = ParseError;
+
+          /// "2026-03-14T10:00:01Z GET /api/users 200 35ms"
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, duration] = fields[..] else {
+                  return Err(ParseError::FieldCount(fields.len()));
+              };
+              let method: Method = method.parse()?;
+              if !path.starts_with('/') {
+                  return Err(ParseError::Path(path.to_string()));
+              }
+              let status = match status.parse::<u16>() {
+                  Ok(code) if (100..=599).contains(&code) => code,
+                  _ => return Err(ParseError::Status(status.to_string())),
+              };
+              let duration_ms = duration
+                  .strip_suffix("ms")
+                  .and_then(|ms| ms.parse().ok())
+                  .ok_or_else(|| ParseError::Duration(duration.to_string()))?;
+              Ok(LogEntry { timestamp: timestamp.to_string(), method, path: path.to_string(), status, duration_ms })
+          }
+      }
+
+      /// `--status 404` matches one code, `--status 5xx` a whole class.
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum StatusFilter {
+          Exact(u16),
+          Class(u16),
+      }
+
+      impl StatusFilter {
+          fn matches(&self, status: u16) -> bool {
+              match self {
+                  StatusFilter::Exact(code) => status == *code,
+                  StatusFilter::Class(class) => status / 100 == *class,
+              }
+          }
+      }
+
+      impl FromStr for StatusFilter {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let filter = match s.strip_suffix("xx") {
+                  Some(class) => class.parse().ok().map(StatusFilter::Class),
+                  None => s.parse().ok().map(StatusFilter::Exact),
+              };
+              match filter {
+                  Some(StatusFilter::Class(c)) if (1..=5).contains(&c) => Ok(StatusFilter::Class(c)),
+                  Some(StatusFilter::Exact(c)) if (100..=599).contains(&c) => Ok(StatusFilter::Exact(c)),
+                  _ => Err(format!("invalid status filter \"{s}\" (use a code like 404 or a class like 5xx)")),
+              }
+          }
+      }
+
+      /// Everything the command line asked for.
+      #[derive(Debug, Default)]
+      struct Config {
+          file: String,
+          method: Option<Method>,
+          status: Option<StatusFilter>,
+          since: Option<String>,
+      }
+
+      impl Config {
+          fn from_args(args: &[String]) -> Result<Config, String> {
+              let mut config = Config::default();
+              let mut file = None;
+              let mut args = args.iter();
+              while let Some(arg) = args.next() {
+                  match arg.as_str() {
+                      "--method" => {
+                          let value = args.next().ok_or("--method needs a value")?;
+                          config.method = Some(value.parse().map_err(|e: ParseError| e.to_string())?);
+                      }
+                      "--status" => {
+                          let value = args.next().ok_or("--status needs a value")?;
+                          config.status = Some(value.parse()?);
+                      }
+                      "--since" => {
+                          let value = args.next().ok_or("--since needs a value")?;
+                          config.since = Some(value.clone());
+                      }
+                      flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
+                      _ if file.is_none() => file = Some(arg.clone()),
+                      _ => return Err(format!("unexpected argument {arg}")),
+                  }
+              }
+              config.file = file.ok_or("missing log file")?;
+              Ok(config)
+          }
+
+          /// Does this entry pass every filter that was given?
+          fn matches(&self, entry: &LogEntry) -> bool {
+              self.method.is_none_or(|method| entry.method == method)
+                  && self.status.is_none_or(|status| status.matches(entry.status))
+                  // ISO 8601 timestamps in UTC sort correctly as plain strings.
+                  && self.since.as_ref().is_none_or(|since| entry.timestamp >= *since)
+          }
+      }
+
+      #[derive(Debug, Default)]
+      struct EndpointStats {
+          count: u32,
+          client_errors: u32,
+          server_errors: u32,
+          total_ms: u64,
+          max_ms: u32,
+      }
+
+      /// Statistics per (path, method), busiest first; equal counts in path order.
+      fn endpoint_stats(entries: &[LogEntry]) -> Vec<((&str, Method), EndpointStats)> {
+          let mut by_endpoint: BTreeMap<(&str, Method), EndpointStats> = BTreeMap::new();
+          for entry in entries {
+              let stats = by_endpoint.entry((entry.path.as_str(), entry.method)).or_default();
+              stats.count += 1;
+              match entry.status {
+                  400..=499 => stats.client_errors += 1,
+                  500..=599 => stats.server_errors += 1,
+                  _ => {}
+              }
+              stats.total_ms += entry.duration_ms as u64;
+              stats.max_ms = stats.max_ms.max(entry.duration_ms);
+          }
+          let mut rows: Vec<_> = by_endpoint.into_iter().collect();
+          // Busiest first. The sort is stable, so equal counts keep the map's (path, method) order.
+          rows.sort_by_key(|(_, stats)| Reverse(stats.count));
+          rows
+      }
+
+      fn print_report(entries: &[LogEntry]) {
+          let (Some(first), Some(last)) = (
+              entries.iter().map(|e| e.timestamp.as_str()).min(),
+              entries.iter().map(|e| e.timestamp.as_str()).max(),
+          ) else {
+              return;
+          };
+          println!("period: {first} to {last}");
+          if let Some(slow) = entries.iter().reduce(|best, e| if e.duration_ms > best.duration_ms { e } else { best }) {
+              println!("slowest: {} {} -> {} in {}ms", slow.method, slow.path, slow.status, slow.duration_ms);
+          }
+
+          println!("{:<24}{:>7}{:>6}{:>6}{:>9}{:>9}", "endpoint", "count", "4xx", "5xx", "avg ms", "max ms");
+          for ((path, method), stats) in endpoint_stats(entries) {
+              let avg = stats.total_ms as f64 / stats.count as f64;
+              let endpoint = format!("{method} {path}");
+              println!(
+                  "{endpoint:<24}{:>7}{:>6}{:>6}{avg:>9.1}{:>9}",
+                  stats.count, stats.client_errors, stats.server_errors, stats.max_ms
+              );
+          }
+      }
+
+      fn run(config: &Config) -> anyhow::Result<()> {
+          let text = fs::read_to_string(&config.file).with_context(|| format!("reading {}", config.file))?;
+
+          let mut entries = Vec::new();
+          let mut skipped = 0;
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match line.parse::<LogEntry>() {
+                  Ok(entry) => entries.push(entry),
+                  Err(e) => {
+                      eprintln!("warning: line {}: {e}", i + 1);
+                      skipped += 1;
+                  }
+              }
+          }
+          println!("requests: {}", entries.len());
+          println!("skipped: {skipped}");
+
+          let matching: Vec<LogEntry> = entries.into_iter().filter(|e| config.matches(e)).collect();
+          println!("matching: {}", matching.len());
+          print_report(&matching);
+          Ok(())
+      }
+
+      /// Exit codes: 0 ok, 1 runtime error, 2 bad command line.
+      fn main() -> ExitCode {
+          let args: Vec<String> = env::args().skip(1).collect();
+          let config = match Config::from_args(&args) {
+              Ok(config) => config,
+              Err(message) => {
+                  eprintln!("error: {message}");
+                  eprintln!("{USAGE}");
+                  return ExitCode::from(2);
+              }
+          };
+          match run(&config) {
+              Ok(()) => ExitCode::SUCCESS,
+              Err(e) => {
+                  eprintln!("error: {e:#}");
+                  ExitCode::FAILURE
+              }
+          }
+      }
+    tests:
+      - args: ["access.log", "--method", "POST"]
+        files:
+          access.log: |
+            2026-03-14T10:00:01Z GET /api/users 200 35ms
+            2026-03-14T10:00:03Z POST /api/orders 201 120ms
+            2026-03-14T10:00:04Z GET /api/users 200 55ms
+            2026-03-14T10:01:10Z GET /api/users/42 404 8ms
+            2026-03-14T10:02:00Z POST /api/orders 503 1200ms
+            2026-03-14T10:02:30Z FETCH /api/users 200 10ms
+
+            2026-03-14T10:03:00Z GET /api/users 200 30ms
+            2026-03-14T10:04:59Z DELETE /api/orders/7 204 15ms
+      - args: ["--since", "2026-03-14T10:02:00Z", "access.log", "--status", "2xx"]
+        files:
+          access.log: |
+            2026-03-14T10:00:01Z GET /api/users 200 35ms
+            2026-03-14T10:00:03Z POST /api/orders 201 120ms
+            2026-03-14T10:00:04Z GET /api/users 200 55ms
+            2026-03-14T10:01:10Z GET /api/users/42 404 8ms
+            2026-03-14T10:02:00Z POST /api/orders 503 1200ms
+            2026-03-14T10:02:30Z FETCH /api/users 200 10ms
+
+            2026-03-14T10:03:00Z GET /api/users 200 30ms
+            2026-03-14T10:04:59Z DELETE /api/orders/7 204 15ms
+      - args: ["access.log", "--status", "7xx"]
+        exit: 2
+        allowEmpty: true
+      - args: ["access.log", "--method"]
+        exit: 2
+        allowEmpty: true
+      - args: ["server.log", "--status", "409"]
+        files:
+          server.log: |
+            2026-05-02T08:00:00Z GET /health 200 1ms
+            2026-05-02T08:00:05Z PUT /api/cart/9 200 42ms
+            2026-05-02T08:00:06Z PUT /api/cart/9 409 40ms
+            2026-05-02T07:59:58Z GET /health 200 2ms
+            2026-05-02T08:00:09Z POST /api/checkout 502 3000ms
+            2026-05-02T08:00:10Z POST /api/checkout 201 3000ms
+            2026-05-02T08:00:11Z GET /api/cart/9 200 12ms
+        hidden: true
+      - args: ["server.log", "--method", "DELETE"]
+        files:
+          server.log: |
+            2026-05-02T08:00:00Z GET /health 200 1ms
+            2026-05-02T08:00:05Z PUT /api/cart/9 200 42ms
+        hidden: true
+      - args: ["server.log", "--verbose"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+      - args: ["server.log", "--method", "get"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "Give `Config` the three `Option` fields (derive `Default`), and parse the arguments with `let mut args = args.iter(); while let Some(arg) = args.next() { match arg.as_str() { ... } }`."
+      - "`StatusFilter::from_str`: `match s.strip_suffix(\"xx\")` gives a class (`Some(class)`) or an exact code (`None`); then check the class is 1 to 5 or the code 100 to 599."
+      - "In `run`, print `matching:` after `skipped:`, using `let matching: Vec<LogEntry> = entries.into_iter().filter(|e| config.matches(e)).collect();`, and report on `matching`."
+
+  - title: "Polish: exit codes that scripts can act on"
+    text: |
+      A tool that only prints is a tool someone has to read. A tool with meaningful **exit codes** can run unattended: in a CI pipeline after a load test, in a cron job, in a deployment script that rolls back when things look bad:
+
+      ```text
+      loglens access.log --since 2026-03-14T10:00:00Z --fail-on-5xx || rollback-deploy
+      ```
+
+      Two additions:
+
+      - A last report line counting the matching requests per status class, in class order, leaving out classes with no requests: `status classes: 2xx=5 4xx=1 5xx=1`.
+      - A `--fail-on-5xx` flag: when it's given and any **matching** request has a 5xx status, still print the full report, then print `error: 2 server error(s) found` to stderr and exit with code **3**. Without the flag, or with no 5xx among the matching requests, exit 0 as before.
+
+      Why a new code instead of 1? Because the caller may want to tell "the log looks bad" (3) apart from "the tool couldn't even read the log" (1) and "you called it wrong" (2). Document your codes; here, a comment above `run` is the right place:
+
+      ```rust
+      /// Exit codes: 0 ok, 1 runtime error, 2 bad command line, 3 server errors found with --fail-on-5xx.
+      fn run(config: &Config) -> anyhow::Result<ExitCode> {
+      ```
+
+      `run` now returns the `ExitCode` to use on success, and `main` returns it. The decision about *what* to report stays in `run`; `main` only maps errors to codes.
+
+      For the class counts, a `BTreeMap<u16, u32>` keyed by `status / 100` keeps the classes in order. Building the line is a good fit for an iterator chain ending in `join`:
+
+      ```rust
+      let classes: Vec<String> = classes.iter().map(|(class, n)| format!("{class}xx={n}")).collect();
+      println!("status classes: {}", classes.join(" "));
+      ```
+
+      Run your tool against the examples one last time with different flags. You've built the same shape as most command-line tools at work: typed parsing at the edges (`FromStr`, `Config`), a `run` that returns `Result`, errors with context, output for people on stdout, problems on stderr, and exit codes for machines.
+    solution: |
+      use anyhow::Context;
+      use std::cmp::Reverse;
+      use std::collections::BTreeMap;
+      use std::env;
+      use std::fmt;
+      use std::fs;
+      use std::process::ExitCode;
+      use std::str::FromStr;
+      use thiserror::Error;
+
+      const USAGE: &str = "usage: loglens <file> [--method METHOD] [--status CODE|Nxx] [--since TIMESTAMP] [--fail-on-5xx]";
+
+      /// The HTTP methods this service uses.
+      #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+      enum Method {
+          Get,
+          Post,
+          Put,
+          Delete,
+      }
+
+      impl fmt::Display for Method {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              let name = match self {
+                  Method::Get => "GET",
+                  Method::Post => "POST",
+                  Method::Put => "PUT",
+                  Method::Delete => "DELETE",
+              };
+              f.pad(name)
+          }
+      }
+
+      /// One line of the access log.
+      #[derive(Debug, Clone, PartialEq)]
+      struct LogEntry {
+          timestamp: String,
+          method: Method,
+          path: String,
+          status: u16,
+          duration_ms: u32,
+      }
+
+      #[derive(Debug, PartialEq, Error)]
+      enum ParseError {
+          #[error("expected 5 fields, found {0}")]
+          FieldCount(usize),
+          #[error("unknown method \"{0}\"")]
+          Method(String),
+          #[error("invalid path \"{0}\"")]
+          Path(String),
+          #[error("invalid status \"{0}\"")]
+          Status(String),
+          #[error("invalid duration \"{0}\"")]
+          Duration(String),
+      }
+
+      impl FromStr for Method {
+          type Err = ParseError;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              match s {
+                  "GET" => Ok(Method::Get),
+                  "POST" => Ok(Method::Post),
+                  "PUT" => Ok(Method::Put),
+                  "DELETE" => Ok(Method::Delete),
+                  other => Err(ParseError::Method(other.to_string())),
+              }
+          }
+      }
+
+      impl FromStr for LogEntry {
+          type Err = ParseError;
+
+          /// "2026-03-14T10:00:01Z GET /api/users 200 35ms"
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, duration] = fields[..] else {
+                  return Err(ParseError::FieldCount(fields.len()));
+              };
+              let method: Method = method.parse()?;
+              if !path.starts_with('/') {
+                  return Err(ParseError::Path(path.to_string()));
+              }
+              let status = match status.parse::<u16>() {
+                  Ok(code) if (100..=599).contains(&code) => code,
+                  _ => return Err(ParseError::Status(status.to_string())),
+              };
+              let duration_ms = duration
+                  .strip_suffix("ms")
+                  .and_then(|ms| ms.parse().ok())
+                  .ok_or_else(|| ParseError::Duration(duration.to_string()))?;
+              Ok(LogEntry { timestamp: timestamp.to_string(), method, path: path.to_string(), status, duration_ms })
+          }
+      }
+
+      /// `--status 404` matches one code, `--status 5xx` a whole class.
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      enum StatusFilter {
+          Exact(u16),
+          Class(u16),
+      }
+
+      impl StatusFilter {
+          fn matches(&self, status: u16) -> bool {
+              match self {
+                  StatusFilter::Exact(code) => status == *code,
+                  StatusFilter::Class(class) => status / 100 == *class,
+              }
+          }
+      }
+
+      impl FromStr for StatusFilter {
+          type Err = String;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let filter = match s.strip_suffix("xx") {
+                  Some(class) => class.parse().ok().map(StatusFilter::Class),
+                  None => s.parse().ok().map(StatusFilter::Exact),
+              };
+              match filter {
+                  Some(StatusFilter::Class(c)) if (1..=5).contains(&c) => Ok(StatusFilter::Class(c)),
+                  Some(StatusFilter::Exact(c)) if (100..=599).contains(&c) => Ok(StatusFilter::Exact(c)),
+                  _ => Err(format!("invalid status filter \"{s}\" (use a code like 404 or a class like 5xx)")),
+              }
+          }
+      }
+
+      /// Everything the command line asked for.
+      #[derive(Debug, Default)]
+      struct Config {
+          file: String,
+          method: Option<Method>,
+          status: Option<StatusFilter>,
+          since: Option<String>,
+          fail_on_5xx: bool,
+      }
+
+      impl Config {
+          fn from_args(args: &[String]) -> Result<Config, String> {
+              let mut config = Config::default();
+              let mut file = None;
+              let mut args = args.iter();
+              while let Some(arg) = args.next() {
+                  match arg.as_str() {
+                      "--method" => {
+                          let value = args.next().ok_or("--method needs a value")?;
+                          config.method = Some(value.parse().map_err(|e: ParseError| e.to_string())?);
+                      }
+                      "--status" => {
+                          let value = args.next().ok_or("--status needs a value")?;
+                          config.status = Some(value.parse()?);
+                      }
+                      "--since" => {
+                          let value = args.next().ok_or("--since needs a value")?;
+                          config.since = Some(value.clone());
+                      }
+                      "--fail-on-5xx" => config.fail_on_5xx = true,
+                      flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
+                      _ if file.is_none() => file = Some(arg.clone()),
+                      _ => return Err(format!("unexpected argument {arg}")),
+                  }
+              }
+              config.file = file.ok_or("missing log file")?;
+              Ok(config)
+          }
+
+          /// Does this entry pass every filter that was given?
+          fn matches(&self, entry: &LogEntry) -> bool {
+              self.method.is_none_or(|method| entry.method == method)
+                  && self.status.is_none_or(|status| status.matches(entry.status))
+                  // ISO 8601 timestamps in UTC sort correctly as plain strings.
+                  && self.since.as_ref().is_none_or(|since| entry.timestamp >= *since)
+          }
+      }
+
+      #[derive(Debug, Default)]
+      struct EndpointStats {
+          count: u32,
+          client_errors: u32,
+          server_errors: u32,
+          total_ms: u64,
+          max_ms: u32,
+      }
+
+      /// Statistics per (path, method), busiest first; equal counts in path order.
+      fn endpoint_stats(entries: &[LogEntry]) -> Vec<((&str, Method), EndpointStats)> {
+          let mut by_endpoint: BTreeMap<(&str, Method), EndpointStats> = BTreeMap::new();
+          for entry in entries {
+              let stats = by_endpoint.entry((entry.path.as_str(), entry.method)).or_default();
+              stats.count += 1;
+              match entry.status {
+                  400..=499 => stats.client_errors += 1,
+                  500..=599 => stats.server_errors += 1,
+                  _ => {}
+              }
+              stats.total_ms += entry.duration_ms as u64;
+              stats.max_ms = stats.max_ms.max(entry.duration_ms);
+          }
+          let mut rows: Vec<_> = by_endpoint.into_iter().collect();
+          // Busiest first. The sort is stable, so equal counts keep the map's (path, method) order.
+          rows.sort_by_key(|(_, stats)| Reverse(stats.count));
+          rows
+      }
+
+      fn print_report(entries: &[LogEntry]) {
+          let (Some(first), Some(last)) = (
+              entries.iter().map(|e| e.timestamp.as_str()).min(),
+              entries.iter().map(|e| e.timestamp.as_str()).max(),
+          ) else {
+              return;
+          };
+          println!("period: {first} to {last}");
+          if let Some(slow) = entries.iter().reduce(|best, e| if e.duration_ms > best.duration_ms { e } else { best }) {
+              println!("slowest: {} {} -> {} in {}ms", slow.method, slow.path, slow.status, slow.duration_ms);
+          }
+
+          println!("{:<24}{:>7}{:>6}{:>6}{:>9}{:>9}", "endpoint", "count", "4xx", "5xx", "avg ms", "max ms");
+          for ((path, method), stats) in endpoint_stats(entries) {
+              let avg = stats.total_ms as f64 / stats.count as f64;
+              let endpoint = format!("{method} {path}");
+              println!(
+                  "{endpoint:<24}{:>7}{:>6}{:>6}{avg:>9.1}{:>9}",
+                  stats.count, stats.client_errors, stats.server_errors, stats.max_ms
+              );
+          }
+
+          let mut classes: BTreeMap<u16, u32> = BTreeMap::new();
+          for entry in entries {
+              *classes.entry(entry.status / 100).or_insert(0) += 1;
+          }
+          let classes: Vec<String> = classes.iter().map(|(class, n)| format!("{class}xx={n}")).collect();
+          println!("status classes: {}", classes.join(" "));
+      }
+
+      /// Exit codes: 0 ok, 1 runtime error, 2 bad command line, 3 server errors found with --fail-on-5xx.
+      fn run(config: &Config) -> anyhow::Result<ExitCode> {
+          let text = fs::read_to_string(&config.file).with_context(|| format!("reading {}", config.file))?;
+
+          let mut entries = Vec::new();
+          let mut skipped = 0;
+          for (i, line) in text.lines().enumerate() {
+              if line.trim().is_empty() {
+                  continue;
+              }
+              match line.parse::<LogEntry>() {
+                  Ok(entry) => entries.push(entry),
+                  Err(e) => {
+                      eprintln!("warning: line {}: {e}", i + 1);
+                      skipped += 1;
+                  }
+              }
+          }
+          println!("requests: {}", entries.len());
+          println!("skipped: {skipped}");
+
+          let matching: Vec<LogEntry> = entries.into_iter().filter(|e| config.matches(e)).collect();
+          println!("matching: {}", matching.len());
+          print_report(&matching);
+
+          let server_errors = matching.iter().filter(|e| e.status >= 500).count();
+          if config.fail_on_5xx && server_errors > 0 {
+              eprintln!("error: {server_errors} server error(s) found");
+              return Ok(ExitCode::from(3));
+          }
+          Ok(ExitCode::SUCCESS)
+      }
+
+      fn main() -> ExitCode {
+          let args: Vec<String> = env::args().skip(1).collect();
+          let config = match Config::from_args(&args) {
+              Ok(config) => config,
+              Err(message) => {
+                  eprintln!("error: {message}");
+                  eprintln!("{USAGE}");
+                  return ExitCode::from(2);
+              }
+          };
+          match run(&config) {
+              Ok(code) => code,
+              Err(e) => {
+                  eprintln!("error: {e:#}");
+                  ExitCode::FAILURE
+              }
+          }
+      }
+    tests:
+      - args: ["access.log", "--fail-on-5xx"]
+        files:
+          access.log: |
+            2026-03-14T10:00:01Z GET /api/users 200 35ms
+            2026-03-14T10:00:03Z POST /api/orders 201 120ms
+            2026-03-14T10:00:04Z GET /api/users 200 55ms
+            2026-03-14T10:01:10Z GET /api/users/42 404 8ms
+            2026-03-14T10:02:00Z POST /api/orders 503 1200ms
+            2026-03-14T10:02:30Z FETCH /api/users 200 10ms
+
+            2026-03-14T10:03:00Z GET /api/users 200 30ms
+            2026-03-14T10:04:59Z DELETE /api/orders/7 204 15ms
+        exit: 3
+      - args: ["access.log", "--fail-on-5xx", "--method", "GET"]
+        files:
+          access.log: |
+            2026-03-14T10:00:01Z GET /api/users 200 35ms
+            2026-03-14T10:00:03Z POST /api/orders 201 120ms
+            2026-03-14T10:00:04Z GET /api/users 200 55ms
+            2026-03-14T10:01:10Z GET /api/users/42 404 8ms
+            2026-03-14T10:02:00Z POST /api/orders 503 1200ms
+            2026-03-14T10:02:30Z FETCH /api/users 200 10ms
+
+            2026-03-14T10:03:00Z GET /api/users 200 30ms
+            2026-03-14T10:04:59Z DELETE /api/orders/7 204 15ms
+      - args: ["server.log"]
+        files:
+          server.log: |
+            2026-05-02T08:00:00Z GET /health 200 1ms
+            2026-05-02T08:00:05Z PUT /api/cart/9 200 42ms
+            2026-05-02T08:00:06Z PUT /api/cart/9 409 40ms
+            2026-05-02T07:59:58Z GET /health 101 2ms
+            2026-05-02T08:00:09Z POST /api/checkout 502 3000ms
+            2026-05-02T08:00:10Z POST /api/checkout 201 3000ms
+            2026-05-02T08:00:11Z GET /api/cart/9 304 12ms
+        hidden: true
+      - args: ["--fail-on-5xx", "server.log", "--since", "2026-05-02T08:00:10Z"]
+        files:
+          server.log: |
+            2026-05-02T08:00:09Z POST /api/checkout 502 3000ms
+            2026-05-02T08:00:10Z POST /api/checkout 201 3000ms
+            2026-05-02T08:00:11Z GET /api/cart/9 304 12ms
+        hidden: true
+      - args: ["--fail-on-5xx"]
+        exit: 2
+        allowEmpty: true
+        hidden: true
+    hints:
+      - "Add `fail_on_5xx: bool` to `Config` and a `\"--fail-on-5xx\" => config.fail_on_5xx = true,` arm."
+      - "At the end of the report, count `entry.status / 100` in a `BTreeMap<u16, u32>` and print the `status classes:` line with `join(\" \")`."
+      - "Change `run` to return `anyhow::Result<ExitCode>`: after printing, if the flag is set and `matching.iter().filter(|e| e.status >= 500).count()` is above 0, `eprintln!` the message and `return Ok(ExitCode::from(3));`."

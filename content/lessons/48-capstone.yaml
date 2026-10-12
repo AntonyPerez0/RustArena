@@ -1,0 +1,2830 @@
+id: capstone
+title: "Capstone: Real Tickets"
+phase: "Capstone"
+summary: Six workplace tickets that combine everything in the course. Parse logs with FromStr and an error enum, build a traffic report, validate orders with thiserror, check a deploy config with serde, model an order workflow as a state machine, and refactor code for review.
+roadmap: [Error Handling, Serde, Traits, Iterators, Testing, Code Review]
+steps:
+  - title: "LOG-101: parse the access log"
+    id: capstone-1
+    text: |
+      Welcome to your first week on the platform team. Every exercise in this module is a ticket, the way work actually arrives: a goal, some context, and acceptance criteria. There's less hand-holding than before; everything you need was covered in earlier modules, and the hints are there if you get stuck.
+
+      > **LOG-101: Parse access log lines into structured entries**
+      >
+      > Our services write one line per HTTP request: `2026-10-01T09:00:03Z GET /api/orders 200 35` (timestamp, method, path, status code, latency in milliseconds). Today every script re-parses these with ad hoc `split` calls and crashes on bad lines. We want one parser the whole team can use: `line.parse::<LogEntry>()`, returning a precise error for each kind of bad input.
+
+      ### The shape of a good parser
+
+      You've seen every piece of this before; here they come together:
+
+      - **`FromStr`** (module 23) lets callers write `line.parse::<LogEntry>()`, like they would for a number.
+      - An **error enum** (module 20) with one variant per failure, carrying the offending text. Callers can `match` on it, and tests can check exactly which error came back.
+      - **`Display`** turns each variant into a message for humans.
+      - **`std::error::Error`** makes it a "real" error, so it works with `?` in functions returning `Box<dyn Error>` and with `anyhow`.
+
+      Here's the same pattern on a smaller format, a sensor reading like `kitchen=21.5`:
+
+      ```rust run
+      use std::fmt;
+      use std::str::FromStr;
+
+      #[derive(Debug, PartialEq)]
+      struct Reading {
+          sensor: String,
+          celsius: f64,
+      }
+
+      #[derive(Debug, PartialEq)]
+      enum ParseReadingError {
+          MissingEquals,
+          BadNumber(String),
+      }
+
+      impl fmt::Display for ParseReadingError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ParseReadingError::MissingEquals => write!(f, "expected SENSOR=VALUE"),
+                  ParseReadingError::BadNumber(s) => write!(f, "not a temperature: {s}"),
+              }
+          }
+      }
+
+      impl std::error::Error for ParseReadingError {}
+
+      impl FromStr for Reading {
+          type Err = ParseReadingError;
+
+          fn from_str(s: &str) -> Result<Self, Self::Err> {
+              let (sensor, value) = s.split_once('=').ok_or(ParseReadingError::MissingEquals)?;
+              let value = value.trim();
+              let celsius = value.parse().map_err(|_| ParseReadingError::BadNumber(value.to_string()))?;
+              Ok(Reading { sensor: sensor.trim().to_string(), celsius })
+          }
+      }
+
+      fn main() {
+          for line in ["kitchen=21.5", "garage = -3", "attic", "cellar=cold"] {
+              match line.parse::<Reading>() {
+                  Ok(r) => println!("{} is {:.1} C", r.sensor, r.celsius),
+                  Err(e) => println!("skipping {line:?}: {e}"),
+              }
+          }
+      }
+      ```
+
+      ```output
+      kitchen is 21.5 C
+      garage is -3.0 C
+      skipping "attic": expected SENSOR=VALUE
+      skipping "cellar=cold": not a temperature: cold
+      ```
+
+      - `ok_or(...)?` turns an `Option` into a `Result` and returns early on `None`.
+      - `map_err(|_| ...)?` replaces the library's error (`ParseFloatError`) with ours, keeping the bad text for the message.
+      - Each error variant carries just enough to explain itself. "Something went wrong" helps nobody at 3 a.m.
+
+      Splitting a line into an exact number of fields is neat with a slice pattern and `let ... else`:
+
+      ```rust
+      let fields: Vec<&str> = line.split_whitespace().collect();
+      let [timestamp, method, path, status, latency] = fields[..] else {
+          return Err(/* wrong number of fields: fields.len() */);
+      };
+      ```
+
+      ### Common mistakes
+
+      - **`unwrap()` inside a parser.** One bad line in a 10 GB log and the whole job dies. Parsers return errors; the caller decides what to do.
+      - **A `String` as the error type.** It works, but callers can't match on it and tests end up comparing message text.
+      - **Losing the bad input.** `BadStatus` alone doesn't say what was wrong; `BadStatus("2x0")` does.
+      - **Accepting "valid-looking" garbage.** `"999".parse::<u16>()` succeeds, but 999 isn't an HTTP status. Validate the range.
+
+      **Your turn:** implement the parser. The seed defines `LogEntry` and `ParseLogError`. Write:
+
+      - `impl fmt::Display for ParseLogError` with exactly these messages: `expected 5 fields, found N`, `unknown HTTP method: M`, `bad status code: S`, `bad latency: L`
+      - `impl FromStr for LogEntry`: split on whitespace; there must be exactly 5 fields (`WrongFieldCount` with the count otherwise); the method must be one of `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (case-sensitive, `BadMethod` otherwise); the status must be a number from 100 to 599 (`BadStatus` with the text otherwise); the latency must parse as a `u32` (`BadLatency` with the text otherwise). Check in that order.
+    seed: |
+      use std::fmt;
+      use std::str::FromStr;
+
+      #[derive(Debug, PartialEq)]
+      struct LogEntry {
+          timestamp: String,
+          method: String,
+          path: String,
+          status: u16,
+          latency_ms: u32,
+      }
+
+      #[derive(Debug, PartialEq)]
+      enum ParseLogError {
+          WrongFieldCount(usize),
+          BadMethod(String),
+          BadStatus(String),
+          BadLatency(String),
+      }
+
+      impl fmt::Display for ParseLogError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              todo!()
+          }
+      }
+
+      // Makes ParseLogError usable with `?` in functions returning Box<dyn Error> (and with anyhow).
+      impl std::error::Error for ParseLogError {}
+
+      impl FromStr for LogEntry {
+          type Err = ParseLogError;
+
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              todo!()
+          }
+      }
+    solution: |
+      use std::fmt;
+      use std::str::FromStr;
+
+      #[derive(Debug, PartialEq)]
+      struct LogEntry {
+          timestamp: String,
+          method: String,
+          path: String,
+          status: u16,
+          latency_ms: u32,
+      }
+
+      #[derive(Debug, PartialEq)]
+      enum ParseLogError {
+          WrongFieldCount(usize),
+          BadMethod(String),
+          BadStatus(String),
+          BadLatency(String),
+      }
+
+      impl fmt::Display for ParseLogError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ParseLogError::WrongFieldCount(n) => write!(f, "expected 5 fields, found {n}"),
+                  ParseLogError::BadMethod(m) => write!(f, "unknown HTTP method: {m}"),
+                  ParseLogError::BadStatus(s) => write!(f, "bad status code: {s}"),
+                  ParseLogError::BadLatency(l) => write!(f, "bad latency: {l}"),
+              }
+          }
+      }
+
+      // Makes ParseLogError usable with `?` in functions returning Box<dyn Error> (and with anyhow).
+      impl std::error::Error for ParseLogError {}
+
+      const METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+      impl FromStr for LogEntry {
+          type Err = ParseLogError;
+
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, latency] = fields[..] else {
+                  return Err(ParseLogError::WrongFieldCount(fields.len()));
+              };
+              if !METHODS.contains(&method) {
+                  return Err(ParseLogError::BadMethod(method.to_string()));
+              }
+              let status: u16 = status
+                  .parse()
+                  .ok()
+                  .filter(|code| (100..=599).contains(code))
+                  .ok_or_else(|| ParseLogError::BadStatus(status.to_string()))?;
+              let latency_ms = latency.parse().map_err(|_| ParseLogError::BadLatency(latency.to_string()))?;
+              Ok(LogEntry {
+                  timestamp: timestamp.to_string(),
+                  method: method.to_string(),
+                  path: path.to_string(),
+                  status,
+                  latency_ms,
+              })
+          }
+      }
+    hints:
+      - "`Display`: `match self` with one `write!(f, ...)` per variant, for example `ParseLogError::BadMethod(m) => write!(f, \"unknown HTTP method: {m}\")`."
+      - "`from_str`: collect `line.split_whitespace()` into a `Vec<&str>` and use `let [timestamp, method, path, status, latency] = fields[..] else { return Err(ParseLogError::WrongFieldCount(fields.len())); };`"
+      - "For the status, `status.parse::<u16>().ok().filter(|c| (100..=599).contains(c)).ok_or_else(|| ParseLogError::BadStatus(status.to_string()))?`; for the latency, `latency.parse().map_err(|_| ParseLogError::BadLatency(latency.to_string()))?`."
+    harness: |
+      #[test]
+      fn parses_a_valid_line() {
+          let e: LogEntry = "2026-10-01T09:00:03Z GET /api/orders 200 35".parse().unwrap();
+          assert_eq!(e.timestamp, "2026-10-01T09:00:03Z", "timestamp");
+          assert_eq!(e.method, "GET", "method");
+          assert_eq!(e.path, "/api/orders", "path");
+          assert_eq!(e.status, 200, "status");
+          assert_eq!(e.latency_ms, 35, "latency_ms");
+      }
+
+      #[test]
+      fn tolerates_extra_spaces() {
+          let e = "  2026-10-01T09:00:04Z   DELETE /api/carts/7  204 12 ".parse::<LogEntry>();
+          assert_eq!(e.map(|e| (e.method, e.status)), Ok((String::from("DELETE"), 204)), "parsing a line with extra spaces");
+      }
+
+      #[test]
+      fn counts_the_fields_of_a_short_or_long_line() {
+          assert_eq!("2026-10-01T09:00:03Z GET /api/orders 200".parse::<LogEntry>(), Err(ParseLogError::WrongFieldCount(4)), "a line with 4 fields");
+          assert_eq!("".parse::<LogEntry>(), Err(ParseLogError::WrongFieldCount(0)), "an empty line");
+          assert_eq!("a b c d e f".parse::<LogEntry>(), Err(ParseLogError::WrongFieldCount(6)), "a line with 6 fields");
+      }
+
+      #[test]
+      fn rejects_unknown_methods() {
+          assert_eq!("t FETCH /x 200 1".parse::<LogEntry>(), Err(ParseLogError::BadMethod("FETCH".into())), "method FETCH");
+          assert_eq!("t get /x 200 1".parse::<LogEntry>(), Err(ParseLogError::BadMethod("get".into())), "lowercase method get");
+      }
+
+      #[test]
+      fn rejects_bad_status_codes() {
+          assert_eq!("t GET /x 2x0 1".parse::<LogEntry>(), Err(ParseLogError::BadStatus("2x0".into())), "status 2x0");
+          assert_eq!("t GET /x 99 1".parse::<LogEntry>(), Err(ParseLogError::BadStatus("99".into())), "status 99");
+          assert_eq!("t GET /x 600 1".parse::<LogEntry>(), Err(ParseLogError::BadStatus("600".into())), "status 600");
+      }
+
+      #[test]
+      fn rejects_bad_latencies() {
+          assert_eq!("t GET /x 200 -5".parse::<LogEntry>(), Err(ParseLogError::BadLatency("-5".into())), "latency -5");
+          assert_eq!("t GET /x 200 fast".parse::<LogEntry>(), Err(ParseLogError::BadLatency("fast".into())), "latency fast");
+      }
+
+      #[test]
+      fn errors_have_readable_messages() {
+          assert_eq!(ParseLogError::WrongFieldCount(3).to_string(), "expected 5 fields, found 3", "WrongFieldCount(3)");
+          assert_eq!(ParseLogError::BadMethod("GTE".into()).to_string(), "unknown HTTP method: GTE", "BadMethod(GTE)");
+          assert_eq!(ParseLogError::BadStatus("2x0".into()).to_string(), "bad status code: 2x0", "BadStatus(2x0)");
+          assert_eq!(ParseLogError::BadLatency("fast".into()).to_string(), "bad latency: fast", "BadLatency(fast)");
+      }
+
+      #[test]
+      fn works_as_a_boxed_error() {
+          let err: Box<dyn std::error::Error> = "t GET /x 200".parse::<LogEntry>().unwrap_err().into();
+          assert_eq!(err.to_string(), "expected 5 fields, found 4", "the error through Box<dyn Error>");
+      }
+    more:
+      - task: |
+          > **LOG-104: Make the HTTP method a type**
+          >
+          > Reviewers keep catching `if entry.method == "GTE"` typos in analytics code. Strings can't be checked by the compiler; an enum can.
+
+          Replace `method: String` with a `Method` enum (`Get`, `Post`, `Put`, `Patch`, `Delete`, deriving `Debug, Clone, Copy, PartialEq`). Implement `FromStr for Method` (with `type Err = ParseLogError`, returning `BadMethod` for anything else; still case-sensitive) and `Display for Method` (prints `GET`, `POST`, ...). Then make `LogEntry::from_str` use `method.parse()?`. Everything else behaves as before.
+        seed: |
+          use std::fmt;
+          use std::str::FromStr;
+
+          // TODO: add the Method enum, FromStr for Method and Display for Method
+
+          #[derive(Debug, PartialEq)]
+          struct LogEntry {
+              timestamp: String,
+              method: String, // TODO: Method
+              path: String,
+              status: u16,
+              latency_ms: u32,
+          }
+
+          #[derive(Debug, PartialEq)]
+          enum ParseLogError {
+              WrongFieldCount(usize),
+              BadMethod(String),
+              BadStatus(String),
+              BadLatency(String),
+          }
+
+          impl fmt::Display for ParseLogError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      ParseLogError::WrongFieldCount(n) => write!(f, "expected 5 fields, found {n}"),
+                      ParseLogError::BadMethod(m) => write!(f, "unknown HTTP method: {m}"),
+                      ParseLogError::BadStatus(s) => write!(f, "bad status code: {s}"),
+                      ParseLogError::BadLatency(l) => write!(f, "bad latency: {l}"),
+                  }
+              }
+          }
+
+          impl std::error::Error for ParseLogError {}
+
+          impl FromStr for LogEntry {
+              type Err = ParseLogError;
+
+              fn from_str(line: &str) -> Result<Self, Self::Err> {
+                  let fields: Vec<&str> = line.split_whitespace().collect();
+                  let [timestamp, method, path, status, latency] = fields[..] else {
+                      return Err(ParseLogError::WrongFieldCount(fields.len()));
+                  };
+                  if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method) {
+                      return Err(ParseLogError::BadMethod(method.to_string()));
+                  }
+                  let status: u16 = status
+                      .parse()
+                      .ok()
+                      .filter(|code| (100..=599).contains(code))
+                      .ok_or_else(|| ParseLogError::BadStatus(status.to_string()))?;
+                  let latency_ms = latency.parse().map_err(|_| ParseLogError::BadLatency(latency.to_string()))?;
+                  Ok(LogEntry {
+                      timestamp: timestamp.to_string(),
+                      method: method.to_string(),
+                      path: path.to_string(),
+                      status,
+                      latency_ms,
+                  })
+              }
+          }
+        solution: |
+          use std::fmt;
+          use std::str::FromStr;
+
+          #[derive(Debug, Clone, Copy, PartialEq)]
+          enum Method {
+              Get,
+              Post,
+              Put,
+              Patch,
+              Delete,
+          }
+
+          impl FromStr for Method {
+              type Err = ParseLogError;
+
+              fn from_str(s: &str) -> Result<Self, Self::Err> {
+                  match s {
+                      "GET" => Ok(Method::Get),
+                      "POST" => Ok(Method::Post),
+                      "PUT" => Ok(Method::Put),
+                      "PATCH" => Ok(Method::Patch),
+                      "DELETE" => Ok(Method::Delete),
+                      other => Err(ParseLogError::BadMethod(other.to_string())),
+                  }
+              }
+          }
+
+          impl fmt::Display for Method {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  let name = match self {
+                      Method::Get => "GET",
+                      Method::Post => "POST",
+                      Method::Put => "PUT",
+                      Method::Patch => "PATCH",
+                      Method::Delete => "DELETE",
+                  };
+                  f.write_str(name)
+              }
+          }
+
+          #[derive(Debug, PartialEq)]
+          struct LogEntry {
+              timestamp: String,
+              method: Method,
+              path: String,
+              status: u16,
+              latency_ms: u32,
+          }
+
+          #[derive(Debug, PartialEq)]
+          enum ParseLogError {
+              WrongFieldCount(usize),
+              BadMethod(String),
+              BadStatus(String),
+              BadLatency(String),
+          }
+
+          impl fmt::Display for ParseLogError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      ParseLogError::WrongFieldCount(n) => write!(f, "expected 5 fields, found {n}"),
+                      ParseLogError::BadMethod(m) => write!(f, "unknown HTTP method: {m}"),
+                      ParseLogError::BadStatus(s) => write!(f, "bad status code: {s}"),
+                      ParseLogError::BadLatency(l) => write!(f, "bad latency: {l}"),
+                  }
+              }
+          }
+
+          impl std::error::Error for ParseLogError {}
+
+          impl FromStr for LogEntry {
+              type Err = ParseLogError;
+
+              fn from_str(line: &str) -> Result<Self, Self::Err> {
+                  let fields: Vec<&str> = line.split_whitespace().collect();
+                  let [timestamp, method, path, status, latency] = fields[..] else {
+                      return Err(ParseLogError::WrongFieldCount(fields.len()));
+                  };
+                  let method = method.parse()?;
+                  let status: u16 = status
+                      .parse()
+                      .ok()
+                      .filter(|code| (100..=599).contains(code))
+                      .ok_or_else(|| ParseLogError::BadStatus(status.to_string()))?;
+                  let latency_ms = latency.parse().map_err(|_| ParseLogError::BadLatency(latency.to_string()))?;
+                  Ok(LogEntry {
+                      timestamp: timestamp.to_string(),
+                      method,
+                      path: path.to_string(),
+                      status,
+                      latency_ms,
+                  })
+              }
+          }
+        require:
+          - pattern: 'enum\s+Method'
+            message: Add a `Method` enum.
+        forbid:
+          - pattern: 'method:\s*String'
+            message: "`LogEntry::method` should be a `Method`, not a `String`."
+        harness: |
+          #[test]
+          fn parses_methods_into_the_enum() {
+              assert_eq!("POST".parse::<Method>(), Ok(Method::Post), "\"POST\".parse()");
+              assert_eq!("DELETE".parse::<Method>(), Ok(Method::Delete), "\"DELETE\".parse()");
+          }
+
+          #[test]
+          fn rejects_other_methods() {
+              assert_eq!("get".parse::<Method>(), Err(ParseLogError::BadMethod("get".into())), "\"get\".parse()");
+              assert_eq!("GTE".parse::<Method>(), Err(ParseLogError::BadMethod("GTE".into())), "\"GTE\".parse()");
+          }
+
+          #[test]
+          fn displays_methods_in_uppercase() {
+              assert_eq!(Method::Patch.to_string(), "PATCH", "Method::Patch.to_string()");
+              assert_eq!(format!("{} {}", Method::Get, Method::Put), "GET PUT", "format of Get and Put");
+          }
+
+          #[test]
+          fn log_entries_carry_the_enum() {
+              let e: LogEntry = "2026-10-01T09:00:03Z PATCH /api/users/9 200 18".parse().unwrap();
+              assert_eq!(e.method, Method::Patch, "entry.method");
+              assert_eq!((e.timestamp.as_str(), e.path.as_str(), e.status, e.latency_ms), ("2026-10-01T09:00:03Z", "/api/users/9", 200, 18), "the other fields");
+          }
+
+          #[test]
+          fn bad_methods_still_fail_the_whole_line() {
+              assert_eq!("t FETCH /x 200 1".parse::<LogEntry>(), Err(ParseLogError::BadMethod("FETCH".into())), "a line with method FETCH");
+          }
+        hints:
+          - "`impl FromStr for Method { type Err = ParseLogError; ... }` with a `match s { \"GET\" => Ok(Method::Get), ..., other => Err(ParseLogError::BadMethod(other.to_string())) }`."
+          - "`Display` can `match self` to a `&str` and finish with `f.write_str(name)`."
+          - "In `LogEntry::from_str`, replace the `contains` check with `let method = method.parse()?;` (the `?` works because both use `ParseLogError`), and change the field type to `Method`."
+      - task: |
+          > **LOG-107: Parse a whole log file and report every bad line**
+          >
+          > The nightly job should keep going past bad lines and list them all at the end, with line numbers, so whoever owns the noisy service can fix it.
+
+          Using the parser from LOG-101 (in the seed), write `fn parse_log(text: &str) -> (Vec<LogEntry>, Vec<String>)`. Go through `text` line by line, numbering lines from 1. Skip blank lines and comment lines starting with `#` (after trimming). Every other line either becomes a `LogEntry` or produces a message `line N: ERROR` using the error's `Display`, for example `line 3: bad status code: 2x0`. Return the entries and the messages, both in file order.
+        seed: |
+          use std::fmt;
+          use std::str::FromStr;
+
+          #[derive(Debug, PartialEq)]
+          struct LogEntry {
+              timestamp: String,
+              method: String,
+              path: String,
+              status: u16,
+              latency_ms: u32,
+          }
+
+          #[derive(Debug, PartialEq)]
+          enum ParseLogError {
+              WrongFieldCount(usize),
+              BadMethod(String),
+              BadStatus(String),
+              BadLatency(String),
+          }
+
+          impl fmt::Display for ParseLogError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      ParseLogError::WrongFieldCount(n) => write!(f, "expected 5 fields, found {n}"),
+                      ParseLogError::BadMethod(m) => write!(f, "unknown HTTP method: {m}"),
+                      ParseLogError::BadStatus(s) => write!(f, "bad status code: {s}"),
+                      ParseLogError::BadLatency(l) => write!(f, "bad latency: {l}"),
+                  }
+              }
+          }
+
+          impl std::error::Error for ParseLogError {}
+
+          impl FromStr for LogEntry {
+              type Err = ParseLogError;
+
+              fn from_str(line: &str) -> Result<Self, Self::Err> {
+                  let fields: Vec<&str> = line.split_whitespace().collect();
+                  let [timestamp, method, path, status, latency] = fields[..] else {
+                      return Err(ParseLogError::WrongFieldCount(fields.len()));
+                  };
+                  if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method) {
+                      return Err(ParseLogError::BadMethod(method.to_string()));
+                  }
+                  let status: u16 = status
+                      .parse()
+                      .ok()
+                      .filter(|code| (100..=599).contains(code))
+                      .ok_or_else(|| ParseLogError::BadStatus(status.to_string()))?;
+                  let latency_ms = latency.parse().map_err(|_| ParseLogError::BadLatency(latency.to_string()))?;
+                  Ok(LogEntry {
+                      timestamp: timestamp.to_string(),
+                      method: method.to_string(),
+                      path: path.to_string(),
+                      status,
+                      latency_ms,
+                  })
+              }
+          }
+
+          fn parse_log(text: &str) -> (Vec<LogEntry>, Vec<String>) {
+              todo!()
+          }
+        solution: |
+          use std::fmt;
+          use std::str::FromStr;
+
+          #[derive(Debug, PartialEq)]
+          struct LogEntry {
+              timestamp: String,
+              method: String,
+              path: String,
+              status: u16,
+              latency_ms: u32,
+          }
+
+          #[derive(Debug, PartialEq)]
+          enum ParseLogError {
+              WrongFieldCount(usize),
+              BadMethod(String),
+              BadStatus(String),
+              BadLatency(String),
+          }
+
+          impl fmt::Display for ParseLogError {
+              fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                  match self {
+                      ParseLogError::WrongFieldCount(n) => write!(f, "expected 5 fields, found {n}"),
+                      ParseLogError::BadMethod(m) => write!(f, "unknown HTTP method: {m}"),
+                      ParseLogError::BadStatus(s) => write!(f, "bad status code: {s}"),
+                      ParseLogError::BadLatency(l) => write!(f, "bad latency: {l}"),
+                  }
+              }
+          }
+
+          impl std::error::Error for ParseLogError {}
+
+          impl FromStr for LogEntry {
+              type Err = ParseLogError;
+
+              fn from_str(line: &str) -> Result<Self, Self::Err> {
+                  let fields: Vec<&str> = line.split_whitespace().collect();
+                  let [timestamp, method, path, status, latency] = fields[..] else {
+                      return Err(ParseLogError::WrongFieldCount(fields.len()));
+                  };
+                  if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method) {
+                      return Err(ParseLogError::BadMethod(method.to_string()));
+                  }
+                  let status: u16 = status
+                      .parse()
+                      .ok()
+                      .filter(|code| (100..=599).contains(code))
+                      .ok_or_else(|| ParseLogError::BadStatus(status.to_string()))?;
+                  let latency_ms = latency.parse().map_err(|_| ParseLogError::BadLatency(latency.to_string()))?;
+                  Ok(LogEntry {
+                      timestamp: timestamp.to_string(),
+                      method: method.to_string(),
+                      path: path.to_string(),
+                      status,
+                      latency_ms,
+                  })
+              }
+          }
+
+          fn parse_log(text: &str) -> (Vec<LogEntry>, Vec<String>) {
+              let mut entries = Vec::new();
+              let mut problems = Vec::new();
+              for (i, line) in text.lines().enumerate() {
+                  let trimmed = line.trim();
+                  if trimmed.is_empty() || trimmed.starts_with('#') {
+                      continue;
+                  }
+                  match trimmed.parse::<LogEntry>() {
+                      Ok(entry) => entries.push(entry),
+                      Err(e) => problems.push(format!("line {}: {e}", i + 1)),
+                  }
+              }
+              (entries, problems)
+          }
+        harness: |
+          const LOG: &str = "# export from web-1
+          2026-10-01T09:00:01Z GET /api/users 200 40
+
+          2026-10-01T09:00:02Z GET /health 2x0 1
+          2026-10-01T09:00:03Z POST /api/orders 201 120
+          oops
+          2026-10-01T09:00:05Z GTE /api/users 200 9
+          ";
+
+          #[test]
+          fn keeps_the_good_lines_in_order() {
+              let (entries, _) = parse_log(LOG);
+              let paths: Vec<(&str, &str, &str, u16, u32)> = entries.iter().map(|e| (e.timestamp.as_str(), e.method.as_str(), e.path.as_str(), e.status, e.latency_ms)).collect();
+              assert_eq!(paths, vec![("2026-10-01T09:00:01Z", "GET", "/api/users", 200, 40), ("2026-10-01T09:00:03Z", "POST", "/api/orders", 201, 120)], "the parsed entries");
+          }
+
+          #[test]
+          fn reports_every_bad_line_with_its_number() {
+              let (_, problems) = parse_log(LOG);
+              assert_eq!(problems, vec!["line 4: bad status code: 2x0", "line 6: expected 5 fields, found 1", "line 7: unknown HTTP method: GTE"], "the problems");
+          }
+
+          #[test]
+          fn skips_comments_and_blank_lines() {
+              let (entries, problems) = parse_log("\n   # just a comment\n\n");
+              assert_eq!((entries.len(), problems.len()), (0, 0), "entries and problems for comments only");
+          }
+
+          #[test]
+          fn handles_an_empty_file() {
+              let (entries, problems) = parse_log("");
+              assert_eq!((entries.len(), problems.len()), (0, 0), "entries and problems for an empty file");
+          }
+        hints:
+          - "Loop over `text.lines().enumerate()`; the line number is `i + 1`."
+          - "Trim each line; `continue` when it's empty or `starts_with('#')`."
+          - "`match trimmed.parse::<LogEntry>()`: push the entry, or push `format!(\"line {}: {e}\", i + 1)` (the `{e}` uses your `Display`)."
+
+  - title: "LOG-102: the daily traffic report"
+    id: capstone-2
+    text: |
+      > **LOG-102: Daily traffic report**
+      >
+      > Product managers want a morning summary of yesterday's traffic: how many requests, how many failed, which endpoints are busy and slow. The log comes in on standard input. Bad lines must not crash the report; count them instead.
+
+      This is the bread and butter of backend work: read records, aggregate, print a table. The tools:
+
+      - **One struct per group** you report on, updated as you read (count, total, max), kept in a **BTreeMap** so the rows come out sorted and the report is the same on every run.
+      - **Iterator adapters** for one-off questions: `filter(...).count()`, `max_by_key`, `map(...).sum()`.
+      - **Format specifiers** for aligned columns: `{:<14}` pads on the right, `{:>5}` on the left, `{:.1}` rounds to one decimal.
+
+      ```rust run
+      use std::collections::BTreeMap;
+
+      #[derive(Default)]
+      struct RegionStats {
+          orders: u32,
+          total_cents: u64,
+          biggest_cents: u64,
+      }
+
+      fn main() {
+          let sales = [("north", 1250), ("south", 300), ("north", 4990), ("east", 2100), ("south", 700)];
+          let mut by_region: BTreeMap<&str, RegionStats> = BTreeMap::new();
+          for &(region, cents) in &sales {
+              let stats = by_region.entry(region).or_default();
+              stats.orders += 1;
+              stats.total_cents += cents;
+              stats.biggest_cents = stats.biggest_cents.max(cents);
+          }
+          println!("{:<8}{:>7}{:>10}{:>10}", "region", "orders", "average", "biggest");
+          for (region, s) in &by_region {
+              let average = s.total_cents as f64 / s.orders as f64 / 100.0;
+              println!("{:<8}{:>7}{:>10.2}{:>10.2}", region, s.orders, average, s.biggest_cents as f64 / 100.0);
+          }
+          let big = sales.iter().filter(|&&(_, cents)| cents >= 1000).count();
+          println!("{big} orders of 10.00 or more ({:.1}%)", big as f64 * 100.0 / sales.len() as f64);
+      }
+      ```
+
+      ```output
+      region   orders   average   biggest
+      east          1     21.00     21.00
+      north         2     31.20     49.90
+      south         2      5.00      7.00
+      3 orders of 10.00 or more (60.0%)
+      ```
+
+      `#[derive(Default)]` gives the struct a zeroed starting value, so `entry(...).or_default()` can create a fresh one the first time a region appears.
+
+      ### Common mistakes
+
+      - **Printing a HashMap.** The rows come out in a different order on every run, which makes reports impossible to diff and tests impossible to write.
+      - **Integer percentages.** `2 * 100 / 7` is 28, not 28.6. Convert to `f64` first.
+      - **Dividing by zero.** An empty log means 0 requests: handle it before computing averages.
+      - **Ties in `max_by_key`.** When several items share the maximum, `max_by_key` returns the **last** one. To get the first, iterate in reverse (`.rev().max_by_key(...)`) or compare explicitly.
+
+      **Your turn:** write the report. The seed has the `LogEntry` parser from LOG-101 (simplified to `String` errors). Read every line of standard input; lines that don't parse are **skipped** and counted. Print exactly:
+
+      ```
+      requests: 7
+      skipped: 1
+      errors: 2 (28.6%)
+      methods: GET 6, POST 1
+      endpoints:
+        /api/orders     3 req  avg   240 ms  max   300 ms
+        /api/users      2 req  avg    45 ms  max    50 ms
+        /health         2 req  avg     1 ms  max     1 ms
+      slowest: /api/orders 300 ms at 2026-10-01T09:00:07Z
+      ```
+
+      - `errors` counts status codes of 500 and above; the percentage is of all valid requests, with one decimal.
+      - `methods` lists each method with its count, alphabetically, separated by `, `.
+      - Endpoint rows are sorted by path and printed with `println!("  {:<14}{:>3} req  avg {:>5} ms  max {:>5} ms", path, count, avg, max)`, where `avg` is the integer average (total divided by count, rounded down).
+      - `slowest` is the request with the highest latency; on a tie, the **first** one in the log.
+      - If there are no valid requests at all, print only the `requests` and `skipped` lines and then `no data`.
+    seed: |
+      use std::collections::BTreeMap;
+      use std::io::{self, BufRead};
+      use std::str::FromStr;
+
+      struct LogEntry {
+          timestamp: String,
+          method: String,
+          path: String,
+          status: u16,
+          latency_ms: u32,
+      }
+
+      impl FromStr for LogEntry {
+          type Err = String;
+
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, latency] = fields[..] else {
+                  return Err(format!("expected 5 fields, found {}", fields.len()));
+              };
+              Ok(LogEntry {
+                  timestamp: timestamp.to_string(),
+                  method: method.to_string(),
+                  path: path.to_string(),
+                  status: status.parse().map_err(|_| format!("bad status code: {status}"))?,
+                  latency_ms: latency.parse().map_err(|_| format!("bad latency: {latency}"))?,
+              })
+          }
+      }
+
+      fn main() {
+          let mut entries: Vec<LogEntry> = Vec::new();
+          let mut skipped = 0;
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("read error");
+              match line.parse::<LogEntry>() {
+                  Ok(entry) => entries.push(entry),
+                  Err(_) => skipped += 1,
+              }
+          }
+          // TODO: print the report
+      }
+    solution: |
+      use std::collections::BTreeMap;
+      use std::io::{self, BufRead};
+      use std::str::FromStr;
+
+      struct LogEntry {
+          timestamp: String,
+          method: String,
+          path: String,
+          status: u16,
+          latency_ms: u32,
+      }
+
+      impl FromStr for LogEntry {
+          type Err = String;
+
+          fn from_str(line: &str) -> Result<Self, Self::Err> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              let [timestamp, method, path, status, latency] = fields[..] else {
+                  return Err(format!("expected 5 fields, found {}", fields.len()));
+              };
+              Ok(LogEntry {
+                  timestamp: timestamp.to_string(),
+                  method: method.to_string(),
+                  path: path.to_string(),
+                  status: status.parse().map_err(|_| format!("bad status code: {status}"))?,
+                  latency_ms: latency.parse().map_err(|_| format!("bad latency: {latency}"))?,
+              })
+          }
+      }
+
+      #[derive(Default)]
+      struct EndpointStats {
+          count: u64,
+          total_ms: u64,
+          max_ms: u32,
+      }
+
+      fn main() {
+          let mut entries: Vec<LogEntry> = Vec::new();
+          let mut skipped = 0;
+          for line in io::stdin().lock().lines() {
+              let line = line.expect("read error");
+              match line.parse::<LogEntry>() {
+                  Ok(entry) => entries.push(entry),
+                  Err(_) => skipped += 1,
+              }
+          }
+          println!("requests: {}", entries.len());
+          println!("skipped: {skipped}");
+          if entries.is_empty() {
+              println!("no data");
+              return;
+          }
+
+          let errors = entries.iter().filter(|e| e.status >= 500).count();
+          println!("errors: {errors} ({:.1}%)", errors as f64 * 100.0 / entries.len() as f64);
+
+          let mut methods: BTreeMap<&str, usize> = BTreeMap::new();
+          let mut endpoints: BTreeMap<&str, EndpointStats> = BTreeMap::new();
+          for e in &entries {
+              *methods.entry(&e.method).or_insert(0) += 1;
+              let stats = endpoints.entry(&e.path).or_default();
+              stats.count += 1;
+              stats.total_ms += e.latency_ms as u64;
+              stats.max_ms = stats.max_ms.max(e.latency_ms);
+          }
+          let method_list: Vec<String> = methods.iter().map(|(m, n)| format!("{m} {n}")).collect();
+          println!("methods: {}", method_list.join(", "));
+
+          println!("endpoints:");
+          for (path, s) in &endpoints {
+              println!("  {:<14}{:>3} req  avg {:>5} ms  max {:>5} ms", path, s.count, s.total_ms / s.count, s.max_ms);
+          }
+
+          if let Some(slowest) = entries.iter().rev().max_by_key(|e| e.latency_ms) {
+              println!("slowest: {} {} ms at {}", slowest.path, slowest.latency_ms, slowest.timestamp);
+          }
+      }
+    hints:
+      - "Print `requests` and `skipped` first, and `return` after `no data` when there are no entries."
+      - "Count errors with `entries.iter().filter(|e| e.status >= 500).count()`. For methods use a `BTreeMap<&str, usize>`; for endpoints a `BTreeMap<&str, EndpointStats>` with a `#[derive(Default)]` struct holding count, total and max."
+      - "`entries.iter().rev().max_by_key(|e| e.latency_ms)` finds the slowest request, and the `rev()` makes ties go to the first one in the log."
+    tests:
+      - stdin: "2026-10-01T09:00:01Z GET /api/users 200 40\n2026-10-01T09:00:02Z GET /health 200 1\n2026-10-01T09:00:03Z POST /api/orders 201 120\n2026-10-01T09:00:04Z GET /api/users 500 50\ngarbage line here\n2026-10-01T09:00:06Z GET /health 200 1\n2026-10-01T09:00:07Z GET /api/orders 503 300\n2026-10-01T09:00:08Z GET /api/orders 200 300\n"
+        expect: "requests: 7\nskipped: 1\nerrors: 2 (28.6%)\nmethods: GET 6, POST 1\nendpoints:\n  /api/orders     3 req  avg   240 ms  max   300 ms\n  /api/users      2 req  avg    45 ms  max    50 ms\n  /health         2 req  avg     1 ms  max     1 ms\nslowest: /api/orders 300 ms at 2026-10-01T09:00:07Z"
+      - stdin: "2026-10-02T10:00:00Z PUT /api/carts/1 200 80\n2026-10-02T10:00:01Z DELETE /api/carts/1 204 15\n2026-10-02T10:00:02Z PUT /api/carts/1 502 1200\n\n2026-10-02T10:00:03Z GET /api/carts/1 200 9\nnot a log line\n2026-10-02T10:00:04Z GET /api/carts/1 200 abc\n"
+        hidden: true
+      - stdin: "nothing useful\n\n"
+        hidden: true
+      - stdin: "2026-10-03T00:00:00Z GET /a 599 7\n"
+        hidden: true
+    more:
+      - task: |
+          > **LOG-105: Requests per hour**
+          >
+          > The capacity planning team wants a quick text histogram of traffic per hour of the day.
+
+          Write a program that reads the same log format from standard input and prints one line per hour that had traffic, in order: the hour as `HH:00`, a bar with one `#` per request, and the count:
+
+          ```
+          09:00 ### 3
+          14:00 # 1
+          ```
+
+          A line counts if it has exactly 5 fields and its timestamp has a two-digit hour at character positions 11 and 12 (`2026-10-01T09:00:03Z`), from `00` to `23`; skip everything else. Use a `BTreeMap` keyed by hour. If nothing counts, print `no traffic`.
+        seed: |
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+              }
+          }
+        solution: |
+          use std::collections::BTreeMap;
+          use std::io::{self, BufRead};
+
+          fn hour_of(line: &str) -> Option<u32> {
+              let fields: Vec<&str> = line.split_whitespace().collect();
+              if fields.len() != 5 {
+                  return None;
+              }
+              let hour: u32 = fields[0].get(11..13)?.parse().ok()?;
+              (hour < 24).then_some(hour)
+          }
+
+          fn main() {
+              let mut per_hour: BTreeMap<u32, usize> = BTreeMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+                  if let Some(hour) = hour_of(&line) {
+                      *per_hour.entry(hour).or_insert(0) += 1;
+                  }
+              }
+              if per_hour.is_empty() {
+                  println!("no traffic");
+              }
+              for (hour, count) in &per_hour {
+                  println!("{hour:02}:00 {} {count}", "#".repeat(*count));
+              }
+          }
+        require:
+          - pattern: 'BTreeMap'
+            message: Count the requests in a `BTreeMap` keyed by hour, so the hours print in order.
+        hints:
+          - "Write `fn hour_of(line: &str) -> Option<u32>` that checks for 5 fields and returns the hour."
+          - "`fields[0].get(11..13)` returns `None` instead of panicking when the timestamp is too short; then `.parse().ok()?` and check `hour < 24`."
+          - "Print with `println!(\"{hour:02}:00 {} {count}\", \"#\".repeat(*count))`."
+        tests:
+          - stdin: "2026-10-01T09:00:01Z GET /a 200 1\n2026-10-01T14:30:00Z GET /a 200 1\n2026-10-01T09:59:59Z POST /b 201 5\n2026-10-01T09:10:00Z GET /a 200 1\n"
+            expect: "09:00 ### 3\n14:00 # 1"
+          - stdin: "2026-10-01T23:00:00Z GET /a 200 1\n2026-10-01T00:00:00Z GET /a 200 1\nbroken\n2026-10-01 GET /a 200 1\n2026-10-01T25:00:00Z GET /a 200 1\n2026-10-01T00:30:00Z GET /a 200 1 extra\n2026-10-01T00:45:00Z GET /a 200 1\n"
+            hidden: true
+          - stdin: "\n"
+            hidden: true
+      - task: |
+          > **LOG-108: Page the on-call engineer on error bursts**
+          >
+          > One 5xx error is noise. Several within a minute means something is broken. We want an alert tool for the log stream.
+
+          This log uses Unix timestamps (seconds) in the first field: `1727773200 GET /api/orders 503 120`. Timestamps never go backwards. The alert threshold is the program's first **command-line argument** (for example `3`). If it's missing or not a positive number, print `usage: alerts THRESHOLD` to standard error and exit with code 2.
+
+          Keep the times of recent server errors (status 500 or above) in a `VecDeque`. For each error at time `t`, first drop errors from the front that are 60 or more seconds older than `t`, then add `t`. When the window holds `THRESHOLD` errors, print `ALERT at T: N server errors in 60s` and clear the window (so one burst gives one alert). Skip malformed lines. At the end print `alerts: K`.
+        seed: |
+          use std::collections::VecDeque;
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let threshold: usize = 3; // TODO: read it from the command line
+          }
+        solution: |
+          use std::collections::VecDeque;
+          use std::io::{self, BufRead};
+
+          fn main() {
+              let threshold = match std::env::args().nth(1).and_then(|a| a.parse::<usize>().ok()) {
+                  Some(n) if n > 0 => n,
+                  _ => {
+                      eprintln!("usage: alerts THRESHOLD");
+                      std::process::exit(2);
+                  }
+              };
+              let mut window: VecDeque<u64> = VecDeque::new();
+              let mut alerts = 0;
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+                  let fields: Vec<&str> = line.split_whitespace().collect();
+                  let [time, _, _, status, _] = fields[..] else {
+                      continue;
+                  };
+                  let (Ok(t), Ok(status)) = (time.parse::<u64>(), status.parse::<u16>()) else {
+                      continue;
+                  };
+                  if status < 500 {
+                      continue;
+                  }
+                  while window.front().is_some_and(|&old| t - old >= 60) {
+                      window.pop_front();
+                  }
+                  window.push_back(t);
+                  if window.len() >= threshold {
+                      println!("ALERT at {t}: {} server errors in 60s", window.len());
+                      alerts += 1;
+                      window.clear();
+                  }
+              }
+              println!("alerts: {alerts}");
+          }
+        require:
+          - pattern: 'VecDeque'
+            message: Keep the recent errors in a `VecDeque`.
+          - pattern: 'env::args'
+            message: Read the threshold from the command line with `std::env::args()`.
+        hints:
+          - "`std::env::args().nth(1)` is the first argument. Parse it with `.and_then(|a| a.parse::<usize>().ok())` and handle `None` or 0 with `eprintln!` and `std::process::exit(2)`."
+          - "For each line, take the time and the status (skip lines that don't have 5 fields or don't parse), and skip statuses below 500."
+          - "`while window.front().is_some_and(|&old| t - old >= 60) { window.pop_front(); }` then `push_back(t)`; at `window.len() >= threshold`, print the alert, count it and `window.clear()`."
+        tests:
+          - args: ["3"]
+            stdin: "1000 GET /a 503 10\n1010 GET /a 200 10\n1020 GET /a 500 10\n1059 POST /b 502 10\n1100 GET /a 500 10\n1200 GET /a 500 10\n"
+            expect: "ALERT at 1059: 3 server errors in 60s\nalerts: 1"
+          - args: ["2"]
+            stdin: "1000 GET /a 503 10\n1060 GET /a 503 10\nbad line\n1061 GET /a 500 10\n1070 GET /a 500 10\n1071 GET /a 500 10\n1200 GET /a 404 10\n"
+            hidden: true
+          - args: ["5"]
+            stdin: "1 GET /a 500 1\n2 GET /a 500 1\n"
+            hidden: true
+          - args: []
+            stdin: "1 GET /a 500 1\n"
+            exit: 2
+            allowEmpty: true
+            hidden: true
+
+  - title: "SHOP-210: orders with validation"
+    id: capstone-3
+    text: |
+      > **SHOP-210: Validate orders before taking stock**
+      >
+      > Last week an order for 3 mugs and 1 unknown product reduced the mug stock and *then* failed. Support had to fix the numbers by hand. New rule: an order either succeeds completely or changes nothing, and every failure comes with a clear reason the storefront can show.
+
+      Two ideas carry this ticket:
+
+      - **Validate everything first, then act.** Check every line of the order against the inventory without changing anything. Only when all checks pass, take the stock and build the receipt. Then a failure can't leave things half-done. (Databases call this a **transaction**; in memory, ordering your code this way is enough.)
+      - **A library-style error type.** The order module will be used by the storefront, the admin tool and the batch importer, each showing errors differently. So it returns a precise enum, made with **thiserror** (module 39): `#[derive(Error)]` writes the `Display` and `std::error::Error` impls from the `#[error("...")]` attributes.
+
+      ```rust run
+      use thiserror::Error;
+
+      #[derive(Debug, Error, PartialEq)]
+      enum TransferError {
+          #[error("amount must be positive")]
+          NotPositive,
+          #[error("account {0} not found")]
+          UnknownAccount(String),
+          #[error("insufficient funds: balance {balance}, needed {needed}")]
+          Insufficient { balance: u64, needed: u64 },
+      }
+
+      fn check(balance: u64, account: &str, amount: u64) -> Result<u64, TransferError> {
+          if amount == 0 {
+              return Err(TransferError::NotPositive);
+          }
+          if account != "ACC-1" {
+              return Err(TransferError::UnknownAccount(account.to_string()));
+          }
+          if amount > balance {
+              return Err(TransferError::Insufficient { balance, needed: amount });
+          }
+          Ok(balance - amount)
+      }
+
+      fn main() {
+          println!("{:?}", check(500, "ACC-1", 200));
+          for (account, amount) in [("ACC-1", 0), ("ACC-9", 10), ("ACC-1", 900)] {
+              if let Err(e) = check(500, account, amount) {
+                  println!("{e}");
+              }
+          }
+      }
+      ```
+
+      ```output
+      Ok(300)
+      amount must be positive
+      account ACC-9 not found
+      insufficient funds: balance 500, needed 900
+      ```
+
+      `{0}` in an `#[error]` message is the first field of a tuple variant, and `{balance}` a named field of a struct variant.
+
+      ### Common mistakes
+
+      - **Mutating while validating.** Any `stock -= ...` before the last check is a bug waiting for the second line of an order to fail.
+      - **Checking lines one at a time when the same product appears twice.** `[("MUG", 2), ("MUG", 2)]` with 3 mugs in stock passes two separate checks but needs 4. Add up per product first.
+      - **`unwrap()` on lookups you "know" succeed.** After validation it's true, but say so: `.expect("validated above")` documents the reasoning and gives a clear message if someone later breaks it.
+
+      **Your turn:** implement `Inventory::place_order(&mut self, order: &[(&str, u32)]) -> Result<Receipt, OrderError>`. Each order line is `(sku, quantity)`. In this order:
+
+      1. An empty order is `OrderError::Empty`.
+      2. Going through the lines in order, the first line with quantity 0 gives `ZeroQuantity(sku)`, and the first unknown SKU gives `UnknownSku(sku)` (whichever line comes first).
+      3. Add up the quantities per SKU. The first SKU (in order of first appearance) whose total exceeds its stock gives `OutOfStock { sku, requested: total, available: stock }`.
+      4. Only then reduce the stock and return a `Receipt` with one `ReceiptLine` per order line (product name, quantity, quantity times price) in order, and the total.
+
+      On any error, nothing in the inventory changes.
+    seed: |
+      use std::collections::HashMap;
+      use thiserror::Error;
+
+      #[derive(Debug, Error, PartialEq)]
+      enum OrderError {
+          #[error("order has no lines")]
+          Empty,
+          #[error("quantity for {0} must be at least 1")]
+          ZeroQuantity(String),
+          #[error("unknown product {0}")]
+          UnknownSku(String),
+          #[error("not enough {sku}: requested {requested}, in stock {available}")]
+          OutOfStock { sku: String, requested: u32, available: u32 },
+      }
+
+      struct Product {
+          name: String,
+          price_cents: u64,
+          stock: u32,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct ReceiptLine {
+          name: String,
+          quantity: u32,
+          line_total_cents: u64,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Receipt {
+          lines: Vec<ReceiptLine>,
+          total_cents: u64,
+      }
+
+      struct Inventory {
+          products: HashMap<String, Product>,
+      }
+
+      impl Inventory {
+          fn new() -> Self {
+              Inventory { products: HashMap::new() }
+          }
+
+          fn add_product(&mut self, sku: &str, name: &str, price_cents: u64, stock: u32) {
+              self.products.insert(sku.to_string(), Product { name: name.to_string(), price_cents, stock });
+          }
+
+          fn stock(&self, sku: &str) -> Option<u32> {
+              self.products.get(sku).map(|p| p.stock)
+          }
+
+          fn place_order(&mut self, order: &[(&str, u32)]) -> Result<Receipt, OrderError> {
+              todo!()
+          }
+      }
+    solution: |
+      use std::collections::HashMap;
+      use thiserror::Error;
+
+      #[derive(Debug, Error, PartialEq)]
+      enum OrderError {
+          #[error("order has no lines")]
+          Empty,
+          #[error("quantity for {0} must be at least 1")]
+          ZeroQuantity(String),
+          #[error("unknown product {0}")]
+          UnknownSku(String),
+          #[error("not enough {sku}: requested {requested}, in stock {available}")]
+          OutOfStock { sku: String, requested: u32, available: u32 },
+      }
+
+      struct Product {
+          name: String,
+          price_cents: u64,
+          stock: u32,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct ReceiptLine {
+          name: String,
+          quantity: u32,
+          line_total_cents: u64,
+      }
+
+      #[derive(Debug, PartialEq)]
+      struct Receipt {
+          lines: Vec<ReceiptLine>,
+          total_cents: u64,
+      }
+
+      struct Inventory {
+          products: HashMap<String, Product>,
+      }
+
+      impl Inventory {
+          fn new() -> Self {
+              Inventory { products: HashMap::new() }
+          }
+
+          fn add_product(&mut self, sku: &str, name: &str, price_cents: u64, stock: u32) {
+              self.products.insert(sku.to_string(), Product { name: name.to_string(), price_cents, stock });
+          }
+
+          fn stock(&self, sku: &str) -> Option<u32> {
+              self.products.get(sku).map(|p| p.stock)
+          }
+
+          fn place_order(&mut self, order: &[(&str, u32)]) -> Result<Receipt, OrderError> {
+              if order.is_empty() {
+                  return Err(OrderError::Empty);
+              }
+              // 1. Validate every line without changing anything.
+              let mut wanted: Vec<(&str, u32)> = Vec::new(); // per SKU, in order of first appearance
+              for &(sku, quantity) in order {
+                  if quantity == 0 {
+                      return Err(OrderError::ZeroQuantity(sku.to_string()));
+                  }
+                  if !self.products.contains_key(sku) {
+                      return Err(OrderError::UnknownSku(sku.to_string()));
+                  }
+                  match wanted.iter_mut().find(|(s, _)| *s == sku) {
+                      Some((_, total)) => *total += quantity,
+                      None => wanted.push((sku, quantity)),
+                  }
+              }
+              for &(sku, requested) in &wanted {
+                  let available = self.products[sku].stock;
+                  if requested > available {
+                      return Err(OrderError::OutOfStock { sku: sku.to_string(), requested, available });
+                  }
+              }
+              // 2. Everything is valid: take the stock and write the receipt.
+              let mut lines = Vec::with_capacity(order.len());
+              let mut total_cents = 0;
+              for &(sku, quantity) in order {
+                  let product = self.products.get_mut(sku).expect("validated above");
+                  product.stock -= quantity;
+                  let line_total_cents = product.price_cents * quantity as u64;
+                  total_cents += line_total_cents;
+                  lines.push(ReceiptLine { name: product.name.clone(), quantity, line_total_cents });
+              }
+              Ok(Receipt { lines, total_cents })
+          }
+      }
+    hints:
+      - "Return `Err(OrderError::Empty)` first. Then loop over the lines checking `quantity == 0` and `self.products.contains_key(sku)`, and add each quantity to a per-SKU total (a small `Vec<(&str, u32)>` keeps first-appearance order)."
+      - "Loop over the totals: if one is bigger than `self.products[sku].stock`, return `OutOfStock { sku: sku.to_string(), requested, available }`. Nothing has been changed yet."
+      - "Only now loop over the order again with `self.products.get_mut(sku)`: subtract the quantity, compute `price_cents * quantity as u64`, and push a `ReceiptLine`."
+    harness: |
+      fn shop() -> Inventory {
+          let mut inv = Inventory::new();
+          inv.add_product("MUG", "Crab mug", 1200, 5);
+          inv.add_product("TEE", "Ferris tee", 2500, 2);
+          inv.add_product("PIN", "Gear pin", 300, 0);
+          inv
+      }
+
+      #[test]
+      fn places_a_valid_order() {
+          let mut inv = shop();
+          let receipt = inv.place_order(&[("MUG", 2), ("TEE", 1)]).unwrap();
+          let lines: Vec<(&str, u32, u64)> = receipt.lines.iter().map(|l| (l.name.as_str(), l.quantity, l.line_total_cents)).collect();
+          assert_eq!(lines, vec![("Crab mug", 2, 2400), ("Ferris tee", 1, 2500)], "receipt lines (name, quantity, total)");
+          assert_eq!(receipt.total_cents, 4900, "receipt total");
+          assert_eq!((inv.stock("MUG"), inv.stock("TEE")), (Some(3), Some(1)), "stock after the order");
+      }
+
+      #[test]
+      fn rejects_an_empty_order() {
+          assert_eq!(shop().place_order(&[]), Err(OrderError::Empty), "place_order([])");
+      }
+
+      #[test]
+      fn rejects_unknown_products() {
+          let mut inv = shop();
+          assert_eq!(inv.place_order(&[("MUG", 1), ("HAT", 1)]), Err(OrderError::UnknownSku("HAT".into())), "order with HAT");
+          assert_eq!(inv.stock("MUG"), Some(5), "MUG stock after the failed order");
+      }
+
+      #[test]
+      fn rejects_zero_quantities_in_line_order() {
+          let mut inv = shop();
+          assert_eq!(inv.place_order(&[("TEE", 0), ("HAT", 1)]), Err(OrderError::ZeroQuantity("TEE".into())), "TEE x0 then HAT");
+          assert_eq!(inv.place_order(&[("HAT", 1), ("TEE", 0)]), Err(OrderError::UnknownSku("HAT".into())), "HAT then TEE x0");
+      }
+
+      #[test]
+      fn rejects_orders_bigger_than_the_stock() {
+          let mut inv = shop();
+          let err = inv.place_order(&[("MUG", 1), ("TEE", 3)]).unwrap_err();
+          assert_eq!(err, OrderError::OutOfStock { sku: "TEE".into(), requested: 3, available: 2 }, "TEE x3");
+          assert_eq!(err.to_string(), "not enough TEE: requested 3, in stock 2", "the message");
+          assert_eq!(inv.stock("MUG"), Some(5), "MUG stock is unchanged");
+      }
+
+      #[test]
+      fn adds_up_repeated_lines_for_the_same_product() {
+          let mut inv = shop();
+          assert_eq!(inv.place_order(&[("MUG", 3), ("TEE", 1), ("MUG", 3)]), Err(OrderError::OutOfStock { sku: "MUG".into(), requested: 6, available: 5 }), "MUG x3 + MUG x3");
+          assert_eq!((inv.stock("MUG"), inv.stock("TEE")), (Some(5), Some(2)), "stock is unchanged");
+      }
+
+      #[test]
+      fn out_of_stock_products_cannot_be_ordered() {
+          let mut inv = shop();
+          assert_eq!(inv.place_order(&[("PIN", 1)]), Err(OrderError::OutOfStock { sku: "PIN".into(), requested: 1, available: 0 }), "PIN x1");
+      }
+
+      #[test]
+      fn orders_can_empty_the_stock() {
+          let mut inv = shop();
+          assert_eq!(inv.place_order(&[("TEE", 1), ("TEE", 1)]).map(|r| r.total_cents), Ok(5000), "TEE x1 twice");
+          assert_eq!(inv.stock("TEE"), Some(0), "TEE stock");
+          assert_eq!(inv.place_order(&[("TEE", 1)]).map(|r| r.total_cents), Err(OrderError::OutOfStock { sku: "TEE".into(), requested: 1, available: 0 }), "TEE x1 again");
+      }
+    more:
+      - task: |
+          > **SHOP-214: Low stock report**
+          >
+          > Purchasing wants a daily list of products that are running low, the emptiest first.
+
+          Add `fn low_stock(&self, threshold: u32) -> Vec<String>` to `Inventory`: one line per product whose stock is **below** `threshold`, formatted as `SKU (Name): N left`, sorted by stock (lowest first) and then by SKU. The inventory is a `HashMap`, so sorting is what makes the report deterministic.
+        seed: |
+          use std::collections::HashMap;
+
+          struct Product {
+              name: String,
+              price_cents: u64,
+              stock: u32,
+          }
+
+          struct Inventory {
+              products: HashMap<String, Product>,
+          }
+
+          impl Inventory {
+              fn new() -> Self {
+                  Inventory { products: HashMap::new() }
+              }
+
+              fn add_product(&mut self, sku: &str, name: &str, price_cents: u64, stock: u32) {
+                  self.products.insert(sku.to_string(), Product { name: name.to_string(), price_cents, stock });
+              }
+
+              fn value_of_stock_cents(&self) -> u64 {
+                  self.products.values().map(|p| p.price_cents * p.stock as u64).sum()
+              }
+
+              fn low_stock(&self, threshold: u32) -> Vec<String> {
+                  todo!()
+              }
+          }
+        solution: |
+          use std::collections::HashMap;
+
+          struct Product {
+              name: String,
+              price_cents: u64,
+              stock: u32,
+          }
+
+          struct Inventory {
+              products: HashMap<String, Product>,
+          }
+
+          impl Inventory {
+              fn new() -> Self {
+                  Inventory { products: HashMap::new() }
+              }
+
+              fn add_product(&mut self, sku: &str, name: &str, price_cents: u64, stock: u32) {
+                  self.products.insert(sku.to_string(), Product { name: name.to_string(), price_cents, stock });
+              }
+
+              fn value_of_stock_cents(&self) -> u64 {
+                  self.products.values().map(|p| p.price_cents * p.stock as u64).sum()
+              }
+
+              fn low_stock(&self, threshold: u32) -> Vec<String> {
+                  let mut low: Vec<(&String, &Product)> = self.products.iter().filter(|(_, p)| p.stock < threshold).collect();
+                  low.sort_by(|a, b| a.1.stock.cmp(&b.1.stock).then(a.0.cmp(b.0)));
+                  low.iter().map(|(sku, p)| format!("{sku} ({}): {} left", p.name, p.stock)).collect()
+              }
+          }
+        harness: |
+          fn shop() -> Inventory {
+              let mut inv = Inventory::new();
+              inv.add_product("MUG", "Crab mug", 1200, 3);
+              inv.add_product("TEE", "Ferris tee", 2500, 12);
+              inv.add_product("PIN", "Gear pin", 300, 0);
+              inv.add_product("CAP", "Rust cap", 1800, 3);
+              inv
+          }
+
+          #[test]
+          fn lists_low_products_emptiest_first() {
+              assert_eq!(shop().low_stock(5), vec!["PIN (Gear pin): 0 left", "CAP (Rust cap): 3 left", "MUG (Crab mug): 3 left"], "low_stock(5)");
+          }
+
+          #[test]
+          fn the_threshold_is_exclusive() {
+              assert_eq!(shop().low_stock(3), vec!["PIN (Gear pin): 0 left"], "low_stock(3)");
+          }
+
+          #[test]
+          fn nothing_low_gives_an_empty_report() {
+              assert_eq!(shop().low_stock(0), Vec::<String>::new(), "low_stock(0)");
+              assert_eq!(Inventory::new().low_stock(10), Vec::<String>::new(), "low_stock on an empty inventory");
+          }
+
+          #[test]
+          fn the_stock_value_still_works() {
+              assert_eq!(shop().value_of_stock_cents(), 1200 * 3 + 2500 * 12 + 1800 * 3, "value_of_stock_cents()");
+          }
+        hints:
+          - "Collect the matching products: `self.products.iter().filter(|(_, p)| p.stock < threshold).collect::<Vec<_>>()` gives `(&String, &Product)` pairs."
+          - "Sort with `sort_by(|a, b| a.1.stock.cmp(&b.1.stock).then(a.0.cmp(b.0)))`."
+          - "Map each pair to `format!(\"{sku} ({}): {} left\", p.name, p.stock)` and collect into a `Vec<String>`."
+      - task: |
+          > **SHOP-220: Discounts at checkout**
+          >
+          > Marketing keeps inventing new kinds of discounts. Checkout shouldn't change every time: make discounts pluggable.
+
+          The seed defines a `Discount` trait with `label()` and `amount_off(subtotal_cents, items)`. Implement it for three types:
+
+          - `PercentOff { percent }`: `subtotal * percent / 100` (rounded down); label `10% off`
+          - `BulkDeal { min_items, off_cents }`: `off_cents` when `items >= min_items`, otherwise 0; label `bulk deal (5+ items)`
+          - `Coupon { code, off_cents }`: always `off_cents`; label `coupon CRAB5`
+
+          Then write `fn checkout(subtotal_cents: u64, items: u32, discounts: &[Box<dyn Discount>]) -> (u64, Vec<String>)`. Every discount is computed from the **original** subtotal (they don't stack on each other), the total discount can't make the price negative, and the returned labels are those of the discounts that took something off (amount above 0), in order.
+        seed: |
+          trait Discount {
+              fn label(&self) -> String;
+              fn amount_off(&self, subtotal_cents: u64, items: u32) -> u64;
+          }
+
+          struct PercentOff {
+              percent: u64,
+          }
+
+          struct BulkDeal {
+              min_items: u32,
+              off_cents: u64,
+          }
+
+          struct Coupon {
+              code: String,
+              off_cents: u64,
+          }
+
+          fn checkout(subtotal_cents: u64, items: u32, discounts: &[Box<dyn Discount>]) -> (u64, Vec<String>) {
+              todo!()
+          }
+        solution: |
+          trait Discount {
+              fn label(&self) -> String;
+              fn amount_off(&self, subtotal_cents: u64, items: u32) -> u64;
+          }
+
+          struct PercentOff {
+              percent: u64,
+          }
+
+          struct BulkDeal {
+              min_items: u32,
+              off_cents: u64,
+          }
+
+          struct Coupon {
+              code: String,
+              off_cents: u64,
+          }
+
+          impl Discount for PercentOff {
+              fn label(&self) -> String {
+                  format!("{}% off", self.percent)
+              }
+
+              fn amount_off(&self, subtotal_cents: u64, _items: u32) -> u64 {
+                  subtotal_cents * self.percent / 100
+              }
+          }
+
+          impl Discount for BulkDeal {
+              fn label(&self) -> String {
+                  format!("bulk deal ({}+ items)", self.min_items)
+              }
+
+              fn amount_off(&self, _subtotal_cents: u64, items: u32) -> u64 {
+                  if items >= self.min_items { self.off_cents } else { 0 }
+              }
+          }
+
+          impl Discount for Coupon {
+              fn label(&self) -> String {
+                  format!("coupon {}", self.code)
+              }
+
+              fn amount_off(&self, _subtotal_cents: u64, _items: u32) -> u64 {
+                  self.off_cents
+              }
+          }
+
+          fn checkout(subtotal_cents: u64, items: u32, discounts: &[Box<dyn Discount>]) -> (u64, Vec<String>) {
+              let mut total_off = 0;
+              let mut applied = Vec::new();
+              for d in discounts {
+                  let off = d.amount_off(subtotal_cents, items);
+                  if off > 0 {
+                      total_off += off;
+                      applied.push(d.label());
+                  }
+              }
+              (subtotal_cents.saturating_sub(total_off), applied)
+          }
+        harness: |
+          fn deals() -> Vec<Box<dyn Discount>> {
+              vec![
+                  Box::new(PercentOff { percent: 10 }),
+                  Box::new(BulkDeal { min_items: 5, off_cents: 500 }),
+                  Box::new(Coupon { code: "CRAB5".to_string(), off_cents: 250 }),
+              ]
+          }
+
+          #[test]
+          fn labels_describe_each_discount() {
+              let labels: Vec<String> = deals().iter().map(|d| d.label()).collect();
+              assert_eq!(labels, vec!["10% off", "bulk deal (5+ items)", "coupon CRAB5"], "labels");
+          }
+
+          #[test]
+          fn applies_every_discount_to_the_original_subtotal() {
+              assert_eq!(checkout(10_000, 6, &deals()), (8_250, vec!["10% off".to_string(), "bulk deal (5+ items)".to_string(), "coupon CRAB5".to_string()]), "checkout(10000, 6 items)");
+          }
+
+          #[test]
+          fn skips_discounts_that_do_not_apply() {
+              assert_eq!(checkout(10_000, 2, &deals()), (8_750, vec!["10% off".to_string(), "coupon CRAB5".to_string()]), "checkout(10000, 2 items)");
+          }
+
+          #[test]
+          fn rounds_percentages_down() {
+              let only: Vec<Box<dyn Discount>> = vec![Box::new(PercentOff { percent: 15 })];
+              assert_eq!(checkout(999, 1, &only), (850, vec!["15% off".to_string()]), "15% off 9.99");
+          }
+
+          #[test]
+          fn never_goes_below_zero() {
+              assert_eq!(checkout(300, 9, &deals()).0, 0, "total for a 3.00 basket with 9 items");
+          }
+
+          #[test]
+          fn no_discounts_means_full_price() {
+              assert_eq!(checkout(4_200, 3, &[]), (4_200, Vec::<String>::new()), "checkout with no discounts");
+          }
+        hints:
+          - "Write one `impl Discount for ...` block per type; `label` uses `format!`, and parameters you don't need can start with `_`."
+          - "In `checkout`, loop over the discounts, call `amount_off(subtotal_cents, items)` on each, and keep the ones above 0 (sum the amounts, push the labels)."
+          - "`subtotal_cents.saturating_sub(total_off)` stops at 0 instead of underflowing."
+
+  - title: "OPS-330: validate the deploy config"
+    id: capstone-4
+    text: |
+      > **OPS-330: Validate deploy configs before they reach production**
+      >
+      > A typo in a deploy config (`"replica": 3` instead of `"replicas"`) silently fell back to the default and took checkout down to one instance. Build a validator for CI: it reads the JSON config and either approves it or lists **every** problem at once, so people don't fix one error per CI run.
+
+      Two kinds of problems, two exit codes:
+
+      - **The JSON doesn't match the schema** (syntax error, missing field, wrong type, unknown field): serde finds these while deserializing. `#[serde(deny_unknown_fields)]` turns the `"replica"` typo into an error instead of silently ignoring it. Exit code 2.
+      - **The values break business rules** (too many replicas, an unknown region): your code checks these after deserializing, collecting every problem into a `Vec<String>` instead of stopping at the first. Exit code 1.
+
+      ```rust run
+      use serde::Deserialize;
+
+      #[derive(Debug, Deserialize)]
+      #[serde(deny_unknown_fields)]
+      struct Job {
+          name: String,
+          #[serde(default)]
+          retries: u32,
+          schedule: Option<String>,
+      }
+
+      fn problems(job: &Job) -> Vec<String> {
+          let mut found = Vec::new();
+          if job.name.is_empty() {
+              found.push("name: must not be empty".to_string());
+          }
+          if job.retries > 5 {
+              found.push(format!("retries: at most 5, got {}", job.retries));
+          }
+          if job.schedule.as_deref().is_some_and(|s| !s.starts_with("cron:")) {
+              found.push("schedule: must start with cron:".to_string());
+          }
+          found
+      }
+
+      fn main() {
+          let inputs = [
+              r#"{"name": "backup", "schedule": "cron:0 3 * * *"}"#,
+              r#"{"name": "", "retries": 9, "schedule": "daily"}"#,
+              r#"{"name": "sync", "retry": 2}"#,
+              r#"{"name": "sync", "retries": -1}"#,
+          ];
+          for json in inputs {
+              match serde_json::from_str::<Job>(json) {
+                  Err(e) => println!("schema error: {e}"),
+                  Ok(job) => {
+                      let found = problems(&job);
+                      if found.is_empty() {
+                          println!("ok: {job:?}");
+                      } else {
+                          println!("{} problems: {}", found.len(), found.join("; "));
+                      }
+                  }
+              }
+          }
+      }
+      ```
+
+      ```output
+      ok: Job { name: "backup", retries: 0, schedule: Some("cron:0 3 * * *") }
+      3 problems: name: must not be empty; retries: at most 5, got 9; schedule: must start with cron:
+      schema error: unknown field `retry`, expected one of `name`, `retries`, `schedule` at line 1 column 24
+      schema error: invalid value: integer `-1`, expected u32 at line 1 column 30
+      ```
+
+      - `#[serde(default)]` fills in `0` when `retries` is missing; an `Option` field is `None` when missing.
+      - `r#"..."#` is a **raw string**: no escaping needed for the quotes inside.
+      - serde's error messages include the line and column, which is exactly what someone fixing a config needs.
+
+      ### Common mistakes
+
+      - **Stopping at the first problem.** Returning `Err` from the first failed check makes people fix configs one CI run at a time. Validation collects; parsing fails fast.
+      - **Forgetting `deny_unknown_fields`.** Without it, serde ignores keys it doesn't know, so typos pass silently.
+      - **Validating with types you could have used instead.** A port that can't be above 65535 is just a `u16`: serde rejects 70000 for you.
+      - **Printing a HashMap of env vars.** Use a `BTreeMap` so problems come out in a stable order.
+
+      **Your turn:** the seed reads the config from standard input and deserializes it. Write `fn validate(config: &Config) -> Vec<String>` and the output. Check these rules, in this order, adding one message per problem:
+
+      1. `service` must start with a lowercase letter and contain only `a-z`, `0-9` and `-`: `service: must start with a letter and use only a-z, 0-9 and -`
+      2. `replicas` from 1 to 20: `replicas: must be between 1 and 20, got N`
+      3. `port` at least 1024: `port: must be 1024 or higher, got N`
+      4. `regions`: if empty, `regions: at least one region is required`; for each region not in `eu-west`, `eu-central`, `us-east`, `us-west` (in list order), `regions: unknown region R`; for each region listed again, `regions: R is listed twice`
+      5. for each `env` key (in sorted order) that isn't `UPPER_SNAKE_CASE` (only `A-Z`, `0-9` and `_`, starting with a letter): `env: KEY must be UPPER_SNAKE_CASE`
+      6. if there is a `health_check`: its path must start with `/` (`health_check.path: must start with /`), and `interval_secs` from 1 to 300 (`health_check.interval_secs: must be between 1 and 300, got N`)
+
+      If there are no problems, print `config OK: SERVICE, N replicas in R1, R2`. Otherwise print `config INVALID (N problems):` followed by each problem on its own line as `- PROBLEM`, and exit with code 1. (The seed already handles schema errors with exit code 2.)
+    seed: |
+      use serde::Deserialize;
+      use std::collections::BTreeMap;
+      use std::io::{self, Read};
+
+      #[derive(Deserialize)]
+      #[serde(deny_unknown_fields)]
+      struct Config {
+          service: String,
+          replicas: u32,
+          port: u16,
+          #[serde(default)]
+          regions: Vec<String>,
+          #[serde(default)]
+          env: BTreeMap<String, String>,
+          health_check: Option<HealthCheck>,
+      }
+
+      #[derive(Deserialize)]
+      #[serde(deny_unknown_fields)]
+      struct HealthCheck {
+          path: String,
+          interval_secs: u32,
+      }
+
+      const REGIONS: [&str; 4] = ["eu-west", "eu-central", "us-east", "us-west"];
+
+      fn validate(config: &Config) -> Vec<String> {
+          todo!()
+      }
+
+      fn main() {
+          let mut input = String::new();
+          io::stdin().read_to_string(&mut input).expect("read error");
+          let config: Config = match serde_json::from_str(&input) {
+              Ok(c) => c,
+              Err(e) => {
+                  println!("invalid config: {e}");
+                  std::process::exit(2);
+              }
+          };
+          // TODO: validate and print the result
+      }
+    solution: |
+      use serde::Deserialize;
+      use std::collections::BTreeMap;
+      use std::io::{self, Read};
+
+      #[derive(Deserialize)]
+      #[serde(deny_unknown_fields)]
+      struct Config {
+          service: String,
+          replicas: u32,
+          port: u16,
+          #[serde(default)]
+          regions: Vec<String>,
+          #[serde(default)]
+          env: BTreeMap<String, String>,
+          health_check: Option<HealthCheck>,
+      }
+
+      #[derive(Deserialize)]
+      #[serde(deny_unknown_fields)]
+      struct HealthCheck {
+          path: String,
+          interval_secs: u32,
+      }
+
+      const REGIONS: [&str; 4] = ["eu-west", "eu-central", "us-east", "us-west"];
+
+      fn is_service_name(name: &str) -> bool {
+          name.starts_with(|c: char| c.is_ascii_lowercase())
+              && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+      }
+
+      fn is_upper_snake(key: &str) -> bool {
+          key.starts_with(|c: char| c.is_ascii_uppercase())
+              && key.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+      }
+
+      fn validate(config: &Config) -> Vec<String> {
+          let mut problems = Vec::new();
+          if !is_service_name(&config.service) {
+              problems.push("service: must start with a letter and use only a-z, 0-9 and -".to_string());
+          }
+          if !(1..=20).contains(&config.replicas) {
+              problems.push(format!("replicas: must be between 1 and 20, got {}", config.replicas));
+          }
+          if config.port < 1024 {
+              problems.push(format!("port: must be 1024 or higher, got {}", config.port));
+          }
+          if config.regions.is_empty() {
+              problems.push("regions: at least one region is required".to_string());
+          }
+          for region in &config.regions {
+              if !REGIONS.contains(&region.as_str()) {
+                  problems.push(format!("regions: unknown region {region}"));
+              }
+          }
+          for (i, region) in config.regions.iter().enumerate() {
+              if config.regions[..i].contains(region) {
+                  problems.push(format!("regions: {region} is listed twice"));
+              }
+          }
+          for key in config.env.keys() {
+              if !is_upper_snake(key) {
+                  problems.push(format!("env: {key} must be UPPER_SNAKE_CASE"));
+              }
+          }
+          if let Some(check) = &config.health_check {
+              if !check.path.starts_with('/') {
+                  problems.push("health_check.path: must start with /".to_string());
+              }
+              if !(1..=300).contains(&check.interval_secs) {
+                  problems.push(format!("health_check.interval_secs: must be between 1 and 300, got {}", check.interval_secs));
+              }
+          }
+          problems
+      }
+
+      fn main() {
+          let mut input = String::new();
+          io::stdin().read_to_string(&mut input).expect("read error");
+          let config: Config = match serde_json::from_str(&input) {
+              Ok(c) => c,
+              Err(e) => {
+                  println!("invalid config: {e}");
+                  std::process::exit(2);
+              }
+          };
+          let problems = validate(&config);
+          if problems.is_empty() {
+              println!("config OK: {}, {} replicas in {}", config.service, config.replicas, config.regions.join(", "));
+          } else {
+              println!("config INVALID ({} problems):", problems.len());
+              for p in &problems {
+                  println!("- {p}");
+              }
+              std::process::exit(1);
+          }
+      }
+    hints:
+      - "Start `validate` with `let mut problems = Vec::new();` and add one `if` per rule, pushing `format!(...)` messages in the order of the list."
+      - "Helpers keep it readable: `fn is_upper_snake(key: &str) -> bool` with `key.starts_with(|c: char| c.is_ascii_uppercase()) && key.chars().all(...)`. For duplicates, a region at index `i` is a repeat if `config.regions[..i].contains(region)`."
+      - "In `main`, print the OK line when the Vec is empty; otherwise print the header and each `- {p}`, then `std::process::exit(1)`."
+    tests:
+      - stdin: "{\n  \"service\": \"checkout\",\n  \"replicas\": 3,\n  \"port\": 8080,\n  \"regions\": [\"eu-west\", \"us-east\"],\n  \"env\": {\"LOG_LEVEL\": \"info\"},\n  \"health_check\": {\"path\": \"/health\", \"interval_secs\": 10}\n}\n"
+        expect: "config OK: checkout, 3 replicas in eu-west, us-east"
+      - stdin: "{\n  \"service\": \"Checkout_v2\",\n  \"replicas\": 0,\n  \"port\": 80,\n  \"regions\": [\"eu-west\", \"ap-south\", \"eu-west\"]\n}\n"
+        exit: 1
+        expect: "config INVALID (5 problems):\n- service: must start with a letter and use only a-z, 0-9 and -\n- replicas: must be between 1 and 20, got 0\n- port: must be 1024 or higher, got 80\n- regions: unknown region ap-south\n- regions: eu-west is listed twice"
+      - stdin: "{\n  \"service\": \"search\",\n  \"replica\": 3,\n  \"port\": 8080\n}\n"
+        exit: 2
+        hidden: true
+      - stdin: "{ \"service\": \"search\", \"replicas\": 2, \"port\": 8080, }"
+        exit: 2
+        hidden: true
+      - stdin: "{\"service\": \"search\", \"replicas\": 25, \"port\": 9000, \"env\": {\"db_url\": \"x\", \"API_KEY\": \"y\", \"9LIVES\": \"z\"}, \"health_check\": {\"path\": \"health\", \"interval_secs\": 0}}"
+        exit: 1
+        hidden: true
+      - stdin: "{\"service\": \"web-2\", \"replicas\": 20, \"port\": 1024, \"regions\": [\"us-west\"]}"
+        hidden: true
+      - stdin: "{\"service\": \"web\", \"replicas\": 2, \"port\": 70000, \"regions\": [\"us-west\"]}"
+        exit: 2
+        hidden: true
+    more:
+      - task: |
+          > **OPS-334: Print the effective config**
+          >
+          > Half our configs leave fields out and rely on defaults nobody remembers. The deploy log should show the config as it will really be used.
+
+          Read a config from standard input where everything except `service` is optional, fill in the defaults, and print the result with `serde_json::to_string_pretty`. Defaults: `replicas` 2, `port` 8080, `regions` `["eu-west"]`, `env` empty, `health_check` `{"path": "/health", "interval_secs": 30}` (and inside a given `health_check`, a missing `path` or `interval_secs` gets its default too). Unknown fields are still errors. On a schema error print `invalid config: ERROR` and exit with code 2.
+
+          Use `#[serde(default = "function_name")]` for fields whose default isn't the type's `Default`, implement `Default` for `HealthCheck`, and put `#[serde(default)]` on the `HealthCheck` struct itself so its fields fall back individually. Derive `Serialize` too; fields print in declaration order and `BTreeMap` keys in sorted order.
+        seed: |
+          use serde::{Deserialize, Serialize};
+          use std::collections::BTreeMap;
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+          }
+        solution: |
+          use serde::{Deserialize, Serialize};
+          use std::collections::BTreeMap;
+          use std::io::{self, Read};
+
+          #[derive(Deserialize, Serialize)]
+          #[serde(deny_unknown_fields)]
+          struct Config {
+              service: String,
+              #[serde(default = "default_replicas")]
+              replicas: u32,
+              #[serde(default = "default_port")]
+              port: u16,
+              #[serde(default = "default_regions")]
+              regions: Vec<String>,
+              #[serde(default)]
+              env: BTreeMap<String, String>,
+              #[serde(default)]
+              health_check: HealthCheck,
+          }
+
+          #[derive(Deserialize, Serialize)]
+          #[serde(default, deny_unknown_fields)]
+          struct HealthCheck {
+              path: String,
+              interval_secs: u32,
+          }
+
+          impl Default for HealthCheck {
+              fn default() -> Self {
+                  HealthCheck { path: "/health".to_string(), interval_secs: 30 }
+              }
+          }
+
+          fn default_replicas() -> u32 {
+              2
+          }
+
+          fn default_port() -> u16 {
+              8080
+          }
+
+          fn default_regions() -> Vec<String> {
+              vec!["eu-west".to_string()]
+          }
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let config: Config = match serde_json::from_str(&input) {
+                  Ok(c) => c,
+                  Err(e) => {
+                      println!("invalid config: {e}");
+                      std::process::exit(2);
+                  }
+              };
+              println!("{}", serde_json::to_string_pretty(&config).expect("a Config always serializes"));
+          }
+        hints:
+          - "Define `Config` and `HealthCheck` with `#[derive(Deserialize, Serialize)]` and `#[serde(deny_unknown_fields)]`."
+          - "Write `fn default_replicas() -> u32 { 2 }` and friends, and use `#[serde(default = \"default_replicas\")]` on the field. For `HealthCheck`, implement `Default` by hand and add `#[serde(default)]` on the struct and on the `health_check` field."
+          - "Deserialize with `serde_json::from_str`, then `println!(\"{}\", serde_json::to_string_pretty(&config).expect(...))`."
+        tests:
+          - stdin: "{\"service\": \"search\"}"
+            expect: "{\n  \"service\": \"search\",\n  \"replicas\": 2,\n  \"port\": 8080,\n  \"regions\": [\n    \"eu-west\"\n  ],\n  \"env\": {},\n  \"health_check\": {\n    \"path\": \"/health\",\n    \"interval_secs\": 30\n  }\n}"
+          - stdin: "{\"service\": \"api\", \"replicas\": 4, \"env\": {\"Z_LAST\": \"1\", \"A_FIRST\": \"2\"}, \"health_check\": {\"interval_secs\": 5}}"
+            hidden: true
+          - stdin: "{\"service\": \"api\", \"regions\": [], \"port\": 9090}"
+            hidden: true
+          - stdin: "{\"service\": \"api\", \"replica\": 4}"
+            exit: 2
+            hidden: true
+      - task: |
+          > **OPS-341: Detect config drift between staging and production**
+          >
+          > Incidents keep happening because production quietly differs from staging. We want a diff of the two configs, key by key.
+
+          Standard input holds two JSON documents (objects): staging, then a line containing only `---`, then production. Parse both into `serde_json::Value` and print their differences, one per line, with **dotted paths** for nested objects (`health_check.path`):
+
+          - a key only in staging: `- PATH`
+          - a key only in production: `+ PATH: VALUE`
+          - a key in both with different values (where not both are objects): `~ PATH: OLD -> NEW`
+          - both are objects: compare their keys recursively
+
+          Values print as compact JSON (`Value`'s `Display`, for example `"info"` with quotes, `3`, `["eu-west"]`). Visit keys in sorted order at every level (collect them into a `BTreeSet` to be sure). If there are no differences, print `no drift`. If a document isn't valid JSON, print `NAME is not valid JSON: ERROR` (NAME is `staging` or `production`) and exit with code 2.
+        seed: |
+          use serde_json::Value;
+          use std::collections::BTreeSet;
+          use std::io::{self, Read};
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+          }
+        solution: |
+          use serde_json::Value;
+          use std::collections::BTreeSet;
+          use std::io::{self, Read};
+
+          fn diff(path: &str, old: &Value, new: &Value, out: &mut Vec<String>) {
+              match (old, new) {
+                  (Value::Object(a), Value::Object(b)) => {
+                      let keys: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+                      for key in keys {
+                          let child = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+                          match (a.get(key), b.get(key)) {
+                              (Some(x), Some(y)) => diff(&child, x, y, out),
+                              (Some(_), None) => out.push(format!("- {child}")),
+                              (None, Some(y)) => out.push(format!("+ {child}: {y}")),
+                              (None, None) => {}
+                          }
+                      }
+                  }
+                  _ => {
+                      if old != new {
+                          out.push(format!("~ {path}: {old} -> {new}"));
+                      }
+                  }
+              }
+          }
+
+          fn parse(text: &str, name: &str) -> Value {
+              serde_json::from_str(text).unwrap_or_else(|e| {
+                  println!("{name} is not valid JSON: {e}");
+                  std::process::exit(2);
+              })
+          }
+
+          fn main() {
+              let mut input = String::new();
+              io::stdin().read_to_string(&mut input).expect("read error");
+              let (staging, production) = input.split_once("\n---\n").unwrap_or((input.as_str(), ""));
+              let (old, new) = (parse(staging, "staging"), parse(production, "production"));
+              let mut out = Vec::new();
+              diff("", &old, &new, &mut out);
+              if out.is_empty() {
+                  println!("no drift");
+              }
+              for line in &out {
+                  println!("{line}");
+              }
+          }
+        hints:
+          - "Split the input with `input.split_once(\"\\n---\\n\")` and parse each half with `serde_json::from_str::<Value>`."
+          - "Write a recursive `fn diff(path: &str, old: &Value, new: &Value, out: &mut Vec<String>)`. Match `(old, new)`: two `Value::Object`s recurse over the union of their keys (a `BTreeSet`); anything else is a change if `old != new`."
+          - "For each key build the child path (`key` at the top, `format!(\"{path}.{key}\")` below), then match `(a.get(key), b.get(key))` for the `-`, `+` and recursive cases."
+        tests:
+          - stdin: "{\"service\": \"checkout\", \"replicas\": 2, \"env\": {\"LOG_LEVEL\": \"debug\", \"OLD_FLAG\": \"1\"}, \"regions\": [\"eu-west\"]}\n---\n{\"service\": \"checkout\", \"replicas\": 6, \"env\": {\"LOG_LEVEL\": \"info\", \"NEW_FLAG\": \"on\"}, \"regions\": [\"eu-west\"]}\n"
+            expect: "~ env.LOG_LEVEL: \"debug\" -> \"info\"\n+ env.NEW_FLAG: \"on\"\n- env.OLD_FLAG\n~ replicas: 2 -> 6"
+          - stdin: "{\"a\": 1, \"b\": {\"c\": [1, 2]}}\n---\n{\"b\": {\"c\": [1, 2]}, \"a\": 1}\n"
+            hidden: true
+          - stdin: "{\"health_check\": {\"path\": \"/health\"}, \"port\": 8080}\n---\n{\"health_check\": \"disabled\", \"port\": 8080, \"debug\": true}\n"
+            hidden: true
+          - stdin: "{\"a\": 1}\n---\n{\"a\": }\n"
+            exit: 2
+            hidden: true
+
+  - title: "SHOP-240: the order workflow state machine"
+    id: capstone-5
+    text: |
+      > **SHOP-240: Enforce the order lifecycle**
+      >
+      > Orders have been shipped without payment and refunded after delivery, because any code could set `order.status = "shipped"`. Model the workflow so that only legal transitions are possible, and every illegal one gets a clear error.
+
+      An **enum state machine** (module 42) makes illegal states unrepresentable: each state is a variant that carries exactly the data that exists in that state (a tracking number only once shipped), and one function decides every transition. Matching on the `(state, event)` **tuple** lists the legal moves explicitly, and a final catch-all arm rejects everything else:
+
+      ```rust run
+      #[derive(Debug)]
+      enum Door {
+          Open,
+          Closed,
+          Locked { code: u32 },
+      }
+
+      #[derive(Debug)]
+      enum Action {
+          Close,
+          Lock(u32),
+          Unlock(u32),
+          Open,
+      }
+
+      fn step(door: Door, action: &Action) -> Result<Door, (Door, String)> {
+          match (door, action) {
+              (Door::Open, Action::Close) => Ok(Door::Closed),
+              (Door::Closed, Action::Open) => Ok(Door::Open),
+              (Door::Closed, Action::Lock(code)) => Ok(Door::Locked { code: *code }),
+              (Door::Locked { code }, Action::Unlock(attempt)) if *attempt == code => Ok(Door::Closed),
+              (door @ Door::Locked { .. }, Action::Unlock(_)) => Err((door, "wrong code".to_string())),
+              (door, action) => {
+                  let why = format!("cannot {action:?} while {door:?}");
+                  Err((door, why))
+              }
+          }
+      }
+
+      fn main() {
+          let actions = [Action::Close, Action::Lock(1234), Action::Open, Action::Unlock(1111), Action::Unlock(1234), Action::Open];
+          let mut door = Door::Open;
+          for action in &actions {
+              door = match step(door, action) {
+                  Ok(next) => next,
+                  Err((unchanged, why)) => {
+                      println!("rejected {action:?}: {why}");
+                      unchanged
+                  }
+              };
+          }
+          println!("final: {door:?}");
+      }
+      ```
+
+      ```output
+      rejected Open: cannot Open while Locked { code: 1234 }
+      rejected Unlock(1111): wrong code
+      final: Open
+      ```
+
+      - `step` takes the state **by value** and returns the next one, so nobody can keep using the old state by accident.
+      - When an action is rejected, the error hands the unchanged state back (`Err((door, why))`), so the caller can carry on. That's a useful pattern for any function that consumes a value and might fail.
+      - `door @ Door::Locked { .. }` matches a locked door and binds the whole value to `door` at the same time.
+
+      ### Common mistakes
+
+      - **A catch-all arm too early.** Arms are tried top to bottom; `(state, _) => Err(...)` above the legal transitions makes them unreachable (the compiler warns about it).
+      - **Status strings plus separate optional fields** (`status: String`, `tracking: Option<String>`): nothing stops `"shipped"` without a tracking number. Put the data inside the variant.
+      - **Validating data in the wrong place.** "Payment must be positive" belongs to the transition that takes the payment, so it's checked exactly when it matters.
+
+      **Your turn:** implement the order workflow. The seed defines `OrderState`, `Event` and `TransitionError` (with thiserror). Write:
+
+      - `OrderState::name()`: `created`, `paid`, `shipped`, `delivered`, `cancelled`; and `Event::name()`: `pay`, `ship`, `deliver`, `cancel`
+      - `OrderState::describe()`: `created`, `paid 25.00` (the amount in cents shown with two decimals), `shipped, tracking TRK123`, `delivered`, `cancelled: REASON`
+      - `fn apply(state: OrderState, event: Event) -> Result<OrderState, TransitionError>` with these legal transitions: Created + Pay becomes Paid (a payment of 0 is `ZeroPayment`); Paid + Ship becomes Shipped (an empty or all-spaces tracking number is `EmptyTracking`); Shipped + Deliver becomes Delivered; Created or Paid + Cancel becomes Cancelled. Anything else is `NotAllowed { state: state.name(), event: event.name() }`.
+    seed: |
+      use thiserror::Error;
+
+      #[derive(Debug, Clone, PartialEq)]
+      enum OrderState {
+          Created,
+          Paid { amount_cents: u64 },
+          Shipped { tracking: String },
+          Delivered,
+          Cancelled { reason: String },
+      }
+
+      #[derive(Debug, Clone, PartialEq)]
+      enum Event {
+          Pay { amount_cents: u64 },
+          Ship { tracking: String },
+          Deliver,
+          Cancel { reason: String },
+      }
+
+      #[derive(Debug, Error, PartialEq)]
+      enum TransitionError {
+          #[error("cannot {event} an order that is {state}")]
+          NotAllowed { state: &'static str, event: &'static str },
+          #[error("payment must be more than zero")]
+          ZeroPayment,
+          #[error("tracking number must not be empty")]
+          EmptyTracking,
+      }
+
+      impl OrderState {
+          fn name(&self) -> &'static str {
+              todo!()
+          }
+
+          fn describe(&self) -> String {
+              todo!()
+          }
+      }
+
+      impl Event {
+          fn name(&self) -> &'static str {
+              todo!()
+          }
+      }
+
+      fn apply(state: OrderState, event: Event) -> Result<OrderState, TransitionError> {
+          todo!()
+      }
+    solution: |
+      use thiserror::Error;
+
+      #[derive(Debug, Clone, PartialEq)]
+      enum OrderState {
+          Created,
+          Paid { amount_cents: u64 },
+          Shipped { tracking: String },
+          Delivered,
+          Cancelled { reason: String },
+      }
+
+      #[derive(Debug, Clone, PartialEq)]
+      enum Event {
+          Pay { amount_cents: u64 },
+          Ship { tracking: String },
+          Deliver,
+          Cancel { reason: String },
+      }
+
+      #[derive(Debug, Error, PartialEq)]
+      enum TransitionError {
+          #[error("cannot {event} an order that is {state}")]
+          NotAllowed { state: &'static str, event: &'static str },
+          #[error("payment must be more than zero")]
+          ZeroPayment,
+          #[error("tracking number must not be empty")]
+          EmptyTracking,
+      }
+
+      impl OrderState {
+          fn name(&self) -> &'static str {
+              match self {
+                  OrderState::Created => "created",
+                  OrderState::Paid { .. } => "paid",
+                  OrderState::Shipped { .. } => "shipped",
+                  OrderState::Delivered => "delivered",
+                  OrderState::Cancelled { .. } => "cancelled",
+              }
+          }
+
+          fn describe(&self) -> String {
+              match self {
+                  OrderState::Paid { amount_cents } => format!("paid {}.{:02}", amount_cents / 100, amount_cents % 100),
+                  OrderState::Shipped { tracking } => format!("shipped, tracking {tracking}"),
+                  OrderState::Cancelled { reason } => format!("cancelled: {reason}"),
+                  other => other.name().to_string(),
+              }
+          }
+      }
+
+      impl Event {
+          fn name(&self) -> &'static str {
+              match self {
+                  Event::Pay { .. } => "pay",
+                  Event::Ship { .. } => "ship",
+                  Event::Deliver => "deliver",
+                  Event::Cancel { .. } => "cancel",
+              }
+          }
+      }
+
+      fn apply(state: OrderState, event: Event) -> Result<OrderState, TransitionError> {
+          match (state, event) {
+              (OrderState::Created, Event::Pay { amount_cents: 0 }) => Err(TransitionError::ZeroPayment),
+              (OrderState::Created, Event::Pay { amount_cents }) => Ok(OrderState::Paid { amount_cents }),
+              (OrderState::Paid { .. }, Event::Ship { tracking }) if tracking.trim().is_empty() => Err(TransitionError::EmptyTracking),
+              (OrderState::Paid { .. }, Event::Ship { tracking }) => Ok(OrderState::Shipped { tracking }),
+              (OrderState::Shipped { .. }, Event::Deliver) => Ok(OrderState::Delivered),
+              (OrderState::Created | OrderState::Paid { .. }, Event::Cancel { reason }) => Ok(OrderState::Cancelled { reason }),
+              (state, event) => Err(TransitionError::NotAllowed { state: state.name(), event: event.name() }),
+          }
+      }
+    hints:
+      - "`name()` is a `match self` returning a string literal per variant; use `{ .. }` to ignore a variant's fields."
+      - "`describe()` can match the three variants with data and fall back to `other => other.name().to_string()`. For money: `format!(\"paid {}.{:02}\", amount_cents / 100, amount_cents % 100)`."
+      - "`apply`: `match (state, event)` with one arm per legal transition (`Event::Pay { amount_cents: 0 }` matches a zero payment; a guard `if tracking.trim().is_empty()` catches empty tracking numbers), and a last arm `(state, event) => Err(TransitionError::NotAllowed { state: state.name(), event: event.name() })`."
+    harness: |
+      fn pay(cents: u64) -> Event {
+          Event::Pay { amount_cents: cents }
+      }
+
+      fn ship(tracking: &str) -> Event {
+          Event::Ship { tracking: tracking.to_string() }
+      }
+
+      fn cancel(reason: &str) -> Event {
+          Event::Cancel { reason: reason.to_string() }
+      }
+
+      #[test]
+      fn follows_the_happy_path() {
+          let paid = apply(OrderState::Created, pay(2500)).unwrap();
+          assert_eq!(paid, OrderState::Paid { amount_cents: 2500 }, "after pay(2500)");
+          let shipped = apply(paid, ship("TRK123")).unwrap();
+          assert_eq!(shipped, OrderState::Shipped { tracking: "TRK123".into() }, "after ship(TRK123)");
+          assert_eq!(apply(shipped, Event::Deliver), Ok(OrderState::Delivered), "after deliver");
+      }
+
+      #[test]
+      fn can_cancel_before_shipping() {
+          assert_eq!(apply(OrderState::Created, cancel("changed mind")), Ok(OrderState::Cancelled { reason: "changed mind".into() }), "cancel when created");
+          assert_eq!(apply(OrderState::Paid { amount_cents: 900 }, cancel("out of stock")), Ok(OrderState::Cancelled { reason: "out of stock".into() }), "cancel when paid");
+      }
+
+      #[test]
+      fn rejects_illegal_transitions() {
+          assert_eq!(apply(OrderState::Created, ship("TRK1")), Err(TransitionError::NotAllowed { state: "created", event: "ship" }), "ship when created");
+          assert_eq!(apply(OrderState::Shipped { tracking: "T".into() }, cancel("late")), Err(TransitionError::NotAllowed { state: "shipped", event: "cancel" }), "cancel when shipped");
+          assert_eq!(apply(OrderState::Delivered, pay(100)), Err(TransitionError::NotAllowed { state: "delivered", event: "pay" }), "pay when delivered");
+          assert_eq!(apply(OrderState::Cancelled { reason: "x".into() }, Event::Deliver), Err(TransitionError::NotAllowed { state: "cancelled", event: "deliver" }), "deliver when cancelled");
+      }
+
+      #[test]
+      fn validates_payment_and_tracking() {
+          assert_eq!(apply(OrderState::Created, pay(0)), Err(TransitionError::ZeroPayment), "pay(0)");
+          assert_eq!(apply(OrderState::Paid { amount_cents: 1 }, ship("   ")), Err(TransitionError::EmptyTracking), "ship with a blank tracking number");
+      }
+
+      #[test]
+      fn errors_explain_themselves() {
+          let err = apply(OrderState::Paid { amount_cents: 1 }, Event::Deliver).unwrap_err();
+          assert_eq!(err.to_string(), "cannot deliver an order that is paid", "the error message");
+      }
+
+      #[test]
+      fn describes_each_state() {
+          assert_eq!(OrderState::Created.describe(), "created", "Created");
+          assert_eq!(OrderState::Paid { amount_cents: 2507 }.describe(), "paid 25.07", "Paid 2507 cents");
+          assert_eq!(OrderState::Shipped { tracking: "TRK9".into() }.describe(), "shipped, tracking TRK9", "Shipped");
+          assert_eq!(OrderState::Delivered.describe(), "delivered", "Delivered");
+          assert_eq!(OrderState::Cancelled { reason: "fraud check".into() }.describe(), "cancelled: fraud check", "Cancelled");
+      }
+    more:
+      - task: |
+          > **SUP-118: Replay the support ticket log**
+          >
+          > The helpdesk exports every action as a line of text. We need the final state of every ticket, plus a list of actions the old system wrongly accepted.
+
+          Standard input has one action per line: `TICKET ACTION [NAME]`. A ticket that appears for the first time starts **open**. The actions and their legal transitions:
+
+          - `assign NAME`: open becomes **in progress (NAME)**; in progress becomes in progress with the new name
+          - `resolve`: in progress becomes **resolved**
+          - `reopen`: resolved becomes **open**
+          - `close`: resolved becomes **closed**
+
+          For every illegal action, print `rejected: TICKET ACTION (ticket is STATE)` as you go, and leave the ticket unchanged. At the end, print every ticket in order of its id with `TICKET: STATE`, where STATE is `open`, `in progress (NAME)`, `resolved` or `closed`. Ignore lines that don't have a known action or are missing the name for `assign` (they don't create a ticket either).
+
+          Model the state as an enum with a `describe()` method, and keep the tickets in a `BTreeMap<String, TicketState>`.
+        seed: |
+          use std::collections::BTreeMap;
+          use std::io::{self, BufRead};
+
+          fn main() {
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+              }
+          }
+        solution: |
+          use std::collections::BTreeMap;
+          use std::io::{self, BufRead};
+
+          #[derive(Clone)]
+          enum TicketState {
+              Open,
+              InProgress { assignee: String },
+              Resolved,
+              Closed,
+          }
+
+          impl TicketState {
+              fn describe(&self) -> String {
+                  match self {
+                      TicketState::Open => "open".to_string(),
+                      TicketState::InProgress { assignee } => format!("in progress ({assignee})"),
+                      TicketState::Resolved => "resolved".to_string(),
+                      TicketState::Closed => "closed".to_string(),
+                  }
+              }
+          }
+
+          fn act(state: &TicketState, action: &str, name: Option<&str>) -> Option<TicketState> {
+              match (state, action, name) {
+                  (TicketState::Open | TicketState::InProgress { .. }, "assign", Some(n)) => Some(TicketState::InProgress { assignee: n.to_string() }),
+                  (TicketState::InProgress { .. }, "resolve", _) => Some(TicketState::Resolved),
+                  (TicketState::Resolved, "reopen", _) => Some(TicketState::Open),
+                  (TicketState::Resolved, "close", _) => Some(TicketState::Closed),
+                  _ => None,
+              }
+          }
+
+          fn main() {
+              let mut tickets: BTreeMap<String, TicketState> = BTreeMap::new();
+              for line in io::stdin().lock().lines() {
+                  let line = line.expect("read error");
+                  let mut parts = line.split_whitespace();
+                  let (Some(id), Some(action)) = (parts.next(), parts.next()) else {
+                      continue;
+                  };
+                  let name = parts.next();
+                  let known = matches!(action, "resolve" | "reopen" | "close") || (action == "assign" && name.is_some());
+                  if !known {
+                      continue;
+                  }
+                  let state = tickets.entry(id.to_string()).or_insert(TicketState::Open);
+                  match act(state, action, name) {
+                      Some(next) => *state = next,
+                      None => println!("rejected: {id} {action} (ticket is {})", state.describe()),
+                  }
+              }
+              for (id, state) in &tickets {
+                  println!("{id}: {}", state.describe());
+              }
+          }
+        hints:
+          - "Define `enum TicketState { Open, InProgress { assignee: String }, Resolved, Closed }` with a `describe()` method."
+          - "Write `fn act(state: &TicketState, action: &str, name: Option<&str>) -> Option<TicketState>` that matches `(state, action, name)` and returns the next state for the four legal moves, `None` otherwise."
+          - "In `main`, get the ticket with `tickets.entry(id.to_string()).or_insert(TicketState::Open)`, then either overwrite it with `*state = next` or print the rejection."
+        tests:
+          - stdin: "T1 assign ana\nT2 close\nT1 resolve\nT1 close\nT3 assign ben\nT3 assign cy\nT2 resolve\n"
+            expect: "rejected: T2 close (ticket is open)\nrejected: T2 resolve (ticket is open)\nT1: closed\nT2: open\nT3: in progress (cy)"
+          - stdin: "A9 assign dee\nA9 resolve\nA9 reopen\nA9 assign eve\nB1 fly\nB1 assign\n\nA9 close\nC4 reopen\n"
+            hidden: true
+          - stdin: "Z1 assign max\nZ1 resolve\nZ1 close\nZ1 reopen\nZ1 assign max\n"
+            hidden: true
+      - task: |
+          > **CMS-77: Articles must be reviewed before publishing**
+          >
+          > An intern published a draft by calling `publish()` directly. Make that impossible at compile time.
+
+          Use the **typestate pattern** (module 34): a separate type per state, where each method consumes `self` and returns the next state's type, so calling a method in the wrong state doesn't compile. Write:
+
+          - `Draft::new(title: &str) -> Draft` (empty body), `Draft::write(self, text: &str) -> Draft` (appends `text` to the body, with a space between pieces), `Draft::submit(self) -> InReview`
+          - `InReview::approve(self, reviewer: &str) -> Published` and `InReview::reject(self) -> Draft` (back to editing, body kept)
+          - `Published::headline(&self) -> String` returning `TITLE (approved by REVIEWER)`, and `Published::body(&self) -> &str`
+
+          There's no `publish` on `Draft` at all: the only way to a `Published` is through review.
+        seed: |
+          struct Draft {
+              title: String,
+              body: String,
+          }
+
+          struct InReview {
+              title: String,
+              body: String,
+          }
+
+          struct Published {
+              title: String,
+              body: String,
+              approved_by: String,
+          }
+        solution: |
+          struct Draft {
+              title: String,
+              body: String,
+          }
+
+          struct InReview {
+              title: String,
+              body: String,
+          }
+
+          struct Published {
+              title: String,
+              body: String,
+              approved_by: String,
+          }
+
+          impl Draft {
+              fn new(title: &str) -> Draft {
+                  Draft { title: title.to_string(), body: String::new() }
+              }
+
+              fn write(mut self, text: &str) -> Draft {
+                  if !self.body.is_empty() {
+                      self.body.push(' ');
+                  }
+                  self.body.push_str(text);
+                  self
+              }
+
+              fn submit(self) -> InReview {
+                  InReview { title: self.title, body: self.body }
+              }
+          }
+
+          impl InReview {
+              fn approve(self, reviewer: &str) -> Published {
+                  Published { title: self.title, body: self.body, approved_by: reviewer.to_string() }
+              }
+
+              fn reject(self) -> Draft {
+                  Draft { title: self.title, body: self.body }
+              }
+          }
+
+          impl Published {
+              fn headline(&self) -> String {
+                  format!("{} (approved by {})", self.title, self.approved_by)
+              }
+
+              fn body(&self) -> &str {
+                  &self.body
+              }
+          }
+        harness: |
+          #[test]
+          fn publishes_through_review() {
+              let article = Draft::new("Rust 2024 is out").write("Edition 2024").write("ships today.").submit().approve("ana");
+              assert_eq!(article.headline(), "Rust 2024 is out (approved by ana)", "headline()");
+              assert_eq!(article.body(), "Edition 2024 ships today.", "body()");
+          }
+
+          #[test]
+          fn rejected_drafts_keep_their_text() {
+              let draft = Draft::new("Draft").write("first try").submit().reject();
+              let article = draft.write("and a fix").submit().approve("ben");
+              assert_eq!(article.body(), "first try and a fix", "body() after reject and rewrite");
+              assert_eq!(article.headline(), "Draft (approved by ben)", "headline()");
+          }
+
+          #[test]
+          fn an_empty_article_can_be_published() {
+              let article = Draft::new("Notice").submit().approve("cy");
+              assert_eq!(article.body(), "", "body() of an empty article");
+          }
+        hints:
+          - "Each transition consumes `self` and builds the next struct from its fields: `fn submit(self) -> InReview { InReview { title: self.title, body: self.body } }`."
+          - "`write` can take `mut self`, push a space if the body isn't empty, push the text, and return `self`."
+          - "`headline` is `format!(\"{} (approved by {})\", self.title, self.approved_by)`; `body` returns `&self.body`."
+
+  - title: "REVIEW-9: refactor for code review"
+    id: capstone-6
+    text: |
+      > **REVIEW-9: Address review comments on the grade report**
+      >
+      > The function works and has been in production for a year, but it's next in line to be extended, and the reviewer left comments. Refactor it without changing its output.
+
+      Much of a developer's week is reading and improving existing code. Good refactoring keeps behavior **exactly** the same (tests prove it) while making the code easier to read, harder to misuse and cheaper to run. The usual review comments in Rust:
+
+      | Smell | Why it matters | Idiomatic fix |
+      |---|---|---|
+      | parallel `Vec`s (`names`, `scores`) | they can get out of sync, and every reader must remember they're linked | a `Vec` of structs |
+      | `Vec<T>` or `String` parameters you only read | forces callers to give up (or clone) their data | `&[T]` and `&str` |
+      | `while i < v.len()` and `v[i]` | off-by-one risk, bounds checks, noise | `for x in &v`, iterators |
+      | `.clone()` just to read | a needless allocation | borrow |
+      | magic numbers (`50`) | what does it mean, and where else is it? | a named `const` |
+      | `s = s + &a + &b` chains | hard to read, extra copies | `format!`, `write!`, `push_str` |
+      | `if flag == true` | noise | `if flag` |
+      | boolean parameters | `ship(3, true, false)` is unreadable at the call site | an enum per choice |
+
+      Clippy flags several of these on its own (`needless_range_loop`, `redundant_clone`, `ptr_arg` for `&Vec<T>` parameters, `bool_comparison`). Running `cargo clippy` before asking for review saves everyone time.
+
+      Here's a small before and after: the same total, from a loop full of smells to an iterator chain.
+
+      ```rust run
+      const FREE_SHIPPING_CENTS: u64 = 5000;
+
+      struct Item {
+          price_cents: u64,
+          quantity: u64,
+      }
+
+      // Before: parallel vectors, an index loop, a magic number
+      fn total_before(prices: Vec<u64>, quantities: Vec<u64>) -> u64 {
+          let mut total = 0;
+          let mut i = 0;
+          while i < prices.len() {
+              total = total + prices[i] * quantities[i];
+              i = i + 1;
+          }
+          if total < 5000 { total + 499 } else { total }
+      }
+
+      // After: one struct per line item, a slice, a named constant
+      fn total_after(items: &[Item]) -> u64 {
+          let total: u64 = items.iter().map(|item| item.price_cents * item.quantity).sum();
+          let shipping = if total < FREE_SHIPPING_CENTS { 499 } else { 0 };
+          total + shipping
+      }
+
+      fn main() {
+          let items = [Item { price_cents: 1200, quantity: 2 }, Item { price_cents: 350, quantity: 4 }];
+          println!("{}", total_before(vec![1200, 350], vec![2, 4]));
+          println!("{}", total_after(&items));
+      }
+      ```
+
+      ```output
+      4299
+      4299
+      ```
+
+      ### How to refactor safely
+
+      1. **Pin the behavior first.** Write tests for the current output, including edge cases (empty input, boundaries like exactly 50). Here the hidden tests do that for you.
+      2. **Change one thing at a time,** compiling and testing in between.
+      3. **Keep the diff focused.** A refactor PR that also changes behavior is hard to review. Do those in separate PRs.
+
+      ### Common mistakes
+
+      - **"Improving" the output.** Even a fixed typo in a report can break a script that parses it. Same output, byte for byte.
+      - **Forgetting the empty case.** The old code avoided dividing by zero; the new one must too.
+      - **`writeln!` into a `String` without `use std::fmt::Write`.** The macro needs that trait in scope; the compiler error suggests the import.
+
+      **Your turn:** the seed's `grade_report` works, but the review asks for:
+
+      1. Take `students: &[Student]` instead of two parallel `Vec`s (`Student` is in the seed).
+      2. No index loops (`while`, `[i]`) and no `.clone()`.
+      3. A named constant `const PASS_MARK: u32 = 50;` instead of the magic number.
+      4. Build the text with `format!`, `write!`/`writeln!` or `push_str` instead of `+` chains.
+
+      The output must stay exactly the same: one line per student, `NAME: pass (SCORE)` or `NAME: fail (SCORE)`, then `average: N` (rounded down) or `average: n/a` when there are no students.
+    seed: |
+      struct Student {
+          name: String,
+          score: u32,
+      }
+
+      // Works, but see the review comments in the task.
+      fn grade_report(names: Vec<String>, scores: Vec<u32>) -> String {
+          let mut out = String::new();
+          let mut total = 0;
+          let mut i = 0;
+          while i < names.len() {
+              let name = names[i].clone();
+              if scores[i] >= 50 {
+                  out = out + &name + ": pass (" + &scores[i].to_string() + ")\n";
+              } else {
+                  out = out + &name + ": fail (" + &scores[i].to_string() + ")\n";
+              }
+              total = total + scores[i];
+              i = i + 1;
+          }
+          if names.len() > 0 {
+              out = out + "average: " + &(total / names.len() as u32).to_string();
+          } else {
+              out = out + "average: n/a";
+          }
+          out
+      }
+    solution: |
+      use std::fmt::Write;
+
+      const PASS_MARK: u32 = 50;
+
+      struct Student {
+          name: String,
+          score: u32,
+      }
+
+      fn grade_report(students: &[Student]) -> String {
+          let mut out = String::new();
+          for s in students {
+              let verdict = if s.score >= PASS_MARK { "pass" } else { "fail" };
+              writeln!(out, "{}: {verdict} ({})", s.name, s.score).expect("writing to a String cannot fail");
+          }
+          if students.is_empty() {
+              out.push_str("average: n/a");
+          } else {
+              let total: u32 = students.iter().map(|s| s.score).sum();
+              write!(out, "average: {}", total / students.len() as u32).expect("writing to a String cannot fail");
+          }
+          out
+      }
+    require:
+      - pattern: 'const\s+PASS_MARK\s*:\s*u32\s*=\s*50'
+        message: "Replace the magic number with `const PASS_MARK: u32 = 50;`."
+      - pattern: 'students\s*:\s*&\[\s*Student\s*\]'
+        message: "Take `students: &[Student]` instead of two parallel Vecs."
+    forbid:
+      - pattern: '\.clone\(\)'
+        message: "Borrow the name instead of cloning it."
+      - pattern: '\bwhile\b|\[\s*i\s*\]'
+        message: Iterate over the students instead of using an index loop.
+      - pattern: '\+\s*&'
+        message: "Build the text with `format!`, `write!` or `push_str` instead of `+ &...` chains."
+      - pattern: 'Vec<String>'
+        message: The names should live inside the `Student` structs, not in a separate Vec.
+    hints:
+      - "Change the signature to `fn grade_report(students: &[Student]) -> String` and add `const PASS_MARK: u32 = 50;`."
+      - "Loop `for s in students`, choose `\"pass\"` or `\"fail\"` with `if s.score >= PASS_MARK`, and append the line with `out.push_str(&format!(...))` or `writeln!(out, ...)` (that one needs `use std::fmt::Write;`)."
+      - "For the last line, `students.iter().map(|s| s.score).sum::<u32>()` divided by `students.len() as u32`, or `average: n/a` when `students.is_empty()`."
+    harness: |
+      fn st(name: &str, score: u32) -> Student {
+          Student { name: name.to_string(), score }
+      }
+
+      #[test]
+      fn reports_pass_and_fail() {
+          let report = grade_report(&[st("Ana", 82), st("Ben", 41), st("Cy", 67)]);
+          assert_eq!(report, "Ana: pass (82)\nBen: fail (41)\nCy: pass (67)\naverage: 63", "grade_report(Ana 82, Ben 41, Cy 67)");
+      }
+
+      #[test]
+      fn exactly_the_pass_mark_passes() {
+          assert_eq!(grade_report(&[st("Dee", 50), st("Eve", 49)]), "Dee: pass (50)\nEve: fail (49)\naverage: 49", "grade_report(Dee 50, Eve 49)");
+      }
+
+      #[test]
+      fn the_average_rounds_down() {
+          assert_eq!(grade_report(&[st("Fay", 100), st("Gus", 0), st("Hal", 0)]), "Fay: pass (100)\nGus: fail (0)\nHal: fail (0)\naverage: 33", "grade_report(100, 0, 0)");
+      }
+
+      #[test]
+      fn no_students_has_no_average() {
+          assert_eq!(grade_report(&[]), "average: n/a", "grade_report([])");
+      }
+
+      #[test]
+      fn keeps_the_callers_data() {
+          let class = vec![st("Ivy", 90)];
+          let first = grade_report(&class);
+          assert_eq!(first, grade_report(&class), "calling twice with the same borrowed data");
+      }
+    more:
+      - task: |
+          > **REVIEW-12: Boolean parameters in the shipping calculator**
+          >
+          > Call sites like `ship_cost(4, true, false, true)` keep causing bugs: nobody remembers which `bool` is which. Replace the flags with enums.
+
+          Add `enum Speed { Standard, Express }` and `enum Zone { Domestic, International }` and change the signature to `fn ship_cost(weight_kg: u32, speed: Speed, zone: Zone, member: bool) -> u32` (keeping `member`: it's a real yes/no fact, and one bool is readable). Use a `match` on `(zone, speed)` to pick the base price and the price per kg, and drop the `== true` / `== false` comparisons. The prices must stay exactly the same.
+        seed: |
+          // Prices in cents.
+          fn ship_cost(weight_kg: u32, express: bool, international: bool, member: bool) -> u32 {
+              let mut cost = 0;
+              if international == false {
+                  if express == true {
+                      cost = 1500 + weight_kg * 200;
+                  } else {
+                      cost = 500 + weight_kg * 100;
+                  }
+              } else {
+                  if express == true {
+                      cost = 4000 + weight_kg * 600;
+                  } else {
+                      cost = 2500 + weight_kg * 300;
+                  }
+              }
+              if member == true {
+                  cost = cost - cost / 10; // members get 10% off
+              }
+              cost
+          }
+        solution: |
+          enum Speed {
+              Standard,
+              Express,
+          }
+
+          enum Zone {
+              Domestic,
+              International,
+          }
+
+          // Prices in cents.
+          fn ship_cost(weight_kg: u32, speed: Speed, zone: Zone, member: bool) -> u32 {
+              let (base, per_kg) = match (zone, speed) {
+                  (Zone::Domestic, Speed::Standard) => (500, 100),
+                  (Zone::Domestic, Speed::Express) => (1500, 200),
+                  (Zone::International, Speed::Standard) => (2500, 300),
+                  (Zone::International, Speed::Express) => (4000, 600),
+              };
+              let cost = base + weight_kg * per_kg;
+              if member {
+                  cost - cost / 10 // members get 10% off
+              } else {
+                  cost
+              }
+          }
+        require:
+          - pattern: 'enum\s+Speed'
+            message: Add an `enum Speed { Standard, Express }`.
+          - pattern: 'enum\s+Zone'
+            message: Add an `enum Zone { Domestic, International }`.
+          - pattern: '\bmatch\b'
+            message: Pick the prices with a `match` on the zone and speed.
+        forbid:
+          - pattern: '==\s*(true|false)'
+            message: "Drop the `== true` / `== false` comparisons."
+          - pattern: 'express\s*:\s*bool|international\s*:\s*bool'
+            message: Replace the `express` and `international` flags with the enums.
+        harness: |
+          #[test]
+          fn domestic_prices() {
+              assert_eq!(ship_cost(3, Speed::Standard, Zone::Domestic, false), 800, "3 kg standard domestic");
+              assert_eq!(ship_cost(3, Speed::Express, Zone::Domestic, false), 2100, "3 kg express domestic");
+          }
+
+          #[test]
+          fn international_prices() {
+              assert_eq!(ship_cost(2, Speed::Standard, Zone::International, false), 3100, "2 kg standard international");
+              assert_eq!(ship_cost(2, Speed::Express, Zone::International, false), 5200, "2 kg express international");
+          }
+
+          #[test]
+          fn members_get_ten_percent_off() {
+              assert_eq!(ship_cost(3, Speed::Standard, Zone::Domestic, true), 720, "3 kg standard domestic, member");
+              assert_eq!(ship_cost(1, Speed::Express, Zone::International, true), 4140, "1 kg express international, member");
+          }
+
+          #[test]
+          fn weightless_parcels_pay_the_base_price() {
+              assert_eq!(ship_cost(0, Speed::Express, Zone::Domestic, false), 1500, "0 kg express domestic");
+          }
+        hints:
+          - "Define the two enums, then change the parameters to `speed: Speed, zone: Zone`."
+          - "`let (base, per_kg) = match (zone, speed) { (Zone::Domestic, Speed::Standard) => (500, 100), ... };`"
+          - "Compute `base + weight_kg * per_kg`, and return `cost - cost / 10` when `member`, otherwise `cost`."
+      - task: |
+          > **REVIEW-15: This parser has no tests**
+          >
+          > `parse_duration` turns `"1h30m"` into 5400 seconds for the job scheduler. It looks right, but nothing proves it, and the next person to touch it will break it. Add tests before approving.
+
+          Write at least **4** `#[test]` functions in the `tests` module. Your tests must pass on the code as it is, and they must be good enough to catch common mistakes: hidden broken copies of `parse_duration` (a wrong multiplier for hours or minutes, a forgotten reset between units, missing checks for empty input or a number without a unit) must each make at least one of your tests fail.
+
+          Cover the units, combinations like `1h30m`, and the error cases (`""`, `"10"`, `"5x"`). Use `assert_eq!` on the `Ok` values and `assert!(... .is_err())` for errors.
+        mode: test
+        minTests: 4
+        seed: |
+          /// Parses durations like "45s", "2m", "1h30m" or "1h0m15s" into seconds.
+          fn parse_duration(text: &str) -> Result<u64, String> {
+              if text.is_empty() {
+                  return Err("empty duration".to_string());
+              }
+              let mut total = 0;
+              let mut number = String::new();
+              for c in text.chars() {
+                  if c.is_ascii_digit() {
+                      number.push(c);
+                      continue;
+                  }
+                  let value: u64 = number.parse().map_err(|_| format!("missing number before {c}"))?;
+                  let unit = match c {
+                      'h' => 3600,
+                      'm' => 60,
+                      's' => 1,
+                      other => return Err(format!("unknown unit {other}")),
+                  };
+                  total += value * unit;
+                  number.clear();
+              }
+              if !number.is_empty() {
+                  return Err(format!("missing unit after {number}"));
+              }
+              Ok(total)
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+          }
+        solution: |
+          /// Parses durations like "45s", "2m", "1h30m" or "1h0m15s" into seconds.
+          fn parse_duration(text: &str) -> Result<u64, String> {
+              if text.is_empty() {
+                  return Err("empty duration".to_string());
+              }
+              let mut total = 0;
+              let mut number = String::new();
+              for c in text.chars() {
+                  if c.is_ascii_digit() {
+                      number.push(c);
+                      continue;
+                  }
+                  let value: u64 = number.parse().map_err(|_| format!("missing number before {c}"))?;
+                  let unit = match c {
+                      'h' => 3600,
+                      'm' => 60,
+                      's' => 1,
+                      other => return Err(format!("unknown unit {other}")),
+                  };
+                  total += value * unit;
+                  number.clear();
+              }
+              if !number.is_empty() {
+                  return Err(format!("missing unit after {number}"));
+              }
+              Ok(total)
+          }
+
+          #[cfg(test)]
+          mod tests {
+              use super::*;
+
+              // Write your #[test] functions here.
+              #[test]
+              fn parses_single_units() {
+                  assert_eq!(parse_duration("45s"), Ok(45));
+                  assert_eq!(parse_duration("2m"), Ok(120));
+                  assert_eq!(parse_duration("3h"), Ok(10_800));
+              }
+
+              #[test]
+              fn parses_combinations() {
+                  assert_eq!(parse_duration("1h30m"), Ok(5400));
+                  assert_eq!(parse_duration("1h0m15s"), Ok(3615));
+              }
+
+              #[test]
+              fn rejects_empty_input() {
+                  assert!(parse_duration("").is_err());
+              }
+
+              #[test]
+              fn rejects_numbers_without_units_and_unknown_units() {
+                  assert!(parse_duration("10").is_err());
+                  assert!(parse_duration("5x").is_err());
+                  assert!(parse_duration("m").is_err());
+              }
+          }
+        mutants:
+          - name: hours worth 360 seconds
+            find: "'h' => 3600,"
+            replace: "'h' => 360,"
+          - name: minutes worth 600 seconds
+            find: "'m' => 60,"
+            replace: "'m' => 600,"
+          - name: number not reset between units
+            find: "number.clear();"
+            replace: ""
+          - name: trailing number accepted
+            find: "if !number.is_empty() {"
+            replace: "if false {"
+          - name: empty input accepted
+            find: "if text.is_empty() {"
+            replace: "if false {"
+        hints:
+          - "Start with one test per unit: `assert_eq!(parse_duration(\"45s\"), Ok(45));` and the same for `m` and `h`."
+          - "A combination like `1h30m` catches the missing `number.clear()` (without it, the second number would be read as `130`)."
+          - "Error cases: `assert!(parse_duration(\"\").is_err());`, `\"10\"` (no unit) and `\"5x\"` (unknown unit)."
