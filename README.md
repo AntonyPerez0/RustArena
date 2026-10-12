@@ -29,7 +29,7 @@ RustArena is a static site with no server of its own. When a learner presses **C
 
 The workflow in `.github/workflows/deploy.yml` runs on every push to `main`. It installs dependencies and stable Rust, compiles and runs every lesson solution, worked example, drill and project milestone with the real Rust compiler (the build fails if any expected output is wrong), builds the site, runs the browser tests (including the accessibility checks, with code run by the local runner), and publishes the result to the `gh-pages` branch. Under **Settings > Pages**, set **Source** to **Deploy from a branch**, **gh-pages**, **/ (root)**. The first publish usually sets this automatically.
 
-The site is published at `https://<you>.github.io/<repo>/` by default. To use your own domain (bought and managed on Cloudflare), follow [docs/CUSTOM-DOMAIN.md](docs/CUSTOM-DOMAIN.md). In short: point the domain's DNS at GitHub Pages, add a repository variable `CUSTOM_DOMAIN`, run the workflow, and enforce HTTPS.
+The site is published at `https://rustarena.app`. Without a custom domain it would be at `https://<you>.github.io/<repo>/`. To set up a domain (bought and managed on Cloudflare), follow [docs/CUSTOM-DOMAIN.md](docs/CUSTOM-DOMAIN.md). This site uses `rustarena.app`, set as `CUSTOM_DOMAIN` at the top of the workflow.
 
 ## Run locally
 

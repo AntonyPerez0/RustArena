@@ -38,14 +38,11 @@ Delete any other `A`, `AAAA` or `CNAME` records for `@` or `www`. Parked-domain 
 
 ## 3. Tell the site its new address
 
-1. In the RustArena repository on GitHub, open **Settings > Secrets and variables > Actions > Variables**
-   and add a repository variable named `CUSTOM_DOMAIN` with the value `rustarena.app`
-   (just the name, no `https://` and no `/`).
-2. Open **Actions > Build, verify and deploy to GitHub Pages > Run workflow** (on `main`).
-
-The workflow now builds the site for the root of the domain. It writes the address into the
-sitemap, page metadata and share links, and publishes a `CNAME` file, which tells GitHub Pages
-the domain to serve.
+The deploy workflow already sets `CUSTOM_DOMAIN: rustarena.app` (a repository variable named
+`CUSTOM_DOMAIN` overrides it). Each deploy builds the site for the root of the domain, writes the
+address into the sitemap, page metadata and share links, and publishes a `CNAME` file, which tells
+GitHub Pages the domain to serve. Don't edit the `CNAME` file on the `gh-pages` branch by hand: each
+deploy replaces that branch.
 
 ## 4. Turn on HTTPS
 
@@ -83,5 +80,5 @@ on the new domain.
 
 ## Going back
 
-Delete the `CUSTOM_DOMAIN` variable and run the workflow again. The site returns to
+Set `CUSTOM_DOMAIN: ""` in `.github/workflows/deploy.yml` (and delete any `CUSTOM_DOMAIN` variable), then push. The site returns to
 `https://antonyperez0.github.io/RustArena/`. Also remove the custom domain under Settings > Pages.
