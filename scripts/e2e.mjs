@@ -884,6 +884,123 @@ await test("keyboard: skip link, focus moves to the new page, editor can be left
   if (!left) throw new Error("Escape then Tab did not leave the code editor");
 });
 
+// The other Arena sites (C/C++ and Java) are linked from the header, the phone menu and the footer.
+// Only the links are checked: the tests never leave this site.
+const ARENA_NAMES = ["C/C++ Arena", "Java Arena", "RustArena"];
+const SISTERS = [
+  ["C/C++ Arena", "https://cpparena.com/"],
+  ["Java Arena", "https://javaarena.com/"],
+];
+/** A list of all three Arenas: in order, this one marked as here (not a link), the other two linked. */
+async function arenaList(list, where) {
+  const names = await list.locator(".arena-name").allTextContents();
+  if (names.join(" | ") !== ARENA_NAMES.join(" | ")) throw new Error(`${where} lists ${names.join(" | ")}`);
+  const here = list.locator("li").nth(2);
+  if (!(await here.textContent())?.includes("You're here") || (await here.locator("a").count())) throw new Error(`${where}: RustArena isn't marked "You're here", or is a link`);
+  await arenaLinks(list, where);
+}
+/** Exactly the two sister sites' links, opening in a new tab. */
+async function arenaLinks(scope, where) {
+  const links = await scope.locator("a").evaluateAll((as) => as.map((a) => ({ text: a.textContent, href: a.getAttribute("href"), target: a.target, rel: a.rel })));
+  if (links.length !== SISTERS.length) throw new Error(`${where} has ${links.length} links`);
+  SISTERS.forEach(([name, url], i) => {
+    const l = links[i];
+    if (!l.text.includes(name) || l.href !== url) throw new Error(`${where}: link ${i + 1} is ${l.text} -> ${l.href}`);
+    if (l.target !== "_blank" || !/\bnoopener\b/.test(l.rel) || !l.text.includes("(opens in a new tab)")) throw new Error(`${where}: ${name} doesn't open in a new tab (target ${l.target}, rel ${l.rel})`);
+  });
+}
+
+await test("arena sites: the header button lists all three, the footer row links the others, and phones get them in the menu", async () => {
+  await apGo("/learn");
+  const btn = ap.getByRole("button", { name: "Other Arena sites" });
+  if (!(await btn.isVisible()) || (await btn.getAttribute("aria-expanded")) !== "false") throw new Error("the header button isn't shown closed");
+  await btn.click();
+  const pop = ap.locator(".arena-pop");
+  await pop.waitFor();
+  if ((await btn.getAttribute("aria-expanded")) !== "true") throw new Error("the button doesn't say it's open");
+  await arenaList(pop, "the header list");
+  for (const part of [".arena-pop-title", ".arena-here"]) {
+    await pop.locator(part).click();
+    if (!(await pop.isVisible()) || (await btn.getAttribute("aria-expanded")) !== "true") throw new Error(`clicking the list's text (${part}) closed it`);
+  }
+  await axe("Arena list open");
+  await ap.keyboard.press("Escape");
+  await pop.waitFor({ state: "hidden" });
+  if (!(await btn.evaluate((b) => b === document.activeElement))) throw new Error("Escape didn't return focus to the button");
+  await btn.click();
+  await pop.waitFor();
+  await ap.locator("#main h1").first().click({ position: { x: 5, y: 5 } });
+  await pop.waitFor({ state: "hidden" });
+  // Choosing a site (it opens in a new tab; not followed here) closes the list and gives the focus back to the button.
+  await btn.click();
+  const sister = pop.getByRole("link", { name: /^C\/C\+\+ Arena/ });
+  await sister.evaluate((a) => a.addEventListener("click", (e) => e.preventDefault(), { once: true }));
+  await sister.click();
+  await pop.waitFor({ state: "hidden" });
+  if (!(await btn.evaluate((b) => b === document.activeElement))) throw new Error("choosing a site didn't give the focus back to the button");
+  const scale = await ap.evaluate(() => document.documentElement.style.getPropertyValue("--scale"));
+  const setScale = (s) => ap.evaluate((v) => document.documentElement.style.setProperty("--scale", v), s);
+  // A short tablet screen with the Largest text: opening the list closes the menu, and the list scrolls
+  // within the screen, keeping its focused link in view.
+  await ap.setViewportSize({ width: 740, height: 360 });
+  await setScale("1.4");
+  try {
+    await ap.getByRole("button", { name: "Open menu" }).click();
+    await ap.locator("#main-nav.nav-open").waitFor();
+    await btn.click();
+    await pop.waitFor();
+    if (await ap.locator("#main-nav.nav-open").count()) throw new Error("opening the Arena list left the menu open");
+    await ap.keyboard.press("Tab");
+    await ap.keyboard.press("Tab");
+    const fit = await pop.evaluate((l) => {
+      const box = l.getBoundingClientRect();
+      const link = document.activeElement.getBoundingClientRect();
+      return { focused: l.contains(document.activeElement), below: Math.ceil(box.bottom - innerHeight), link: [Math.floor(link.top - box.top), Math.floor(box.bottom - link.bottom)] };
+    });
+    if (!fit.focused || fit.below > 0 || fit.link.some((d) => d < 0)) throw new Error(`at 740 x 360 with the Largest text the list or its last link runs off the screen: ${JSON.stringify(fit)}`);
+    const sideways = await ap.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    if (sideways > 0) throw new Error(`with the list open at 740px and the Largest text the page scrolls sideways by ${sideways}px`);
+    await ap.keyboard.press("Escape");
+    await pop.waitFor({ state: "hidden" });
+  } finally {
+    await setScale(scale);
+    await ap.setViewportSize({ width: 1360, height: 900 });
+  }
+  // The header's room follows the text size setting: with Large text the navigation needs it all at 1360px,
+  // so the button hides instead of pushing the page sideways.
+  await setScale("1.125");
+  try {
+    if (await btn.isVisible()) throw new Error("with Large text the header button still shows at 1360px");
+    const sideways = await ap.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    if (sideways > 0) throw new Error(`with Large text at 1360px the page scrolls sideways by ${sideways}px`);
+  } finally {
+    await setScale(scale);
+  }
+
+  const family = ap.locator(".arena-family");
+  await family.getByRole("heading", { name: "Arena sites" }).waitFor();
+  if ((await family.locator("li").count()) !== 3) throw new Error("the footer row doesn't have three Arenas");
+  await arenaList(family, "the footer row");
+
+  const phone = await browser.newContext({ viewport: { width: 360, height: 780 }, isMobile: true, hasTouch: true, serviceWorkers: "block", colorScheme: "dark" });
+  const pp = await phone.newPage();
+  await pp.goto(BASE + "learn");
+  await pp.locator("#main h1").first().waitFor();
+  const phoneBtn = pp.getByRole("button", { name: "Other Arena sites", includeHidden: true });
+  if ((await phoneBtn.count()) !== 1 || (await phoneBtn.isVisible())) throw new Error("the header button shows on a phone");
+  await pp.getByRole("button", { name: "Open menu" }).tap();
+  const group = pp.locator("#main-nav .nav-arenas");
+  await group.getByText("Other Arena sites").waitFor();
+  await arenaLinks(group, "the phone menu");
+  for (const [name] of SISTERS) await group.getByRole("link", { name }).waitFor();
+  // The Theme row after the group gets its own dividing line, so it doesn't read as part of the group.
+  if ((await pp.locator("#main-nav .nav-arenas + .nav-theme").evaluate((t) => getComputedStyle(t).borderTopStyle)) !== "solid") throw new Error("no line between the menu's Arena sites and its Theme row");
+  const extra = await pp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  if (extra > 1) throw new Error(`with the menu open the page scrolls sideways by ${extra}px`);
+  await axe("the phone menu with the Arena sites", pp);
+  await phone.close();
+});
+
 // ---------------------------------------------------------------- SEO
 await test("SEO: real URLs, per-page metadata and a sitemap", async () => {
   const get = async (p) => (await page.request.get(BASE + p)).text();

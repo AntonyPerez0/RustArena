@@ -1,6 +1,7 @@
 import { BrowserRouter, NavLink, Route, Routes, Link, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Menu, Moon, Sun, X } from "lucide-react";
+import { ArenaFamily, ArenaMenuLinks, ArenaSwitcher } from "./components/Arenas";
 import { BrandMark } from "./components/Brand";
 import RunnerBadge from "./components/RunnerBadge";
 import Home from "./pages/Home";
@@ -114,6 +115,7 @@ function Footer() {
             <li><Link to="/about">About and credits</Link></li>
           </FooterCol>
         </div>
+        <ArenaFamily />
         <div className="footer-bottom">
           <p>© {new Date().getFullYear()} RustArena. Free and open source. Not affiliated with or endorsed by the Rust Foundation or the Rust Project.</p>
           <p>Your progress stays in your browser unless you choose to sync it.</p>
@@ -169,6 +171,7 @@ function Header() {
           <Link to="/topics">Rust topics</Link>
           <Link to="/placement">Placement quiz</Link>
           <Link to="/settings">Settings</Link>
+          <ArenaMenuLinks />
           <div className="nav-theme">
             <span>Theme</span>
             <ThemeToggle />
@@ -177,6 +180,7 @@ function Header() {
       </nav>
       <div className="topbar-right">
         <RunnerBadge compact />
+        <ArenaSwitcher onOpen={() => setOpen(false)} />
         <ThemeToggle />
         <Link to="/learn" className="btn btn-primary btn-sm topbar-cta">
           Start learning
