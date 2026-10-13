@@ -3,7 +3,8 @@ import { useId } from "react";
 /**
  * The RustArena mark: a crab (a Rustacean, in the spirit of Ferris, the community's public-domain
  * mascot) on a tile in Rust's orange. It's our own drawing, not the Rust logo, which is a trademark
- * of the Rust Foundation. The same drawing is in public/favicon.svg and scripts/make-brand-images.mjs.
+ * of the Rust Foundation. The same drawing is in public/favicon.svg, scripts/make-brand-images.mjs
+ * and src/components/Arenas.tsx.
  */
 export function BrandMark({ className = "brand-mark" }: { className?: string }) {
   const id = useId();
