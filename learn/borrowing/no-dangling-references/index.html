@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>No dangling references · Borrowing (Rust) | RustArena</title>
+    <meta name="description" content="A dangling reference points at memory that has already been freed. In C you can return a pointer to a local variable: it compiles, and reading through it…" />
+    <link rel="canonical" href="https://rustarena.app/learn/borrowing/no-dangling-references/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="No dangling references · Borrowing (Rust) | RustArena" />
+    <meta property="og:description" content="A dangling reference points at memory that has already been freed. In C you can return a pointer to a local variable: it compiles, and reading through it…" />
+    <meta property="og:url" content="https://rustarena.app/learn/borrowing/no-dangling-references/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"No dangling references","description":"A dangling reference points at memory that has already been freed. In C you can return a pointer to a local variable: it compiles, and reading through it…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/borrowing/no-dangling-references/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Ownership › Borrowing</nav>
+<p>Step 6 of 7</p>
+<h1>No dangling references</h1>
+<p>A <strong>dangling reference</strong> points at memory that has already been freed. In C you can return a pointer to a local variable: it compiles, and reading through it later gives garbage, a crash, or a security hole. Rust&#39;s second borrowing rule is: <strong>a reference must never outlive the value it points to.</strong> The compiler checks it everywhere.</p>
+<h2>Returning a reference to a local: E0106</h2>
+<pre><code class="language-rust-error">fn make_label() -&gt; &amp;String {
+    let label = String::from(&quot;VIP&quot;);
+    &amp;label
+}
+
+fn main() {
+    println!(&quot;{}&quot;, make_label());
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0106]: missing lifetime specifier
+ --&gt; src/main.rs:1:20
+  |
+1 | fn make_label() -&gt; &amp;String {
+  |                    ^ expected named lifetime parameter
+  |
+  = help: this function&#39;s return type contains a borrowed value, but there is no value for it to be borrowed from
+help: instead, you are more likely to want to return an owned value
+  |
+1 - fn make_label() -&gt; &amp;String {
+1 + fn make_label() -&gt; String {
+</code></pre>
+<p><code>label</code> is dropped at the end of <code>make_label</code>, so a reference to it would dangle the moment the function returns. The help line says it exactly: a returned reference has to borrow from something, and there&#39;s nothing here to borrow from. (&quot;Lifetime&quot; is the compiler&#39;s word for how long a reference stays valid; you&#39;ll learn to write lifetimes in their own module.)</p>
+<p>The fix isn&#39;t a lifetime: it&#39;s to <strong>return the owned value</strong>. Ownership moves to the caller, so nothing dangles:</p>
+<pre><code class="language-rust">fn make_label(vip: bool) -&gt; String {
+    let label = if vip { String::from(&quot;VIP&quot;) } else { String::from(&quot;standard&quot;) };
+    label    // ownership moves to the caller
+}
+
+fn main() {
+    let a = make_label(true);
+    let b = make_label(false);
+    println!(&quot;{} / {}&quot;, a, b);
+}
+</code></pre>
+<pre><code class="language-text">VIP / standard
+</code></pre>
+<p>If the function has a reference parameter, the error is different but means the same thing:</p>
+<pre><code class="language-rust-error">fn shout(text: &amp;String) -&gt; &amp;String {
+    let loud = text.to_uppercase();
+    &amp;loud
+}
+
+fn main() {
+    println!(&quot;{}&quot;, shout(&amp;String::from(&quot;hi&quot;)));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0515]: cannot return reference to local variable `loud`
+ --&gt; src/main.rs:3:5
+  |
+3 |     &amp;loud
+  |     ^^^^^ returns a reference to data owned by the current function
+</code></pre>
+<p>Returning a reference <strong>is</strong> fine when it points into something the caller gave you, because that value lives in the caller:</p>
+<pre><code class="language-rust">fn first_item(list: &amp;Vec&lt;String&gt;) -&gt; &amp;String {
+    &amp;list[0]           // borrows from list, which the caller owns
+}
+
+fn main() {
+    let items = vec![String::from(&quot;sword&quot;), String::from(&quot;shield&quot;)];
+    let first = first_item(&amp;items);
+    println!(&quot;first: {}&quot;, first);
+}
+</code></pre>
+<pre><code class="language-text">first: sword
+</code></pre>
+<h2>A reference outliving a scope: E0597</h2>
+<pre><code class="language-rust-error">fn main() {
+    let r;
+    {
+        let s = String::from(&quot;hi&quot;);
+        r = &amp;s;
+    }
+    println!(&quot;{}&quot;, r);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0597]: `s` does not live long enough
+ --&gt; src/main.rs:5:13
+  |
+4 |         let s = String::from(&quot;hi&quot;);
+  |             - binding `s` declared here
+5 |         r = &amp;s;
+  |             ^^ borrowed value does not live long enough
+6 |     }
+  |     - `s` dropped here while still borrowed
+7 |     println!(&quot;{}&quot;, r);
+  |                    - borrow later used here
+</code></pre>
+<pre><code class="language-text">let r;
+{
+    let s = String::from(&quot;hi&quot;);   ── s lives ──┐
+    r = &amp;s;                                    │
+}                                 ◄────────────┘  s dropped here
+println!(&quot;{}&quot;, r);                ← r would point at freed memory
+</code></pre>
+<p>Fix it by making the value live as long as the reference (declare <code>s</code> in the outer scope), or by having <code>r</code> own a value instead of borrowing one.</p>
+<p><strong>Workplace note:</strong> this check is what removes use-after-free from safe Rust. In practice it gives a simple rule for signatures: functions that <strong>create</strong> new data return owned values (<code>String</code>, <code>Vec&lt;T&gt;</code>); functions that <strong>look something up</strong> in their input can return a reference into it.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Returning <code>&amp;String</code> from a function that builds a new string</strong> (E0106 or E0515). Return <code>String</code>.</li>
+<li><strong>Keeping a reference to a value from an inner block</strong> after the block (E0597).</li>
+<li><strong>Adding <code>&#39;static</code> because the compiler mentions it.</strong> For these errors it&#39;s almost never what you want; return an owned value.</li>
+</ul>
+
+<h2>Your task</h2>
+<p><code>make_badge</code> builds a new <code>String</code> and tries to return a reference to it (E0515). Fix the function so it gives the caller ownership of the badge. The program should print:</p>
+<pre><code>[7] Ferris
+Ferris is still ours
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p><code>winner</code> borrows from <code>final_round</code>, which is dropped at the end of the inner block (E0597). Fix it so it prints:</p>
+<pre><code>winner: Ferris
+</code></pre>
+<p>Either make <code>final_round</code> live long enough, or give <code>winner</code> its own copy of the name.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>longest</code>, which borrows a vector of words and returns a <strong>reference</strong> to the longest one (by <code>.len()</code>; the first one on a tie). It returns a reference into the vector, not a copy. You can assume the vector isn&#39;t empty.</p>
+
+<p><a href="/learn/borrowing/borrows-end-at-their-last-use">Previous: Borrows end at their last use</a> <a href="/learn/borrowing/choosing-how-to-pass-a-value">Next: Choosing how to pass a value</a></p></main></div>
+  </body>
+</html>

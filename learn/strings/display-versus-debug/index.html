@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Display versus Debug · Strings in depth (Rust) | RustArena</title>
+    <meta name="description" content="{} and {:?} call two different formatting abilities (traits): Display ({}) is the text for users: clean, no quotes, decided by the type's author. Debug…" />
+    <link rel="canonical" href="https://rustarena.app/learn/strings/display-versus-debug/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Display versus Debug · Strings in depth (Rust) | RustArena" />
+    <meta property="og:description" content="{} and {:?} call two different formatting abilities (traits): Display ({}) is the text for users: clean, no quotes, decided by the type's author. Debug…" />
+    <meta property="og:url" content="https://rustarena.app/learn/strings/display-versus-debug/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Display versus Debug","description":"{} and {:?} call two different formatting abilities (traits): Display ({}) is the text for users: clean, no quotes, decided by the type's author. Debug…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/strings/display-versus-debug/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Structuring data › Strings in depth</nav>
+<p>Step 7 of 7</p>
+<h1>Display versus Debug</h1>
+<p><code>{}</code> and <code>{:?}</code> call two different formatting abilities (<strong>traits</strong>):</p>
+<ul>
+<li><strong>Display</strong> (<code>{}</code>) is the text for <strong>users</strong>: clean, no quotes, decided by the type&#39;s author.</li>
+<li><strong>Debug</strong> (<code>{:?}</code>) is the text for <strong>programmers</strong>: unambiguous, showing quotes, escapes and structure. <code>{:#?}</code> is the pretty, multi-line version.</li>
+</ul>
+<pre><code class="language-rust">fn main() {
+    let name = &quot;Ferris \&quot;the crab\&quot;&quot;;
+    println!(&quot;{}&quot;, name);
+    println!(&quot;{:?}&quot;, name);
+    println!(&quot;{:?}&quot;, &quot;a\tb&quot;);
+    println!(&quot;{} vs {:?}&quot;, &#39;x&#39;, &#39;x&#39;);
+    println!(&quot;{:?} {:?}&quot;, Some(&quot;ok&quot;), vec![&quot;a&quot;, &quot;b&quot;]);
+}
+</code></pre>
+<pre><code class="language-text">Ferris &quot;the crab&quot;
+&quot;Ferris \&quot;the crab\&quot;&quot;
+&quot;a\tb&quot;
+x vs &#39;x&#39;
+Some(&quot;ok&quot;) [&quot;a&quot;, &quot;b&quot;]
+</code></pre>
+<p>Debug output is what you want in logs and test failures: with <code>{:?}</code> you can <em>see</em> a stray tab or trailing space that <code>{}</code> would hide.</p>
+<p>Collections and <code>Option</code> only have Debug. There&#39;s no single &quot;right&quot; way to show a list to a user, so Rust leaves it to you:</p>
+<pre><code class="language-rust-error">fn main() {
+    println!(&quot;{}&quot;, vec![1, 2]);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: `Vec&lt;{integer}&gt;` doesn&#39;t implement `std::fmt::Display`
+</code></pre>
+<h2>Display for your own types</h2>
+<p><code>#[derive(Debug)]</code> writes Debug for you (module 12). Display you write yourself, because only you know how your type should look to users. The shape is always the same:</p>
+<pre><code class="language-rust">use std::fmt;
+
+struct Money {
+    cents: i64,
+}
+
+impl fmt::Display for Money {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter&lt;&#39;_&gt;) -&gt; fmt::Result {
+        let sign = if self.cents &lt; 0 { &quot;-&quot; } else { &quot;&quot; };
+        let abs = self.cents.abs();
+        write!(f, &quot;{}${}.{:02}&quot;, sign, abs / 100, abs % 100)
+    }
+}
+
+fn main() {
+    let price = Money { cents: 1999 };
+    let refund = Money { cents: -250 };
+    println!(&quot;{price} and {refund}&quot;);
+    let text = price.to_string();
+    println!(&quot;{} chars: {text}&quot;, text.len());
+}
+</code></pre>
+<pre><code class="language-text">$19.99 and -$2.50
+6 chars: $19.99
+</code></pre>
+<ul>
+<li><code>impl fmt::Display for Money</code> says &quot;here&#39;s how Money does Display&quot;. It has one method, <code>fmt</code>, which you copy in this exact shape. (<code>Formatter&lt;&#39;_&gt;</code> contains a lifetime placeholder; module 24 explains it, and you can copy it as is.)</li>
+<li><code>write!(f, ...)</code> works like <code>format!</code>, but writes into the formatter <code>f</code>. Its result, a <code>fmt::Result</code>, is what <code>fmt</code> returns.</li>
+<li>Once a type has Display, <code>{}</code> works for it everywhere (<code>println!</code>, <code>format!</code>, <code>panic!</code>), and you get <code>.to_string()</code> for free.</li>
+<li>Need several <code>write!</code> calls? Each returns a <code>fmt::Result</code>, and real code ends them with <code>?</code> to stop on an error (module 19). Until then, build the text in a <code>String</code> and <code>write!</code> it once.</li>
+</ul>
+<h2>Common mistake: width on your own type</h2>
+<p>A width like <code>{:&gt;10}</code> is handled by each type&#39;s <code>fmt</code>, and a <code>fmt</code> that just calls <code>write!</code> ignores it:</p>
+<pre><code class="language-rust">use std::fmt;
+
+struct Money {
+    cents: i64,
+}
+
+impl fmt::Display for Money {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter&lt;&#39;_&gt;) -&gt; fmt::Result {
+        write!(f, &quot;${}.{:02}&quot;, self.cents / 100, self.cents % 100)
+    }
+}
+
+fn main() {
+    let m = Money { cents: 1999 };
+    println!(&quot;[{:&gt;10}]&quot;, m);
+    println!(&quot;[{:&gt;10}]&quot;, m.to_string());
+}
+</code></pre>
+<pre><code class="language-text">[$19.99]
+[    $19.99]
+</code></pre>
+<p>Format it into a String first (as above), or make your <code>fmt</code> end with <code>f.pad(&amp;text)</code>, which applies the caller&#39;s width and alignment.</p>
+
+<h2>Your task</h2>
+<p>Implement <code>Display</code> for <code>Elapsed</code> (a number of seconds) the way a CLI shows durations: <code>45</code> seconds is <code>45s</code>, <code>125</code> is <code>2m 05s</code>, <code>3725</code> is <code>1h 02m 05s</code>. Minutes and seconds after the first unit are padded to two digits; hours appear only if there&#39;s at least one, minutes only if there are hours or minutes.</p>
+
+<h3>Challenge 2</h3>
+<p>Implement <code>Display</code> for <code>Level</code> (<code>INFO</code>, <code>WARN</code>, <code>ERROR</code>) and for <code>LogLine</code>, which displays as <code>[LEVEL] message</code>, for example <code>[WARN] disk 91% full</code>. Inside <code>LogLine</code>&#39;s <code>fmt</code> you can use <code>{}</code> on <code>self.level</code> once <code>Level</code> has Display.</p>
+
+<h3>Challenge 3</h3>
+<p>Implement <code>Display</code> for <code>Grid</code> so it prints as a table: every number right-aligned in a field 4 characters wide, rows separated by newlines (no newline after the last row). For <code>[[1, 20], [300, -4]]</code>:</p>
+<pre><code>   1  20
+ 300  -4
+</code></pre>
+<p>Build the whole text in a <code>String</code> with <code>format!(&quot;{:&gt;4}&quot;, n)</code> pieces, then <code>write!</code> it once.</p>
+
+<p><a href="/learn/strings/formatting-width-alignment-precision">Previous: Formatting: width, alignment, precision</a> </p></main></div>
+  </body>
+</html>

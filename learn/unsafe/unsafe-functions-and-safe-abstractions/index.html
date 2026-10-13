@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Unsafe functions and safe abstractions · Unsafe Rust (Rust) | RustArena</title>
+    <meta name="description" content="unsafe fn: a contract the caller must keep An unsafe fn is a function with a precondition the compiler can't check. Calling it is only allowed inside an…" />
+    <link rel="canonical" href="https://rustarena.app/learn/unsafe/unsafe-functions-and-safe-abstractions/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Unsafe functions and safe abstractions · Unsafe Rust (Rust) | RustArena" />
+    <meta property="og:description" content="unsafe fn: a contract the caller must keep An unsafe fn is a function with a precondition the compiler can't check. Calling it is only allowed inside an…" />
+    <meta property="og:url" content="https://rustarena.app/learn/unsafe/unsafe-functions-and-safe-abstractions/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Unsafe functions and safe abstractions","description":"unsafe fn: a contract the caller must keep An unsafe fn is a function with a precondition the compiler can't check. Calling it is only allowed inside an…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/unsafe/unsafe-functions-and-safe-abstractions/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Unsafe Rust</nav>
+<p>Step 2 of 6</p>
+<h1>Unsafe functions and safe abstractions</h1>
+<h2>unsafe fn: a contract the caller must keep</h2>
+<p>An <strong><code>unsafe fn</code></strong> is a function with a precondition the compiler can&#39;t check. Calling it is only allowed inside an <code>unsafe</code> block, which is the caller saying &quot;I&#39;ve checked the precondition&quot;. std has many: <code>slice::get_unchecked</code> (the index must be in bounds), <code>String::from_utf8_unchecked</code> (the bytes must be valid UTF-8).</p>
+<p>Every <code>unsafe fn</code> documents its contract in a <strong><code># Safety</code></strong> section, and every <code>unsafe</code> block gets a <strong><code>// SAFETY:</code></strong> comment explaining why the contract holds right there:</p>
+<pre><code class="language-rust">/// Returns the element at `index` without checking bounds.
+///
+/// # Safety
+///
+/// `index` must be less than `values.len()`.
+unsafe fn get_fast(values: &amp;[u32], index: usize) -&gt; u32 {
+    // SAFETY: the caller promises index &lt; values.len().
+    unsafe { *values.as_ptr().add(index) }
+}
+
+fn main() {
+    let v = [7, 8, 9];
+    for i in 0..v.len() {
+        // SAFETY: i &lt; v.len() because of the loop range.
+        print!(&quot;{} &quot;, unsafe { get_fast(&amp;v, i) });
+    }
+    println!();
+}
+</code></pre>
+<pre><code class="language-text">7 8 9
+</code></pre>
+<p>Notice the <code>unsafe { }</code> block <strong>inside</strong> the unsafe fn. Since edition 2024, an <code>unsafe fn</code> only means &quot;callers must be careful&quot;; its body is checked like safe code, and each unsafe operation inside still needs its own block. Leave it out and the compiler warns: <code>dereference of raw pointer is unsafe and requires unsafe block</code> (lint <code>unsafe_op_in_unsafe_fn</code>). That keeps the dangerous lines small and visible.</p>
+<p>Reviewers read <code>SAFETY</code> comments carefully, and clippy&#39;s <code>undocumented_unsafe_blocks</code> lint can require one on every block. A missing or vague comment (&quot;this is fine&quot;) is a red flag in code review.</p>
+<h2>Safe abstractions</h2>
+<p>The most important idea in this module: wrap unsafe code in a <strong>safe function</strong> that checks everything the unsafe code relies on. Then no caller, however careless, can cause UB. A function with that property is <strong>sound</strong>.</p>
+<p>The classic example is <code>split_at_mut</code>, which turns one mutable slice into two that don&#39;t overlap. The borrow checker can&#39;t see that the halves are disjoint:</p>
+<pre><code class="language-rust-error">fn split_at_mut(values: &amp;mut [i32], mid: usize) -&gt; (&amp;mut [i32], &amp;mut [i32]) {
+    (&amp;mut values[..mid], &amp;mut values[mid..])
+}
+
+fn main() {
+    let mut v = [1, 2, 3];
+    let (a, b) = split_at_mut(&amp;mut v, 1);
+    println!(&quot;{a:?} {b:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0499]: cannot borrow `*values` as mutable more than once at a time
+</code></pre>
+<p>We know the halves don&#39;t overlap, so we can build them from raw parts:</p>
+<pre><code class="language-rust">use std::slice;
+
+fn split_at_mut(values: &amp;mut [i32], mid: usize) -&gt; (&amp;mut [i32], &amp;mut [i32]) {
+    let len = values.len();
+    let ptr = values.as_mut_ptr();
+    assert!(mid &lt;= len, &quot;mid out of range&quot;);
+    // SAFETY: mid &lt;= len, so [0, mid) and [mid, len) are inside the slice and
+    // don&#39;t overlap. Both results borrow `values`, so nothing else can use it
+    // while they&#39;re alive.
+    unsafe {
+        (
+            slice::from_raw_parts_mut(ptr, mid),
+            slice::from_raw_parts_mut(ptr.add(mid), len - mid),
+        )
+    }
+}
+
+fn main() {
+    let mut v = [1, 2, 3, 4, 5];
+    let (left, right) = split_at_mut(&amp;mut v, 2);
+    left[0] = 10;
+    right[0] = 30;
+    println!(&quot;{:?} {:?}&quot;, left, right);
+    println!(&quot;{:?}&quot;, v);
+}
+</code></pre>
+<pre><code class="language-text">[10, 2] [30, 4, 5]
+[10, 2, 30, 4, 5]
+</code></pre>
+<ul>
+<li><code>slice::from_raw_parts_mut(ptr, len)</code> is an unsafe fn: it makes a slice from a pointer and a length, trusting you that they describe valid, unaliased memory.</li>
+<li>The <code>assert!</code> is what makes the function <strong>sound</strong>. Without it, <code>split_at_mut(&amp;mut v, 99)</code> would create a slice reaching past the array: UB from a safe call, which is a bug in <code>split_at_mut</code>, not in the caller.</li>
+<li>The signature ties both output lifetimes to the input, so the borrow checker still protects callers.</li>
+</ul>
+<p>You&#39;ll never need to write this one: std&#39;s <code>values.split_at_mut(mid)</code> is exactly this code. But the pattern (check, then a small commented unsafe block, behind a safe signature) is how all of std, Tokio and other foundation crates use unsafe.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Trusting input you don&#39;t control.</strong> Unsafe code must not rely on safe code behaving well: a caller&#39;s <code>Ord</code> impl might be inconsistent, a closure might panic halfway. Sound code stays sound even then.</li>
+<li><strong>Making the wrapper <code>unsafe fn</code> &quot;to be safe&quot;.</strong> If your function checks everything, it should be a normal <code>fn</code>. Mark it <code>unsafe</code> only if callers must uphold something.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>get_two_mut</code>, which returns mutable references to two <strong>different</strong> elements of a slice. It must panic if <code>i == j</code> or either index is out of range (check with <code>assert!</code> before any unsafe code). Then get the two references from <code>values.as_mut_ptr()</code> with <code>&amp;mut *ptr.add(i)</code> inside an unsafe block with a <code>// SAFETY:</code> comment.</p>
+
+<h3>Challenge 2</h3>
+<p>Before writing unsafe code, always look for a safe API. Write <code>get_two_mut</code> again <strong>without</strong> <code>unsafe</code>, using the slice method <code>split_at_mut</code>: split at the larger index, so one element is in the left half and the other is the first element of the right half. It must still panic if <code>i == j</code> or an index is out of range (slice indexing panics for you). The same tests run.</p>
+
+<h3>Challenge 3</h3>
+<p>Write the &quot;unsafe core, safe wrapper&quot; pair that std uses everywhere:</p>
+<ul>
+<li><code>unsafe fn sum_at_unchecked(values: &amp;[i64], indexes: &amp;[usize]) -&gt; i64</code> adds up <code>values[i]</code> for every <code>i</code> in <code>indexes</code> using <code>get_unchecked</code>, with a <code># Safety</code> doc section saying every index must be in bounds.</li>
+<li><code>fn sum_at(values: &amp;[i64], indexes: &amp;[usize]) -&gt; Option&lt;i64&gt;</code> is the safe API: it returns <code>None</code> if any index is out of range, and otherwise calls <code>sum_at_unchecked</code>.</li>
+</ul>
+<p>Remember: inside an <code>unsafe fn</code>, the <code>get_unchecked</code> call still needs its own <code>unsafe { }</code> block.</p>
+
+<p><a href="/learn/unsafe/what-unsafe-means-and-raw-pointers">Previous: What unsafe means, and raw pointers</a> <a href="/learn/unsafe/calling-c-with-ffi">Next: Calling C with FFI</a></p></main></div>
+  </body>
+</html>

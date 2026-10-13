@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Rust integer types and integer overflow | RustArena</title>
+    <meta name="description" content="i8 to i128, u8 to usize: Rust integer ranges, what happens on overflow in debug and release builds, and checked, wrapping and saturating math." />
+    <link rel="canonical" href="https://rustarena.app/topics/integer-types-and-overflow/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Rust integer types and integer overflow | RustArena" />
+    <meta property="og:description" content="i8 to i128, u8 to usize: Rust integer ranges, what happens on overflow in debug and release builds, and checked, wrapping and saturating math." />
+    <meta property="og:url" content="https://rustarena.app/topics/integer-types-and-overflow/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Rust integer types and integer overflow","description":"i8 to i128, u8 to usize: Rust integer ranges, what happens on overflow in debug and release builds, and checked, wrapping and saturating math.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/integer-types-and-overflow/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Rust integer types and integer overflow</h1>
+<p>i8 to i128, u8 to usize: Rust integer ranges, what happens on overflow in debug and release builds, and checked, wrapping and saturating math.</p>
+<p>Rust has signed (<code>i</code>) and unsigned (<code>u</code>) integers of fixed sizes. The number is how many bits they use:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Range</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>u8</code></td>
+<td>0 to 255</td>
+<td>bytes, small counts</td>
+</tr>
+<tr>
+<td><code>i32</code></td>
+<td>about -2.1 billion to 2.1 billion</td>
+<td>the default for integer literals</td>
+</tr>
+<tr>
+<td><code>u32</code></td>
+<td>0 to about 4.3 billion</td>
+<td>counts, ids</td>
+</tr>
+<tr>
+<td><code>i64</code> / <code>u64</code></td>
+<td>about ±9.2 × 10^18 / 0 to 1.8 × 10^19</td>
+<td>money in cents, timestamps, big totals</td>
+</tr>
+<tr>
+<td><code>i128</code> / <code>u128</code></td>
+<td>huge</td>
+<td>rare: cryptography, very large math</td>
+</tr>
+<tr>
+<td><code>usize</code> / <code>isize</code></td>
+<td>pointer-sized (64-bit on most machines)</td>
+<td>indexes and lengths: <code>v.len()</code> is a <code>usize</code></td>
+</tr>
+</tbody></table>
+<p>Each type has <code>MIN</code> and <code>MAX</code> constants, like <code>u8::MAX</code> (255) and <code>i32::MAX</code> (2147483647). Literals can use underscores for readability (<code>1_000_000</code>), other bases (<code>0xff</code>, <code>0b1010</code>, <code>0o17</code>) and a type suffix (<code>255u8</code>, <code>10_i64</code>).</p>
+<h2>What happens on overflow</h2>
+<p><strong>Overflow</strong> is a result that doesn&#39;t fit in the type: <code>250u8 + 10</code> would be 260, but a <code>u8</code> stops at 255. What Rust does depends on the build:</p>
+<ul>
+<li><strong>Debug builds</strong> (<code>cargo run</code>, <code>cargo test</code>, this site): the program <strong>panics</strong> with <code>attempt to add with overflow</code>. You find the bug the first time it happens.</li>
+<li><strong>Release builds</strong> (<code>cargo build --release</code>): the value <strong>wraps around</strong> (250 + 10 becomes 4) for speed, unless you turn checks on with <code>overflow-checks = true</code> in your <code>Cargo.toml</code> profile.</li>
+</ul>
+<p>Either way it&#39;s never undefined behavior like in C. When the compiler can see the overflow, it refuses to build:</p>
+<pre><code class="language-rust-error">fn main() {
+    let level: u8 = 256;
+    println!(&quot;{level}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error: literal out of range for `u8`
+</code></pre>
+<h2>Choosing what overflow means</h2>
+<p>When overflow is possible, say what you want with explicit methods:</p>
+<pre><code class="language-rust">fn main() {
+    let hp: u8 = 250;
+    println!(&quot;{:?}&quot;, hp.checked_add(10));
+    println!(&quot;{:?}&quot;, hp.checked_add(5));
+    println!(&quot;{}&quot;, hp.wrapping_add(10));
+    println!(&quot;{}&quot;, hp.saturating_add(10));
+    println!(&quot;{:?}&quot;, hp.overflowing_add(10));
+}
+</code></pre>
+<pre><code class="language-text">None
+Some(255)
+4
+255
+(4, true)
+</code></pre>
+<ul>
+<li><code>checked_*</code> returns an <code>Option</code>: <code>None</code> on overflow. Use it when overflow means bad input you should report.</li>
+<li><code>saturating_*</code> clamps at <code>MIN</code>/<code>MAX</code>. Good for health bars, volume and progress counters.</li>
+<li><code>wrapping_*</code> wraps around on purpose. Used in hashing, checksums and random number generators.</li>
+<li><code>overflowing_*</code> returns the wrapped value and a <code>bool</code> saying whether it overflowed.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>len() - 1</code> on an empty collection.</strong> <code>v.len()</code> is a <code>usize</code>, which can&#39;t go below zero, so <code>v.len() - 1</code> on an empty <code>Vec</code> panics with <code>attempt to subtract with overflow</code>. Use <code>v.len().checked_sub(1)</code>, <code>v.last()</code>, or check <code>v.is_empty()</code> first.</li>
+<li><strong>Using <code>u32</code> for values that can be negative.</strong> A bank balance or a temperature difference needs a signed type.</li>
+<li><strong>Summing many <code>i32</code>s.</strong> A total of large values can overflow even when each one fits. Use <code>i64</code> or <code>u64</code> for totals.</li>
+<li><strong>Mixing integer types.</strong> <code>a + b</code> with an <code>i32</code> and an <code>i64</code> doesn&#39;t compile; convert explicitly with <code>i64::from(a)</code> or <code>as</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>fn main() {
+    println!(&quot;u8: {} to {}&quot;, u8::MIN, u8::MAX);
+    println!(&quot;i32: {} to {}&quot;, i32::MIN, i32::MAX);
+    println!(&quot;big literal: {}&quot;, 1_000_000_u64 * 1_000_000);
+    println!(&quot;hex 0xff = {}, binary 0b1010 = {}&quot;, 0xff, 0b1010);
+
+    let stock: u8 = 250;
+    match stock.checked_add(10) {
+        Some(n) =&gt; println!(&quot;new stock {n}&quot;),
+        None =&gt; println!(&quot;stock would overflow a u8&quot;),
+    }
+    println!(&quot;health capped at {}&quot;, stock.saturating_add(10));
+
+    let empty: Vec&lt;i32&gt; = Vec::new();
+    println!(&quot;last index of empty list: {:?}&quot;, empty.len().checked_sub(1));
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>u8: 0 to 255
+i32: -2147483648 to 2147483647
+big literal: 1000000000000
+hex 0xff = 255, binary 0b1010 = 10
+stock would overflow a u8
+health capped at 255
+last index of empty list: None
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/types/integer-types-and-literals">Lesson: Numbers, Booleans and Characters</a></li></ul></main></div>
+  </body>
+</html>

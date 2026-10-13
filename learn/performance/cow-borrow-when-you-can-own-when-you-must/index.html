@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Cow: borrow when you can, own when you must · Performance (Rust) | RustArena</title>
+    <meta name="description" content="Some functions usually return their input unchanged but occasionally need to modify it: escaping text that rarely contains special characters,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/performance/cow-borrow-when-you-can-own-when-you-must/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Cow: borrow when you can, own when you must · Performance (Rust) | RustArena" />
+    <meta property="og:description" content="Some functions usually return their input unchanged but occasionally need to modify it: escaping text that rarely contains special characters,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/performance/cow-borrow-when-you-can-own-when-you-must/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Cow: borrow when you can, own when you must","description":"Some functions usually return their input unchanged but occasionally need to modify it: escaping text that rarely contains special characters,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/performance/cow-borrow-when-you-can-own-when-you-must/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Performance</nav>
+<p>Step 5 of 6</p>
+<h1>Cow: borrow when you can, own when you must</h1>
+<p>Some functions usually return their input <strong>unchanged</strong> but occasionally need to modify it: escaping text that rarely contains special characters, normalizing paths that are usually already normal. Returning <code>String</code> allocates every time, even for the common case. Returning <code>&amp;str</code> can&#39;t express the modified case.</p>
+<p><strong><code>Cow</code></strong> (&quot;clone on write&quot;, from <code>std::borrow</code>) handles both. <code>Cow&lt;&#39;a, str&gt;</code> is an enum with two variants: <code>Borrowed(&amp;&#39;a str)</code> or <code>Owned(String)</code>.</p>
+<pre><code class="language-rust">use std::borrow::Cow;
+
+fn escape_html(input: &amp;str) -&gt; Cow&lt;&#39;_, str&gt; {
+    if !input.contains([&#39;&lt;&#39;, &#39;&gt;&#39;, &#39;&amp;&#39;]) {
+        return Cow::Borrowed(input); // the common case: no allocation
+    }
+    let mut out = String::with_capacity(input.len() + 16);
+    for c in input.chars() {
+        match c {
+            &#39;&lt;&#39; =&gt; out.push_str(&quot;&amp;lt;&quot;),
+            &#39;&gt;&#39; =&gt; out.push_str(&quot;&amp;gt;&quot;),
+            &#39;&amp;&#39; =&gt; out.push_str(&quot;&amp;amp;&quot;),
+            _ =&gt; out.push(c),
+        }
+    }
+    Cow::Owned(out)
+}
+
+fn main() {
+    for text in [&quot;hello crab&quot;, &quot;1 &lt; 2 &amp; 3 &gt; 2&quot;] {
+        let escaped = escape_html(text);
+        let kind = match &amp;escaped {
+            Cow::Borrowed(_) =&gt; &quot;borrowed&quot;,
+            Cow::Owned(_) =&gt; &quot;owned&quot;,
+        };
+        println!(&quot;{kind}: {escaped}&quot;);
+    }
+}
+</code></pre>
+<pre><code class="language-text">borrowed: hello crab
+owned: 1 &amp;lt; 2 &amp;amp; 3 &amp;gt; 2
+</code></pre>
+<ul>
+<li><code>Cow&lt;&#39;_, str&gt;</code> borrows from <code>input</code> (the <code>&#39;_</code> is the elided lifetime of <code>input</code>).</li>
+<li>Callers don&#39;t care which variant they got: <code>Cow&lt;str&gt;</code> dereferences to <code>&amp;str</code>, so it prints, compares and slices like one. <code>.into_owned()</code> gives a <code>String</code> (allocating only if it was borrowed).</li>
+<li><code>.to_mut()</code> turns a <code>Borrowed</code> into an <code>Owned</code> copy the first time you need to change it, and returns <code>&amp;mut</code> to the owned value. That&#39;s the &quot;clone on write&quot; in the name.</li>
+</ul>
+<p>std uses <code>Cow</code> too: <code>String::from_utf8_lossy(bytes)</code> returns <code>Cow::Borrowed</code> when the bytes were valid UTF-8 and <code>Cow::Owned</code> only when it had to replace bad bytes. A <code>Cow&lt;&#39;static, str&gt;</code> field is a common way to hold messages that are usually string literals but sometimes built with <code>format!</code>.</p>
+<h2>When not to use it</h2>
+<p><code>Cow</code> adds a lifetime and a little complexity to every caller. It pays off when the unchanged case is common and the data is big or the function is hot. If you modify the input most of the time anyway, just return <code>String</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>Cow::Owned(s)</code> with a <code>&amp;str</code></strong>: the owned variant holds a <code>String</code>, so write <code>Cow::Owned(s.to_string())</code>.</li>
+<li><strong>Calling <code>.to_string()</code> on the result</strong> &quot;to be safe&quot;: that allocates every time and throws the benefit away. Use the <code>Cow</code> as a <code>&amp;str</code> where you can.</li>
+<li><strong>Returning <code>Cow::Borrowed</code> of a local <code>String</code></strong>: the borrow can&#39;t outlive the function. Anything you built inside must be <code>Owned</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>redact_digits</code>, which replaces every ASCII digit with <code>#</code> (<code>&quot;pin 1234&quot;</code> becomes <code>&quot;pin ####&quot;</code>). Text without digits must come back as <code>Cow::Borrowed</code> (no allocation); a hidden test checks the variant.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>ensure_trailing_slash</code>, which makes sure a directory path ends with <code>/</code>: <code>&quot;/usr/bin&quot;</code> becomes <code>&quot;/usr/bin/&quot;</code> (owned), <code>&quot;/usr/bin/&quot;</code> comes back unchanged (borrowed), and <code>&quot;&quot;</code> becomes <code>&quot;/&quot;</code>.</p>
+
+<h3>Challenge 3</h3>
+<p><code>Cow</code> works for slices too: <code>Cow&lt;&#39;_, [i32]&gt;</code> is either a borrowed <code>&amp;[i32]</code> or an owned <code>Vec&lt;i32&gt;</code>. Write <code>clamp_negatives</code>, which replaces negative numbers with <code>0</code>. Start with <code>Cow::Borrowed(values)</code> and call <code>.to_mut()</code> only when you find a negative number: the first call copies the slice into a <code>Vec</code>, later calls reuse it. A slice with no negatives comes back borrowed.</p>
+
+<p><a href="/learn/performance/iterator-chains-and-avoiding-intermediate-collections">Previous: Iterator chains and avoiding intermediate collections</a> <a href="/learn/performance/benchmarks-and-profilers">Next: Benchmarks and profilers</a></p></main></div>
+  </body>
+</html>

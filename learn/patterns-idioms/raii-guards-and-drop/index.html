@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>RAII guards and Drop · Design Patterns and Idioms (Rust) | RustArena</title>
+    <meta name="description" content="RAII (&quot;resource acquisition is initialization&quot;, a name from C++) means: tie the cleanup of a resource to the lifetime of a value. When the value goes out…" />
+    <link rel="canonical" href="https://rustarena.app/learn/patterns-idioms/raii-guards-and-drop/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="RAII guards and Drop · Design Patterns and Idioms (Rust) | RustArena" />
+    <meta property="og:description" content="RAII (&quot;resource acquisition is initialization&quot;, a name from C++) means: tie the cleanup of a resource to the lifetime of a value. When the value goes out…" />
+    <meta property="og:url" content="https://rustarena.app/learn/patterns-idioms/raii-guards-and-drop/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"RAII guards and Drop","description":"RAII (\"resource acquisition is initialization\", a name from C++) means: tie the cleanup of a resource to the lifetime of a value. When the value goes out…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/patterns-idioms/raii-guards-and-drop/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Design Patterns and Idioms</nav>
+<p>Step 5 of 7</p>
+<h1>RAII guards and Drop</h1>
+<p><strong>RAII</strong> (&quot;resource acquisition is initialization&quot;, a name from C++) means: tie the cleanup of a resource to the lifetime of a value. When the value goes out of scope, its <code>Drop</code> code runs and the cleanup happens, no matter <strong>how</strong> the scope ends: normally, by <code>return</code>, by <code>?</code>, by <code>break</code>, or by a panic unwinding the stack. You&#39;ve relied on it all along: a <code>File</code> closes itself, a <code>MutexGuard</code> unlocks, a <code>Vec</code> frees its memory.</p>
+<p>A <strong>guard</strong> is a small value you create just for its <code>Drop</code>. It&#39;s the Rust answer to <code>try/finally</code> and <code>defer</code>, and it can&#39;t be forgotten on an early return.</p>
+<pre><code class="language-rust">struct Account {
+    balance: i64,
+    log: Vec&lt;String&gt;,
+}
+
+struct Transaction&lt;&#39;a&gt; {
+    account: &amp;&#39;a mut Account,
+    start_balance: i64,
+    committed: bool,
+}
+
+impl&lt;&#39;a&gt; Transaction&lt;&#39;a&gt; {
+    fn begin(account: &amp;&#39;a mut Account) -&gt; Self {
+        let start_balance = account.balance;
+        Transaction { account, start_balance, committed: false }
+    }
+
+    fn withdraw(&amp;mut self, amount: i64) -&gt; Result&lt;(), String&gt; {
+        if amount &gt; self.account.balance {
+            return Err(format!(&quot;cannot withdraw {amount}, balance is {}&quot;, self.account.balance));
+        }
+        self.account.balance -= amount;
+        Ok(())
+    }
+
+    fn commit(mut self) {
+        self.committed = true;
+        self.account.log.push(String::from(&quot;committed&quot;));
+    }
+}
+
+impl Drop for Transaction&lt;&#39;_&gt; {
+    fn drop(&amp;mut self) {
+        if !self.committed {
+            self.account.balance = self.start_balance;
+            self.account.log.push(String::from(&quot;rolled back&quot;));
+        }
+    }
+}
+
+fn pay_bills(account: &amp;mut Account) -&gt; Result&lt;(), String&gt; {
+    let mut tx = Transaction::begin(account);
+    tx.withdraw(700)?;
+    tx.withdraw(300)?;
+    tx.commit();
+    Ok(())
+}
+
+fn main() {
+    for start in [1500, 900] {
+        let mut acc = Account { balance: start, log: Vec::new() };
+        let result = pay_bills(&amp;mut acc);
+        println!(&quot;{result:?} -&gt; balance {} {:?}&quot;, acc.balance, acc.log);
+    }
+}
+</code></pre>
+<pre><code class="language-text">Ok(()) -&gt; balance 500 [&quot;committed&quot;]
+Err(&quot;cannot withdraw 300, balance is 200&quot;) -&gt; balance 900 [&quot;rolled back&quot;]
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>Transaction</code> holds <code>&amp;mut Account</code>: while it&#39;s alive, nobody else can touch the account. The borrow checker enforces the &quot;transaction&quot; for free.</li>
+<li>In the second run, the second <code>withdraw</code> fails and <code>?</code> returns early. <code>tx</code> goes out of scope, <code>Drop</code> runs, sees <code>committed == false</code>, and restores the balance. There&#39;s no rollback code in <code>pay_bills</code> at all.</li>
+<li><code>commit(mut self)</code> takes the guard <strong>by value</strong>: after committing you can&#39;t use the transaction again, and when <code>commit</code> ends, <code>self</code> is dropped with <code>committed == true</code>, so nothing is undone.</li>
+<li>Values are dropped in <strong>reverse order</strong> of declaration, so guards nest naturally.</li>
+</ul>
+<h2><code>let _guard</code> vs <code>let _</code></h2>
+<p>A subtle trap: <code>let _ = guard();</code> drops the guard <strong>immediately</strong>, because <code>_</code> doesn&#39;t bind anything. <code>let _guard = guard();</code> keeps it alive until the end of the scope.</p>
+<pre><code class="language-rust">struct Noisy(&amp;&#39;static str);
+
+impl Drop for Noisy {
+    fn drop(&amp;mut self) {
+        println!(&quot;drop {}&quot;, self.0);
+    }
+}
+
+fn main() {
+    let _a = Noisy(&quot;a&quot;);
+    let _ = Noisy(&quot;b&quot;);
+    println!(&quot;body&quot;);
+    {
+        let _c = Noisy(&quot;c&quot;);
+        println!(&quot;inner&quot;);
+    }
+    drop(Noisy(&quot;d&quot;));
+    println!(&quot;end of main&quot;);
+}
+</code></pre>
+<pre><code class="language-text">drop b
+body
+inner
+drop c
+drop d
+end of main
+drop a
+</code></pre>
+<p><code>drop(x)</code> (the function <code>std::mem::drop</code>) ends a value&#39;s life early, for example to release a lock before slow work.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Fallible cleanup in <code>Drop</code>.</strong> <code>drop</code> can&#39;t return an error, and panicking inside it is a bad idea. When cleanup can fail (flushing a file), offer an explicit <code>fn close(self) -&gt; Result&lt;..&gt;</code> and keep <code>Drop</code> as the fallback, like <code>BufWriter</code> does.</li>
+<li><strong><code>std::process::exit</code> skips <code>Drop</code></strong>, as the CLI module said. So does <code>std::mem::forget</code>. Guards protect you from early returns and panics, not from killing the process.</li>
+<li><strong>Calling <code>x.drop()</code> directly</strong> isn&#39;t allowed: <code>error[E0040]: explicit use of destructor method</code>. Use <code>drop(x)</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Count active work with a guard. <code>Tracker::enter(&amp;self)</code> increments <code>active</code>, updates <code>peak</code> (the highest <code>active</code> ever seen) and returns an <code>ActiveGuard</code>; dropping the guard decrements <code>active</code>. The fields are <code>Cell&lt;u32&gt;</code> so they can change through <code>&amp;self</code> (interior mutability, from the smart pointers module).</p>
+
+<h3>Challenge 2</h3>
+<p>An undo guard for a list. <code>Undo::begin(list)</code> remembers the list&#39;s length; <code>push</code> adds items through the guard; <code>keep(self)</code> makes the changes permanent. If the guard is dropped without <code>keep</code>, the list is truncated back to its old length.</p>
+
+<h3>Challenge 3</h3>
+<p>A temporary file that cleans up after itself. <code>TempFile::new(path, contents)</code> writes the file and returns the guard (or the I/O error); <code>path()</code> returns the path; dropping the guard deletes the file (ignore errors while deleting: <code>let _ = std::fs::remove_file(..)</code>).</p>
+
+<p><a href="/learn/patterns-idioms/conversions-and-flexible-parameters-from-into-asref">Previous: Conversions and flexible parameters: From, Into, AsRef</a> <a href="/learn/patterns-idioms/returning-iterators">Next: Returning iterators</a></p></main></div>
+  </body>
+</html>

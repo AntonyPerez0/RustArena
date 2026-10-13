@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Result and the ? operator in Rust | RustArena</title>
+    <meta name="description" content="How Rust handles errors with Result&lt;T, E&gt;: Ok and Err, match, the ? operator for early returns, main returning Result, and map_err." />
+    <link rel="canonical" href="https://rustarena.app/topics/result-and-question-mark/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Result and the ? operator in Rust | RustArena" />
+    <meta property="og:description" content="How Rust handles errors with Result&lt;T, E&gt;: Ok and Err, match, the ? operator for early returns, main returning Result, and map_err." />
+    <meta property="og:url" content="https://rustarena.app/topics/result-and-question-mark/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Result and the ? operator in Rust","description":"How Rust handles errors with Result\u003cT, E>: Ok and Err, match, the ? operator for early returns, main returning Result, and map_err.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/result-and-question-mark/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Result and the ? operator in Rust</h1>
+<p>How Rust handles errors with Result&lt;T, E&gt;: Ok and Err, match, the ? operator for early returns, main returning Result, and map_err.</p>
+<p>Rust has no exceptions. A function that can fail returns <strong><code>Result&lt;T, E&gt;</code></strong>, an enum with two variants:</p>
+<pre><code class="language-rust">enum Result&lt;T, E&gt; {
+    Ok(T),   // success, holding the value
+    Err(E),  // failure, holding the error
+}
+</code></pre>
+<p>The failure is part of the function&#39;s type, so callers can see it in the signature and the compiler makes sure they deal with it. Ignoring a <code>Result</code> entirely gives the warning <code>unused Result that must be used</code>.</p>
+<h2>Handling a Result with match</h2>
+<pre><code class="language-rust">fn main() {
+    for input in [&quot;42&quot;, &quot;forty-two&quot;] {
+        match input.parse::&lt;i32&gt;() {
+            Ok(n) =&gt; println!(&quot;{input:?} -&gt; {n}&quot;),
+            Err(e) =&gt; println!(&quot;{input:?} -&gt; error: {e}&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">&quot;42&quot; -&gt; 42
+&quot;forty-two&quot; -&gt; error: invalid digit found in string
+</code></pre>
+<h2>The ? operator</h2>
+<p>Most of the time a function can&#39;t fix an error itself and should pass it to its caller. Writing a <code>match</code> for that each time is noisy, so Rust has <code>?</code>:</p>
+<pre><code class="language-rust">let port: u16 = text.parse()?;
+</code></pre>
+<p>means: if <code>parse</code> returned <code>Ok(v)</code>, give me <code>v</code>; if it returned <code>Err(e)</code>, <strong>return <code>Err(e)</code> from this function right now</strong>. Before returning, <code>?</code> converts the error with <code>From::from</code>, so a function returning <code>Result&lt;T, MyError&gt;</code> can use <code>?</code> on any error that converts into <code>MyError</code>.</p>
+<p><code>?</code> only works inside a function that returns <code>Result</code> (or <code>Option</code>):</p>
+<pre><code class="language-rust-error">use std::fs::File;
+
+fn main() {
+    let f = File::open(&quot;config.toml&quot;)?;
+    println!(&quot;{f:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+</code></pre>
+<h2>main can return a Result</h2>
+<p>Change <code>main</code>&#39;s signature and <code>?</code> works there too:</p>
+<pre><code class="language-rust">fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let config = std::fs::read_to_string(&quot;config.toml&quot;)?;
+    println!(&quot;{} bytes&quot;, config.len());
+    Ok(())
+}
+</code></pre>
+<p>If <code>main</code> returns <code>Err</code>, Rust prints the error (in its <code>Debug</code> form) and exits with a non-zero code. <code>Box&lt;dyn Error&gt;</code> accepts any error type, which is convenient in small programs; applications at work often use <code>anyhow::Result</code> for the same purpose.</p>
+<h2>Combinators</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>map(|v| ...)</code></td>
+<td>transform the success value</td>
+</tr>
+<tr>
+<td><code>map_err(|e| ...)</code></td>
+<td>transform the error, e.g. into your own type or a message</td>
+</tr>
+<tr>
+<td><code>and_then(|v| ...)</code></td>
+<td>chain another fallible step</td>
+</tr>
+<tr>
+<td><code>unwrap_or(default)</code>, <code>unwrap_or_else(|e| ...)</code></td>
+<td>fall back to a value</td>
+</tr>
+<tr>
+<td><code>ok()</code></td>
+<td>turn it into an <code>Option</code>, dropping the error</td>
+</tr>
+<tr>
+<td><code>is_ok()</code>, <code>is_err()</code></td>
+<td>test without taking it apart</td>
+</tr>
+<tr>
+<td><code>expect(&quot;why&quot;)</code></td>
+<td>panic with a message on <code>Err</code></td>
+</tr>
+</tbody></table>
+<h2>When to panic instead</h2>
+<p><code>panic!</code>, <code>unwrap()</code> and <code>expect()</code> stop the program (or thread). Use them for <strong>bugs</strong> (a broken invariant, an index you just checked) and in tests and prototypes. Use <code>Result</code> for anything that can go wrong in normal operation: missing files, bad input, network failures.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>unwrap()</code> everywhere in real code.</strong> One bad input line crashes the whole program. Propagate with <code>?</code> and decide at the top what to do.</li>
+<li><strong>Using <code>?</code> on an <code>Option</code> in a function returning <code>Result</code>:</strong> E0277, &quot;the <code>?</code> operator can only be used on <code>Result</code>s, not <code>Option</code>s&quot;. Convert with <code>.ok_or(...)</code> or <code>.ok_or_else(...)</code>.</li>
+<li><strong>Error types that don&#39;t convert:</strong> &quot;<code>?</code> couldn&#39;t convert the error to <code>MyError</code>&quot;. Implement <code>From&lt;TheirError&gt; for MyError</code>, or use <code>map_err</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::num::ParseIntError;
+
+#[derive(Debug)]
+struct Order {
+    item: String,
+    qty: u32,
+}
+
+fn parse_qty(text: &amp;str) -&gt; Result&lt;u32, ParseIntError&gt; {
+    let qty = text.trim().parse::&lt;u32&gt;()?;
+    Ok(qty)
+}
+
+fn parse_order(line: &amp;str) -&gt; Result&lt;Order, String&gt; {
+    let (item, qty) = line.split_once(',').ok_or(format!(&quot;missing comma in {line:?}&quot;))?;
+    let qty = parse_qty(qty).map_err(|e| format!(&quot;bad quantity in {line:?}: {e}&quot;))?;
+    if qty == 0 {
+        return Err(format!(&quot;zero quantity in {line:?}&quot;));
+    }
+    Ok(Order { item: item.trim().to_string(), qty })
+}
+
+fn total_qty(lines: &amp;[&amp;str]) -&gt; Result&lt;u32, String&gt; {
+    let mut total = 0;
+    for line in lines {
+        total += parse_order(line)?.qty;
+    }
+    Ok(total)
+}
+
+fn main() {
+    for line in [&quot;potion, 3&quot;, &quot;sword 1&quot;, &quot;shield, two&quot;, &quot;arrow, 0&quot;] {
+        match parse_order(line) {
+            Ok(order) =&gt; println!(&quot;ok: {} x{}&quot;, order.item, order.qty),
+            Err(e) =&gt; println!(&quot;error: {e}&quot;),
+        }
+    }
+    println!(&quot;{:?}&quot;, total_qty(&amp;[&quot;a, 1&quot;, &quot;b, 2&quot;]));
+    println!(&quot;{:?}&quot;, total_qty(&amp;[&quot;a, 1&quot;, &quot;b, x&quot;]));
+    println!(&quot;default: {}&quot;, parse_qty(&quot;oops&quot;).unwrap_or(1));
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>ok: potion x3
+error: missing comma in &quot;sword 1&quot;
+error: bad quantity in &quot;shield, two&quot;: invalid digit found in string
+error: zero quantity in &quot;arrow, 0&quot;
+Ok(3)
+Err(&quot;bad quantity in \&quot;b, x\&quot;: invalid digit found in string&quot;)
+default: 1
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/errors/panic-or-result">Lesson: Error Handling with Result</a></li></ul></main></div>
+  </body>
+</html>

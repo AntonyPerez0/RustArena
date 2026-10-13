@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Drop and Deref · Standard Library Traits (Rust) | RustArena</title>
+    <meta name="description" content="Drop: code that runs when a value goes away In the ownership module you saw that a value is dropped at the end of its scope: its memory is freed. Drop…" />
+    <link rel="canonical" href="https://rustarena.app/learn/std-traits/drop-and-deref/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Drop and Deref · Standard Library Traits (Rust) | RustArena" />
+    <meta property="og:description" content="Drop: code that runs when a value goes away In the ownership module you saw that a value is dropped at the end of its scope: its memory is freed. Drop…" />
+    <meta property="og:url" content="https://rustarena.app/learn/std-traits/drop-and-deref/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Drop and Deref","description":"Drop: code that runs when a value goes away In the ownership module you saw that a value is dropped at the end of its scope: its memory is freed. Drop…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/std-traits/drop-and-deref/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Standard Library Traits</nav>
+<p>Step 7 of 7</p>
+<h1>Drop and Deref</h1>
+<h2>Drop: code that runs when a value goes away</h2>
+<p>In the ownership module you saw that a value is <strong>dropped</strong> at the end of its scope: its memory is freed. <code>Drop</code> lets you run your own code at that moment.</p>
+<pre><code class="language-rust">struct Connection {
+    id: u32,
+}
+
+impl Drop for Connection {
+    fn drop(&amp;mut self) {
+        println!(&quot;closing connection {}&quot;, self.id);
+    }
+}
+
+fn main() {
+    let _a = Connection { id: 1 };
+    {
+        let _b = Connection { id: 2 };
+        println!(&quot;inner scope ends&quot;);
+    }
+    let c = Connection { id: 3 };
+    drop(c);
+    println!(&quot;main ends&quot;);
+}
+</code></pre>
+<pre><code class="language-text">inner scope ends
+closing connection 2
+closing connection 3
+main ends
+closing connection 1
+</code></pre>
+<ul>
+<li><code>fn drop(&amp;mut self)</code> runs automatically. <code>_b</code> is dropped when the inner block ends; <code>_a</code> when <code>main</code> ends.</li>
+<li>Values in the same scope are dropped in <strong>reverse</strong> order of creation (last in, first out), so things created later, which may depend on earlier ones, go away first.</li>
+<li><code>drop(c)</code> drops a value early. It&#39;s an ordinary function (<code>std::mem::drop</code>) that takes ownership and lets the value go out of scope.</li>
+</ul>
+<p>This pattern is called <strong>RAII</strong> (&quot;resource acquisition is initialization&quot;): a value owns a resource and releases it in <code>Drop</code>, so you can&#39;t forget. Files close themselves, <code>MutexGuard</code>s unlock their mutex, network connections hang up. You rarely write <code>Drop</code> for plain data; you write it for types that own something outside your program&#39;s memory.</p>
+<h2>Deref (briefly): <code>*</code> and automatic method calls</h2>
+<p><code>Deref</code> lets a wrapper type act like a reference to what it contains. You use it all the time without noticing: a <code>String</code> derefs to <code>str</code> (that&#39;s why <code>&amp;String</code> works where <code>&amp;str</code> is expected) and a <code>Vec&lt;T&gt;</code> derefs to <code>[T]</code>.</p>
+<pre><code class="language-rust">use std::ops::Deref;
+
+struct Username(String);
+
+impl Deref for Username {
+    type Target = str;
+
+    fn deref(&amp;self) -&gt; &amp;str {
+        &amp;self.0
+    }
+}
+
+fn greet(name: &amp;str) -&gt; String {
+    format!(&quot;hi {name}&quot;)
+}
+
+fn main() {
+    let u = Username(String::from(&quot;ferris&quot;));
+    println!(&quot;{} {}&quot;, u.len(), u.to_uppercase());
+    println!(&quot;{}&quot;, greet(&amp;u));
+}
+</code></pre>
+<pre><code class="language-text">6 FERRIS
+hi ferris
+</code></pre>
+<ul>
+<li><code>type Target = str;</code> is what the wrapper derefs to, and <code>deref</code> returns a reference to it.</li>
+<li><code>u.len()</code>: <code>Username</code> has no <code>len</code> method, so Rust derefs and finds <code>str::len</code>.</li>
+<li><code>greet(&amp;u)</code>: a <code>&amp;Username</code> turns into a <code>&amp;str</code> automatically. This is <strong>deref coercion</strong>.</li>
+</ul>
+<p>Use <code>Deref</code> for smart pointers and thin wrappers like this one. The smart pointers module comes back to <code>Deref</code> and <code>Drop</code> in depth.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Calling <code>.drop()</code> yourself.</strong> <code>c.drop()</code> gives <code>error[E0040]: explicit use of destructor method</code>, because Rust would then run it a second time at the end of the scope. Call <code>drop(c)</code>, which takes ownership.</li>
+<li><strong>Expecting creation order.</strong> Values in one scope are dropped last-created first, so the output of <code>Drop</code> impls can surprise you.</li>
+<li><strong><code>Copy</code> and <code>Drop</code> together.</strong> <code>error[E0184]: the trait `Copy` cannot be implemented for this type; the type has a destructor</code>: with copies around, the cleanup would run several times.</li>
+<li><strong><code>Deref</code> to fake inheritance.</strong> &quot;My <code>Admin</code> derefs to <code>User</code>, so it gets all of <code>User</code>&#39;s methods&quot; confuses readers, and the Rust API guidelines advise against it. Use a field and forward the methods you need, or a shared trait.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Implement <code>Drop</code> for <code>Connection</code> so it prints <code>close &lt;id&gt;</code> when it&#39;s dropped. Don&#39;t change <code>main</code>. The program must print exactly:</p>
+<pre><code>open 1
+open 2
+using 2
+close 2
+open 3
+close 1
+end of main
+close 3
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>Fill in the blanks so <code>Noisy</code> prints <code>drop &lt;name&gt;</code> when it&#39;s dropped. Three values are created in one scope; notice the order they&#39;re dropped in. The program prints:</p>
+<pre><code>made all three
+drop c
+drop b
+drop a
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>A <code>Tag</code> wraps a <code>String</code> that&#39;s always lowercase. Write <code>fn new(text: &amp;str) -&gt; Tag</code> that lowercases the text, and implement <code>Deref</code> with <code>Target = str</code>, so a <code>Tag</code> can use every <code>str</code> method (<code>len</code>, <code>starts_with</code>...) and be passed where a <code>&amp;str</code> is expected.</p>
+
+<p><a href="/learn/std-traits/default-and-asref">Previous: Default and AsRef</a> </p></main></div>
+  </body>
+</html>

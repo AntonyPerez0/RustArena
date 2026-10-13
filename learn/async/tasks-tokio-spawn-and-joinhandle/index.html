@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Tasks: tokio::spawn and JoinHandle · Async Rust with Tokio (Rust) | RustArena</title>
+    <meta name="description" content="join! runs futures inside one task. tokio::spawn(future) starts a new, independent task. The runtime schedules tasks on its worker threads, so spawned…" />
+    <link rel="canonical" href="https://rustarena.app/learn/async/tasks-tokio-spawn-and-joinhandle/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Tasks: tokio::spawn and JoinHandle · Async Rust with Tokio (Rust) | RustArena" />
+    <meta property="og:description" content="join! runs futures inside one task. tokio::spawn(future) starts a new, independent task. The runtime schedules tasks on its worker threads, so spawned…" />
+    <meta property="og:url" content="https://rustarena.app/learn/async/tasks-tokio-spawn-and-joinhandle/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Tasks: tokio::spawn and JoinHandle","description":"join! runs futures inside one task. tokio::spawn(future) starts a new, independent task. The runtime schedules tasks on its worker threads, so spawned…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/async/tasks-tokio-spawn-and-joinhandle/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Async Rust with Tokio</nav>
+<p>Step 4 of 7</p>
+<h1>Tasks: tokio::spawn and JoinHandle</h1>
+<p><code>join!</code> runs futures inside one task. <strong><code>tokio::spawn(future)</code></strong> starts a new, independent <strong>task</strong>. The runtime schedules tasks on its worker threads, so spawned tasks can also run in parallel on several cores. It returns a <code>tokio::task::JoinHandle&lt;T&gt;</code>, and awaiting the handle gives <code>Result&lt;T, JoinError&gt;</code>: <code>Err</code> if the task panicked or was cancelled.</p>
+<p>Tasks are cheap: a few hundred bytes each, against megabytes of stack for a thread. A server running 100,000 tasks, one per connection, is perfectly normal.</p>
+<pre><code class="language-rust">use std::time::Duration;
+use tokio::time::sleep;
+
+async fn check_server(name: String, latency_ms: u64) -&gt; String {
+    sleep(Duration::from_millis(latency_ms)).await;
+    format!(&quot;{name}: up ({latency_ms} ms)&quot;)
+}
+
+#[tokio::main]
+async fn main() {
+    let servers = vec![(&quot;eu-1&quot;, 15), (&quot;us-1&quot;, 5), (&quot;ap-1&quot;, 10)];
+    let mut handles = Vec::new();
+    for (name, ms) in servers {
+        handles.push(tokio::spawn(check_server(name.to_string(), ms)));
+    }
+    for handle in handles {
+        println!(&quot;{}&quot;, handle.await.unwrap());
+    }
+}
+</code></pre>
+<pre><code class="language-text">eu-1: up (15 ms)
+us-1: up (5 ms)
+ap-1: up (10 ms)
+</code></pre>
+<p>The same pattern as threads in module 31: spawn everything, keep the handles, await them in spawn order. <code>us-1</code> finishes first, but the results print in a fixed order.</p>
+<h2>&#39;static and Send, again</h2>
+<p><code>tokio::spawn</code> has the same requirements as <code>thread::spawn</code>, for the same reasons:</p>
+<ul>
+<li><strong><code>&#39;static</code></strong>: the task may outlive the function that spawned it, so it can&#39;t borrow local variables. Pass owned values (as <code>check_server</code> takes a <code>String</code>), or write an <strong><code>async move { ... }</code></strong> block, which moves the variables it uses into the future, just like a <code>move</code> closure.</li>
+<li><strong><code>Send</code></strong>: a task can pause at an <code>.await</code> on one worker thread and resume on another. So everything the task holds <strong>across an <code>.await</code></strong> must be <code>Send</code>. An <code>Rc</code> kept alive over an <code>.await</code> breaks that:</li>
+</ul>
+<pre><code class="language-rust-error">use std::rc::Rc;
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() {
+    let handle = tokio::spawn(async {
+        let name = Rc::new(String::from(&quot;crab&quot;));
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        name.len()
+    });
+    println!(&quot;{}&quot;, handle.await.unwrap());
+}
+</code></pre>
+<pre><code class="language-compiler">error: future cannot be sent between threads safely
+</code></pre>
+<p>The full message points at the <code>.await</code> and says <code>name</code> is still in use after it. Use <code>Arc</code>, or make sure the value is dropped before the <code>.await</code>.</p>
+<h2>Panics and cancellation</h2>
+<p>A panic inside a task doesn&#39;t bring down the program: the task ends, and its handle&#39;s <code>.await</code> returns an <code>Err(JoinError)</code> (<code>e.is_panic()</code> is <code>true</code>). <code>handle.abort()</code> cancels a task; awaiting it then gives an <code>Err</code> where <code>is_cancelled()</code> is <code>true</code>. And when <code>main</code> returns, the runtime shuts down and drops every task that hasn&#39;t finished, so await the handles you care about.</p>
+<h2>Many tasks: JoinSet</h2>
+<p><code>tokio::task::JoinSet</code> holds a group of tasks: <code>set.spawn(future)</code> adds one, and <code>set.join_all().await</code> waits for all of them and returns their outputs in a <code>Vec</code>, <strong>in the order they finished</strong> (sort before printing!). It&#39;s handy when you don&#39;t need each handle separately.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Borrowing locals in a spawned task</strong>: <code>E0373</code>, &quot;async block may outlive the current function&quot;, with a help line suggesting <code>move</code>. Move owned data in (<code>async move</code>).</li>
+<li><strong>Holding an <code>Rc</code>, a <code>RefCell</code> borrow or a <code>std</code> <code>MutexGuard</code> across <code>.await</code></strong> in a spawned task: &quot;future cannot be sent between threads safely&quot;.</li>
+<li><strong>Printing from inside tasks</strong>: the order changes between runs. Return values and print after awaiting.</li>
+<li><strong>Not awaiting the handles</strong>: work still running when <code>main</code> ends is lost.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>async fn fetch_all(ids: Vec&lt;u32&gt;) -&gt; Vec&lt;String&gt;</code>. Spawn <strong>one task per id</strong> with <code>tokio::spawn</code>, each running <code>fetch_user(id)</code>, then await the handles and return the results in the same order as <code>ids</code>. One hidden test fetches 300 users: one after another that would take over 3 seconds, so they really have to run at the same time.</p>
+
+<h3>Challenge 2</h3>
+<p>Fill in the function that starts a new task. The program should print <code>letters: 14</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Use a <code>JoinSet</code> to measure several files at once. Spawn one task per file into the set; each task returns <code>(name, file_size(name).await)</code>. Wait for all of them with <code>set.join_all().await</code> (which returns them in <strong>finishing</strong> order), sort the results by name, and print:</p>
+<pre><code>a.txt: 5120 bytes
+notes.md: 8192 bytes
+photo_large.png: 15360 bytes
+report.pdf: 10240 bytes
+</code></pre>
+
+<p><a href="/learn/async/running-futures-at-the-same-time-join-and-try-join">Previous: Running futures at the same time: join! and try_join!</a> <a href="/learn/async/async-channels-tokio-sync-mpsc">Next: Async channels: tokio::sync::mpsc</a></p></main></div>
+  </body>
+</html>

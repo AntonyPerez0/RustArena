@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Option in Rust: Some, None and handling missing values | RustArena</title>
+    <meta name="description" content="How Rust's Option&lt;T&gt; replaces null: Some and None, match and if let, unwrap_or, map, and_then, the ? operator, and when unwrap is OK." />
+    <link rel="canonical" href="https://rustarena.app/topics/option/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Option in Rust: Some, None and handling missing values | RustArena" />
+    <meta property="og:description" content="How Rust's Option&lt;T&gt; replaces null: Some and None, match and if let, unwrap_or, map, and_then, the ? operator, and when unwrap is OK." />
+    <meta property="og:url" content="https://rustarena.app/topics/option/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Option in Rust: Some, None and handling missing values","description":"How Rust's Option\u003cT> replaces null: Some and None, match and if let, unwrap_or, map, and_then, the ? operator, and when unwrap is OK.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/option/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Option in Rust: Some, None and handling missing values</h1>
+<p>How Rust's Option&lt;T&gt; replaces null: Some and None, match and if let, unwrap_or, map, and_then, the ? operator, and when unwrap is OK.</p>
+<p>Rust has no <code>null</code>. A value that might be missing has the type <strong><code>Option&lt;T&gt;</code></strong>, an enum from the standard library:</p>
+<pre><code class="language-rust">enum Option&lt;T&gt; {
+    Some(T),
+    None,
+}
+</code></pre>
+<p>An <code>Option&lt;u32&gt;</code> is either <code>Some(5)</code> or <code>None</code>, and the type system <strong>forces</strong> you to handle <code>None</code> before you can use the number. The famous &quot;billion-dollar mistake&quot; of null pointer crashes simply can&#39;t happen by accident.</p>
+<p>Many standard methods return an <code>Option</code>: <code>v.first()</code>, <code>v.get(i)</code>, <code>v.pop()</code>, <code>map.get(&amp;key)</code>, <code>s.find(&#39;x&#39;)</code>, <code>iter.max()</code>, <code>s.chars().next()</code>, <code>text.parse().ok()</code>.</p>
+<h2>Getting the value out</h2>
+<pre><code class="language-rust">fn find_price(item: &amp;str) -&gt; Option&lt;u32&gt; {
+    match item {
+        &quot;apple&quot; =&gt; Some(3),
+        &quot;bread&quot; =&gt; Some(5),
+        _ =&gt; None,
+    }
+}
+
+fn main() {
+    match find_price(&quot;apple&quot;) {
+        Some(p) =&gt; println!(&quot;apple costs {p}&quot;),
+        None =&gt; println!(&quot;no apples&quot;),
+    }
+    if let Some(p) = find_price(&quot;bread&quot;) {
+        println!(&quot;bread costs {p}&quot;);
+    }
+    println!(&quot;caviar costs {}&quot;, find_price(&quot;caviar&quot;).unwrap_or(0));
+}
+</code></pre>
+<pre><code class="language-text">apple costs 3
+bread costs 5
+caviar costs 0
+</code></pre>
+<h2>The methods worth knowing</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>unwrap_or(default)</code></td>
+<td>the value, or a default</td>
+</tr>
+<tr>
+<td><code>unwrap_or_default()</code></td>
+<td>the value, or <code>0</code> / <code>&quot;&quot;</code> / empty</td>
+</tr>
+<tr>
+<td><code>unwrap_or_else(|| ...)</code></td>
+<td>the value, or compute a default (only when needed)</td>
+</tr>
+<tr>
+<td><code>map(|v| ...)</code></td>
+<td>transform the value if there is one</td>
+</tr>
+<tr>
+<td><code>and_then(|v| ...)</code></td>
+<td>chain another step that also returns an <code>Option</code></td>
+</tr>
+<tr>
+<td><code>filter(|v| ...)</code></td>
+<td>turn <code>Some</code> into <code>None</code> if a test fails</td>
+</tr>
+<tr>
+<td><code>ok_or(err)</code></td>
+<td>turn it into a <code>Result</code> with an error for <code>None</code></td>
+</tr>
+<tr>
+<td><code>is_some()</code>, <code>is_none()</code></td>
+<td>test without taking the value</td>
+</tr>
+<tr>
+<td><code>as_ref()</code>, <code>as_deref()</code></td>
+<td>borrow the contents: <code>Option&lt;&amp;T&gt;</code>, <code>Option&lt;&amp;str&gt;</code></td>
+</tr>
+<tr>
+<td><code>copied()</code>, <code>cloned()</code></td>
+<td><code>Option&lt;&amp;T&gt;</code> to <code>Option&lt;T&gt;</code></td>
+</tr>
+<tr>
+<td><code>take()</code></td>
+<td>move the value out, leaving <code>None</code></td>
+</tr>
+</tbody></table>
+<p>Inside a function that returns <code>Option</code>, the <strong><code>?</code> operator</strong> returns <code>None</code> early: <code>let first = words.first()?;</code>.</p>
+<h2>let else</h2>
+<p>To bail out when a value is missing and keep going with a plain value otherwise:</p>
+<pre><code class="language-rust">let Some(user) = find_user(id) else {
+    return Err(&quot;no such user&quot;.to_string());
+};
+// `user` is a plain value from here on
+</code></pre>
+<h2>unwrap and expect</h2>
+<p><code>unwrap()</code> returns the value or <strong>panics</strong> on <code>None</code> with &quot;called <code>Option::unwrap()</code> on a <code>None</code> value&quot;. <code>expect(&quot;message&quot;)</code> panics with your message. They&#39;re fine in tests, quick scripts, and when <code>None</code> really is impossible (say why in the <code>expect</code> message). In code that handles user input or data from outside, handle <code>None</code> properly.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Using an <code>Option</code> as the value:</strong> <code>let first: i32 = v.first();</code> is E0308, expected <code>i32</code>, found <code>Option&lt;&amp;i32&gt;</code>.</li>
+<li><strong>Option of a reference.</strong> <code>v.first()</code> gives <code>Option&lt;&amp;i32&gt;</code>, not <code>Option&lt;i32&gt;</code>; call <code>.copied()</code> to get the number.</li>
+<li><strong><code>if x.is_some() { x.unwrap() }</code>.</strong> Use <code>if let Some(v) = x</code> instead: one check, no unwrap.</li>
+<li><strong>Using <code>Option</code> for errors.</strong> If the caller needs to know <em>why</em> something failed, return a <code>Result</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>#[derive(Debug)]
+struct User {
+    name: String,
+    nickname: Option&lt;String&gt;,
+}
+
+fn find_user(users: &amp;[User], name: &amp;str) -&gt; Option&lt;usize&gt; {
+    users.iter().position(|u| u.name == name)
+}
+
+fn display_name(u: &amp;User) -&gt; &amp;str {
+    u.nickname.as_deref().unwrap_or(&amp;u.name)
+}
+
+fn first_initial(users: &amp;[User]) -&gt; Option&lt;char&gt; {
+    let first = users.first()?;
+    first.name.chars().next()
+}
+
+fn main() {
+    let users = vec![
+        User { name: String::from(&quot;Ferris&quot;), nickname: Some(String::from(&quot;crab&quot;)) },
+        User { name: String::from(&quot;Corro&quot;), nickname: None },
+    ];
+
+    for name in [&quot;Corro&quot;, &quot;Gopher&quot;] {
+        match find_user(&amp;users, name) {
+            Some(i) =&gt; println!(&quot;{name} is user #{i}, shown as {}&quot;, display_name(&amp;users[i])),
+            None =&gt; println!(&quot;{name} not found&quot;),
+        }
+    }
+
+    println!(&quot;{}&quot;, display_name(&amp;users[0]));
+    println!(&quot;initial {:?}&quot;, first_initial(&amp;users));
+    println!(&quot;no users: {:?}&quot;, first_initial(&amp;[]));
+
+    let scores = vec![12, 40, 7];
+    let best = scores.iter().max().copied().unwrap_or(0);
+    let doubled = scores.get(1).map(|s| s * 2);
+    let big = scores.get(2).copied().filter(|s| *s &gt; 10);
+    println!(&quot;best {best}, doubled {doubled:?}, big {big:?}&quot;);
+
+    let Some(last) = scores.last() else {
+        println!(&quot;no scores&quot;);
+        return;
+    };
+    println!(&quot;last {last}, {:?}&quot;, users[1]);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>Corro is user #1, shown as Corro
+Gopher not found
+crab
+initial Some('F')
+no users: None
+best 40, doubled Some(80), big None
+last 7, User { name: &quot;Corro&quot;, nickname: None }
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/enums/enums-one-of-a-fixed-set-of-variants">Lesson: Enums and Option</a></li><li><a href="/learn/errors/panic-or-result">Lesson: Error Handling with Result</a></li></ul></main></div>
+  </body>
+</html>

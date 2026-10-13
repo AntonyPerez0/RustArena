@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Benchmarks and profilers · Performance (Rust) | RustArena</title>
+    <meta name="description" content="Guessing where a program spends its time is famously unreliable, even for experts. Two tools replace guessing: profilers tell you where the time goes,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/performance/benchmarks-and-profilers/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Benchmarks and profilers · Performance (Rust) | RustArena" />
+    <meta property="og:description" content="Guessing where a program spends its time is famously unreliable, even for experts. Two tools replace guessing: profilers tell you where the time goes,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/performance/benchmarks-and-profilers/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Benchmarks and profilers","description":"Guessing where a program spends its time is famously unreliable, even for experts. Two tools replace guessing: profilers tell you where the time goes,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/performance/benchmarks-and-profilers/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Performance</nav>
+<p>Step 6 of 6</p>
+<h1>Benchmarks and profilers</h1>
+<p>Guessing where a program spends its time is famously unreliable, even for experts. Two tools replace guessing: <strong>profilers</strong> tell you <em>where</em> the time goes, and <strong>benchmarks</strong> tell you <em>how much</em> a change helped.</p>
+<h2>Benchmarks with criterion</h2>
+<p><strong>criterion</strong> is the standard benchmarking crate. It runs your code many times, warms up first, and uses statistics to tell real changes from noise:</p>
+<pre><code class="language-toml"># Cargo.toml
+[dev-dependencies]
+criterion = &quot;0.5&quot;   # check crates.io for the current version
+
+[[bench]]
+name = &quot;word_count&quot;
+harness = false
+</code></pre>
+<pre><code class="language-rust">// benches/word_count.rs
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+use my_app::count_words;
+
+fn bench_count_words(c: &amp;mut Criterion) {
+    let text = std::fs::read_to_string(&quot;benches/sample.txt&quot;).unwrap();
+    c.bench_function(&quot;count_words 1 MB&quot;, |b| {
+        b.iter(|| count_words(black_box(&amp;text)))
+    });
+}
+
+criterion_group!(benches, bench_count_words);
+criterion_main!(benches);
+</code></pre>
+<pre><code class="language-text">$ cargo bench
+count_words 1 MB        time:   [2.8131 ms 2.8297 ms 2.8476 ms]
+                        change: [-41.205% -40.731% -40.249%] (p = 0.00 &lt; 0.05)
+                        Performance has improved.
+</code></pre>
+<ul>
+<li><code>cargo bench</code> always builds with optimizations.</li>
+<li><strong><code>std::hint::black_box</code></strong> hides a value from the optimizer. Without it, the compiler may notice the result is unused and delete the work you meant to measure.</li>
+<li>The three times are a confidence interval; the <code>change</code> line compares with the previous run.</li>
+<li>Benchmark with <strong>realistic input</strong>. A function that&#39;s fastest on 10 items may be slowest on 10 million.</li>
+</ul>
+<p>A hand-rolled <code>Instant::now()</code> timing loop is fine for a rough idea, in a release build, but it won&#39;t tell you whether a 3% difference is real.</p>
+<h2>Profilers: where does the time go?</h2>
+<p>A <strong>sampling profiler</strong> interrupts the program thousands of times per second and records which function was running. On Linux:</p>
+<pre><code class="language-text">$ cargo build --release            # with debug = true in [profile.release]
+$ perf record -g ./target/release/report big_input.txt
+$ perf report                      # functions sorted by share of samples
+</code></pre>
+<p><strong>Flamegraphs</strong> draw the same data as a picture. <code>cargo install flamegraph</code>, then <code>cargo flamegraph --bin report -- big_input.txt</code> writes <code>flamegraph.svg</code> (it builds in release mode by default). How to read one:</p>
+<ul>
+<li>Each box is a function; the boxes on top of it are the functions it called.</li>
+<li><strong>Width</strong> is the share of samples, so wide boxes are where the time goes. The x-axis is <strong>not</strong> time order.</li>
+<li>Look for wide plateaus near the top: a function that is wide itself, not just because of what it calls.</li>
+</ul>
+<p><code>samply</code> is a cross-platform alternative that opens results in the Firefox profiler; macOS has Instruments. For memory, <code>heaptrack</code> and the <code>dhat</code> crate show who allocates.</p>
+<h2>The workflow</h2>
+<ol>
+<li>Reproduce the slowness with realistic input, in a <strong>release</strong> build.</li>
+<li>Profile. Find the widest box.</li>
+<li>Fix that one thing (usually an algorithm, a collection, or an allocation in a loop).</li>
+<li>Benchmark before and after, and keep the benchmark so a later change can&#39;t quietly undo it.</li>
+</ol>
+<h2>A real hot spot</h2>
+<p>Suppose a flamegraph of a text tool looks like this (one line per stack level, with its share of samples):</p>
+<pre><code class="language-text">main                                 100%
+└─ count_vowels                       98%
+   └─ core::iter::Iterator::nth       96%   &lt;- almost all the time
+</code></pre>
+<p>and <code>count_vowels</code> is:</p>
+<pre><code class="language-rust">fn count_vowels(text: &amp;str) -&gt; usize {
+    let mut count = 0;
+    for i in 0..text.chars().count() {
+        let c = text.chars().nth(i).unwrap(); // walks from the start every time
+        if &quot;aeiouAEIOU&quot;.contains(c) {
+            count += 1;
+        }
+    }
+    count
+}
+</code></pre>
+<p>Strings are UTF-8, so finding the <code>i</code>-th character means walking from the start: <code>nth(i)</code> is O(i), and the loop makes the whole function O(n²). The profile points straight at it; no amount of compiler tuning would.</p>
+
+<h2>Your task</h2>
+<p>Fix <code>count_vowels</code> so it walks the characters once (O(n)), without <code>nth</code>. The tests include a 100,000-character string.</p>
+
+<h3>Challenge 2</h3>
+<p>A profile of a job scheduler shows 99% of the time in <code>Vec::remove</code>, called from <code>finish_times</code>. Removing the first element of a <code>Vec</code> shifts every other element down, so the loop is O(n²). Rewrite it to walk the jobs in order without removing anything: each job&#39;s finish time is the running total of the costs so far.</p>
+
+<h3>Challenge 3</h3>
+<p>A profile of a word counter shows most of its time in <code>to_string</code> allocations and hashing, because every word is converted to a <code>String</code> up to three times and looked up up to three times. Rewrite <code>word_counts</code> to return <code>HashMap&lt;&amp;str, usize&gt;</code> that <strong>borrows</strong> the words from <code>text</code> (no allocation per word), and use the <code>entry</code> API so each word is hashed once.</p>
+
+<p><a href="/learn/performance/cow-borrow-when-you-can-own-when-you-must">Previous: Cow: borrow when you can, own when you must</a> </p></main></div>
+  </body>
+</html>

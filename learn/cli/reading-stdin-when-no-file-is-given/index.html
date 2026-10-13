@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Reading stdin when no file is given · Building Command-Line Tools (Rust) | RustArena</title>
+    <meta name="description" content="Unix tools follow a convention that makes them combine like building blocks: if no file is given (or the file is -), read standard input. That's what…" />
+    <link rel="canonical" href="https://rustarena.app/learn/cli/reading-stdin-when-no-file-is-given/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Reading stdin when no file is given · Building Command-Line Tools (Rust) | RustArena" />
+    <meta property="og:description" content="Unix tools follow a convention that makes them combine like building blocks: if no file is given (or the file is -), read standard input. That's what…" />
+    <meta property="og:url" content="https://rustarena.app/learn/cli/reading-stdin-when-no-file-is-given/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Reading stdin when no file is given","description":"Unix tools follow a convention that makes them combine like building blocks: if no file is given (or the file is -), read standard input. That's what…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/cli/reading-stdin-when-no-file-is-given/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Building Command-Line Tools</nav>
+<p>Step 5 of 6</p>
+<h1>Reading stdin when no file is given</h1>
+<p>Unix tools follow a convention that makes them combine like building blocks: <strong>if no file is given (or the file is <code>-</code>), read standard input</strong>. That&#39;s what lets you write pipelines:</p>
+<pre><code class="language-text">$ cat app.log | grep ERROR | wc -l
+$ grep ERROR app.log | sort | uniq -c
+</code></pre>
+<p>Each <code>|</code> connects one program&#39;s stdout to the next one&#39;s stdin. Your tool joins the party by accepting both. A clean way: a function that returns a <strong>reader</strong> for either source, as a trait object (<code>Box&lt;dyn BufRead&gt;</code>), since a file reader and stdin are different types:</p>
+<pre><code class="language-rust">use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+
+fn open(path: Option&lt;&amp;str&gt;) -&gt; io::Result&lt;Box&lt;dyn BufRead&gt;&gt; {
+    match path {
+        None | Some(&quot;-&quot;) =&gt; Ok(Box::new(io::stdin().lock())),
+        Some(p) =&gt; Ok(Box::new(BufReader::new(File::open(p)?))),
+    }
+}
+
+fn main() -&gt; io::Result&lt;()&gt; {
+    let path = std::env::args().nth(1);
+    let reader = open(path.as_deref())?;
+    let mut lines = 0;
+    let mut longest = 0;
+    for line in reader.lines() {
+        let line = line?;
+        lines += 1;
+        longest = longest.max(line.chars().count());
+    }
+    println!(&quot;{lines} lines, longest {longest} chars&quot;);
+    Ok(())
+}
+</code></pre>
+<pre><code class="language-text">one
+three
+fifteen
+</code></pre>
+<pre><code class="language-text">3 lines, longest 7 chars
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>io::stdin().lock()</code> gives a locked handle to standard input that implements <code>BufRead</code>, just like a <code>BufReader&lt;File&gt;</code> does. Both fit in a <code>Box&lt;dyn BufRead&gt;</code>, so the rest of the program doesn&#39;t care where the text comes from.</li>
+<li><code>path.as_deref()</code> turns an <code>Option&lt;String&gt;</code> into an <code>Option&lt;&amp;str&gt;</code>, which is what <code>match</code> with string literals wants.</li>
+<li>If reading line by line isn&#39;t needed, the simpler version is <code>io::stdin().read_to_string(&amp;mut text)</code> (from <code>std::io::Read</code>) or <code>io::read_to_string(io::stdin())</code>.</li>
+</ul>
+<h2>Keep the logic away from the I/O</h2>
+<p>The most useful habit for testable tools: functions that <strong>decide</strong> things take <code>&amp;str</code> and return values; only <code>main</code> (or <code>run</code>) touches files, stdin, args and exit codes.</p>
+<pre><code class="language-rust">fn matching_lines&lt;&#39;a&gt;(text: &amp;&#39;a str, pattern: &amp;str) -&gt; Vec&lt;(usize, &amp;&#39;a str)&gt; {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains(pattern))
+        .map(|(i, line)| (i + 1, line))
+        .collect()
+}
+
+fn main() {
+    let text = &quot;INFO boot\nERROR disk\nINFO ok\nERROR net&quot;;
+    for (n, line) in matching_lines(text, &quot;ERROR&quot;) {
+        println!(&quot;{n}:{line}&quot;);
+    }
+}
+</code></pre>
+<pre><code class="language-text">2:ERROR disk
+4:ERROR net
+</code></pre>
+<p><code>matching_lines</code> can be tested with a string literal in a unit test: no files, no processes.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Waiting forever.</strong> A tool that reads stdin when no file is given just sits there if a human runs it in a terminal without a pipe; it&#39;s waiting for typed input (end it with Ctrl+D). Some tools print a hint when stdin is a terminal: <code>std::io::IsTerminal</code> has <code>io::stdin().is_terminal()</code>.</li>
+<li><strong>Locking stdin inside a loop</strong> (<code>io::stdin().lock()</code> per line): lock once and read through that handle.</li>
+<li><strong>Slow output in big loops.</strong> <code>println!</code> locks stdout on every call. For tools that print millions of lines, lock it once (<code>let mut out = io::stdout().lock();</code>) and use <code>writeln!(out, ...)</code>, or wrap it in a <code>BufWriter</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>find [-i] [-n] &lt;pattern&gt; [file]</code>, a small grep. Print every line containing the pattern (<code>-i</code>: ignore case, compare the lowercase versions; <code>-n</code>: prefix each line with its line number and <code>:</code>). Read the file if one is given (and isn&#39;t <code>-</code>), otherwise standard input. Exit codes like grep: <code>0</code> if at least one line matched, <code>1</code> if none did, <code>2</code> for errors (no pattern, an unknown flag, a file that can&#39;t be read), with a message on stderr.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>uniq [-c] [file]</code>: print the input with <strong>consecutive</strong> duplicate lines collapsed into one. With <code>-c</code>, prefix each line with how many times it repeated and a space (<code>3 ERROR</code>). Read the file if given, otherwise standard input. A file that can&#39;t be read prints <code>uniq: &lt;name&gt;: &lt;error&gt;</code> to stderr and exits with code 1.</p>
+
+<h3>Challenge 3</h3>
+<p>Keep logic away from I/O: write <code>fn search&lt;&#39;a&gt;(text: &amp;&#39;a str, pattern: &amp;str, ignore_case: bool) -&gt; Vec&lt;(usize, &amp;&#39;a str)&gt;</code> that returns the matching lines with their 1-based line numbers. With <code>ignore_case</code>, compare <code>to_lowercase()</code> versions (which also handles non-ASCII letters like <code>É</code>).</p>
+
+<p><a href="/learn/cli/reading-files">Previous: Reading files</a> <a href="/learn/cli/putting-it-together-config-run-and-clap">Next: Putting it together: Config, run() and clap</a></p></main></div>
+  </body>
+</html>

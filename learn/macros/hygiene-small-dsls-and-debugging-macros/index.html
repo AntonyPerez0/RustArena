@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Hygiene, small DSLs and debugging macros · Macros (Rust) | RustArena</title>
+    <meta name="description" content="Hygiene Macros in Rust are hygienic: a local variable created inside a macro lives in its own world, separate from the caller's variables, even if the…" />
+    <link rel="canonical" href="https://rustarena.app/learn/macros/hygiene-small-dsls-and-debugging-macros/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Hygiene, small DSLs and debugging macros · Macros (Rust) | RustArena" />
+    <meta property="og:description" content="Hygiene Macros in Rust are hygienic: a local variable created inside a macro lives in its own world, separate from the caller's variables, even if the…" />
+    <meta property="og:url" content="https://rustarena.app/learn/macros/hygiene-small-dsls-and-debugging-macros/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Hygiene, small DSLs and debugging macros","description":"Hygiene Macros in Rust are hygienic: a local variable created inside a macro lives in its own world, separate from the caller's variables, even if the…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/macros/hygiene-small-dsls-and-debugging-macros/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Macros</nav>
+<p>Step 5 of 6</p>
+<h1>Hygiene, small DSLs and debugging macros</h1>
+<h2>Hygiene</h2>
+<p>Macros in Rust are <strong>hygienic</strong>: a local variable created inside a macro lives in its own world, separate from the caller&#39;s variables, even if the names are the same.</p>
+<pre><code class="language-rust">macro_rules! double_it {
+    ($e:expr) =&gt; {{
+        let x = $e;
+        x * 2
+    }};
+}
+
+fn main() {
+    let x = 10;
+    println!(&quot;{}&quot;, double_it!(x + 1));
+    println!(&quot;{}&quot;, x);
+}
+</code></pre>
+<pre><code class="language-text">22
+10
+</code></pre>
+<p>The macro&#39;s <code>let x</code> doesn&#39;t capture or shadow the caller&#39;s <code>x</code>: <code>$e</code> is still <code>x + 1</code> with the caller&#39;s <code>x</code>, giving 22, and the caller&#39;s <code>x</code> is untouched. In C, the same trick with <code>#define</code> would quietly compute with the wrong variable.</p>
+<p>Hygiene works the other way too: a macro can&#39;t reach into the caller&#39;s local variables unless they&#39;re passed in.</p>
+<pre><code class="language-rust-error">macro_rules! add_count {
+    ($x:expr) =&gt; {
+        $x + count
+    };
+}
+
+fn main() {
+    let count = 2;
+    println!(&quot;{}&quot;, add_count!(5));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0425]: cannot find value `count` in this scope
+</code></pre>
+<p>The compiler even adds: <code>an identifier with the same name exists, but is not accessible due to macro hygiene</code>. Pass it in instead (<code>add_count!(5, count)</code>); then it&#39;s visible at the call site, which is what readers expect.</p>
+<p>Hygiene covers local variables and labels. Function, struct and other item names a macro creates or uses are looked up normally, which is why <code>make_adder!(add_five, 5)</code> could create a function you call later. For macros shared between crates, mark them <code>#[macro_export]</code> and write paths as <code>$crate::...</code> so they resolve inside your crate, wherever the macro is used.</p>
+<h2>Small DSLs</h2>
+<p>A <strong>DSL</strong> (domain-specific language) is a mini-language for one job. Macros let you invent readable syntax that expands to plain Rust. A favorite at work is a <strong>table of test cases</strong> that generates one <code>#[test]</code> per row:</p>
+<pre><code class="language-rust">macro_rules! level_tests {
+    ($($name:ident: $input:expr =&gt; $expected:expr,)*) =&gt; {
+        $(
+            #[test]
+            fn $name() {
+                assert_eq!(parse_level($input), $expected);
+            }
+        )*
+    };
+}
+
+level_tests! {
+    parses_info: &quot;info&quot; =&gt; Some(Level::Info),
+    parses_upper: &quot;WARN&quot; =&gt; Some(Level::Warn),
+    rejects_junk: &quot;loud&quot; =&gt; None,
+}
+</code></pre>
+<p>Each row becomes a separate test with its own name, so a failure tells you exactly which case broke. Crates like <code>rstest</code> and <code>test-case</code> do this with attribute macros. Other DSLs you&#39;ll meet: <code>serde_json::json!({ &quot;id&quot;: 1 })</code>, <code>html!</code> in web frameworks, and <code>sqlx::query!</code>.</p>
+<p>Here&#39;s a version you can run that collects results instead of generating tests. <code>stringify!</code> turns tokens into a string literal, so the table can report the source text of each input:</p>
+<pre><code class="language-rust">macro_rules! check_table {
+    ($func:ident { $($input:expr =&gt; $expected:expr),* $(,)? }) =&gt; {
+        $(
+            let got = $func($input);
+            let mark = if got == $expected { &quot;ok  &quot; } else { &quot;FAIL&quot; };
+            println!(&quot;{} {}({}) = {:?}&quot;, mark, stringify!($func), stringify!($input), got);
+        )*
+    };
+}
+
+fn grade(score: u32) -&gt; char {
+    match score {
+        90.. =&gt; &#39;A&#39;,
+        75..=89 =&gt; &#39;B&#39;,
+        _ =&gt; &#39;C&#39;,
+    }
+}
+
+fn main() {
+    check_table!(grade {
+        95 =&gt; &#39;A&#39;,
+        80 =&gt; &#39;B&#39;,
+        74 =&gt; &#39;B&#39;,
+    });
+}
+</code></pre>
+<pre><code class="language-text">ok   grade(95) = &#39;A&#39;
+ok   grade(80) = &#39;B&#39;
+FAIL grade(74) = &#39;C&#39;
+</code></pre>
+<h2>Debugging macros</h2>
+<p>When a macro doesn&#39;t do what you expect, look at what it <strong>expands to</strong>:</p>
+<ul>
+<li><strong><code>cargo expand</code></strong> prints your code with every macro expanded. Install it once with <code>cargo install cargo-expand</code>; it works with your normal stable toolchain. <code>cargo expand</code> shows the whole crate; <code>cargo expand path::to::module</code> narrows it down.</li>
+</ul>
+<pre><code class="language-text">$ cargo expand
+fn main() {
+    let x = 10;
+    {
+        ::std::io::_print(format_args!(&quot;{0}\n&quot;, { let x = x + 1; x * 2 }));
+    };
+    ...
+</code></pre>
+<p>(<code>println!</code> itself expands too, which is why the output is noisier than your code.) Notice <code>let x = x + 1;</code>: printed code can&#39;t show hygiene, so the macro&#39;s <code>x</code> and yours look like one variable. The compiler still keeps them apart; read expanded code with that in mind.</p>
+<ul>
+<li><strong>rust-analyzer</strong> in VS Code and other editors has a command &quot;Expand macro recursively at caret&quot; that shows the expansion of the call under your cursor.</li>
+<li>Put <code>stringify!(...)</code> or <code>println!</code> calls inside the transcriber to see what was matched.</li>
+<li>Read the error&#39;s note: <code>in this macro invocation</code> points at your call, and the arrows point into the macro&#39;s rules.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>test_table!</code>, which runs a function over a table of cases and returns a <code>Vec&lt;String&gt;</code> describing each failure. <code>test_table!(double { 1 =&gt; 2, 5 =&gt; 11 })</code> returns <code>vec![&quot;double(5): expected 11, got 10&quot;]</code> (the function and input are shown as source text with <code>stringify!</code>, the expected and actual values with <code>{:?}</code>). Rows that pass add nothing. Allow a trailing comma, and evaluate each expected value once.</p>
+
+<h3>Challenge 2</h3>
+<p>Thanks to hygiene, a <code>swap!</code> macro can use a temporary variable called <code>tmp</code> even when the caller has a variable called <code>tmp</code>. Write <code>swap!(a, b)</code> (taking two <strong>identifiers</strong> of mutable variables) that swaps their values using <code>let tmp = $a;</code>. The program should print <code>tmp = 2, other = 1</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Write a <code>state_machine!</code> DSL. Each row is <code>From + event =&gt; To</code>, and the macro generates <code>fn next_state(state: &amp;str, event: &amp;str) -&gt; Option&lt;&amp;&#39;static str&gt;</code>, which returns the target state&#39;s name for a known <code>(state, event)</code> pair and <code>None</code> otherwise. Then use it to define this machine for a media player:</p>
+<pre><code class="language-text">Idle + play =&gt; Playing
+Playing + pause =&gt; Paused
+Paused + play =&gt; Playing
+Playing + stop =&gt; Idle
+Paused + stop =&gt; Idle
+</code></pre>
+<p>Hint: <code>stringify!</code> works in match patterns too.</p>
+
+<p><a href="/learn/macros/recursive-macros">Previous: Recursive macros</a> <a href="/learn/macros/procedural-macros-and-derive">Next: Procedural macros and derive</a></p></main></div>
+  </body>
+</html>

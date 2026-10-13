@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Mutable references · Borrowing (Rust) | RustArena</title>
+    <meta name="description" content="A &amp; reference is read-only. Try to change something through one and the compiler stops you: To lend a value for changing, use a mutable reference, &amp;mut.…" />
+    <link rel="canonical" href="https://rustarena.app/learn/borrowing/mutable-references/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Mutable references · Borrowing (Rust) | RustArena" />
+    <meta property="og:description" content="A &amp; reference is read-only. Try to change something through one and the compiler stops you: To lend a value for changing, use a mutable reference, &amp;mut.…" />
+    <meta property="og:url" content="https://rustarena.app/learn/borrowing/mutable-references/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Mutable references","description":"A & reference is read-only. Try to change something through one and the compiler stops you: To lend a value for changing, use a mutable reference, &mut.…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/borrowing/mutable-references/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Ownership › Borrowing</nav>
+<p>Step 2 of 7</p>
+<h1>Mutable references</h1>
+<p>A <code>&amp;</code> reference is read-only. Try to change something through one and the compiler stops you:</p>
+<pre><code class="language-rust-error">fn shout(text: &amp;String) {
+    text.push_str(&quot;!&quot;);
+}
+
+fn main() {
+    let mut s = String::from(&quot;hi&quot;);
+    shout(&amp;s);
+    println!(&quot;{}&quot;, s);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0596]: cannot borrow `*text` as mutable, as it is behind a `&amp;` reference
+ --&gt; src/main.rs:2:5
+  |
+2 |     text.push_str(&quot;!&quot;);
+  |     ^^^^ `text` is a `&amp;` reference, so it cannot be borrowed as mutable
+  |
+help: consider changing this to be a mutable reference
+  |
+1 | fn shout(text: &amp;mut String) {
+  |                 +++
+</code></pre>
+<p>To lend a value <strong>for changing</strong>, use a <strong>mutable reference</strong>, <code>&amp;mut</code>. Its type is <code>&amp;mut String</code>, and you create one with <code>&amp;mut s</code>. Three places have to agree:</p>
+<ol>
+<li>the owner is declared <code>mut</code> (you can&#39;t lend out write access to something you can&#39;t write yourself),</li>
+<li>the parameter&#39;s type is <code>&amp;mut T</code>,</li>
+<li>the call passes <code>&amp;mut value</code>.</li>
+</ol>
+<pre><code class="language-rust">fn add_signature(letter: &amp;mut String) {
+    letter.push_str(&quot;\n-- Ferris&quot;);
+}
+
+fn restock(shelf: &amp;mut Vec&lt;String&gt;) {
+    shelf.push(String::from(&quot;milk&quot;));
+    shelf.push(String::from(&quot;eggs&quot;));
+}
+
+fn main() {
+    let mut letter = String::from(&quot;See you in the arena!&quot;);
+    add_signature(&amp;mut letter);
+    println!(&quot;{}&quot;, letter);
+
+    let mut shelf = vec![String::from(&quot;bread&quot;)];
+    restock(&amp;mut shelf);
+    println!(&quot;{:?}&quot;, shelf);
+}
+</code></pre>
+<pre><code class="language-text">See you in the arena!
+-- Ferris
+[&quot;bread&quot;, &quot;milk&quot;, &quot;eggs&quot;]
+</code></pre>
+<p>As with <code>&amp;</code>, method calls work through a <code>&amp;mut</code> automatically: <code>letter.push_str(...)</code> changes the <code>String</code> that <code>main</code> owns. When the function returns, the borrow is over and <code>main</code> can use its value again, now changed.</p>
+<p>You&#39;ve used a mutable reference since the input module: <code>std::io::stdin().read_line(&amp;mut line)</code>. <code>read_line</code> borrows your <code>String</code> mutably so it can append the typed line to it, then gives the borrow back. Now you know why the <code>&amp;mut</code> is there.</p>
+<p>The picture is the same as for <code>&amp;</code>. The difference is a promise the compiler enforces: while a <code>&amp;mut</code> exists, it is the <strong>only</strong> way to reach the value (step 4 explains why).</p>
+<pre><code class="language-text">   add_signature&#39;s frame       main&#39;s frame
+   letter: &amp;mut String         letter: String
+  ┌────────────┐              ┌────────────┐          HEAP
+  │ ptr ───────┼────────────► │ ptr ───────┼─────► &quot;See you in the arena!&quot; + more text
+  └────────────┘              │ len ...    │
+    exclusive access:         │ cap ...    │
+    can read and write        └────────────┘
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>mut</code> on the variable.</strong> You can&#39;t borrow mutably from an immutable variable:</li>
+</ul>
+<pre><code class="language-rust-error">fn main() {
+    let s = String::from(&quot;hi&quot;);
+    let r = &amp;mut s;
+    r.push(&#39;!&#39;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0596]: cannot borrow `s` as mutable, as it is not declared as mutable
+</code></pre>
+<ul>
+<li><strong>Writing <code>&amp;</code> at the call when the function wants <code>&amp;mut</code></strong>: <code>error[E0308]: mismatched types</code> with the note <code>types differ in mutability</code>.</li>
+<li><strong>Asking for <code>&amp;mut</code> when you only read.</strong> Callers then need a <code>mut</code> variable, and (step 4) nobody else can look at the value while your borrow is active. Ask for the least access you need.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>add_entry</code>. It appends <code>entry</code> to the <code>log</code> it borrows mutably. If the log already has text in it, put <code>&quot;; &quot;</code> before the new entry, so entries come out as <code>start; hit; miss</code>. (<code>entry: &amp;str</code> lets you pass string literals like <code>&quot;hit&quot;</code>. <code>log.is_empty()</code> tells you whether a <code>String</code> has no text.)</p>
+
+<h3>Challenge 2</h3>
+<p><code>level_up</code> should add a skill to the player&#39;s skill list, but the program has three mistakes: the function takes <code>&amp;</code> instead of <code>&amp;mut</code>, the variable isn&#39;t <code>mut</code>, and the call passes <code>&amp;</code> instead of <code>&amp;mut</code>. Fix all three (read the compiler&#39;s messages one at a time) so it prints:</p>
+<pre><code>[&quot;run&quot;, &quot;jump&quot;, &quot;double jump&quot;]
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>Write <code>pad_right</code>. It borrows <code>text</code> mutably and pushes <code>.</code> characters onto the end until the text is <code>width</code> characters long. If it&#39;s already that long or longer, leave it unchanged. Count characters with <code>.chars().count()</code>, so <code>&quot;café&quot;</code> padded to 6 becomes <code>&quot;café..&quot;</code>.</p>
+
+<p><a href="/learn/borrowing/references-borrowing-a-value">Previous: References: borrowing a value</a> <a href="/learn/borrowing/changing-values-through-and-mut-with">Next: Changing values through &amp;mut with *</a></p></main></div>
+  </body>
+</html>

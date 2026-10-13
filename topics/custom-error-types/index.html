@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Custom error types in Rust: enums, Display and From | RustArena</title>
+    <meta name="description" content="How to write your own error type in Rust: an error enum, impl Display and std::error::Error, From conversions for ?, and the thiserror shortcut." />
+    <link rel="canonical" href="https://rustarena.app/topics/custom-error-types/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Custom error types in Rust: enums, Display and From | RustArena" />
+    <meta property="og:description" content="How to write your own error type in Rust: an error enum, impl Display and std::error::Error, From conversions for ?, and the thiserror shortcut." />
+    <meta property="og:url" content="https://rustarena.app/topics/custom-error-types/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Custom error types in Rust: enums, Display and From","description":"How to write your own error type in Rust: an error enum, impl Display and std::error::Error, From conversions for ?, and the thiserror shortcut.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/custom-error-types/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Custom error types in Rust: enums, Display and From</h1>
+<p>How to write your own error type in Rust: an error enum, impl Display and std::error::Error, From conversions for ?, and the thiserror shortcut.</p>
+<p><code>Result&lt;T, String&gt;</code> works for small programs, but callers can&#39;t do much with a string except print it. A <strong>custom error type</strong> lets them react to specific failures (retry on a timeout, show a form error for bad input) and keeps the original cause around.</p>
+<h2>Step 1: an enum of everything that can go wrong</h2>
+<pre><code class="language-rust">#[derive(Debug)]
+enum ConfigError {
+    Missing(String),               // which key was missing
+    BadNumber { key: String, source: std::num::ParseIntError },
+    OutOfRange(u32),
+}
+</code></pre>
+<p>Each variant carries the details needed to explain or handle it.</p>
+<h2>Step 2: implement Display and Error</h2>
+<p><code>Display</code> is the message for humans; <code>std::error::Error</code> marks it as a proper error type, so it works with <code>Box&lt;dyn Error&gt;</code>, <code>anyhow</code>, and error-reporting tools. <code>source()</code> returns the underlying cause, if any:</p>
+<pre><code class="language-rust">impl fmt::Display for ConfigError {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        match self {
+            ConfigError::Missing(key) =&gt; write!(f, &quot;missing key `{key}`&quot;),
+            ConfigError::BadNumber { key, .. } =&gt; write!(f, &quot;`{key}` is not a number&quot;),
+            ConfigError::OutOfRange(n) =&gt; write!(f, &quot;{n} is out of range&quot;),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&amp;self) -&gt; Option&lt;&amp;(dyn std::error::Error + &#39;static)&gt; {
+        match self {
+            ConfigError::BadNumber { source, .. } =&gt; Some(source),
+            _ =&gt; None,
+        }
+    }
+}
+</code></pre>
+<p>Convention: messages are lowercase with no trailing period, and don&#39;t repeat the source&#39;s message (reporters print the chain).</p>
+<h2>Step 3: From, so ? converts for you</h2>
+<p>The <code>?</code> operator calls <code>From::from</code> on the error. Implement <code>From&lt;OtherError&gt; for ConfigError</code> and <code>?</code> turns that error into yours automatically. Without it:</p>
+<pre><code class="language-rust-error">#[derive(Debug)]
+enum ConfigError {
+    Missing,
+}
+
+fn port(s: &amp;str) -&gt; Result&lt;u16, ConfigError&gt; {
+    let p = s.parse::&lt;u16&gt;()?;
+    Ok(p)
+}
+
+fn main() {
+    println!(&quot;{:?} {:?}&quot;, port(&quot;80&quot;), ConfigError::Missing);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: `?` couldn&#39;t convert the error to `ConfigError`
+</code></pre>
+<p>When a variant needs extra context (like which key failed), use <code>map_err</code> at the call site instead of a blanket <code>From</code>.</p>
+<h2>Box<dyn Error>: the quick alternative</h2>
+<p>For scripts and <code>main</code>, <code>Result&lt;T, Box&lt;dyn std::error::Error&gt;&gt;</code> accepts any error type through <code>?</code> with no boilerplate. The cost: callers can&#39;t easily match on specific errors.</p>
+<h2>thiserror: the same thing, less typing</h2>
+<p>In real projects, the <code>thiserror</code> crate generates the <code>Display</code>, <code>Error</code> and <code>From</code> impls from attributes:</p>
+<pre><code class="language-rust">#[derive(Debug, thiserror::Error)]
+enum ConfigError {
+    #[error(&quot;missing key `{0}`&quot;)]
+    Missing(String),
+    #[error(&quot;not a number&quot;)]
+    BadNumber(#[from] std::num::ParseIntError),
+}
+</code></pre>
+<p>Libraries typically expose <code>thiserror</code> enums; applications often wrap everything in <code>anyhow::Error</code> at the top.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>One giant error enum for the whole program.</strong> Give each module or layer its own, and convert at the boundaries.</li>
+<li><strong>Losing the cause:</strong> mapping errors to strings drops the source chain. Keep the original error in a field.</li>
+<li><strong>Forgetting <code>Debug</code>:</strong> the <code>Error</code> trait requires both <code>Debug</code> and <code>Display</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::error::Error;
+use std::fmt;
+use std::num::ParseIntError;
+
+#[derive(Debug)]
+enum ConfigError {
+    Missing(String),
+    BadNumber { key: String, source: ParseIntError },
+    OutOfRange(u32),
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        match self {
+            ConfigError::Missing(key) =&gt; write!(f, &quot;missing key `{key}`&quot;),
+            ConfigError::BadNumber { key, .. } =&gt; write!(f, &quot;`{key}` is not a number&quot;),
+            ConfigError::OutOfRange(n) =&gt; write!(f, &quot;{n} is out of range 1-65535&quot;),
+        }
+    }
+}
+
+impl Error for ConfigError {
+    fn source(&amp;self) -&gt; Option&lt;&amp;(dyn Error + 'static)&gt; {
+        match self {
+            ConfigError::BadNumber { source, .. } =&gt; Some(source),
+            _ =&gt; None,
+        }
+    }
+}
+
+fn get&lt;'a&gt;(pairs: &amp;[(&amp;str, &amp;'a str)], key: &amp;str) -&gt; Result&lt;&amp;'a str, ConfigError&gt; {
+    pairs.iter().find(|(k, _)| *k == key).map(|(_, v)| *v).ok_or_else(|| ConfigError::Missing(key.to_string()))
+}
+
+fn port(pairs: &amp;[(&amp;str, &amp;str)]) -&gt; Result&lt;u16, ConfigError&gt; {
+    let raw = get(pairs, &quot;port&quot;)?;
+    let n: u32 = raw.parse().map_err(|e| ConfigError::BadNumber { key: &quot;port&quot;.to_string(), source: e })?;
+    u16::try_from(n).ok().filter(|p| *p &gt; 0).ok_or(ConfigError::OutOfRange(n))
+}
+
+fn main() {
+    let configs = [vec![(&quot;port&quot;, &quot;8080&quot;)], vec![(&quot;host&quot;, &quot;arena&quot;)], vec![(&quot;port&quot;, &quot;eighty&quot;)], vec![(&quot;port&quot;, &quot;70000&quot;)]];
+    for c in &amp;configs {
+        match port(c) {
+            Ok(p) =&gt; println!(&quot;port {p}&quot;),
+            Err(e) =&gt; {
+                print!(&quot;error: {e}&quot;);
+                if let Some(cause) = e.source() {
+                    print!(&quot; (caused by: {cause})&quot;);
+                }
+                println!();
+            }
+        }
+    }
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>port 8080
+error: missing key `port`
+error: `port` is not a number (caused by: invalid digit found in string)
+error: 70000 is out of range 1-65535
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/custom-errors/an-enum-for-everything-that-can-go-wrong">Lesson: Custom Error Types</a></li></ul></main></div>
+  </body>
+</html>

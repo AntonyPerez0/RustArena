@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>rayon: data parallelism made easy · Threads (Rust) | RustArena</title>
+    <meta name="description" content="Chunking data, spawning threads, joining them: a lot of ceremony for &quot;do this to every item, on every core&quot;. Most Rust teams reach for the rayon crate…" />
+    <link rel="canonical" href="https://rustarena.app/learn/threads/rayon-data-parallelism-made-easy/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="rayon: data parallelism made easy · Threads (Rust) | RustArena" />
+    <meta property="og:description" content="Chunking data, spawning threads, joining them: a lot of ceremony for &quot;do this to every item, on every core&quot;. Most Rust teams reach for the rayon crate…" />
+    <meta property="og:url" content="https://rustarena.app/learn/threads/rayon-data-parallelism-made-easy/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"rayon: data parallelism made easy","description":"Chunking data, spawning threads, joining them: a lot of ceremony for \"do this to every item, on every core\". Most Rust teams reach for the rayon crate…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/threads/rayon-data-parallelism-made-easy/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Threads</nav>
+<p>Step 7 of 7</p>
+<h1>rayon: data parallelism made easy</h1>
+<p>Chunking data, spawning threads, joining them: a lot of ceremony for &quot;do this to every item, on every core&quot;. Most Rust teams reach for the <strong>rayon</strong> crate instead. It keeps a <strong>thread pool</strong> (about one thread per core, started once and reused) and gives you <strong>parallel iterators</strong>: change <code>.iter()</code> to <code>.par_iter()</code> and rayon splits the work across the pool.</p>
+<pre><code class="language-toml">[dependencies]
+rayon = &quot;1&quot;
+</code></pre>
+<pre><code class="language-rust">use rayon::prelude::*;
+
+fn main() {
+    let orders: Vec&lt;u64&gt; = (1..=1_000).collect();
+    let revenue: u64 = orders.par_iter().map(|price| price * 2).sum();
+    let big: Vec&lt;u64&gt; = orders.par_iter().filter(|&amp;&amp;p| p &gt; 995).copied().collect();
+    println!(&quot;revenue: {revenue}&quot;);
+    println!(&quot;big orders: {big:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">revenue: 1001000
+big orders: [996, 997, 998, 999, 1000]
+</code></pre>
+<ul>
+<li><code>use rayon::prelude::*;</code> brings in the traits that add the parallel methods. Forget it and you get <code>error[E0599]: no method named `par_iter` found for struct `Vec&lt;u64&gt;` in the current scope</code>.</li>
+<li><code>par_iter()</code> borrows the items, <code>par_iter_mut()</code> borrows them mutably, <code>into_par_iter()</code> takes ownership (it works on ranges too: <code>(1..=n).into_par_iter()</code>).</li>
+<li>Most iterator methods you know have parallel versions: <code>map</code>, <code>filter</code>, <code>sum</code>, <code>count</code>, <code>min</code>, <code>max</code>, <code>any</code>, <code>all</code>, <code>for_each</code>, <code>collect</code>. On slices there are <code>par_sort()</code> and <code>par_sort_unstable()</code>.</li>
+<li><code>collect()</code> keeps the <strong>original order</strong>, even though the items were processed on different threads. <code>sum</code> and <code>count</code> give the same answer every run.</li>
+</ul>
+<h2>The closures can&#39;t change captured variables</h2>
+<p>The same rules as threads apply: closures run on several threads at once, so they may read captured data but not modify it:</p>
+<pre><code class="language-rust-error">use rayon::prelude::*;
+
+fn main() {
+    let v: Vec&lt;u64&gt; = (1..=10).collect();
+    let mut count = 0;
+    v.par_iter().for_each(|_| count += 1);
+    println!(&quot;{count}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0594]: cannot assign to `count`, as it is a captured variable in a `Fn` closure
+</code></pre>
+<p>Use the iterator&#39;s own result instead (<code>.count()</code>, <code>.sum()</code>), or an atomic counter (next module).</p>
+<h2>Is it worth it?</h2>
+<p>Parallelism has overhead: splitting work and waking threads takes time. For a few hundred cheap items, a plain <code>.iter()</code> is often faster. Use rayon for real work (thousands of items, or expensive work per item), and measure (module 37).</p>
+<h2>Choosing your tool</h2>
+<table>
+<thead>
+<tr>
+<th>The job</th>
+<th>Reach for</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>The same CPU work on many items</td>
+<td>rayon (<code>par_iter</code>)</td>
+</tr>
+<tr>
+<td>A few threads that borrow local data, then finish</td>
+<td><code>thread::scope</code></td>
+</tr>
+<tr>
+<td>A long-running background worker</td>
+<td><code>thread::spawn</code> + channels (next module)</td>
+</tr>
+<tr>
+<td>Thousands of network connections, waiting on I/O</td>
+<td>async with Tokio (module 33)</td>
+</tr>
+</tbody></table>
+
+<h2>Your task</h2>
+<p>Write two functions with rayon&#39;s <code>par_iter()</code>:</p>
+<ul>
+<li><code>fn total_revenue(orders: &amp;[Order]) -&gt; u64</code>: the sum of <code>quantity * unit_price</code> over all orders.</li>
+<li><code>fn count_large(orders: &amp;[Order], threshold: u64) -&gt; usize</code>: how many orders have <code>quantity * unit_price</code> of at least <code>threshold</code>.</li>
+</ul>
+
+<h3>Challenge 2</h3>
+<p>Write <code>fn clean_tags(tags: &amp;[&amp;str]) -&gt; Vec&lt;String&gt;</code> with rayon: trim and lowercase every tag <strong>in parallel</strong> (<code>par_iter</code>), collect them, sort the result with <code>par_sort()</code>, and remove duplicates with <code>dedup()</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Count the primes below 50,000 in parallel. Write <code>fn is_prime(n: u32) -&gt; bool</code> yourself (trial division up to the square root is fine), then use <code>(2..50_000u32).into_par_iter()</code> to count them and to find the largest one. Print:</p>
+<pre><code>primes below 50000: 5133
+largest: 49999
+</code></pre>
+
+<p><a href="/learn/threads/when-a-thread-panics">Previous: When a thread panics</a> </p></main></div>
+  </body>
+</html>

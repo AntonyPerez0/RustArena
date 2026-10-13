@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Measure first, and fix the algorithm first · Performance (Rust) | RustArena</title>
+    <meta name="description" content="Rust is fast by default, and most code is fast enough as written. When something is slow, the time almost always goes to a few hot spots, and the biggest…" />
+    <link rel="canonical" href="https://rustarena.app/learn/performance/measure-first-and-fix-the-algorithm-first/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Measure first, and fix the algorithm first · Performance (Rust) | RustArena" />
+    <meta property="og:description" content="Rust is fast by default, and most code is fast enough as written. When something is slow, the time almost always goes to a few hot spots, and the biggest…" />
+    <meta property="og:url" content="https://rustarena.app/learn/performance/measure-first-and-fix-the-algorithm-first/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Measure first, and fix the algorithm first","description":"Rust is fast by default, and most code is fast enough as written. When something is slow, the time almost always goes to a few hot spots, and the biggest…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/performance/measure-first-and-fix-the-algorithm-first/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Performance</nav>
+<p>Step 1 of 6</p>
+<h1>Measure first, and fix the algorithm first</h1>
+<p>Rust is fast by default, and most code is fast enough as written. When something <strong>is</strong> slow, the time almost always goes to a few hot spots, and the biggest wins come from doing <strong>less work</strong>, not from clever tricks. The order teams follow: make it work, make it right, then measure, and only then make it fast.</p>
+<h2>Debug versus release</h2>
+<p><code>cargo run</code> and <code>cargo build</code> make a <strong>debug build</strong>: no optimizations, plus extra checks like integer overflow. It compiles quickly and is great for development, but it&#39;s often 10 to 100 times slower than a <strong>release build</strong>:</p>
+<pre><code class="language-text">$ cargo build --release
+$ ./target/release/report big_input.txt
+</code></pre>
+<p>Never judge speed from a debug build, and never benchmark one. Release builds can be tuned in <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[profile.release]
+lto = true            # optimize across crates: slower to build, often a bit faster to run
+codegen-units = 1     # fewer parallel compile units: better optimization, slower builds
+debug = true          # keep symbols so profilers can show function names
+</code></pre>
+<p>This site runs debug builds, so its tests can&#39;t measure fine-grained speed. Instead, the exercises in this module check what matters most: the <strong>amount of work</strong>. Tests use inputs big enough that a quadratic solution runs past the 2-second time limit, while a linear one finishes in milliseconds, even unoptimized. Other exercises check for allocations and clones with rules.</p>
+<h2>Big-O beats micro-optimization</h2>
+<p><strong>Big-O</strong> describes how the work grows with the input size <code>n</code>. For <code>n = 100_000</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Complexity</th>
+<th>Example</th>
+<th>Steps for 100,000 items</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>O(1)</td>
+<td><code>HashSet::contains</code>, <code>Vec</code> index</td>
+<td>1</td>
+</tr>
+<tr>
+<td>O(log n)</td>
+<td><code>binary_search</code> on a sorted Vec</td>
+<td>about 17</td>
+</tr>
+<tr>
+<td>O(n)</td>
+<td>one pass over the data</td>
+<td>100,000</td>
+</tr>
+<tr>
+<td>O(n log n)</td>
+<td>sorting</td>
+<td>about 1.7 million</td>
+</tr>
+<tr>
+<td>O(n²)</td>
+<td>a loop inside a loop</td>
+<td>10,000,000,000</td>
+</tr>
+</tbody></table>
+<p>No compiler flag turns ten billion steps into a hundred thousand. The most common O(n²) at work hides in one innocent line: <strong><code>Vec::contains</code> inside a loop</strong>.</p>
+<pre><code class="language-rust">use std::collections::HashSet;
+
+// O(n * m): for every wanted id, scan the whole stock list.
+fn missing_slow(wanted: &amp;[u32], in_stock: &amp;[u32]) -&gt; Vec&lt;u32&gt; {
+    wanted.iter().filter(|id| !in_stock.contains(id)).copied().collect()
+}
+
+// O(n + m): build a set once, then each lookup is O(1).
+fn missing_fast(wanted: &amp;[u32], in_stock: &amp;[u32]) -&gt; Vec&lt;u32&gt; {
+    let stock: HashSet&lt;u32&gt; = in_stock.iter().copied().collect();
+    wanted.iter().filter(|id| !stock.contains(id)).copied().collect()
+}
+
+fn main() {
+    let wanted = [3, 8, 15, 42];
+    let in_stock = [42, 8, 7];
+    println!(&quot;{:?}&quot;, missing_slow(&amp;wanted, &amp;in_stock));
+    println!(&quot;{:?}&quot;, missing_fast(&amp;wanted, &amp;in_stock));
+}
+</code></pre>
+<pre><code class="language-text">[3, 15]
+[3, 15]
+</code></pre>
+<p>Same answer. With 100,000 orders and 100,000 stock items, the slow version does ten billion comparisons; the fast one does about 200,000 hash operations. For a dozen items, though, the <code>Vec</code> is fine (hashing has a cost too). Big-O matters when <code>n</code> can grow.</p>
+<h2>Choosing a collection</h2>
+<table>
+<thead>
+<tr>
+<th>You need</th>
+<th>Use</th>
+<th>Cost per operation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>&quot;is X in here?&quot; many times</td>
+<td><code>HashSet</code> / <code>HashMap</code></td>
+<td>O(1) on average</td>
+</tr>
+<tr>
+<td>keys in sorted order, or ranges</td>
+<td><code>BTreeMap</code> / <code>BTreeSet</code></td>
+<td>O(log n)</td>
+</tr>
+<tr>
+<td>many searches in data that rarely changes</td>
+<td>sort once, then <code>binary_search</code></td>
+<td>O(log n) per search</td>
+</tr>
+<tr>
+<td>a queue (push at the back, pop at the front)</td>
+<td><code>VecDeque</code></td>
+<td>O(1); <code>Vec::remove(0)</code> is O(n)</td>
+</tr>
+<tr>
+<td>counting things</td>
+<td><code>HashMap</code> with <code>entry</code></td>
+<td>O(1) per item</td>
+</tr>
+</tbody></table>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Optimizing without measuring</strong>: you&#39;ll speed up code that wasn&#39;t slow and make it harder to read.</li>
+<li><strong>Sorting inside a loop</strong>, or calling <code>.contains</code> on a <code>Vec</code> inside a loop: each turns a linear job into a quadratic one.</li>
+<li><strong>Reaching for a <code>HashMap</code> for five items</strong>: a small <code>Vec</code> or array is simpler and often faster.</li>
+</ul>
+
+<h2>Your task</h2>
+<p><code>has_duplicates</code> compares every pair of ids, which is O(n²); with 100,000 ids it blows the time limit. Make it O(n) with a <code>HashSet</code>: remember that <code>insert</code> returns <code>false</code> when the value was already there. (Sorting a copy and comparing neighbours, O(n log n), would also pass.)</p>
+
+<h3>Challenge 2</h3>
+<p><code>count_known</code> counts how many words appear in a dictionary, but it calls <code>dictionary.contains</code> for every word: O(words × dictionary). Put the dictionary into a <code>HashSet&lt;&amp;str&gt;</code> first (no need to copy the strings: the set can hold the borrowed <code>&amp;str</code>s).</p>
+
+<h3>Challenge 3</h3>
+<p>A classic interview problem, done in O(n). Write <code>has_pair_with_sum(values, target)</code>: is there a pair of values at <strong>two different positions</strong> that adds up to <code>target</code>? Walk the list once, keeping a <code>HashSet</code> of the values seen so far; for each value <code>v</code>, check whether <code>target - v</code> is already in the set. (Nested loops would time out on the 100,000-value test.)</p>
+
+<p> <a href="/learn/performance/borrow-dont-clone">Next: Borrow, don't clone</a></p></main></div>
+  </body>
+</html>

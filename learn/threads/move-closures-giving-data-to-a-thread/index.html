@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>move closures: giving data to a thread · Threads (Rust) | RustArena</title>
+    <meta name="description" content="The closures in step 1 only used data they created themselves. Usually a thread needs data from outside. Here's the obvious attempt: Why does Rust…" />
+    <link rel="canonical" href="https://rustarena.app/learn/threads/move-closures-giving-data-to-a-thread/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="move closures: giving data to a thread · Threads (Rust) | RustArena" />
+    <meta property="og:description" content="The closures in step 1 only used data they created themselves. Usually a thread needs data from outside. Here's the obvious attempt: Why does Rust…" />
+    <meta property="og:url" content="https://rustarena.app/learn/threads/move-closures-giving-data-to-a-thread/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"move closures: giving data to a thread","description":"The closures in step 1 only used data they created themselves. Usually a thread needs data from outside. Here's the obvious attempt: Why does Rust…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/threads/move-closures-giving-data-to-a-thread/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Threads</nav>
+<p>Step 2 of 7</p>
+<h1>move closures: giving data to a thread</h1>
+<p>The closures in step 1 only used data they created themselves. Usually a thread needs data from outside. Here&#39;s the obvious attempt:</p>
+<pre><code class="language-rust-error">use std::thread;
+
+fn main() {
+    let scores = vec![10, 20, 30];
+    let handle = thread::spawn(|| scores.iter().sum::&lt;i32&gt;());
+    println!(&quot;{}&quot;, handle.join().unwrap());
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0373]: closure may outlive the current function, but it borrows `scores`, which is owned by the current function
+help: to force the closure to take ownership of `scores` (and any other referenced variables), use the `move` keyword
+</code></pre>
+<p>Why does Rust refuse? A closure that only reads <code>scores</code> <strong>borrows</strong> it. But the compiler has no idea how long the new thread will run: you might never join it, and the function that owns <code>scores</code> could return and drop the vector while the thread is still reading it. That would be a dangling reference, exactly what the borrow checker exists to prevent. So <code>thread::spawn</code> demands a closure that borrows nothing from the function that spawned it. In Rust&#39;s terms the closure must be <strong><code>&#39;static</code></strong>: everything it holds is owned, or lives for the whole program (like string literals).</p>
+<p>The fix is in the help line. Writing <code>move</code> before the closure <strong>moves</strong> every variable the closure uses into it, so the thread owns its data:</p>
+<pre><code class="language-rust">use std::thread;
+
+fn main() {
+    let scores = vec![10, 20, 30];
+    let handle = thread::spawn(move || scores.iter().sum::&lt;i32&gt;());
+    println!(&quot;total: {}&quot;, handle.join().unwrap());
+}
+</code></pre>
+<pre><code class="language-text">total: 60
+</code></pre>
+<p>The vector now lives inside the closure. When the thread finishes, the closure is dropped, and the vector with it.</p>
+<h2>After a move, main can&#39;t use it</h2>
+<p><code>move</code> is a real move, just like passing a <code>String</code> to a function (module 9):</p>
+<pre><code class="language-rust-error">use std::thread;
+
+fn main() {
+    let scores = vec![10, 20, 30];
+    let handle = thread::spawn(move || scores.len());
+    println!(&quot;{} scores: {:?}&quot;, handle.join().unwrap(), scores);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0382]: borrow of moved value: `scores`
+</code></pre>
+<p>Three ways out, depending on what you need:</p>
+<ol>
+<li><strong>Clone before spawning</strong> and move the clone: <code>let for_worker = scores.clone();</code> then <code>move || for_worker.len()</code>. Both threads have their own copy. Fine for small data.</li>
+<li><strong>Get it back</strong>: the thread returns the data as (part of) its result, and <code>join</code> hands it back to you.</li>
+<li><strong>Borrow with scoped threads</strong>, which step 4 shows. No copy at all.</li>
+</ol>
+<p>Option 2 looks like this:</p>
+<pre><code class="language-rust">use std::thread;
+
+fn main() {
+    let orders = vec![120, 45, 300];
+    let handle = thread::spawn(move || {
+        let mut sorted = orders;
+        sorted.sort();
+        sorted
+    });
+    let sorted = handle.join().unwrap();
+    println!(&quot;{sorted:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">[45, 120, 300]
+</code></pre>
+<h2>Copy types are copied</h2>
+<p>For <code>Copy</code> types (integers, <code>f64</code>, <code>bool</code>, <code>char</code>), <code>move</code> copies the value into the closure. The original stays usable, and changes made inside the thread don&#39;t affect it: the thread changed its own copy.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Cloning inside the closure</strong>: <code>thread::spawn(move || scores.clone().len())</code> still moves <code>scores</code> into the closure first. Clone <em>before</em> <code>spawn</code>, into a new variable.</li>
+<li><strong>Expecting <code>move</code> to share</strong>: after <code>move</code>, the data belongs to the thread. To share one piece of data between threads you need <code>Arc</code> (step 5) or scoped threads (step 4).</li>
+<li><strong>Ignoring the help line</strong>: rustc&#39;s <code>help:</code> lines often contain the exact fix. Read them.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>This program doesn&#39;t compile (<code>E0373</code>). Make the closure take ownership of <code>stock</code>, so the thread can add it up. It should print <code>total stock: 57</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>The main thread still needs <code>names</code> after spawning the worker (to print how many players there are), so moving it into the thread breaks the last line (<code>E0382</code>). Give the thread its own copy: clone the vector into a new variable <strong>before</strong> spawning, and move the copy. The program should print:</p>
+<pre><code>longest name: Hermione
+players: 3
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>A function can start a thread and hand the <code>JoinHandle</code> back to its caller, who decides when to wait. Write <code>fn spawn_word_count(text: String) -&gt; thread::JoinHandle&lt;usize&gt;</code>: it starts a thread that counts the words in <code>text</code> (split on whitespace) and returns the handle <strong>without joining it</strong>.</p>
+
+<p><a href="/learn/threads/spawning-a-thread-and-joining-it">Previous: Spawning a thread and joining it</a> <a href="/learn/threads/many-threads-results-in-order">Next: Many threads, results in order</a></p></main></div>
+  </body>
+</html>

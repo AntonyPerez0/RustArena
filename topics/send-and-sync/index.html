@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Send and Sync in Rust explained | RustArena</title>
+    <meta name="description" content="What the Send and Sync traits mean in Rust, which types are not Send or Sync (Rc, RefCell, Cell), and how to fix 'cannot be sent between threads safely'." />
+    <link rel="canonical" href="https://rustarena.app/topics/send-and-sync/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Send and Sync in Rust explained | RustArena" />
+    <meta property="og:description" content="What the Send and Sync traits mean in Rust, which types are not Send or Sync (Rc, RefCell, Cell), and how to fix 'cannot be sent between threads safely'." />
+    <meta property="og:url" content="https://rustarena.app/topics/send-and-sync/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Send and Sync in Rust explained","description":"What the Send and Sync traits mean in Rust, which types are not Send or Sync (Rc, RefCell, Cell), and how to fix 'cannot be sent between threads safely'.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/send-and-sync/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Send and Sync in Rust explained</h1>
+<p>What the Send and Sync traits mean in Rust, which types are not Send or Sync (Rc, RefCell, Cell), and how to fix 'cannot be sent between threads safely'.</p>
+<p>Rust prevents data races at compile time with two <strong>marker traits</strong> (traits with no methods that describe a property of a type):</p>
+<ul>
+<li><strong><code>Send</code></strong>: a value of this type can be <strong>moved</strong> to another thread.</li>
+<li><strong><code>Sync</code></strong>: a value of this type can be <strong>shared</strong> between threads by reference. Precisely, <code>T</code> is <code>Sync</code> when <code>&amp;T</code> is <code>Send</code>.</li>
+</ul>
+<p>You almost never implement them. They&#39;re <strong>auto traits</strong>: the compiler implements them for your struct or enum automatically when all its fields are <code>Send</code> / <code>Sync</code>. A struct containing an <code>Rc</code> is not <code>Send</code>, because <code>Rc</code> isn&#39;t.</p>
+<h2>Which types are which</h2>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Send</th>
+<th>Sync</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>i32</code>, <code>String</code>, <code>Vec&lt;T&gt;</code>, <code>Box&lt;T&gt;</code> (of Send/Sync data)</td>
+<td>yes</td>
+<td>yes</td>
+<td>plain owned data</td>
+</tr>
+<tr>
+<td><code>Arc&lt;T&gt;</code> (T: Send + Sync)</td>
+<td>yes</td>
+<td>yes</td>
+<td>atomic reference count</td>
+</tr>
+<tr>
+<td><code>Mutex&lt;T&gt;</code> (T: Send)</td>
+<td>yes</td>
+<td>yes</td>
+<td>the lock serializes access</td>
+</tr>
+<tr>
+<td><code>Rc&lt;T&gt;</code></td>
+<td><strong>no</strong></td>
+<td><strong>no</strong></td>
+<td>non-atomic reference count</td>
+</tr>
+<tr>
+<td><code>RefCell&lt;T&gt;</code>, <code>Cell&lt;T&gt;</code></td>
+<td>yes</td>
+<td><strong>no</strong></td>
+<td>unsynchronized interior mutability</td>
+</tr>
+<tr>
+<td><code>MutexGuard&lt;T&gt;</code></td>
+<td><strong>no</strong></td>
+<td>yes</td>
+<td>must be unlocked on the thread that locked it</td>
+</tr>
+<tr>
+<td>raw pointers <code>*const T</code>, <code>*mut T</code></td>
+<td><strong>no</strong></td>
+<td><strong>no</strong></td>
+<td>the compiler can&#39;t check what they point to</td>
+</tr>
+</tbody></table>
+<h2>The errors</h2>
+<p><code>thread::spawn</code> requires its closure (and everything it captures) to be <code>Send + &#39;static</code>. Moving an <code>Rc</code> into a thread fails:</p>
+<pre><code class="language-rust-error">use std::rc::Rc;
+use std::thread;
+
+fn main() {
+    let data = Rc::new(5);
+    let h = thread::spawn(move || {
+        println!(&quot;{data}&quot;);
+    });
+    h.join().unwrap();
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: `Rc&lt;i32&gt;` cannot be sent between threads safely
+</code></pre>
+<p>The note explains: &quot;within <code>{closure}</code>, the trait <code>Send</code> is not implemented for <code>Rc&lt;i32&gt;</code>&quot;. Fix: use <code>Arc</code>.</p>
+<p>Sharing a <code>RefCell</code> through an <code>Arc</code> fails on <code>Sync</code>:</p>
+<pre><code class="language-rust-error">use std::cell::RefCell;
+use std::sync::Arc;
+use std::thread;
+
+fn main() {
+    let data = Arc::new(RefCell::new(5));
+    let d = Arc::clone(&amp;data);
+    let h = thread::spawn(move || {
+        *d.borrow_mut() += 1;
+    });
+    h.join().unwrap();
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: `RefCell&lt;i32&gt;` cannot be shared between threads safely
+</code></pre>
+<p><code>Arc&lt;T&gt;</code> is only <code>Send</code> if <code>T</code> is <code>Sync</code>, and <code>RefCell</code> isn&#39;t (two threads could both call <code>borrow_mut</code> at once). Fix: <code>Arc&lt;Mutex&lt;T&gt;&gt;</code>, <code>Arc&lt;RwLock&lt;T&gt;&gt;</code>, or an atomic.</p>
+<h2>The thread-safe equivalents</h2>
+<table>
+<thead>
+<tr>
+<th>Single-threaded</th>
+<th>Thread-safe</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Rc&lt;T&gt;</code></td>
+<td><code>Arc&lt;T&gt;</code></td>
+</tr>
+<tr>
+<td><code>RefCell&lt;T&gt;</code></td>
+<td><code>Mutex&lt;T&gt;</code> or <code>RwLock&lt;T&gt;</code></td>
+</tr>
+<tr>
+<td><code>Cell&lt;u32&gt;</code></td>
+<td><code>AtomicU32</code></td>
+</tr>
+<tr>
+<td><code>Rc&lt;RefCell&lt;T&gt;&gt;</code></td>
+<td><code>Arc&lt;Mutex&lt;T&gt;&gt;</code></td>
+</tr>
+</tbody></table>
+<h2>Send in async code</h2>
+<p><code>tokio::spawn</code> also requires <code>Send</code> futures, because a task can move between worker threads at each <code>.await</code>. Holding an <code>Rc</code> or a <code>std::sync::MutexGuard</code> across an <code>.await</code> makes the future non-<code>Send</code>, and the error reads &quot;future cannot be sent between threads safely&quot;. Drop such values before awaiting, or use <code>Arc</code> and <code>tokio::sync::Mutex</code>.</p>
+<h2>unsafe impl Send</h2>
+<p>Types wrapping raw pointers (FFI handles, custom data structures) can promise thread safety with <code>unsafe impl Send for MyType {}</code>. It&#39;s <code>unsafe</code> because the compiler can no longer check it: you&#39;re vouching that it&#39;s correct. In application code, you should essentially never need it.</p>
+
+<h2>Example</h2>
+<pre><code>use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+fn assert_send&lt;T: Send&gt;(name: &amp;str) {
+    println!(&quot;{name} is Send&quot;);
+}
+
+fn assert_sync&lt;T: Sync&gt;(name: &amp;str) {
+    println!(&quot;{name} is Sync&quot;);
+}
+
+struct Stats {
+    hits: AtomicU32,
+    names: Mutex&lt;Vec&lt;String&gt;&gt;,
+}
+
+fn main() {
+    assert_send::&lt;String&gt;(&quot;String&quot;);
+    assert_sync::&lt;Arc&lt;Mutex&lt;Vec&lt;i32&gt;&gt;&gt;&gt;(&quot;Arc&lt;Mutex&lt;Vec&lt;i32&gt;&gt;&gt;&quot;);
+    assert_send::&lt;RefCell&lt;i32&gt;&gt;(&quot;RefCell&lt;i32&gt;&quot;); // Send, but not Sync
+    assert_sync::&lt;Stats&gt;(&quot;Stats (all fields are Sync)&quot;);
+
+    // Single-threaded sharing: Rc&lt;RefCell&lt;T&gt;&gt;.
+    let local = Rc::new(RefCell::new(vec![1]));
+    Rc::clone(&amp;local).borrow_mut().push(2);
+    println!(&quot;local {:?}&quot;, local.borrow());
+
+    // The thread-safe version: Arc with a Mutex and an atomic.
+    let stats = Arc::new(Stats { hits: AtomicU32::new(0), names: Mutex::new(Vec::new()) });
+    let handles: Vec&lt;_&gt; = [&quot;ferris&quot;, &quot;corro&quot;, &quot;gopher&quot;]
+        .into_iter()
+        .map(|name| {
+            let stats = Arc::clone(&amp;stats);
+            thread::spawn(move || {
+                stats.hits.fetch_add(1, Ordering::Relaxed);
+                stats.names.lock().unwrap().push(name.to_uppercase());
+            })
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap();
+    }
+    let mut names = stats.names.lock().unwrap().clone();
+    names.sort();
+    println!(&quot;{} hits from {names:?}&quot;, stats.hits.load(Ordering::Relaxed));
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>String is Send
+Arc&lt;Mutex&lt;Vec&lt;i32&gt;&gt;&gt; is Sync
+RefCell&lt;i32&gt; is Send
+Stats (all fields are Sync) is Sync
+local [1, 2]
+3 hits from [&quot;CORRO&quot;, &quot;FERRIS&quot;, &quot;GOPHER&quot;]
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/threads/spawning-a-thread-and-joining-it">Lesson: Threads</a></li><li><a href="/learn/sync/channels-sending-messages-between-threads">Lesson: Sharing data between threads</a></li></ul></main></div>
+  </body>
+</html>

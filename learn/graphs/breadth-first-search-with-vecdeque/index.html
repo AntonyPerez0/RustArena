@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Breadth-first search with VecDeque · Graphs and Trees (Rust) | RustArena</title>
+    <meta name="description" content="Breadth-first search (BFS) explores a graph in layers: first the start node, then every node one edge away, then every node two edges away, and so on,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/graphs/breadth-first-search-with-vecdeque/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Breadth-first search with VecDeque · Graphs and Trees (Rust) | RustArena" />
+    <meta property="og:description" content="Breadth-first search (BFS) explores a graph in layers: first the start node, then every node one edge away, then every node two edges away, and so on,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/graphs/breadth-first-search-with-vecdeque/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Breadth-first search with VecDeque","description":"Breadth-first search (BFS) explores a graph in layers: first the start node, then every node one edge away, then every node two edges away, and so on,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/graphs/breadth-first-search-with-vecdeque/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Algorithms and data structures › Graphs and Trees</nav>
+<p>Step 2 of 7</p>
+<h1>Breadth-first search with VecDeque</h1>
+<p><strong>Breadth-first search</strong> (BFS) explores a graph in <strong>layers</strong>: first the start node, then every node one edge away, then every node two edges away, and so on, like ripples in a pond. To visit nodes in that order it uses a FIFO queue, a <code>VecDeque</code>.</p>
+<p>Because it goes layer by layer, the first time BFS reaches a node it got there with the <strong>fewest possible edges</strong>. So in an unweighted graph BFS finds <strong>shortest paths</strong> (fewest hops): the fewest network hops between servers, the fewest moves in a puzzle, the &quot;degrees of separation&quot; between two people.</p>
+<pre><code class="language-rust">use std::collections::VecDeque;
+
+fn bfs(adj: &amp;[Vec&lt;usize&gt;], start: usize) -&gt; Vec&lt;Option&lt;usize&gt;&gt; {
+    let mut dist = vec![None; adj.len()];
+    let mut queue = VecDeque::new();
+    dist[start] = Some(0);
+    queue.push_back((start, 0));
+    while let Some((u, d)) = queue.pop_front() {
+        for &amp;v in &amp;adj[u] {
+            if dist[v].is_none() {
+                dist[v] = Some(d + 1); // mark when you push, not when you pop
+                queue.push_back((v, d + 1));
+            }
+        }
+    }
+    dist
+}
+
+fn main() {
+    // the stations from the last step, plus station 5 with no tracks
+    let adj = vec![vec![1, 2], vec![0, 3], vec![0, 3], vec![1, 2, 4], vec![3], vec![]];
+    for (station, d) in bfs(&amp;adj, 0).iter().enumerate() {
+        match d {
+            Some(hops) =&gt; println!(&quot;station {station}: distance {hops}&quot;),
+            None =&gt; println!(&quot;station {station}: unreachable&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">station 0: distance 0
+station 1: distance 1
+station 2: distance 1
+station 3: distance 2
+station 4: distance 3
+station 5: unreachable
+</code></pre>
+<ul>
+<li><code>dist</code> doubles as the &quot;visited&quot; marker: <code>None</code> means not reached yet.</li>
+<li>Each node enters the queue at most once and each edge is looked at once (twice when undirected): <strong>O(V + E)</strong>.</li>
+</ul>
+<h2>Grids are graphs too</h2>
+<p>In a maze or a map, every open cell is a node and its neighbors are the cells up, down, left and right. You don&#39;t build adjacency lists; you compute the neighbors on the fly. With <code>usize</code> coordinates, <code>r - 1</code> panics at row 0, so a common trick is <code>r.wrapping_sub(1)</code>: at 0 it wraps around to a huge number, which then fails the bounds check (<code>grid.get(r)</code> returns <code>None</code>) like any other off-grid cell.</p>
+<pre><code class="language-rust">for (nr, nc) in [(r.wrapping_sub(1), c), (r + 1, c), (r, c.wrapping_sub(1)), (r, c + 1)] {
+    if matches!(grid.get(nr).and_then(|row| row.get(nc)), Some(&amp;cell) if cell != b&#39;#&#39;) {
+        // (nr, nc) is an open neighbor
+    }
+}
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Marking visited when popping instead of when pushing.</strong> A node can then be pushed many times (once per neighbor that sees it) before it&#39;s popped. Results may still be right, but the queue can blow up on dense graphs.</li>
+<li><strong>A Vec with <code>remove(0)</code> as the queue.</strong> O(n) per pop, O(V²) overall.</li>
+<li><strong>DFS for shortest paths.</strong> Depth-first search finds <em>a</em> path, not the shortest one.</li>
+<li><strong>Weighted edges.</strong> BFS counts edges. When edges have different costs, you need Dijkstra (later in this module).</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>fn shortest_hops(adj: &amp;[Vec&lt;usize&gt;], from: usize, to: usize) -&gt; Option&lt;usize&gt;</code>: the fewest edges on a path from <code>from</code> to <code>to</code> in a directed graph given as adjacency lists, or <code>None</code> if <code>to</code> can&#39;t be reached (<code>Some(0)</code> when <code>from == to</code>). The tests include a graph of 200,000 nodes.</p>
+
+<h3>Challenge 2</h3>
+<p>Write a maze solver. Standard input is a grid, one row per line: <code>S</code> is the start, <code>E</code> the exit, <code>#</code> a wall and <code>.</code> open floor. You can move up, down, left or right. Print <code>shortest path: N steps</code> with the fewest moves from <code>S</code> to <code>E</code>, or <code>no path</code>.</p>
+<p>Use BFS over the cells with a <code>VecDeque&lt;((usize, usize), usize)&gt;</code> of positions and distances, and a <code>Vec&lt;Vec&lt;bool&gt;&gt;</code> of visited cells. The lesson&#39;s <code>wrapping_sub</code> trick handles the edges of the grid.</p>
+
+<h3>Challenge 3</h3>
+<p>Showing <em>how many</em> hops isn&#39;t enough for the network team; they want the route itself. Write <code>fn shortest_route(adj: &amp;[Vec&lt;usize&gt;], from: usize, to: usize) -&gt; Option&lt;Vec&lt;usize&gt;&gt;</code> that returns the nodes of a shortest path from <code>from</code> to <code>to</code>, both included (<code>[from]</code> when they&#39;re equal), or <code>None</code>. In every test the shortest path is unique.</p>
+<p>During BFS, record each node&#39;s <strong>parent</strong>: the node you were at when you first discovered it (<code>parent: Vec&lt;Option&lt;usize&gt;&gt;</code>). When you reach <code>to</code>, follow the parents back to <code>from</code> and reverse the list.</p>
+
+<p><a href="/learn/graphs/representing-graphs-adjacency-lists">Previous: Representing graphs: adjacency lists</a> <a href="/learn/graphs/depth-first-search-recursion-and-an-explicit-stack">Next: Depth-first search: recursion and an explicit stack</a></p></main></div>
+  </body>
+</html>

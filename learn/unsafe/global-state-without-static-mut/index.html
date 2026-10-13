@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Global state without static mut · Unsafe Rust (Rust) | RustArena</title>
+    <meta name="description" content="A static is a global variable with one fixed address for the whole program. Immutable statics are perfectly safe. A static mut can be changed, and that's…" />
+    <link rel="canonical" href="https://rustarena.app/learn/unsafe/global-state-without-static-mut/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Global state without static mut · Unsafe Rust (Rust) | RustArena" />
+    <meta property="og:description" content="A static is a global variable with one fixed address for the whole program. Immutable statics are perfectly safe. A static mut can be changed, and that's…" />
+    <meta property="og:url" content="https://rustarena.app/learn/unsafe/global-state-without-static-mut/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Global state without static mut","description":"A static is a global variable with one fixed address for the whole program. Immutable statics are perfectly safe. A static mut can be changed, and that's…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/unsafe/global-state-without-static-mut/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Unsafe Rust</nav>
+<p>Step 4 of 6</p>
+<h1>Global state without static mut</h1>
+<p>A <strong><code>static</code></strong> is a global variable with one fixed address for the whole program. Immutable statics are perfectly safe. A <strong><code>static mut</code></strong> can be changed, and that&#39;s the problem: any thread can reach it at any time, so two threads incrementing it at once is a <strong>data race</strong>, which is UB. The compiler can&#39;t prevent that, so every access to a <code>static mut</code> is unsafe.</p>
+<p>Edition 2024 goes further and forbids even taking a reference to one:</p>
+<pre><code class="language-rust-error">static mut COUNTER: u32 = 0;
+
+fn main() {
+    unsafe {
+        COUNTER += 1;
+        println!(&quot;{}&quot;, COUNTER);
+    }
+}
+</code></pre>
+<pre><code class="language-compiler">error: creating a shared reference to mutable static
+</code></pre>
+<p>(<code>println!</code> takes its arguments by reference.) Reading the value out (<code>let n = unsafe { COUNTER };</code>) still compiles, but the race is still there. In modern Rust, <code>static mut</code> is almost never the answer.</p>
+<h2>The safe tools</h2>
+<ul>
+<li><strong>Atomics</strong> (from the sync module) for counters and flags: <code>AtomicU64</code>, <code>AtomicBool</code>, ... They can live in a plain <code>static</code> because their methods take <code>&amp;self</code>.</li>
+<li><strong><code>Mutex&lt;T&gt;</code></strong> in a <code>static</code> for anything bigger. <code>Mutex::new</code> is a <code>const fn</code>, so <code>static LOG: Mutex&lt;Vec&lt;String&gt;&gt; = Mutex::new(Vec::new());</code> just works.</li>
+<li><strong><code>OnceLock</code></strong> and <strong><code>LazyLock</code></strong> for globals that are built once at runtime (a parsed config, a compiled regex).</li>
+</ul>
+<pre><code class="language-rust">use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+
+static REQUESTS: AtomicU64 = AtomicU64::new(0);
+static ERRORS: Mutex&lt;Vec&lt;String&gt;&gt; = Mutex::new(Vec::new());
+
+fn handle(id: u64) {
+    REQUESTS.fetch_add(1, Ordering::Relaxed);
+    if id % 500 == 0 {
+        ERRORS.lock().unwrap().push(format!(&quot;request {id} failed&quot;));
+    }
+}
+
+fn main() {
+    let workers: Vec&lt;_&gt; = (0..4)
+        .map(|w| {
+            thread::spawn(move || {
+                for i in 0..1000 {
+                    handle(w * 1000 + i);
+                }
+            })
+        })
+        .collect();
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    println!(&quot;requests: {}&quot;, REQUESTS.load(Ordering::Relaxed));
+    println!(&quot;errors: {}&quot;, ERRORS.lock().unwrap().len());
+}
+</code></pre>
+<pre><code class="language-text">requests: 4000
+errors: 8
+</code></pre>
+<p>Four threads, no <code>unsafe</code>, and the counts are always right. <code>fetch_add</code> returns the <strong>previous</strong> value and adds atomically; <code>Ordering::Relaxed</code> is enough for a counter that nothing else depends on. Global state still makes code harder to test (every test shares it), so at work prefer passing state in (<code>Arc&lt;AppState&gt;</code>) and keep statics for things like metrics.</p>
+<h2>Unsafe traits</h2>
+<p>A trait can be declared <code>unsafe trait</code> when implementing it makes a promise the compiler can&#39;t check. The ones you&#39;ll meet are <strong><code>Send</code></strong> and <strong><code>Sync</code></strong>. The compiler implements them automatically when a type&#39;s fields are thread-safe; a struct holding a raw pointer gets neither. If you&#39;ve made sure such a type really is safe to send between threads, you say so with an unsafe impl:</p>
+<pre><code class="language-rust">struct DeviceHandle {
+    regs: *mut u32, // raw pointer: not Send by default
+}
+
+// SAFETY: the device registers may be used from any thread, and every
+// access goes through methods that take &amp;mut self.
+unsafe impl Send for DeviceHandle {}
+</code></pre>
+<h2>Unions</h2>
+<p>A <strong><code>union</code></strong> looks like a struct, but all fields share the <strong>same memory</strong>, like a C union. The compiler doesn&#39;t know which field was written last, so reading one is unsafe:</p>
+<pre><code class="language-rust">union Bits {
+    f: f32,
+    u: u32,
+}
+
+fn main() {
+    let b = Bits { f: 1.0 };
+    // SAFETY: every bit pattern is a valid u32, so reading `u` is fine.
+    let raw = unsafe { b.u };
+    println!(&quot;{raw:#010x}&quot;);
+    println!(&quot;{:#010x}&quot;, 1.0f32.to_bits());
+}
+</code></pre>
+<pre><code class="language-text">0x3f800000
+0x3f800000
+</code></pre>
+<p>Unions exist mainly to match C structs in FFI. For everything else there are safe tools: <code>f32::to_bits</code>, <code>u32::from_le_bytes</code> and an <code>enum</code> (a union with a tag that Rust checks for you).</p>
+
+<h2>Your task</h2>
+<p><code>next_ticket</code> hands out ticket numbers 1, 2, 3, ... and is called from many threads, but it&#39;s built on a <code>static mut</code>, which races. Rewrite it with a <code>static</code> <code>AtomicU32</code> and <code>fetch_add</code>, with no <code>unsafe</code> and no <code>static mut</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>This logger was written for an older edition with a <code>static mut Vec</code>, and edition 2024 refuses to compile it (taking <code>&amp;mut</code> of a <code>static mut</code> is an error). Rewrite it with a <code>static LOG: Mutex&lt;Vec&lt;String&gt;&gt;</code>: <code>log</code> appends a message, and <code>take_logs</code> returns all messages so far (oldest first) and leaves the log empty. No <code>unsafe</code>, no <code>static mut</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Fill in the blanks to declare a union and read one of its fields. Both fields share the same 4 bytes, so writing <code>word</code> and reading <code>bytes</code> shows how the number is laid out in memory. On little-endian CPUs (x86 and most ARM), the lowest byte comes first, which is exactly what the safe <code>to_le_bytes</code> gives. The program should print <code>[4, 3, 2, 1]</code> twice.</p>
+
+<p><a href="/learn/unsafe/calling-c-with-ffi">Previous: Calling C with FFI</a> <a href="/learn/unsafe/undefined-behavior-and-miri">Next: Undefined behavior and Miri</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Allocate less · Performance (Rust) | RustArena</title>
+    <meta name="description" content="A Vec (and a String, which is a Vec&lt;u8&gt; inside) keeps its elements in one heap buffer with room to spare: its capacity. When you push past the capacity,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/performance/allocate-less/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Allocate less · Performance (Rust) | RustArena" />
+    <meta property="og:description" content="A Vec (and a String, which is a Vec&lt;u8&gt; inside) keeps its elements in one heap buffer with room to spare: its capacity. When you push past the capacity,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/performance/allocate-less/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Allocate less","description":"A Vec (and a String, which is a Vec\u003cu8> inside) keeps its elements in one heap buffer with room to spare: its capacity. When you push past the capacity,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/performance/allocate-less/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Performance</nav>
+<p>Step 3 of 6</p>
+<h1>Allocate less</h1>
+<p>A <code>Vec</code> (and a <code>String</code>, which is a <code>Vec&lt;u8&gt;</code> inside) keeps its elements in one heap buffer with room to spare: its <strong>capacity</strong>. When you push past the capacity, it allocates a bigger buffer (about double), copies everything over and frees the old one.</p>
+<pre><code class="language-rust">fn main() {
+    let mut grown = Vec::new();
+    let mut allocations = 0;
+    let mut last_capacity = grown.capacity();
+    for i in 0..1000 {
+        grown.push(i);
+        if grown.capacity() != last_capacity {
+            allocations += 1;
+            last_capacity = grown.capacity();
+        }
+    }
+    println!(&quot;Vec::new: {allocations} allocations, capacity {}&quot;, grown.capacity());
+
+    let mut sized = Vec::with_capacity(1000);
+    let start = sized.capacity();
+    for i in 0..1000 {
+        sized.push(i);
+    }
+    println!(&quot;with_capacity: capacity {} -&gt; {}&quot;, start, sized.capacity());
+}
+</code></pre>
+<pre><code class="language-text">Vec::new: 9 allocations, capacity 1024
+with_capacity: capacity 1000 -&gt; 1000
+</code></pre>
+<p>Doubling keeps pushes cheap on average, but when you <strong>know</strong> the final size, <code>Vec::with_capacity(n)</code> or <code>String::with_capacity(n)</code> allocates once. The exact growth steps are an implementation detail; the guarantee is that <code>with_capacity(n)</code> gives at least (in practice exactly) <code>n</code>.</p>
+<p>You often get this for free: <code>collect()</code> asks the iterator for its size first, so <code>(0..n).map(f).collect::&lt;Vec&lt;_&gt;&gt;()</code> allocates once. <code>join</code> and <code>concat</code> add up the lengths before allocating, too.</p>
+<h2>Building strings</h2>
+<p><code>format!</code> always creates a <strong>new</strong> <code>String</code>. Inside a loop that appends to a result, that&#39;s an extra allocation per line, and <code>result = format!(&quot;{result}{line}&quot;)</code> even copies everything built so far, every time: quadratic. Write straight into one buffer instead with <code>push_str</code>, or with <code>write!</code> and <code>writeln!</code> (from the <code>std::fmt::Write</code> trait), which format directly into an existing <code>String</code>:</p>
+<pre><code class="language-rust">use std::fmt::Write;
+
+fn report(items: &amp;[(&amp;str, u32)]) -&gt; String {
+    let mut out = String::with_capacity(items.len() * 16);
+    for (name, qty) in items {
+        writeln!(out, &quot;{name:&lt;8}{qty:&gt;4}&quot;).unwrap();
+    }
+    out
+}
+
+fn main() {
+    print!(&quot;{}&quot;, report(&amp;[(&quot;potion&quot;, 3), (&quot;arrow&quot;, 120), (&quot;map&quot;, 1)]));
+}
+</code></pre>
+<pre><code class="language-text">potion     3
+arrow    120
+map        1
+</code></pre>
+<p><code>writeln!</code> into a <code>String</code> returns a <code>fmt::Result</code> that can never actually be an error, so <code>.unwrap()</code> is fine here. (<code>std::fmt::Write</code> and <code>std::io::Write</code> share the name <code>Write</code>, so a file that needs both imports one anonymously: <code>use std::io::Write as _;</code> still brings its methods into scope.)</p>
+<h2>Reuse buffers</h2>
+<p>When a loop needs a temporary <code>String</code> or <code>Vec</code>, create it <strong>once</strong> outside the loop and <code>clear()</code> it each time round. <code>clear</code> keeps the capacity, so after the first few rounds the loop stops allocating. The classic case is reading input line by line with <code>read_line(&amp;mut line)</code> and <code>line.clear()</code>.</p>
+<h2>Common mistakes</h2>
+<p><strong>Capacity isn&#39;t length.</strong> <code>with_capacity</code> reserves room but the <code>Vec</code> is still empty, so indexing panics:</p>
+<pre><code class="language-rust">fn main() {
+    let mut v: Vec&lt;u32&gt; = Vec::with_capacity(10);
+    println!(&quot;len {} capacity {}&quot;, v.len(), v.capacity());
+    v[0] = 1;
+}
+</code></pre>
+<pre><code class="language-text">len 0 capacity 10
+</code></pre>
+<p>Use <code>push</code>, or <code>vec![0; 10]</code> if you really want ten zeros to overwrite.</p>
+<ul>
+<li><strong>Guessing huge capacities</strong> &quot;to be safe&quot; wastes memory. Use exact counts when you know them; otherwise let the <code>Vec</code> grow.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>join_path</code>, which joins path parts with <code>/</code> (<code>[&quot;usr&quot;, &quot;local&quot;, &quot;bin&quot;]</code> gives <code>&quot;usr/local/bin&quot;</code>) and allocates <strong>exactly once</strong>: compute the final length first (all the parts plus one <code>/</code> between each pair, careful with an empty list), create the <code>String</code> with that capacity, then <code>push_str</code> and <code>push</code>. A test checks the capacity equals the length. (<code>parts.join(&quot;/&quot;)</code> does exactly this internally; here you write it yourself.)</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>render_table</code>, which turns <code>(name, quantity)</code> rows into lines like <code>potion: 3</code>, each ending with <code>\n</code>. Build everything in one <code>String</code> created with <code>with_capacity</code> (a rough estimate is fine), and append each line with <code>writeln!</code> instead of <code>format!</code>.</p>
+
+<h3>Challenge 3</h3>
+<p><code>numbered_list</code> rebuilds the whole string on every line with <code>format!</code>, so the total copying grows with the square of the list length: 200,000 items take far longer than the time limit. Make it linear by appending to one <code>String</code> instead. The output format stays the same: <code>1. first\n2. second\n...</code>.</p>
+
+<p><a href="/learn/performance/borrow-dont-clone">Previous: Borrow, don't clone</a> <a href="/learn/performance/iterator-chains-and-avoiding-intermediate-collections">Next: Iterator chains and avoiding intermediate collections</a></p></main></div>
+  </body>
+</html>

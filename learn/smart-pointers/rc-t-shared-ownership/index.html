@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Rc&lt;T&gt;: shared ownership · Smart Pointers (Rust) | RustArena</title>
+    <meta name="description" content="Ownership says every value has exactly one owner. Most of the time that's what you want. But sometimes several parts of a program need to own the same…" />
+    <link rel="canonical" href="https://rustarena.app/learn/smart-pointers/rc-t-shared-ownership/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Rc&lt;T&gt;: shared ownership · Smart Pointers (Rust) | RustArena" />
+    <meta property="og:description" content="Ownership says every value has exactly one owner. Most of the time that's what you want. But sometimes several parts of a program need to own the same…" />
+    <meta property="og:url" content="https://rustarena.app/learn/smart-pointers/rc-t-shared-ownership/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Rc\u003cT>: shared ownership","description":"Ownership says every value has exactly one owner. Most of the time that's what you want. But sometimes several parts of a program need to own the same…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/smart-pointers/rc-t-shared-ownership/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Idiomatic Rust › Smart Pointers</nav>
+<p>Step 4 of 7</p>
+<h1>Rc&lt;T&gt;: shared ownership</h1>
+<p>Ownership says every value has exactly one owner. Most of the time that&#39;s what you want. But sometimes several parts of a program need to <em>own</em> the same value, and there&#39;s no obvious one that lives longest: a song that&#39;s on several playlists, a config shared by several services, a node in a graph with several incoming edges.</p>
+<p><strong><code>Rc&lt;T&gt;</code></strong> (<strong>reference counted</strong>) allows that. <code>Rc::new(value)</code> puts the value on the heap together with a counter. <code>Rc::clone(&amp;rc)</code> makes another pointer to the <em>same</em> value and adds 1 to the <strong>strong count</strong>. Dropping an <code>Rc</code> subtracts 1. When the count reaches 0, the value is dropped.</p>
+<pre><code class="language-rust">use std::rc::Rc;
+
+struct Song {
+    title: String,
+}
+
+fn main() {
+    let song = Rc::new(Song { title: String::from(&quot;Crab Rave&quot;) });
+    println!(&quot;count after new: {}&quot;, Rc::strong_count(&amp;song));
+
+    let workout = vec![Rc::clone(&amp;song)];
+    {
+        let road_trip = vec![Rc::clone(&amp;song)];
+        println!(&quot;count with two playlists: {}&quot;, Rc::strong_count(&amp;song));
+        println!(&quot;road trip plays {}&quot;, road_trip[0].title);
+    }
+    println!(&quot;count after the road trip: {}&quot;, Rc::strong_count(&amp;song));
+    println!(&quot;workout plays {}&quot;, workout[0].title);
+}
+</code></pre>
+<pre><code class="language-text">count after new: 1
+count with two playlists: 3
+road trip plays Crab Rave
+count after the road trip: 2
+workout plays Crab Rave
+</code></pre>
+<ul>
+<li><code>Rc::clone(&amp;song)</code> doesn&#39;t copy the <code>Song</code>. It copies a pointer and bumps the counter, which is very cheap. <code>song.clone()</code> does the same thing, but Rust code conventionally writes <code>Rc::clone(&amp;song)</code> so readers can see at a glance that it&#39;s a cheap pointer copy and not a deep copy.</li>
+<li><code>road_trip[0].title</code> reaches through the <code>Rc</code> with <code>Deref</code>, like a Box.</li>
+<li>When the inner block ends, <code>road_trip</code> is dropped, its <code>Rc</code> with it, and the count goes from 3 to 2. The song itself stays alive until the last <code>Rc</code> is gone.</li>
+</ul>
+<h2>Rc is read-only and single-threaded</h2>
+<p>An <code>Rc&lt;T&gt;</code> only hands out shared references (<code>&amp;T</code>). With several owners, letting any one of them mutate would break the &quot;one writer&quot; rule, so this doesn&#39;t compile:</p>
+<pre><code class="language-rust-error">use std::rc::Rc;
+
+fn main() {
+    let scores = Rc::new(vec![1, 2]);
+    scores.push(3);
+    println!(&quot;{scores:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0596]: cannot borrow data in an `Rc` as mutable
+</code></pre>
+<p>To change shared data, combine <code>Rc</code> with <code>RefCell</code> (next two steps). And <code>Rc</code> updates its counter without any thread synchronization, so the compiler won&#39;t let you send it to another thread. Its thread-safe twin is <code>Arc&lt;T&gt;</code> (atomically reference counted), coming in the concurrency modules.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Expecting <code>Rc::clone</code> to copy the data.</strong> All clones point at the same value.</li>
+<li><strong>Reaching for Rc to quiet the borrow checker.</strong> If one owner clearly outlives the others, plain references (<code>&amp;T</code>) are simpler and free. Use Rc when ownership really is shared.</li>
+<li><strong>Trying to mutate through it</strong>: <code>error[E0596]</code> as above.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Fill the blanks: make <code>a</code> and <code>b</code> share the same config with <code>Rc::clone</code>, and print the strong count. The program prints:</p>
+<pre><code>owners: 3
+a sees retries = 5
+owners after a is gone: 2
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>Two lists can share the same tail when the tail is held in an <code>Rc</code>. Finish the program:</p>
+<ol>
+<li><code>shared</code> is the list <code>10 -&gt; 20</code>.</li>
+<li><code>a</code> is <code>1 -&gt; shared</code> and <code>b</code> is <code>2 -&gt; shared</code> (both point at the <em>same</em> <code>shared</code>, using <code>Rc::clone</code>).</li>
+<li>Write <code>fn sum(list: &amp;List) -&gt; i32</code>.</li>
+</ol>
+<p>The program must print exactly:</p>
+<pre><code>sum a = 31
+sum b = 32
+shared owners = 3
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>A tournament player can be on several teams. Write:</p>
+<ul>
+<li><code>fn share(player: Player, teams: &amp;mut [Team]) -&gt; Rc&lt;Player&gt;</code>: wraps the player in one <code>Rc</code>, adds a clone of it to every team&#39;s <code>members</code>, and returns the <code>Rc</code> (so the caller keeps one handle too).</li>
+<li><code>fn on_both(player: &amp;Rc&lt;Player&gt;, a: &amp;Team, b: &amp;Team) -&gt; bool</code>: true if this exact player (the same <code>Rc</code>, not just the same name) is a member of both teams. <code>Rc::ptr_eq(&amp;x, &amp;y)</code> tells you whether two <code>Rc</code>s point at the same value.</li>
+</ul>
+
+<p><a href="/learn/smart-pointers/deref-and-drop-what-makes-a-pointer-smart">Previous: Deref and Drop: what makes a pointer smart</a> <a href="/learn/smart-pointers/refcell-and-cell-changing-data-behind-and">Next: RefCell and Cell: changing data behind &amp;</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Threads in Rust: thread::spawn, join and move closures | RustArena</title>
+    <meta name="description" content="How to run code in parallel with std::thread in Rust: spawn and join, returning values, move closures, scoped threads, and the E0373 error." />
+    <link rel="canonical" href="https://rustarena.app/topics/threads/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Threads in Rust: thread::spawn, join and move closures | RustArena" />
+    <meta property="og:description" content="How to run code in parallel with std::thread in Rust: spawn and join, returning values, move closures, scoped threads, and the E0373 error." />
+    <meta property="og:url" content="https://rustarena.app/topics/threads/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Threads in Rust: thread::spawn, join and move closures","description":"How to run code in parallel with std::thread in Rust: spawn and join, returning values, move closures, scoped threads, and the E0373 error.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/threads/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Threads in Rust: thread::spawn, join and move closures</h1>
+<p>How to run code in parallel with std::thread in Rust: spawn and join, returning values, move closures, scoped threads, and the E0373 error.</p>
+<p>A <strong>thread</strong> runs code at the same time as the rest of your program. <code>std::thread::spawn</code> starts one and returns a <strong><code>JoinHandle</code></strong>; calling <code>.join()</code> waits for the thread to finish and gives back the value its closure returned.</p>
+<pre><code class="language-rust">use std::thread;
+
+fn main() {
+    let handle = thread::spawn(|| {
+        let mut sum = 0u64;
+        for i in 1..=1_000 {
+            sum += i;
+        }
+        sum
+    });
+    let total = handle.join().unwrap();
+    println!(&quot;sum is {total}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">sum is 500500
+</code></pre>
+<p><code>join()</code> returns a <code>Result</code>: <code>Err</code> if the thread panicked. A panic in a spawned thread doesn&#39;t crash the main thread; it&#39;s reported when you join.</p>
+<h2>Giving data to a thread: move</h2>
+<p>A spawned thread may run longer than the function that started it, so its closure can&#39;t borrow local variables:</p>
+<pre><code class="language-rust-error">use std::thread;
+
+fn main() {
+    let names = vec![&quot;Ferris&quot;, &quot;Corro&quot;];
+    let handle = thread::spawn(|| {
+        println!(&quot;{} names&quot;, names.len());
+    });
+    handle.join().unwrap();
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0373]: closure may outlive the current function, but it borrows `names`, which is owned by the current function
+ --&gt; src/main.rs:5:32
+  |
+5 |     let handle = thread::spawn(|| {
+  |                                ^^ may outlive borrowed value `names`
+6 |         println!(&quot;{} names&quot;, names.len());
+  |                              ----- `names` is borrowed here
+  |
+help: to force the closure to take ownership of `names` (and any other referenced variables), use the `move` keyword
+</code></pre>
+<p>Add <code>move</code> and the closure <strong>owns</strong> <code>names</code>. The thread can then use it as long as it likes, and <code>main</code> can&#39;t use it afterwards. If both need the data, clone it before spawning, or share it with <code>Arc</code>.</p>
+<h2>Scoped threads: borrowing safely</h2>
+<p><code>thread::scope</code> guarantees that every thread spawned inside it finishes before the scope returns, so those threads <strong>may borrow</strong> local data, no <code>move</code> or <code>Arc</code> needed:</p>
+<pre><code class="language-rust">thread::scope(|s| {
+    for chunk in data.chunks(1000) {
+        s.spawn(move || process(chunk));
+    }
+}); // all threads have finished here
+</code></pre>
+<p>This is the simplest way to split work over a slice.</p>
+<h2>Many threads, results in order</h2>
+<p>Spawn the threads, keep their handles in a <code>Vec</code>, then join them <strong>in order</strong>. Collecting results this way gives deterministic output even though the threads finish in any order. Printing from inside the threads doesn&#39;t: the lines interleave differently on every run.</p>
+<h2>Shared state and communication</h2>
+<ul>
+<li>To send results back as they&#39;re ready: <strong>channels</strong> (<code>std::sync::mpsc</code>).</li>
+<li>To share and mutate data: <strong><code>Arc&lt;Mutex&lt;T&gt;&gt;</code></strong>, or atomics for counters.</li>
+<li>The compiler enforces safety through the <strong><code>Send</code></strong> and <strong><code>Sync</code></strong> traits: <code>Rc</code> and <code>RefCell</code> can&#39;t cross threads, and the error says so.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting to join.</strong> When <code>main</code> returns, the process exits and unfinished threads are killed mid-work.</li>
+<li><strong>Expecting a fixed order of output</strong> from several threads. Collect results, then print.</li>
+<li><strong>Spawning a thread per tiny task.</strong> Threads cost memory (2 MB of stack each by default) and start-up time. For data parallelism, <code>rayon</code>&#39;s <code>par_iter()</code> splits work over a thread pool for you.</li>
+<li><strong>Using threads for waiting on I/O at scale.</strong> Thousands of network connections are better served by async (Tokio).</li>
+<li><strong><code>thread::sleep</code> to &quot;wait&quot; for another thread.</strong> Use <code>join</code>, a channel, or a condition variable instead; sleeping is a guess.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::thread;
+
+fn count_primes(from: u32, to: u32) -&gt; usize {
+    (from..to).filter(|&amp;n| n &gt;= 2 &amp;&amp; (2..).take_while(|d| d * d &lt;= n).all(|d| n % d != 0)).count()
+}
+
+fn main() {
+    // Each thread owns its range (move) and returns a value.
+    let ranges = [(0, 25_000), (25_000, 50_000), (50_000, 75_000), (75_000, 100_000)];
+    let mut handles = Vec::new();
+    for (from, to) in ranges {
+        handles.push(thread::spawn(move || (from, to, count_primes(from, to))));
+    }
+    let mut total = 0;
+    for h in handles {
+        let (from, to, n) = h.join().expect(&quot;worker panicked&quot;);
+        println!(&quot;{from:&gt;6}..{to:&lt;6} {n} primes&quot;);
+        total += n;
+    }
+    println!(&quot;total {total}&quot;);
+
+    // Scoped threads can borrow local data.
+    let words = vec![&quot;ferris&quot;, &quot;crab&quot;, &quot;rustacean&quot;, &quot;borrow&quot;];
+    let lengths: Vec&lt;usize&gt; = thread::scope(|s| {
+        let handles: Vec&lt;_&gt; = words.iter().map(|w| s.spawn(move || w.len())).collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    println!(&quot;{words:?} -&gt; {lengths:?}&quot;);
+
+    // A panic in a thread is reported by join, not by crashing main.
+    let result = thread::spawn(|| {
+        let empty: Vec&lt;i32&gt; = Vec::new();
+        empty[0] // panics: index out of bounds
+    })
+    .join();
+    println!(&quot;worker panicked: {}&quot;, result.is_err());
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>     0..25000  2762 primes
+ 25000..50000  2371 primes
+ 50000..75000  2260 primes
+ 75000..100000 2199 primes
+total 9592
+[&quot;ferris&quot;, &quot;crab&quot;, &quot;rustacean&quot;, &quot;borrow&quot;] -&gt; [6, 4, 9, 6]
+worker panicked: true
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/threads/spawning-a-thread-and-joining-it">Lesson: Threads</a></li></ul></main></div>
+  </body>
+</html>

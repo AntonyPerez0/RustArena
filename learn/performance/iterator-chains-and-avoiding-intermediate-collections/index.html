@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Iterator chains and avoiding intermediate collections · Performance (Rust) | RustArena</title>
+    <meta name="description" content="Iterators are a zero-cost abstraction: in a release build, a chain like .filter().map().sum() compiles to the same machine code as a hand-written loop,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/performance/iterator-chains-and-avoiding-intermediate-collections/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Iterator chains and avoiding intermediate collections · Performance (Rust) | RustArena" />
+    <meta property="og:description" content="Iterators are a zero-cost abstraction: in a release build, a chain like .filter().map().sum() compiles to the same machine code as a hand-written loop,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/performance/iterator-chains-and-avoiding-intermediate-collections/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Iterator chains and avoiding intermediate collections","description":"Iterators are a zero-cost abstraction: in a release build, a chain like .filter().map().sum() compiles to the same machine code as a hand-written loop,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/performance/iterator-chains-and-avoiding-intermediate-collections/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Performance</nav>
+<p>Step 4 of 6</p>
+<h1>Iterator chains and avoiding intermediate collections</h1>
+<p>Iterators are a <strong>zero-cost abstraction</strong>: in a release build, a chain like <code>.filter().map().sum()</code> compiles to the same machine code as a hand-written loop, often better, because iterators don&#39;t need bounds checks on every element. You can&#39;t beat them by writing the loop yourself.</p>
+<p>What <strong>does</strong> cost is collecting in the middle. Every <code>.collect::&lt;Vec&lt;_&gt;&gt;()</code> allocates a whole new vector, and the next step then reads it all again:</p>
+<pre><code class="language-rust">fn long_words_wasteful(text: &amp;str) -&gt; usize {
+    let words: Vec&lt;&amp;str&gt; = text.split_whitespace().collect();
+    let long: Vec&lt;&amp;&amp;str&gt; = words.iter().filter(|w| w.len() &gt; 3).collect();
+    long.len()
+}
+
+fn long_words(text: &amp;str) -&gt; usize {
+    text.split_whitespace().filter(|w| w.len() &gt; 3).count()
+}
+
+fn main() {
+    let text = &quot;the crab scuttled across the warm sand&quot;;
+    println!(&quot;{} {}&quot;, long_words_wasteful(text), long_words(text));
+}
+</code></pre>
+<pre><code class="language-text">5 5
+</code></pre>
+<p>Same answer, but the first version builds two vectors it immediately throws away. The chain walks the words once and allocates nothing. clippy&#39;s <code>needless_collect</code> lint (in the opt-in <code>clippy::nursery</code> group) points these out.</p>
+<h2>Laziness lets you stop early</h2>
+<p>Adapters do nothing until a consumer pulls items, and consumers like <code>any</code>, <code>all</code>, <code>find</code> and <code>position</code> <strong>stop as soon as they have the answer</strong> (so does any chain with <code>take(n)</code> in it, after <code>n</code> items):</p>
+<pre><code class="language-rust">fn main() {
+    let mut checked = 0;
+    let readings = [12, 15, 99, 14, 13, 18, 11];
+    let alarm = readings.iter().any(|&amp;r| {
+        checked += 1;
+        r &gt; 90
+    });
+    println!(&quot;alarm: {alarm}, readings checked: {checked}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">alarm: true, readings checked: 3
+</code></pre>
+<p>If the readings came from a huge file or a network stream, the lazy version stops reading at the third one. Collecting first would read everything.</p>
+<h2>Don&#39;t sort to find one thing</h2>
+<p>Sorting is O(n log n) and usually needs a copy. To find the largest or smallest item, <code>max</code>, <code>min</code>, <code>max_by_key</code> and <code>min_by_key</code> do one O(n) pass and return a reference, no copy. (For the top <code>k</code> of many, <code>select_nth_unstable</code> beats a full sort.)</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>.collect::&lt;Vec&lt;_&gt;&gt;().len()</code></strong>: use <code>.count()</code>.</li>
+<li><strong><code>v.iter().count()</code></strong> on a <code>Vec</code>: it&#39;s just <code>v.len()</code>.</li>
+<li><strong><code>.map(...).collect::&lt;Vec&lt;_&gt;&gt;()</code> then <code>.iter().sum()</code></strong>: sum directly.</li>
+<li><strong><code>list.clone()</code> then sort, just to read the first element</strong>: use <code>min_by_key</code>/<code>max_by_key</code>.</li>
+<li><strong>Index loops</strong> (<code>for i in 0..v.len() { v[i] }</code>): iterate the values; it&#39;s clearer and skips bounds checks.</li>
+</ul>
+
+<h2>Your task</h2>
+<p><code>paid_revenue</code> collects two throwaway vectors and then loops. Rewrite it as <strong>one</strong> iterator chain: keep paid orders, turn each into <code>qty * price_cents</code> (as <code>u64</code>), and <code>sum</code> them. No <code>collect</code> and no loops.</p>
+
+<h3>Challenge 2</h3>
+<p><code>first_bad_line</code> receives lines from a stream (it could be a multi-gigabyte log) and returns the position of the first line that isn&#39;t a valid integer (after trimming). The current version collects every line before looking. Make it stop as soon as it finds the answer, using <code>position</code>. A hidden test feeds it a stream that panics if read past the bad line.</p>
+
+<h3>Challenge 3</h3>
+<p><code>top_scorer</code> copies and sorts the whole roster just to read one player. Rewrite it to return <code>Option&lt;&amp;Player&gt;</code> (a reference into the slice) in a single pass, with no sorting, cloning or collecting. If several players share the top score, return the <strong>first</strong> of them in the list. Hint: <code>max_by_key</code> returns the <strong>last</strong> of equal maximums, so use <code>reduce</code> (or a loop) that only replaces the best when a score is strictly greater.</p>
+
+<p><a href="/learn/performance/allocate-less">Previous: Allocate less</a> <a href="/learn/performance/cow-borrow-when-you-can-own-when-you-must">Next: Cow: borrow when you can, own when you must</a></p></main></div>
+  </body>
+</html>

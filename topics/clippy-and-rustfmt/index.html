@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Clippy and rustfmt: linting and formatting Rust code | RustArena</title>
+    <meta name="description" content="How to use cargo clippy and cargo fmt: the most common clippy suggestions with before and after code, lint levels, configuration, and running both in CI." />
+    <link rel="canonical" href="https://rustarena.app/topics/clippy-and-rustfmt/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Clippy and rustfmt: linting and formatting Rust code | RustArena" />
+    <meta property="og:description" content="How to use cargo clippy and cargo fmt: the most common clippy suggestions with before and after code, lint levels, configuration, and running both in CI." />
+    <meta property="og:url" content="https://rustarena.app/topics/clippy-and-rustfmt/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Clippy and rustfmt: linting and formatting Rust code","description":"How to use cargo clippy and cargo fmt: the most common clippy suggestions with before and after code, lint levels, configuration, and running both in CI.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/clippy-and-rustfmt/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Clippy and rustfmt: linting and formatting Rust code</h1>
+<p>How to use cargo clippy and cargo fmt: the most common clippy suggestions with before and after code, lint levels, configuration, and running both in CI.</p>
+<p>Two tools come with every Rust installation and are used on virtually every professional Rust project:</p>
+<ul>
+<li><strong>rustfmt</strong> (<code>cargo fmt</code>) formats code in the community style: indentation, line breaks, spacing. Nobody argues about style in code review because nobody formats by hand.</li>
+<li><strong>clippy</strong> (<code>cargo clippy</code>) is a <strong>linter</strong> with hundreds of checks for bugs, slow code, and non-idiomatic patterns, each with an explanation and usually a suggested fix.</li>
+</ul>
+<h2>rustfmt</h2>
+<pre><code class="language-text">$ cargo fmt            # format the whole project
+$ cargo fmt --check    # CI: fail if anything isn&#39;t formatted
+</code></pre>
+<p>Configure it (rarely) with a <code>rustfmt.toml</code>, for example <code>max_width = 120</code>. Most teams keep the defaults. Set your editor to format on save; rust-analyzer does it for you in VS Code.</p>
+<h2>clippy&#39;s most common suggestions</h2>
+<table>
+<thead>
+<tr>
+<th>Lint</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>needless_return</code></td>
+<td><code>return x;</code> as the last line</td>
+<td><code>x</code></td>
+</tr>
+<tr>
+<td><code>len_zero</code></td>
+<td><code>if v.len() == 0</code></td>
+<td><code>if v.is_empty()</code></td>
+</tr>
+<tr>
+<td><code>needless_range_loop</code></td>
+<td><code>for i in 0..v.len() { v[i] ... }</code></td>
+<td><code>for x in &amp;v</code> or <code>.iter().enumerate()</code></td>
+</tr>
+<tr>
+<td><code>ptr_arg</code></td>
+<td><code>fn f(s: &amp;String)</code>, <code>fn g(v: &amp;Vec&lt;i32&gt;)</code></td>
+<td><code>fn f(s: &amp;str)</code>, <code>fn g(v: &amp;[i32])</code></td>
+</tr>
+<tr>
+<td><code>bool_comparison</code></td>
+<td><code>if done == true</code></td>
+<td><code>if done</code></td>
+</tr>
+<tr>
+<td><code>clone_on_copy</code></td>
+<td><code>x.clone()</code> on an <code>i32</code></td>
+<td><code>x</code></td>
+</tr>
+<tr>
+<td><code>manual_map</code></td>
+<td><code>match opt { Some(x) =&gt; Some(f(x)), None =&gt; None }</code></td>
+<td><code>opt.map(f)</code></td>
+</tr>
+<tr>
+<td><code>collapsible_if</code></td>
+<td><code>if a { if b { ... } }</code></td>
+<td><code>if a &amp;&amp; b { ... }</code></td>
+</tr>
+<tr>
+<td><code>single_match</code></td>
+<td>a <code>match</code> with one arm and <code>_ =&gt; {}</code></td>
+<td><code>if let</code></td>
+</tr>
+<tr>
+<td><code>useless_format</code></td>
+<td><code>format!(&quot;{}&quot;, s)</code></td>
+<td><code>s.to_string()</code></td>
+</tr>
+<tr>
+<td><code>unwrap_or_default</code></td>
+<td><code>.unwrap_or(Vec::new())</code></td>
+<td><code>.unwrap_or_default()</code></td>
+</tr>
+<tr>
+<td><code>map_entry</code></td>
+<td><code>if !m.contains_key(k) { m.insert(k, v) }</code></td>
+<td><code>m.entry(k).or_insert(v)</code></td>
+</tr>
+</tbody></table>
+<p>A clippy warning looks like a compiler warning, with a link to the lint&#39;s documentation:</p>
+<pre><code class="language-text">warning: length comparison to zero
+ --&gt; src/main.rs:4:8
+  |
+4 |     if names.len() == 0 {
+  |        ^^^^^^^^^^^^^^^^ help: using `is_empty` is clearer and more explicit: `names.is_empty()`
+</code></pre>
+<h2>Lint groups and levels</h2>
+<p>Lints are grouped: <code>clippy::correctness</code> (likely bugs, <strong>deny</strong> by default), <code>suspicious</code>, <code>style</code>, <code>complexity</code> and <code>perf</code> (warn by default), plus opt-in <code>pedantic</code>, <code>nursery</code> and <code>restriction</code>. Adjust them:</p>
+<ul>
+<li>In code: <code>#[allow(clippy::too_many_arguments)]</code> on an item, or better <code>#[expect(clippy::lint_name, reason = &quot;...&quot;)]</code>, which warns you when the exception is no longer needed.</li>
+<li>Project-wide in <code>Cargo.toml</code>:</li>
+</ul>
+<pre><code class="language-toml">[lints.clippy]
+pedantic = { level = &quot;warn&quot;, priority = -1 }
+unwrap_used = &quot;warn&quot;
+module_name_repetitions = &quot;allow&quot;
+</code></pre>
+<h2>In CI</h2>
+<pre><code class="language-text">cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+</code></pre>
+<p><code>-D warnings</code> turns every warning into an error, so the main branch stays clean. <code>cargo clippy --fix</code> applies machine-applicable suggestions automatically.</p>
+<h2>Advice</h2>
+<ul>
+<li>Fix clippy warnings as you go; they&#39;re cheap when the code is fresh.</li>
+<li>Read the lint&#39;s explanation before silencing it. Most suggestions also make code faster or clearer.</li>
+<li>Don&#39;t enable all of <code>pedantic</code> on an existing codebase in one go; pick the lints your team agrees on.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>// Idiomatic versions of the &quot;before&quot; patterns from the table above.
+use std::collections::HashMap;
+
+fn shout(s: &amp;str) -&gt; String {
+    s.to_uppercase()
+}
+
+fn total(values: &amp;[i32]) -&gt; i32 {
+    values.iter().sum()
+}
+
+fn first_long(words: &amp;[&amp;str]) -&gt; Option&lt;usize&gt; {
+    words.iter().find(|w| w.len() &gt; 4).map(|w| w.len())
+}
+
+fn main() {
+    let names: Vec&lt;String&gt; = Vec::new();
+    if names.is_empty() {
+        println!(&quot;no names yet&quot;);
+    }
+
+    let scores = vec![3, 9, 4];
+    for (i, s) in scores.iter().enumerate() {
+        println!(&quot;#{i}: {s}&quot;);
+    }
+    println!(&quot;total {}&quot;, total(&amp;scores));
+
+    let greeting = String::from(&quot;hello&quot;);
+    println!(&quot;{}&quot;, shout(&amp;greeting));
+
+    let mut counts: HashMap&lt;&amp;str, u32&gt; = HashMap::new();
+    for word in [&quot;a&quot;, &quot;b&quot;, &quot;a&quot;] {
+        *counts.entry(word).or_insert(0) += 1;
+    }
+    let mut keys: Vec&lt;_&gt; = counts.iter().collect();
+    keys.sort();
+    println!(&quot;{keys:?}&quot;);
+
+    let empty: Option&lt;Vec&lt;i32&gt;&gt; = None;
+    println!(&quot;{:?} {:?}&quot;, empty.unwrap_or_default(), first_long(&amp;[&quot;hi&quot;, &quot;crabby&quot;]));
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>no names yet
+#0: 3
+#1: 9
+#2: 4
+total 16
+HELLO
+[(&quot;a&quot;, 2), (&quot;b&quot;, 1)]
+[] Some(6)
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/tooling/dbg-and-eprintln-print-debugging-done-right">Lesson: Debugging, Docs and Tooling</a></li><li><a href="/learn/hello/your-first-program">Lesson: Hello, Rust</a></li></ul></main></div>
+  </body>
+</html>

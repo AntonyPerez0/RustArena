@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Slices in real code · Slices (Rust) | RustArena</title>
+    <meta name="description" content="Slices are everywhere in real Rust code, because they let one function work on any data without caring who owns it, and without copying it. This step…" />
+    <link rel="canonical" href="https://rustarena.app/learn/slices/slices-in-real-code/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Slices in real code · Slices (Rust) | RustArena" />
+    <meta property="og:description" content="Slices are everywhere in real Rust code, because they let one function work on any data without caring who owns it, and without copying it. This step…" />
+    <meta property="og:url" content="https://rustarena.app/learn/slices/slices-in-real-code/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Slices in real code","description":"Slices are everywhere in real Rust code, because they let one function work on any data without caring who owns it, and without copying it. This step…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/slices/slices-in-real-code/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Ownership › Slices</nav>
+<p>Step 6 of 6</p>
+<h1>Slices in real code</h1>
+<p>Slices are everywhere in real Rust code, because they let one function work on any data without caring who owns it, and without copying it. This step puts the pieces together.</p>
+<h2>Iterating slices</h2>
+<p>All of these loops work on a slice <code>s</code> (and on a vector or array, through a slice):</p>
+<table>
+<thead>
+<tr>
+<th>Loop</th>
+<th>You get</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>for x in s</code> or <code>for x in s.iter()</code></td>
+<td>a <code>&amp;T</code> for each element (the same thing, two spellings)</td>
+</tr>
+<tr>
+<td><code>for x in s.iter_mut()</code>, when <code>s</code> is a <code>&amp;mut [T]</code></td>
+<td>a <code>&amp;mut T</code> for each element</td>
+</tr>
+<tr>
+<td><code>for i in 0..s.len()</code></td>
+<td>each index, for when you need positions</td>
+</tr>
+<tr>
+<td><code>for word in text.split_whitespace()</code></td>
+<td>each word, as a <code>&amp;str</code> slice of <code>text</code></td>
+</tr>
+<tr>
+<td><code>for line in text.lines()</code></td>
+<td>each line, as a <code>&amp;str</code> slice of <code>text</code></td>
+</tr>
+</tbody></table>
+<h2>A zero-copy log reader</h2>
+<p>This program reads a log held in one <code>String</code> and never copies any of its text: every line and every level is a slice pointing into <code>log</code>.</p>
+<pre><code class="language-rust">// &quot;[LEVEL] message&quot;: the level is between the brackets.
+fn level_of(line: &amp;str) -&gt; &amp;str {
+    let bytes = line.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] == b&#39;]&#39; {
+            return &amp;line[1..i];
+        }
+    }
+    &quot;&quot;
+}
+
+fn count_level(lines: &amp;[&amp;str], level: &amp;str) -&gt; usize {
+    let mut n = 0;
+    for line in lines {
+        if level_of(line) == level {
+            n += 1;
+        }
+    }
+    n
+}
+
+fn main() {
+    let log = String::from(&quot;[INFO] started\n[ERROR] disk full\n[WARN] slow\n[ERROR] timeout&quot;);
+    let mut lines = Vec::new();
+    for line in log.lines() {
+        lines.push(line);          // a &amp;str slice of log: nothing copied
+    }
+    println!(&quot;{} lines, {} errors&quot;, lines.len(), count_level(&amp;lines, &quot;ERROR&quot;));
+    println!(&quot;first level: {}&quot;, level_of(lines[0]));
+}
+</code></pre>
+<pre><code class="language-text">4 lines, 2 errors
+first level: INFO
+</code></pre>
+<p>Look at the types: <code>lines</code> is a <code>Vec&lt;&amp;str&gt;</code>, a vector of slices that all borrow from <code>log</code>. <code>count_level</code> takes <code>&amp;[&amp;str]</code>, a slice of string slices. Each <code>line</code> in its loop is a <code>&amp;&amp;str</code> (a reference to an element); Rust lets you pass it where a <code>&amp;str</code> is expected. And because every slice borrows from <code>log</code>, the borrow checker won&#39;t let <code>log</code> be changed or dropped while <code>lines</code> is in use.</p>
+<h2>Idiomatic signatures</h2>
+<table>
+<thead>
+<tr>
+<th>Your function needs to...</th>
+<th>Take</th>
+<th>Rather than</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>read text</td>
+<td><code>&amp;str</code></td>
+<td><code>&amp;String</code> or <code>String</code></td>
+</tr>
+<tr>
+<td>read a list</td>
+<td><code>&amp;[T]</code></td>
+<td><code>&amp;Vec&lt;T&gt;</code> or <code>Vec&lt;T&gt;</code></td>
+</tr>
+<tr>
+<td>change elements in place</td>
+<td><code>&amp;mut [T]</code></td>
+<td><code>&amp;mut Vec&lt;T&gt;</code></td>
+</tr>
+<tr>
+<td>add or remove elements</td>
+<td><code>&amp;mut Vec&lt;T&gt;</code></td>
+<td></td>
+</tr>
+<tr>
+<td>add to text</td>
+<td><code>&amp;mut String</code></td>
+<td></td>
+</tr>
+<tr>
+<td>keep the value (store it)</td>
+<td><code>String</code>, <code>Vec&lt;T&gt;</code></td>
+<td></td>
+</tr>
+</tbody></table>
+<p>And for return values:</p>
+<table>
+<thead>
+<tr>
+<th>It returns...</th>
+<th>Return</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>part of its input</td>
+<td><code>&amp;str</code> or <code>&amp;[T]</code>, a slice of the input</td>
+</tr>
+<tr>
+<td>new data</td>
+<td><code>String</code> or <code>Vec&lt;T&gt;</code>, owned</td>
+</tr>
+</tbody></table>
+<p><strong>Workplace note:</strong> these signatures are what reviewers look for. A function taking <code>&amp;str</code> or <code>&amp;[T]</code> works with every caller and makes no copies, and returning slices of the input is how fast parsers stay fast. When a slice has to outlive the data it points into (say, you&#39;re reading lines one at a time and each line is dropped after its loop round), call <code>.to_string()</code> or <code>.to_vec()</code> to get an owned copy: the compiler will tell you when (E0597).</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Keeping a slice of a value that&#39;s about to be dropped</strong>, like a line <code>String</code> that only lives for one loop round (E0597). Read everything into one <code>String</code> first, or keep an owned copy.</li>
+<li><strong>Mixing up <code>&amp;[&amp;str]</code> and <code>&amp;[String]</code>.</strong> Both are fine parameter types; use whichever matches the data you have.</li>
+<li><strong>Returning <code>String</code> when a slice would do.</strong> If the result is part of the input, return a slice and let the caller decide whether to copy it.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>longest_word</code>, which returns the longest word in <code>text</code> (words are separated by whitespace), as a slice of <code>text</code>. Compare lengths in <strong>characters</strong> (<code>.chars().count()</code>); on a tie, the first word wins. If there are no words, return <code>&quot;&quot;</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>longest_name</code>, which takes a slice of <code>String</code>s and returns the longest name (by <code>.len()</code>, first on a tie) as a <code>&amp;str</code>, or <code>&quot;&quot;</code> if the slice is empty. A <code>&amp;String</code> element can be assigned to a <code>&amp;str</code> variable directly.</p>
+
+<h3>Challenge 3</h3>
+<p>A scoreboard arrives as lines of <code>name score</code>. Write <code>parse_line</code>, which splits one line into the name (a slice of the line) and the score (a <code>u32</code>), then finish <code>main</code>: print the player with the highest score (the first one on a tie) and the total. The starter reads the whole input into one <code>String</code>, so every name can stay a slice of it: no copies. For the input:</p>
+<pre><code>ferris 42
+corro 17
+sunny 41
+</code></pre>
+<p>it prints:</p>
+<pre><code>top: ferris (42)
+total: 100
+</code></pre>
+
+<p><a href="/learn/slices/mutable-slices-and-mut-t">Previous: Mutable slices: &amp;mut [T]</a> </p></main></div>
+  </body>
+</html>

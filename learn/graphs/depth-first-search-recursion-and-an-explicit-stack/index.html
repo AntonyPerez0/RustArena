@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Depth-first search: recursion and an explicit stack · Graphs and Trees (Rust) | RustArena</title>
+    <meta name="description" content="Depth-first search (DFS) goes as deep as it can along one path, and only when it gets stuck does it back up and try the next branch. It's the natural way…" />
+    <link rel="canonical" href="https://rustarena.app/learn/graphs/depth-first-search-recursion-and-an-explicit-stack/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Depth-first search: recursion and an explicit stack · Graphs and Trees (Rust) | RustArena" />
+    <meta property="og:description" content="Depth-first search (DFS) goes as deep as it can along one path, and only when it gets stuck does it back up and try the next branch. It's the natural way…" />
+    <meta property="og:url" content="https://rustarena.app/learn/graphs/depth-first-search-recursion-and-an-explicit-stack/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Depth-first search: recursion and an explicit stack","description":"Depth-first search (DFS) goes as deep as it can along one path, and only when it gets stuck does it back up and try the next branch. It's the natural way…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/graphs/depth-first-search-recursion-and-an-explicit-stack/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Algorithms and data structures › Graphs and Trees</nav>
+<p>Step 3 of 7</p>
+<h1>Depth-first search: recursion and an explicit stack</h1>
+<p><strong>Depth-first search</strong> (DFS) goes as deep as it can along one path, and only when it gets stuck does it back up and try the next branch. It&#39;s the natural way to ask &quot;what can I reach from here?&quot;, to count separate groups (<strong>connected components</strong>), to detect cycles, to flood-fill a region of a map, and it&#39;s the basis of topological sorting.</p>
+<p>Recursion expresses it directly: visit a node, then recursively visit each unvisited neighbor.</p>
+<pre><code class="language-rust">fn explore(u: usize, adj: &amp;[Vec&lt;usize&gt;], seen: &amp;mut [bool], members: &amp;mut Vec&lt;usize&gt;) {
+    seen[u] = true;
+    members.push(u);
+    for &amp;v in &amp;adj[u] {
+        if !seen[v] {
+            explore(v, adj, seen, members);
+        }
+    }
+}
+
+fn main() {
+    // friendships: 0-1, 1-2, 3-4, and 5 knows nobody
+    let adj = vec![vec![1], vec![0, 2], vec![1], vec![4], vec![3], vec![]];
+    let mut seen = vec![false; adj.len()];
+    for start in 0..adj.len() {
+        if !seen[start] {
+            let mut members = Vec::new();
+            explore(start, &amp;adj, &amp;mut seen, &amp;mut members);
+            println!(&quot;group: {members:?}&quot;);
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">group: [0, 1, 2]
+group: [3, 4]
+group: [5]
+</code></pre>
+<p>The outer loop starts a new DFS from every node not seen yet; each DFS marks one whole component. Every node and edge is handled once: O(V + E).</p>
+<h2>The same thing with a stack</h2>
+<p>Recursion depth equals the length of the path DFS is following. On a long chain or a big grid that can be hundreds of thousands of calls deep, and the program dies with <code>thread &#39;main&#39; (4242) has overflowed its stack</code>. The fix is to keep your own stack in a <code>Vec</code>, which lives on the heap and can grow as needed:</p>
+<pre><code class="language-rust">fn reachable(adj: &amp;[Vec&lt;usize&gt;], start: usize) -&gt; Vec&lt;usize&gt; {
+    let mut seen = vec![false; adj.len()];
+    let mut stack = vec![start];
+    let mut order = Vec::new();
+    while let Some(u) = stack.pop() {
+        if seen[u] {
+            continue; // pushed twice before we got to it
+        }
+        seen[u] = true;
+        order.push(u);
+        for &amp;v in adj[u].iter().rev() {
+            if !seen[v] {
+                stack.push(v);
+            }
+        }
+    }
+    order
+}
+
+fn main() {
+    let adj = vec![vec![1, 3], vec![2], vec![], vec![4], vec![]];
+    println!(&quot;{:?}&quot;, reachable(&amp;adj, 0));
+}
+</code></pre>
+<pre><code class="language-text">[0, 1, 2, 3, 4]
+</code></pre>
+<p>Pushing the neighbors in reverse makes the stack pop them in their original order, so the visiting order matches the recursive version. Here a node can sit on the stack more than once, so it&#39;s checked when popped (<code>continue</code> if already seen).</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting the visited check</strong> in a graph with cycles: the search goes around forever.</li>
+<li><strong>Recursive DFS on huge inputs.</strong> Fine for trees and small graphs; for a 1,000 by 1,000 grid, use an explicit stack.</li>
+<li><strong>Expecting shortest paths from DFS.</strong> DFS finds <em>a</em> path; BFS finds the shortest.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Count the islands on a map. Write <code>fn count_islands(map: &amp;[&amp;str]) -&gt; usize</code> where each string is a row, <code>#</code> is land and <code>.</code> is water. Land cells that touch up, down, left or right belong to the same island. Use DFS with an <strong>explicit stack</strong> (<code>Vec&lt;(usize, usize)&gt;</code>): the tests include a 700 by 700 map that is all land, where recursion would overflow the stack.</p>
+
+<h3>Challenge 2</h3>
+<p>The map team now wants the size of the <strong>largest</strong> island (the number of land cells in it), with the same map format: <code>#</code> land, <code>.</code> water, and only up, down, left and right connect. Write <code>fn largest_island(map: &amp;[&amp;str]) -&gt; usize</code> (0 if there&#39;s no land). Recursion or an explicit stack are both fine here; the maps in these tests are small.</p>
+
+<h3>Challenge 3</h3>
+<p>Print a project&#39;s folder tree like the <code>tree</code> command. The first line of standard input is the name of the root folder. Every following line is <code>PARENT CHILD</code>: CHILD is directly inside PARENT. Print the tree from the root, one name per line, indented by two spaces per level, with each folder&#39;s children in alphabetical order:</p>
+<pre><code>project
+  Cargo.toml
+  src
+    lib.rs
+    main.rs
+</code></pre>
+<p>A recursive DFS is perfect here (folder trees are shallow). Store the children in a <code>BTreeMap&lt;String, BTreeSet&lt;String&gt;&gt;</code> so they come out sorted, and pass the depth down the recursion.</p>
+
+<p><a href="/learn/graphs/breadth-first-search-with-vecdeque">Previous: Breadth-first search with VecDeque</a> <a href="/learn/graphs/topological-sort-ordering-tasks-with-dependencies">Next: Topological sort: ordering tasks with dependencies</a></p></main></div>
+  </body>
+</html>

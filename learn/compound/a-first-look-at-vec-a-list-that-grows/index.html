@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>A first look at Vec: a list that grows · Tuples, Arrays and a First Vec (Rust) | RustArena</title>
+    <meta name="description" content="An array's length is fixed when you write the program. Often you don't know it in advance: orders arrive, players join, a file has however many lines it…" />
+    <link rel="canonical" href="https://rustarena.app/learn/compound/a-first-look-at-vec-a-list-that-grows/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="A first look at Vec: a list that grows · Tuples, Arrays and a First Vec (Rust) | RustArena" />
+    <meta property="og:description" content="An array's length is fixed when you write the program. Often you don't know it in advance: orders arrive, players join, a file has however many lines it…" />
+    <meta property="og:url" content="https://rustarena.app/learn/compound/a-first-look-at-vec-a-list-that-grows/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"A first look at Vec: a list that grows","description":"An array's length is fixed when you write the program. Often you don't know it in advance: orders arrive, players join, a file has however many lines it…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/compound/a-first-look-at-vec-a-list-that-grows/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Foundations › Tuples, Arrays and a First Vec</nav>
+<p>Step 6 of 6</p>
+<h1>A first look at Vec: a list that grows</h1>
+<p>An array&#39;s length is fixed when you write the program. Often you don&#39;t know it in advance: orders arrive, players join, a file has however many lines it has. For that, Rust has <strong><code>Vec&lt;T&gt;</code></strong>, called a <strong>vector</strong>: a list of values of one type that can grow and shrink while the program runs. It&#39;s the collection you&#39;ll use most in Rust. Module 16 covers it in depth; here are the basics.</p>
+<pre><code class="language-rust">fn main() {
+    let mut queue = vec![101, 102];
+    queue.push(103);
+    queue.push(104);
+    println!(&quot;{:?}&quot;, queue);
+    println!(&quot;{} tickets, first is {}&quot;, queue.len(), queue[0]);
+}
+</code></pre>
+<pre><code class="language-text">[101, 102, 103, 104]
+4 tickets, first is 101
+</code></pre>
+<ul>
+<li><code>vec![...]</code> is a macro (note the <code>!</code>) that creates a vector holding those values. It looks like an array with <code>vec!</code> in front.</li>
+<li><code>.push(value)</code> adds a value at the end. Pushing changes the vector, so it must be <code>let mut</code>.</li>
+<li>Indexing, <code>.len()</code> and <code>{:?}</code> work just like with arrays, and an out-of-bounds index panics the same way.</li>
+<li>The type is written <code>Vec&lt;i32&gt;</code>: the angle brackets hold the element type.</li>
+</ul>
+<h2>Starting empty</h2>
+<p><code>Vec::new()</code> creates an empty vector, ready to be filled in a loop:</p>
+<pre><code class="language-rust">fn main() {
+    let mut squares = Vec::new();
+    for n in 1..=5 {
+        squares.push(n * n);
+    }
+    println!(&quot;{:?}&quot;, squares);
+}
+</code></pre>
+<pre><code class="language-text">[1, 4, 9, 16, 25]
+</code></pre>
+<p>Rust works out the element type from what you push. If you never push anything, it can&#39;t tell, and asks you (error E0282, <code>type annotations needed for `Vec&lt;_&gt;` </code>). Then write the type: <code>let scores: Vec&lt;i32&gt; = Vec::new();</code></p>
+<h2>Array or Vec?</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Array <code>[T; N]</code></th>
+<th>Vector <code>Vec&lt;T&gt;</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Length</td>
+<td>fixed, part of the type</td>
+<td>changes at run time</td>
+</tr>
+<tr>
+<td>Typical use</td>
+<td>days of the week, a 3×3 board</td>
+<td>orders, lines of input, search results</td>
+</tr>
+<tr>
+<td>Adding elements</td>
+<td>impossible</td>
+<td><code>push</code></td>
+</tr>
+</tbody></table>
+<p>Under the hood, a vector keeps its elements in a block of memory it can grow (on the <strong>heap</strong>, which module 09 explains), while an array is stored directly where it&#39;s declared.</p>
+<h2>Looping over a vector</h2>
+<p>You can loop over the indexes, <code>for i in 0..v.len()</code>, exactly as with arrays. In real code you&#39;ll more often see this form:</p>
+<pre><code class="language-rust">fn main() {
+    let lap_times = vec![62, 58, 60];
+    let mut total = 0;
+    for t in &amp;lap_times {
+        total += t;
+    }
+    println!(&quot;{} laps, total {} s&quot;, lap_times.len(), total);
+}
+</code></pre>
+<pre><code class="language-text">3 laps, total 180 s
+</code></pre>
+<p>The <code>&amp;</code> in <code>&amp;lap_times</code> lets the loop <strong>look at</strong> the elements without using up the vector. Without it, <code>for t in lap_times</code> takes the vector over, and using <code>lap_times</code> after the loop is an error (E0382, <code>borrow of moved value: `lap_times` </code>). Why that happens is the topic of the next phase: <strong>ownership</strong> (module 09) and <strong>borrowing</strong> with <code>&amp;</code> (module 10). For now, loop over <code>&amp;v</code> (or over the indexes) when you still need <code>v</code> afterwards.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>mut</code></strong>: <code>v.push(3)</code> on a non-<code>mut</code> vector gives error E0596, <code>cannot borrow `v` as mutable, as it is not declared as mutable</code>.</li>
+<li><strong>Pushing the wrong type</strong>: a <code>Vec</code> of integers can&#39;t take <code>&quot;three&quot;</code> (<code>expected integer, found &amp;str</code>). Every element has the same type.</li>
+<li><strong>Confusing arrays and vectors in types</strong>: <code>[i32; 3]</code> is an array, <code>Vec&lt;i32&gt;</code> a vector. <code>vec![1, 2, 3]</code> makes a vector, <code>[1, 2, 3]</code> an array.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Start from an empty vector and use a loop with <code>push</code> to collect the multiples of 7 from 7 up to 49. Then print the vector and how many numbers it holds:</p>
+<pre><code>[7, 14, 21, 28, 35, 42, 49]
+count: 7
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>Fill the blanks: create an empty cart, add a price to it, and print how many items it holds. The program should print <code>2 items: [499, 1250]</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>evens_up_to(n)</code>, which returns a vector of the even numbers from 2 up to and including <code>n</code>. For example <code>evens_up_to(10)</code> returns <code>[2, 4, 6, 8, 10]</code>, and <code>evens_up_to(1)</code> returns an empty vector.</p>
+
+<p><a href="/learn/compound/grids-arrays-of-arrays">Previous: Grids: arrays of arrays</a> </p></main></div>
+  </body>
+</html>

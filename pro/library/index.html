@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Designing a library crate | Pro Track | RustArena</title>
+    <meta name="description" content="Split code into a library and a binary in a Cargo workspace, design a public API with typed errors and full documentation, and prepare it for crates.io." />
+    <link rel="canonical" href="https://rustarena.app/pro/library/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Designing a library crate | Pro Track | RustArena" />
+    <meta property="og:description" content="Split code into a library and a binary in a Cargo workspace, design a public API with typed errors and full documentation, and prepare it for crates.io." />
+    <meta property="og:url" content="https://rustarena.app/pro/library/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><h1>Designing a library crate</h1><p>Most Rust code at work lives in libraries that other code depends on. A library&#39;s public API is a promise: once someone builds on it, every name, signature and error variant is hard to change. So teams work to get it right: types that make mistakes impossible, errors callers can act on, documentation whose examples are tested, and version numbers that tell the truth.</p>
+<p>You&#39;ll finish <strong>semver-lite</strong>, a library that parses, compares and matches <a href="https://semver.org">semantic versions</a> (the <code>^1.2</code> rules Cargo itself uses), and a small <code>semver</code> command-line tool built on it, in one Cargo workspace.</p>
+<p><strong>You&#39;ll practice:</strong> workspaces, API design (newtypes, builders, <code>impl Trait</code>, <code>AsRef</code>), typed errors with <code>thiserror</code>, rustdoc and doc tests, cargo features, semver, and packaging for crates.io.</p>
+<h2>The workspace</h2>
+<pre><code>05-library/
+  Cargo.toml        [workspace]: the members, plus settings and dependencies they share
+  semver-lite/      the library (the product)
+  semver-cli/       the `semver` binary: reads arguments, calls the library, prints
+</code></pre>
+<p>A workspace builds several packages with one <code>Cargo.lock</code> and one <code>target/</code> folder. Real projects (ripgrep, tokio, serde) split this way so the library can be tested and reused without the binary, and the binary stays thin. Shared settings go in <code>[workspace.package]</code> and <code>[workspace.dependencies]</code>, and members inherit them with <code>edition.workspace = true</code>.</p>
+<pre><code class="language-bash">cd projects/05-library
+cargo build --workspace            # everything
+cargo test -p semver-lite          # one member (-p = --package)
+cargo run -p semver-cli -- sort 1.10.0 1.2.0 v1.2.0-rc.1
+</code></pre>
+<p>The CLI depends on the library with <code>path = &quot;semver-lite&quot;, version = &quot;0.1.0&quot;</code>: the path is used here, and the version is what the dependency becomes if the CLI is ever published (crates.io doesn&#39;t allow path-only dependencies).</p>
+<h2>Background</h2>
+<h3>API design: make the right thing easy</h3>
+<ul>
+<li><strong>Re-export from <code>lib.rs</code>.</strong> Users write <code>semver_lite::Version</code>, never <code>semver_lite::version::Version</code>. The module layout stays private, so you can reorganize it without breaking anyone.</li>
+<li><strong>Newtypes.</strong> <code>Prerelease</code> wraps a <code>String</code> in a struct with a private field. The only way to make one is <code>Prerelease::new</code>, which validates, so every <code>Prerelease</code> in existence is valid, and its ordering rule lives with the data. A plain <code>String</code> would let anyone build <code>&quot;rc..1&quot;</code>.</li>
+<li><strong>Standard traits.</strong> Users expect <code>&quot;1.2.3&quot;.parse()</code> (<code>FromStr</code>), <code>println!(&quot;{v}&quot;)</code> (<code>Display</code>), <code>versions.sort()</code> (<code>Ord</code>), plus <code>Debug</code>, <code>Clone</code>, <code>PartialEq</code>, <code>Hash</code>. They can&#39;t add them from outside your crate.</li>
+<li><strong>Builders.</strong> <code>Parser::new().allow_v_prefix(true).allow_partial(true)</code> reads well at the call site, unlike <code>parse(s, true, false)</code>, and adding an option later breaks nobody.</li>
+<li><strong><code>impl Trait</code> and <code>AsRef</code>.</strong> <code>parse_all(inputs: impl IntoIterator&lt;Item = impl AsRef&lt;str&gt;&gt;)</code> accepts <code>[&quot;1.0.0&quot;]</code>, a <code>Vec&lt;String&gt;</code>, or <code>&amp;args</code> without the caller converting anything. Returning <code>impl Iterator</code> (see <code>VersionReq::matching</code>) lets callers chain or collect without the crate committing to a collection type.</li>
+</ul>
+<h3>Typed errors with thiserror</h3>
+<p>Applications report errors to people, so <code>anyhow</code> (project 04) is fine there. Libraries report errors to <em>code</em>, so they return an enum the caller can <code>match</code> on:</p>
+<pre><code class="language-rust">#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    #[error(&quot;invalid version number \&quot;{part}\&quot;&quot;)]
+    InvalidNumber { part: String },
+    #[error(&quot;invalid version requirement \&quot;{req}\&quot;&quot;)]
+    InvalidReq { req: String, source: Box&lt;Error&gt; },   // a field named `source` is the cause
+}
+</code></pre>
+<p><code>thiserror</code> writes the <code>Display</code> and <code>std::error::Error</code> impls, including <code>source()</code>, so a program can print the whole chain (try <code>semver match &quot;^1.x&quot; 1.0.0</code>). <code>#[non_exhaustive]</code> makes users add a <code>_</code> arm when they match, so a new variant later isn&#39;t a breaking change.</p>
+<h3>Documentation is part of the API</h3>
+<p><code>///</code> documents the next item and <code>//!</code> the enclosing one (the crate, at the top of <code>lib.rs</code>). Code blocks in docs are <strong>compiled and run</strong> by <code>cargo test</code>, so examples can&#39;t silently rot. Inside them, lines starting with <code># </code> are hidden from the rendered page; <code># Ok::&lt;(), semver_lite::Error&gt;(())</code> at the end lets an example use <code>?</code>. Conventional sections are <code># Examples</code>, <code># Errors</code> (when a function returns <code>Result</code>) and <code># Panics</code>, and <code>[`Version`]</code> links to an item. <code>#![deny(missing_docs)]</code> at the top of <code>lib.rs</code> makes any undocumented public item a compile error. Read the result with <code>cargo doc --open</code>.</p>
+<h3>Optional features</h3>
+<p>Not every user wants serde. An optional dependency plus a feature lets them choose:</p>
+<pre><code class="language-toml">[features]
+serde = [&quot;dep:serde&quot;]
+
+[dependencies]
+serde = { version = &quot;1&quot;, optional = true }
+</code></pre>
+<p>Code that needs it goes behind <code>#[cfg(feature = &quot;serde&quot;)]</code> (a whole module is easiest). Features must be <strong>additive</strong>: turning one on may add API, never remove or change it, because Cargo unifies features across the whole dependency graph. Test both ways (<code>cargo test</code> and <code>cargo test --all-features</code>), as the grader does.</p>
+<h3>Semver for your own crate</h3>
+<p><code>MAJOR.MINOR.PATCH</code>: bump PATCH for fixes, MINOR for new API, MAJOR for breaking changes. Breaking includes removing or renaming a public item, changing a signature, adding a variant to an exhaustive enum, and adding a field to a struct with public fields (it breaks struct literals and patterns). Before 1.0, Cargo treats the first non-zero number as the major one: <code>^0.2.3</code> means <code>&gt;=0.2.3, &lt;0.3.0</code>. You are about to implement exactly that rule.</p>
+<h3>Ready for crates.io</h3>
+<p>crates.io needs a <code>description</code>, a <code>license</code> (an SPDX expression like <code>MIT OR Apache-2.0</code>) and a link (<code>repository</code>). Good crates also set <code>readme</code>, <code>keywords</code>, <code>categories</code> and <code>rust-version</code> (the oldest Rust they support). <code>cargo package --list</code> shows exactly which files would be uploaded, and <code>cargo package</code> builds the <code>.crate</code> and compiles it in isolation, which catches files you forgot to include. <strong>Don&#39;t run <code>cargo publish</code> for this project</strong>: published versions are permanent.</p>
+<h2>Your tasks</h2>
+<ol>
+<li><strong>Errors</strong> (<code>semver-lite/src/error.rs</code>): derive <code>thiserror::Error</code>, write the messages listed in the comments, add <code>#[non_exhaustive]</code>.</li>
+<li><strong>Prerelease</strong> (<code>prerelease.rs</code>): <code>new</code> (validation) and <code>Ord</code> (precedence).</li>
+<li><strong>Version and Parser</strong> (<code>version.rs</code>, <code>parser.rs</code>): parsing, ordering, <code>Display</code>, bumps. Now <code>cargo test -p semver-lite --test api</code> and <code>cargo test -p semver-cli</code> pass.</li>
+<li><strong>Documentation:</strong> add <code>#![deny(missing_docs)]</code> and crate docs to <code>lib.rs</code>, then document every public item, including <code>req.rs</code> (written by a colleague, undocumented). At least 6 examples in total; <code>cargo test --doc -p semver-lite</code> runs them.</li>
+<li><strong>The <code>serde</code> feature:</strong> add it to <code>semver-lite/Cargo.toml</code> and implement <code>Serialize</code>/<code>Deserialize</code> for <code>Version</code> <em>as a string</em> in a <code>#[cfg(feature = &quot;serde&quot;)]</code> module. Run <code>cargo test -p semver-lite --features serde</code>.</li>
+<li><strong>Metadata:</strong> fill in <code>[workspace.package]</code> and <code>semver-lite/Cargo.toml</code>, write <code>semver-lite/README.md</code> (what crates.io shows), then run <code>cargo package -p semver-lite --list</code> and <code>cargo package -p semver-lite --allow-dirty</code>.</li>
+<li>Grade (<code>bash ../../tools/grade.sh 05-library</code>), then commit and push.</li>
+</ol>
+<h2>What the grader checks</h2>
+<ul>
+<li><code>cargo fmt</code> and <code>cargo clippy --all-features</code> are clean; the provided tests are unchanged.</li>
+<li><code>Error</code> uses thiserror and is <code>#[non_exhaustive]</code>; <code>lib.rs</code> has <code>#![deny(missing_docs)]</code>.</li>
+<li>Tests pass without features and with <code>serde</code>; serde isn&#39;t compiled when the feature is off.</li>
+<li>At least 6 doc tests; <code>cargo doc</code> passes with <code>RUSTDOCFLAGS=&quot;-D warnings&quot;</code> (no broken links).</li>
+<li><code>cargo package</code> succeeds with no warnings and includes <code>README.md</code>.</li>
+</ul>
+<h2>Hints</h2>
+<ul>
+<li>Since <code>Prerelease</code> knows its own ordering, <code>Version</code> can simply <code>#[derive(PartialOrd, Ord)]</code>: derived ordering compares fields in declaration order.</li>
+<li><code>u64::from_str</code> accepts <code>&quot;+2&quot;</code>. Check that every byte is an ASCII digit first.</li>
+<li>Pre-release numbers have no leading zeros, so a longer number is a bigger number: compare lengths, then text. No overflow possible.</li>
+<li>For serde, <code>serializer.collect_str(self)</code> writes your <code>Display</code> output; for deserializing, read a <code>String</code> and <code>parse()</code> it, turning the error into <code>serde::de::Error::custom</code>.</li>
+<li><code>#![warn(clippy::missing_errors_doc)]</code> reminds you to write <code># Errors</code> sections.</li>
+</ul>
+<h2>Going further</h2>
+<ul>
+<li>Install <a href="https://github.com/obi1kenobi/cargo-semver-checks">cargo-semver-checks</a>, make a breaking change (add a public field to <code>Version</code>), and watch it catch it.</li>
+<li>Use the README as the crate docs with <code>#![doc = include_str!(&quot;../README.md&quot;)]</code>, so its examples become doc tests too.</li>
+<li>Support build metadata (<code>1.0.0+build.5</code>), which is ignored when comparing versions.</li>
+<li>Run <code>cargo publish --dry-run -p semver-lite</code> to see the last checks crates.io would do, without uploading.</li>
+</ul>
+</main></div>
+  </body>
+</html>

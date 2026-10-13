@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Bottom-up DP: filling a table · Recursion and Dynamic Programming (Rust) | RustArena</title>
+    <meta name="description" content="Memoization works top-down: start from the big question and recurse. The other way is bottom-up (also called tabulation): fill a table starting from the…" />
+    <link rel="canonical" href="https://rustarena.app/learn/recursion-dp/bottom-up-dp-filling-a-table/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Bottom-up DP: filling a table · Recursion and Dynamic Programming (Rust) | RustArena" />
+    <meta property="og:description" content="Memoization works top-down: start from the big question and recurse. The other way is bottom-up (also called tabulation): fill a table starting from the…" />
+    <meta property="og:url" content="https://rustarena.app/learn/recursion-dp/bottom-up-dp-filling-a-table/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Bottom-up DP: filling a table","description":"Memoization works top-down: start from the big question and recurse. The other way is bottom-up (also called tabulation): fill a table starting from the…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/recursion-dp/bottom-up-dp-filling-a-table/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Algorithms and data structures › Recursion and Dynamic Programming</nav>
+<p>Step 4 of 6</p>
+<h1>Bottom-up DP: filling a table</h1>
+<p>Memoization works top-down: start from the big question and recurse. The other way is <strong>bottom-up</strong> (also called <strong>tabulation</strong>): fill a table starting from the smallest subproblems, so that every entry you compute only needs entries you&#39;ve already filled. No recursion at all, which means no stack depth limit, and a <code>Vec</code> index is cheaper than hashing a key.</p>
+<pre><code class="language-rust">fn fib(n: usize) -&gt; u64 {
+    let mut table = vec![0u64; n + 1];
+    if n &gt;= 1 {
+        table[1] = 1;
+    }
+    for i in 2..=n {
+        table[i] = table[i - 1] + table[i - 2];
+    }
+    table[n]
+}
+
+fn min_cost(cost: &amp;[u32]) -&gt; u32 {
+    // best[i] = the cheapest way to stand on step i; the top is step cost.len().
+    // You may start on step 0 or 1 for free; leaving step j costs cost[j].
+    let n = cost.len();
+    let mut best = vec![0; n + 1];
+    for i in 2..=n {
+        best[i] = (best[i - 1] + cost[i - 1]).min(best[i - 2] + cost[i - 2]);
+    }
+    best[n]
+}
+
+fn main() {
+    println!(&quot;fib(90) = {}&quot;, fib(90));
+    println!(&quot;{}&quot;, min_cost(&amp;[10, 15, 20]));
+    println!(&quot;{}&quot;, min_cost(&amp;[1, 100, 1, 1, 1, 100, 1, 1, 100, 1]));
+}
+</code></pre>
+<pre><code class="language-text">fib(90) = 2880067194370816120
+15
+6
+</code></pre>
+<h2>A recipe for DP problems</h2>
+<ol>
+<li><strong>State</strong>: say in words what one table entry means. &quot;<code>best[i]</code> is the cheapest cost to stand on step i.&quot;</li>
+<li><strong>Recurrence</strong>: how an entry is built from smaller ones. &quot;<code>best[i]</code> is the cheaper of arriving from step i-1 or from step i-2.&quot;</li>
+<li><strong>Base cases</strong>: the entries you know without computing. &quot;<code>best[0] = best[1] = 0</code>.&quot;</li>
+<li><strong>Order</strong>: fill the table so dependencies are ready (here: increasing i).</li>
+<li><strong>Answer</strong>: which entry holds it (&quot;<code>best[n]</code>&quot;).</li>
+</ol>
+<p>Writing the state down in a comment, as above, is the single most useful habit for DP.</p>
+<h2>Saving memory</h2>
+<p>When an entry only depends on the last few entries, you don&#39;t need the whole table. Fibonacci only needs the previous two values:</p>
+<pre><code class="language-rust">let (mut a, mut b) = (0u64, 1u64);
+for _ in 0..n {
+    (a, b) = (b, a + b); // destructuring assignment: both update at once
+}
+// a is now fib(n)
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>A table one too short.</strong> If the answer is <code>table[n]</code>, the table needs <code>n + 1</code> entries.</li>
+<li><strong>Filling in the wrong order</strong>, reading an entry that&#39;s still the initial 0.</li>
+<li><strong>&quot;Impossible&quot; values.</strong> For a minimum, initialize entries to a marker like <code>u32::MAX</code> (or use <code>Option&lt;u32&gt;</code>), and never add 1 to the marker: <code>u32::MAX + 1</code> overflows.</li>
+<li><strong>Trusting greed.</strong> For coins <code>[1, 3, 4]</code> and amount 6, &quot;always take the biggest coin&quot; gives 4 + 1 + 1 (three coins), but 3 + 3 is two. DP checks every option.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>The classic <strong>coin change</strong>. Write <code>fn min_coins(coins: &amp;[u32], amount: u32) -&gt; Option&lt;u32&gt;</code>: the fewest coins (each coin value can be used any number of times) that add up to exactly <code>amount</code>, or <code>None</code> if it&#39;s impossible. Make amount 0 need 0 coins. State: <code>best[a]</code> is the fewest coins for amount <code>a</code>; for each coin <code>c &lt;= a</code>, <code>best[a]</code> could be <code>best[a - c] + 1</code>. The tests include amounts up to 100,000.</p>
+
+<h3>Challenge 2</h3>
+<p>The vending machine team wants to know in how many <strong>different ways</strong> an amount can be paid (order doesn&#39;t matter: 1 + 2 and 2 + 1 are the same way). Write <code>fn ways_to_pay(coins: &amp;[u32], amount: u32) -&gt; u64</code>. There&#39;s 1 way to pay 0.</p>
+<p>State: <code>ways[a]</code> = number of ways to pay <code>a</code> with the coins considered so far. Loop over the <strong>coins on the outside</strong> and the amounts on the inside: <code>ways[a] += ways[a - coin]</code>. (With the amounts outside you&#39;d count 1 + 2 and 2 + 1 separately.) The tests include paying 10,000 with eight coin values.</p>
+
+<h3>Challenge 3</h3>
+<p>A delivery drone flies along a street where each house offers a tip, but noise rules forbid stopping at <strong>two neighboring houses</strong> on the same run. Write <code>fn max_tips(tips: &amp;[u32]) -&gt; u64</code>: the largest total it can collect.</p>
+<p>State: the best total using the houses up to <code>i</code>. At house <code>i</code> you either skip it (keep the best up to <code>i - 1</code>) or take it (its tip plus the best up to <code>i - 2</code>). You only ever need the last two values, so use two variables instead of a table. The tests include a street of 200,000 houses.</p>
+
+<p><a href="/learn/recursion-dp/memoization-with-a-hashmap">Previous: Memoization with a HashMap</a> <a href="/learn/recursion-dp/two-dimensional-dp-grids-and-strings">Next: Two-dimensional DP: grids and strings</a></p></main></div>
+  </body>
+</html>

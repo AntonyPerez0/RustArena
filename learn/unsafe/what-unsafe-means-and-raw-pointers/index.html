@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>What unsafe means, and raw pointers · Unsafe Rust (Rust) | RustArena</title>
+    <meta name="description" content="Everything you've written so far is safe Rust: the compiler proves there are no dangling references, no data races and no out-of-bounds reads. But some…" />
+    <link rel="canonical" href="https://rustarena.app/learn/unsafe/what-unsafe-means-and-raw-pointers/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="What unsafe means, and raw pointers · Unsafe Rust (Rust) | RustArena" />
+    <meta property="og:description" content="Everything you've written so far is safe Rust: the compiler proves there are no dangling references, no data races and no out-of-bounds reads. But some…" />
+    <meta property="og:url" content="https://rustarena.app/learn/unsafe/what-unsafe-means-and-raw-pointers/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"What unsafe means, and raw pointers","description":"Everything you've written so far is safe Rust: the compiler proves there are no dangling references, no data races and no out-of-bounds reads. But some…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/unsafe/what-unsafe-means-and-raw-pointers/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Unsafe Rust</nav>
+<p>Step 1 of 6</p>
+<h1>What unsafe means, and raw pointers</h1>
+<p>Everything you&#39;ve written so far is <strong>safe Rust</strong>: the compiler proves there are no dangling references, no data races and no out-of-bounds reads. But some correct programs can&#39;t be proven by the compiler. Calling a C library, talking to hardware, or implementing <code>Vec</code> itself needs operations the compiler can&#39;t check. For those, Rust has the <strong><code>unsafe</code></strong> keyword.</p>
+<p>The <code>unsafe</code> keyword unlocks exactly five extra abilities (the Rust book calls them the unsafe superpowers):</p>
+<ol>
+<li>Dereference a <strong>raw pointer</strong>.</li>
+<li>Call an <code>unsafe</code> function (including C functions through FFI).</li>
+<li>Read or write a mutable <code>static</code> variable.</li>
+<li>Implement an <code>unsafe</code> trait (like <code>Send</code>), written <code>unsafe impl</code>.</li>
+<li>Read a field of a <code>union</code>.</li>
+</ol>
+<p>All but the fourth happen inside an <code>unsafe { ... }</code> block. (Edition 2024 also uses the keyword to mark declarations the compiler can&#39;t check, like <code>unsafe extern &quot;C&quot;</code> blocks and <code>#[unsafe(no_mangle)]</code>; step 3 shows them. They unlock nothing new: you&#39;re vouching that the declaration is right.)</p>
+<p>That&#39;s the whole list. <code>unsafe</code> does <strong>not</strong> turn off the borrow checker, type checking or bounds checks on normal indexing. It marks a spot where <strong>you</strong> promise to uphold rules the compiler can&#39;t verify. If you break them, the result is <strong>undefined behavior</strong> (UB): the program may crash, compute garbage or seem to work until it doesn&#39;t. Step 5 is all about UB.</p>
+<h2>Raw pointers</h2>
+<p>Rust has two raw pointer types: <code>*const T</code> (read) and <code>*mut T</code> (read and write). Unlike references, a raw pointer may be null, dangling or unaligned, several <code>*mut</code> may point to the same place, and nothing tracks how long the data lives. <strong>Creating</strong> one is safe; <strong>dereferencing</strong> one is not.</p>
+<pre><code class="language-rust">fn main() {
+    let mut hp = 100;
+    let read_ptr = &amp;raw const hp; // *const i32
+    let write_ptr = &amp;raw mut hp; // *mut i32
+
+    // SAFETY: both pointers point to `hp`, which is alive for all of main.
+    unsafe {
+        *write_ptr -= 30;
+        println!(&quot;hp = {}&quot;, *read_ptr);
+    }
+
+    let nothing: *const i32 = std::ptr::null();
+    println!(&quot;null? {}&quot;, nothing.is_null());
+    println!(&quot;same address? {}&quot;, read_ptr == write_ptr as *const i32);
+}
+</code></pre>
+<pre><code class="language-text">hp = 70
+null? true
+same address? true
+</code></pre>
+<ul>
+<li><code>&amp;raw const hp</code> and <code>&amp;raw mut hp</code> create raw pointers directly. Older code writes <code>&amp;hp as *const i32</code>; both work.</li>
+<li>Having a <code>*const</code> and a <code>*mut</code> to the same variable at the same time is allowed, unlike <code>&amp;</code> and <code>&amp;mut</code>. The compiler stops tracking aliasing for raw pointers; that&#39;s now your job.</li>
+<li>The <code>// SAFETY:</code> comment explains why this particular unsafe block is fine. It&#39;s the standard convention in Rust codebases (the next step explains it).</li>
+</ul>
+<h2>Pointer arithmetic</h2>
+<p><code>ptr.add(i)</code> moves a pointer forward by <code>i</code> <strong>elements</strong> (not bytes). It&#39;s an unsafe function itself: the result must stay inside the same array (or point just past its end). Combined with <code>as_ptr()</code> on a slice, it walks through the elements:</p>
+<pre><code class="language-rust">fn main() {
+    let scores = [10, 20, 30, 40];
+    let p = scores.as_ptr();
+    let mut total = 0;
+    for i in 0..scores.len() {
+        // SAFETY: i &lt; scores.len(), so p.add(i) points inside the array.
+        total += unsafe { *p.add(i) };
+    }
+    println!(&quot;{total}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">100
+</code></pre>
+<p>This is roughly what <code>scores.iter().sum()</code> does under the hood, except that the iterator&#39;s safe API guarantees the pointer never leaves the array. In real code you&#39;d write the iterator version: it&#39;s just as fast and can&#39;t go wrong.</p>
+<h2>Common mistakes</h2>
+<p><strong>Dereferencing outside an unsafe block:</strong></p>
+<pre><code class="language-rust-error">fn main() {
+    let x = 5;
+    let p = &amp;raw const x;
+    println!(&quot;{}&quot;, *p);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0133]: dereference of raw pointer is unsafe and requires unsafe block
+</code></pre>
+<p><strong>Keeping a pointer longer than the data.</strong> This compiles, because creating and returning a raw pointer is safe, but <code>x</code> is gone when the function returns, so any later dereference is UB:</p>
+<pre><code class="language-rust">fn dangling() -&gt; *const i32 {
+    let x = 42;
+    &amp;raw const x // x is dropped here; the pointer now points at nothing
+}
+</code></pre>
+<p>References would never allow this. With raw pointers, lifetimes are your responsibility.</p>
+
+<h2>Your task</h2>
+<p>Fill in the blanks: create a <code>*mut i32</code> pointing at <code>gold</code>, then add 25 through it inside an unsafe block. The program should print <code>gold = 75</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>For practice (real code would use <code>values.iter().sum()</code>), write <code>sum_raw</code>, which adds up a slice by reading each element through the raw pointer <code>p = values.as_ptr()</code> and <code>p.add(i)</code>. Don&#39;t use iterators or indexing on <code>values</code>. Add a <code>// SAFETY:</code> comment to your unsafe block.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>reverse_raw</code>, which reverses a slice in place using raw pointers: take <code>p = v.as_mut_ptr()</code>, keep two indexes <code>i</code> (from the front) and <code>j</code> (from the back), and swap the elements they point to with <code>std::ptr::swap(p.add(i), p.add(j))</code> until they meet. Careful: an empty slice has no last element, so check the length <strong>before</strong> computing <code>len - 1</code>.</p>
+
+<p> <a href="/learn/unsafe/unsafe-functions-and-safe-abstractions">Next: Unsafe functions and safe abstractions</a></p></main></div>
+  </body>
+</html>

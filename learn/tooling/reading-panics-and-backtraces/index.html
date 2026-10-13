@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Reading panics and backtraces · Debugging, Docs and Tooling (Rust) | RustArena</title>
+    <meta name="description" content="When a Rust program hits a bug it can't recover from, it panics: it stops, prints a message to stderr, and exits with code 101. The message is precise,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/tooling/reading-panics-and-backtraces/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Reading panics and backtraces · Debugging, Docs and Tooling (Rust) | RustArena" />
+    <meta property="og:description" content="When a Rust program hits a bug it can't recover from, it panics: it stops, prints a message to stderr, and exits with code 101. The message is precise,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/tooling/reading-panics-and-backtraces/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Reading panics and backtraces","description":"When a Rust program hits a bug it can't recover from, it panics: it stops, prints a message to stderr, and exits with code 101. The message is precise,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/tooling/reading-panics-and-backtraces/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Debugging, Docs and Tooling</nav>
+<p>Step 2 of 7</p>
+<h1>Reading panics and backtraces</h1>
+<p>When a Rust program hits a bug it can&#39;t recover from, it <strong>panics</strong>: it stops, prints a message to stderr, and exits with code 101. The message is precise, so read it slowly.</p>
+<pre><code class="language-rust">fn main() {
+    let lines = [&quot;12&quot;, &quot;7&quot;, &quot;x3&quot;];
+    let mut total = 0;
+    for line in lines {
+        let n: i32 = line.parse().expect(&quot;each line should be a whole number&quot;);
+        total += n;
+        println!(&quot;running total: {total}&quot;);
+    }
+}
+</code></pre>
+<pre><code class="language-text">running total: 12
+running total: 19
+</code></pre>
+<p>Then, on stderr:</p>
+<pre><code class="language-text">thread &#39;main&#39; (31337) panicked at src/main.rs:5:35:
+each line should be a whole number: ParseIntError { kind: InvalidDigit }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</code></pre>
+<ul>
+<li><code>thread &#39;main&#39;</code>: which thread panicked (in tests, it&#39;s the test&#39;s name). The number in parentheses is the thread&#39;s id and changes on every run; older Rust versions don&#39;t print it.</li>
+<li><code>src/main.rs:5:35</code>: file, line and column. Line 5, column 35 is the <code>.expect(...)</code> call.</li>
+<li>The message: your <code>expect</code> text, then the error&#39;s <code>Debug</code> form. A good <code>expect</code> message says what you <em>expected</em> to be true, which is why it reads well here.</li>
+<li>The lines printed before the panic tell you how far the program got: it failed on the third line, <code>&quot;x3&quot;</code>.</li>
+</ul>
+<p>The fix is to handle bad lines instead of crashing:</p>
+<pre><code class="language-rust">fn main() {
+    let lines = [&quot;12&quot;, &quot;7&quot;, &quot;x3&quot;];
+    let mut total = 0;
+    for line in lines {
+        match line.parse::&lt;i32&gt;() {
+            Ok(n) =&gt; total += n,
+            Err(e) =&gt; eprintln!(&quot;skipping {line:?}: {e}&quot;),
+        }
+    }
+    println!(&quot;total: {total}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">total: 19
+</code></pre>
+<h2>Messages you&#39;ll meet</h2>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Usual cause</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>index out of bounds: the len is 3 but the index is 3</code></td>
+<td>a loop or index one past the end</td>
+</tr>
+<tr>
+<td><code>called `Option::unwrap()` on a `None` value</code></td>
+<td>a lookup or search found nothing</td>
+</tr>
+<tr>
+<td><code>called `Result::unwrap()` on an `Err` value: ...</code></td>
+<td>parsing or I/O failed; the error follows</td>
+</tr>
+<tr>
+<td><code>attempt to subtract with overflow</code></td>
+<td>an unsigned number would go below 0 (debug builds check this)</td>
+</tr>
+<tr>
+<td><code>attempt to divide by zero</code></td>
+<td>dividing by an empty collection&#39;s length, often</td>
+</tr>
+<tr>
+<td><code>RefCell already borrowed</code></td>
+<td>a RefCell borrowed mutably while another borrow was alive</td>
+</tr>
+<tr>
+<td><code>not yet implemented</code></td>
+<td>a <code>todo!()</code> was reached</td>
+</tr>
+</tbody></table>
+<h2>Backtraces</h2>
+<p>The panic location says <em>where</em> it broke, but often the real mistake is in the caller. Set the <code>RUST_BACKTRACE</code> environment variable to see the whole chain of calls, the <strong>backtrace</strong>:</p>
+<pre><code class="language-rust">fn average(scores: &amp;[u32]) -&gt; u32 {
+    let total: u32 = scores.iter().sum();
+    total / scores.len() as u32
+}
+
+fn main() {
+    let rounds: Vec&lt;Vec&lt;u32&gt;&gt; = vec![vec![70, 80], vec![]];
+    for r in &amp;rounds {
+        println!(&quot;{}&quot;, average(r));
+    }
+}
+</code></pre>
+<pre><code class="language-text">$ RUST_BACKTRACE=1 cargo run
+75
+
+thread &#39;main&#39; (8226) panicked at src/main.rs:3:5:
+attempt to divide by zero
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7.../library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7.../library/core/src/panicking.rs:80:14
+   2: core::panicking::panic_const::panic_const_div_by_zero
+             at /rustc/2d8144b7.../library/core/src/panicking.rs:175:17
+   3: scores::average
+             at ./src/main.rs:3:5
+   4: scores::main
+             at ./src/main.rs:9:24
+   5: &lt;fn() as core::ops::function::FnOnce&lt;()&gt;&gt;::call_once
+             at /rustc/2d8144b7.../library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+</code></pre>
+<p>Read it from the top and skip the frames from <code>std</code> and <code>core</code> (the panic machinery). Frame 3 is the first one in <em>your</em> crate: <code>scores::average</code> at line 3. Frame 4 is who called it: <code>main</code>, line 9. So <code>main</code> passed an empty round, and <code>average</code> didn&#39;t expect one. On Windows PowerShell, set the variable with <code>$env:RUST_BACKTRACE=1</code> first. <code>RUST_BACKTRACE=full</code> shows every frame.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Reading only the last line.</strong> The first line (location) and the message carry the information; the <code>note:</code> line is just a tip.</li>
+<li><strong>Fixing the line that panicked instead of the cause.</strong> If <code>average</code> receives an empty slice, decide whether <code>average</code> should handle it (return <code>Option</code>) or the caller should never pass one.</li>
+<li><strong><code>.unwrap()</code> everywhere.</strong> When something truly can&#39;t fail, <code>.expect(&quot;why it can&#39;t&quot;)</code> makes the panic message explain itself.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>This program panics before finishing. Run it, read the panic message, and fix the loop so it prints the change between each pair of neighboring readings:</p>
+<pre><code>18 -&gt; 21: +3
+21 -&gt; 19: -2
+19 -&gt; 25: +6
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>This order summary panics with <code>called `Option::unwrap()` on a `None` value</code>. Find out which item causes it, and handle the missing price instead of panicking: print <code>kiwi: unknown item</code> and leave it out of the total. Expected output:</p>
+<pre><code>apple: 120
+kiwi: unknown item
+pear: 95
+total: 215
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>The warehouse program panics with <code>attempt to subtract with overflow</code>. Stock is a <code>u32</code>, which can&#39;t go below 0. Use <code>checked_sub</code> (it returns <code>None</code> instead of overflowing) so an order larger than the stock is refused and the program keeps going:</p>
+<pre><code>shipped 2, 3 left
+cannot ship 4, only 3 left
+shipped 1, 2 left
+</code></pre>
+
+<p><a href="/learn/tooling/dbg-and-eprintln-print-debugging-done-right">Previous: dbg! and eprintln!: print debugging done right</a> <a href="/learn/tooling/debuggers-and-logging">Next: Debuggers and logging</a></p></main></div>
+  </body>
+</html>

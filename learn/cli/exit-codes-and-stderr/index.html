@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Exit codes and stderr · Building Command-Line Tools (Rust) | RustArena</title>
+    <meta name="description" content="Every program ends with an exit code, a small number it hands back to whoever started it. 0 means success, anything else means failure. Humans rarely see…" />
+    <link rel="canonical" href="https://rustarena.app/learn/cli/exit-codes-and-stderr/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Exit codes and stderr · Building Command-Line Tools (Rust) | RustArena" />
+    <meta property="og:description" content="Every program ends with an exit code, a small number it hands back to whoever started it. 0 means success, anything else means failure. Humans rarely see…" />
+    <meta property="og:url" content="https://rustarena.app/learn/cli/exit-codes-and-stderr/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Exit codes and stderr","description":"Every program ends with an exit code, a small number it hands back to whoever started it. 0 means success, anything else means failure. Humans rarely see…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/cli/exit-codes-and-stderr/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Building Command-Line Tools</nav>
+<p>Step 3 of 6</p>
+<h1>Exit codes and stderr</h1>
+<p>Every program ends with an <strong>exit code</strong>, a small number it hands back to whoever started it. <code>0</code> means success, anything else means failure. Humans rarely see it, but everything else does: shell scripts (<code>mytool &amp;&amp; deploy</code>), CI pipelines (a non-zero code fails the build), and other programs. A tool that prints &quot;error&quot; but exits with 0 tells the script everything went fine.</p>
+<pre><code class="language-text">$ grep crab notes.txt; echo &quot;exit code: $?&quot;
+the crab sleeps
+exit code: 0
+$ grep lobster notes.txt; echo &quot;exit code: $?&quot;
+exit code: 1
+$ grep lobster missing.txt; echo &quot;exit code: $?&quot;
+grep: missing.txt: No such file or directory
+exit code: 2
+</code></pre>
+<p>Common conventions: <code>0</code> success, <code>1</code> a general failure (or &quot;nothing found&quot;, for search tools), <code>2</code> the tool was called wrong (bad arguments). Codes go from 0 to 255.</p>
+<h2>Returning an exit code from main</h2>
+<pre><code class="language-rust">use std::process::ExitCode;
+
+fn main() -&gt; ExitCode {
+    let words = [&quot;alpha&quot;, &quot;beta&quot;, &quot;gamma&quot;];
+    for w in words {
+        println!(&quot;{w}&quot;);
+    }
+    eprintln!(&quot;debug: printed {} words&quot;, words.len());
+    ExitCode::SUCCESS
+}
+</code></pre>
+<pre><code class="language-text">alpha
+beta
+gamma
+</code></pre>
+<ul>
+<li><code>fn main() -&gt; ExitCode</code> lets <code>main</code> choose the code: <code>ExitCode::SUCCESS</code> (0), <code>ExitCode::FAILURE</code> (1), or any <code>u8</code> with <code>ExitCode::from(2)</code>.</li>
+<li>The <code>debug:</code> line isn&#39;t in the output above because <code>eprintln!</code> writes to <strong>standard error</strong> (stderr), a second output stream. Messages for humans (errors, warnings, progress) go to stderr; the tool&#39;s real <strong>results</strong> go to stdout. That way <code>mytool &gt; results.txt</code> puts only results in the file while errors still appear on screen, and a pipe like <code>mytool | sort</code> doesn&#39;t sort your error messages.</li>
+</ul>
+<p>Here is a typical <code>main</code> for a tool that can be called wrong:</p>
+<pre><code class="language-rust">use std::process::ExitCode;
+
+fn main() -&gt; ExitCode {
+    let args: Vec&lt;String&gt; = std::env::args().skip(1).collect();
+    if args.is_empty() {
+        eprintln!(&quot;usage: shout &lt;word&gt;...&quot;);
+        return ExitCode::from(2);
+    }
+    println!(&quot;{}&quot;, args.join(&quot; &quot;).to_uppercase());
+    ExitCode::SUCCESS
+}
+</code></pre>
+<pre><code class="language-text">$ shout hello crab
+HELLO CRAB
+$ shout; echo $?
+usage: shout &lt;word&gt;...
+2
+</code></pre>
+<h2><code>std::process::exit</code></h2>
+<p><code>std::process::exit(2)</code> ends the program immediately from anywhere. It&#39;s handy in small tools, but it doesn&#39;t return: values in scope are never dropped (their <code>Drop</code> code doesn&#39;t run), and a function that might call it is hard to test. Prefer returning <code>ExitCode</code> (or a <code>Result</code>) up to <code>main</code>, and keep <code>exit</code> for the top level.</p>
+<p>(Recall from the last module: a <code>main</code> that returns <code>Err</code> exits with 1, and a panic exits with 101.)</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Errors on stdout</strong> with <code>println!</code>: they end up in the output file or the next program in the pipe.</li>
+<li><strong>Exiting with 0 after an error.</strong> Check: does <code>mytool bad-input &amp;&amp; echo ok</code> print <code>ok</code>? It shouldn&#39;t.</li>
+<li><strong><code>exit(256)</code></strong>: codes are taken modulo 256 on Unix, so 256 becomes 0, which means success. <code>ExitCode::from</code> takes a <code>u8</code>, which avoids that.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>average</code>: print the average of the numeric arguments with two decimals. With no arguments, print <code>usage: average &lt;number&gt;...</code> to <strong>stderr</strong> and exit with code 2. If an argument isn&#39;t a number, print <code>error: &quot;x&quot; is not a number</code> to stderr and exit with code 1 (print nothing to stdout in both cases).</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>contains &lt;word&gt; &lt;text&gt;...</code> with grep&#39;s exit codes: if one of the text arguments equals <code>word</code>, print <code>found at position N</code> (N counts the text arguments from 1, first match) and exit 0. If none does, print nothing and exit 1. With fewer than two arguments, print <code>usage: contains &lt;word&gt; &lt;text&gt;...</code> to stderr and exit 2.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>temp</code>, a converter: <code>temp 100C</code> prints <code>212.0F</code>, <code>temp -40F</code> prints <code>-40.0C</code> (one decimal). Structure it the way real tools are built: a <code>run(args: &amp;[String]) -&gt; Result&lt;String, CliError&gt;</code> that does the work, and a <code>main</code> that prints the result or the error and picks the exit code. <code>CliError::Usage</code> (wrong number of arguments) exits 2 with <code>usage: temp &lt;value&gt;&lt;C|F&gt;</code>; <code>CliError::Invalid(String)</code> exits 1 with <code>error: &lt;message&gt;</code>, for a unit other than <code>C</code>/<code>F</code> (<code>unknown unit in &quot;30K&quot;</code>) or a value that isn&#39;t a number (<code>bad number in &quot;abcC&quot;</code>). Errors go to stderr.</p>
+
+<p><a href="/learn/cli/flags-and-options">Previous: Flags and options</a> <a href="/learn/cli/reading-files">Next: Reading files</a></p></main></div>
+  </body>
+</html>

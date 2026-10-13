@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Monomorphization: generics cost nothing at run time · Generics (Rust) | RustArena</title>
+    <meta name="description" content="How can one largest function work on i32s, f64s and chars, which have different sizes and are compared by different machine instructions? The compiler…" />
+    <link rel="canonical" href="https://rustarena.app/learn/generics/monomorphization-generics-cost-nothing-at-run-time/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Monomorphization: generics cost nothing at run time · Generics (Rust) | RustArena" />
+    <meta property="og:description" content="How can one largest function work on i32s, f64s and chars, which have different sizes and are compared by different machine instructions? The compiler…" />
+    <meta property="og:url" content="https://rustarena.app/learn/generics/monomorphization-generics-cost-nothing-at-run-time/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Monomorphization: generics cost nothing at run time","description":"How can one largest function work on i32s, f64s and chars, which have different sizes and are compared by different machine instructions? The compiler…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/generics/monomorphization-generics-cost-nothing-at-run-time/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Generics</nav>
+<p>Step 5 of 6</p>
+<h1>Monomorphization: generics cost nothing at run time</h1>
+<p>How can one <code>largest</code> function work on <code>i32</code>s, <code>f64</code>s and <code>char</code>s, which have different sizes and are compared by different machine instructions? The compiler doesn&#39;t keep one flexible version. For every concrete type you actually use, it generates a separate copy of the generic code with <code>T</code> filled in, as if you had written <code>largest_i32</code>, <code>largest_f64</code> and <code>largest_char</code> yourself. This is called <strong>monomorphization</strong> (&quot;making into a single form&quot;).</p>
+<p>You can watch it happen. <code>std::any::type_name::&lt;T&gt;()</code> returns the name of whatever <code>T</code> is in the copy that&#39;s running:</p>
+<pre><code class="language-rust">fn describe&lt;T: std::fmt::Debug&gt;(value: T) -&gt; String {
+    format!(&quot;{} = {:?}&quot;, std::any::type_name::&lt;T&gt;(), value)
+}
+
+fn main() {
+    println!(&quot;{}&quot;, describe(42));
+    println!(&quot;{}&quot;, describe(2.5));
+    println!(&quot;{}&quot;, describe(&#39;z&#39;));
+    println!(&quot;{}&quot;, describe(&quot;crab&quot;));
+    println!(&quot;{}&quot;, describe(7u8));
+    println!(&quot;{}&quot;, describe::&lt;i64&gt;(7));
+}
+</code></pre>
+<pre><code class="language-text">i32 = 42
+f64 = 2.5
+char = &#39;z&#39;
+&amp;str = &quot;crab&quot;
+u8 = 7
+i64 = 7
+</code></pre>
+<p>This program contains six versions of <code>describe</code>: for <code>i32</code>, <code>f64</code>, <code>char</code>, <code>&amp;str</code>, <code>u8</code> and <code>i64</code>. (<code>std::fmt::Debug</code> is written out in full here instead of with a <code>use</code> line; both work.)</p>
+<h2>Zero-cost abstraction</h2>
+<p>Because each copy is specialized, generic code runs exactly as fast as the hand-written versions would: no checking types at run time, no extra indirection. Rust people call this a <strong>zero-cost abstraction</strong>: you pay nothing at run time for writing the code once.</p>
+<p>The cost is paid at compile time instead: every copy has to be compiled, and the program file gets bigger. In large projects heavy generic code can noticeably slow down builds. The alternative is <strong>dynamic dispatch</strong>, which you&#39;ve already met in <code>Box&lt;dyn Error&gt;</code>: one copy of the code, and a small run-time lookup to find the right method. Module 25 compares the two.</p>
+<h2>The turbofish: ::&lt;&gt;</h2>
+<p>Usually the compiler infers <code>T</code> from the arguments. When it can&#39;t, or when you want a different type, write it explicitly with <code>::&lt;Type&gt;</code>, nicknamed the <strong>turbofish</strong>:</p>
+<ul>
+<li><code>describe::&lt;i64&gt;(7)</code>: without it, <code>7</code> would be an <code>i32</code>.</li>
+<li><code>&quot;42&quot;.parse::&lt;u32&gt;()</code>: <code>parse</code> can produce many types, and nothing else says which.</li>
+<li><code>Vec::&lt;String&gt;::new()</code>: an empty <code>Vec</code> has no elements to infer from.</li>
+<li><code>std::mem::size_of::&lt;u64&gt;()</code>: a function with a type parameter and no arguments at all.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Nothing to infer the type from.</strong> <code>parse</code> needs to know its target type:</li>
+</ul>
+<pre><code class="language-rust-error">fn main() {
+    let n = &quot;42&quot;.parse().unwrap();
+    println!(&quot;{n}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0284]: type annotations needed
+</code></pre>
+<p>Fix it with <code>&quot;42&quot;.parse::&lt;u32&gt;()</code> or <code>let n: u32 = ...</code>.</p>
+<ul>
+<li><strong>Thinking generics are slow.</strong> It&#39;s the opposite: generic code is specialized for each type. If you hear &quot;use <code>dyn</code> instead of generics for speed&quot;, it&#39;s backwards; <code>dyn</code> trades a little speed for less compiled code.</li>
+<li><strong>The turbofish on the wrong name.</strong> It goes right after the generic function or type: <code>parse::&lt;u32&gt;()</code>, not <code>parse()::&lt;u32&gt;</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>fn size_info&lt;T&gt;(_value: &amp;T) -&gt; String</code> that returns <code>size of &lt;type name&gt;: &lt;size in bytes&gt;</code>, using <code>std::any::type_name::&lt;T&gt;()</code> and <code>std::mem::size_of::&lt;T&gt;()</code>. The starter&#39;s <code>main</code> calls it seven times (seven copies!), the last one with a turbofish. The program prints:</p>
+<pre><code>size of u8: 1
+size of i32: 4
+size of f64: 8
+size of char: 4
+size of bool: 1
+size of (u8, u32): 8
+size of u64: 8
+</code></pre>
+<p>(The <code>(u8, u32)</code> tuple takes 8 bytes, not 5: the compiler adds padding so the <code>u32</code> sits at a position divisible by 4, where the processor reads it fastest.)</p>
+
+<h3>Challenge 2</h3>
+<p>Fill in the turbofish types: parse <code>&quot;42&quot;</code> as a <code>u8</code>, parse <code>&quot;5000000000&quot;</code> as a <code>u64</code> (too big for a <code>u32</code>), and create an empty <code>Vec</code> of <code>String</code>s. The program prints:</p>
+<pre><code>42 5000000000 [&quot;ferris&quot;]
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>Write <code>fn count_matching&lt;T: PartialEq&gt;(items: &amp;[T], target: &amp;T) -&gt; usize</code> that counts how many items are equal to <code>target</code>. The tests call it with four different types, so the compiler builds four copies.</p>
+
+<p><a href="/learn/generics/methods-on-generic-types-impl-t">Previous: Methods on generic types: impl&lt;T&gt;</a> <a href="/learn/generics/const-generics-arrays-of-any-length">Next: Const generics: arrays of any length</a></p></main></div>
+  </body>
+</html>

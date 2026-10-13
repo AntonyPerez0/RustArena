@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Make invalid states unrepresentable · Design Patterns and Idioms (Rust) | RustArena</title>
+    <meta name="description" content="Look at this struct, the kind found in many codebases: What does connected: true, connecting: true mean? Or connected: false with a sessionid? Those…" />
+    <link rel="canonical" href="https://rustarena.app/learn/patterns-idioms/make-invalid-states-unrepresentable/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Make invalid states unrepresentable · Design Patterns and Idioms (Rust) | RustArena" />
+    <meta property="og:description" content="Look at this struct, the kind found in many codebases: What does connected: true, connecting: true mean? Or connected: false with a sessionid? Those…" />
+    <meta property="og:url" content="https://rustarena.app/learn/patterns-idioms/make-invalid-states-unrepresentable/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Make invalid states unrepresentable","description":"Look at this struct, the kind found in many codebases: What does connected: true, connecting: true mean? Or connected: false with a sessionid? Those…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/patterns-idioms/make-invalid-states-unrepresentable/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Design Patterns and Idioms</nav>
+<p>Step 3 of 7</p>
+<h1>Make invalid states unrepresentable</h1>
+<p>Look at this struct, the kind found in many codebases:</p>
+<pre><code class="language-rust">struct Connection {
+    connected: bool,
+    connecting: bool,
+    session_id: Option&lt;String&gt;,
+    retries: u32,
+    error: Option&lt;String&gt;,
+}
+</code></pre>
+<p>What does <code>connected: true, connecting: true</code> mean? Or <code>connected: false</code> with a <code>session_id</code>? Those combinations are <strong>possible</strong>, so every function has to check for them, and someone eventually forgets. The idiomatic Rust fix: an <strong>enum where each state carries exactly its data</strong>, so nonsense combinations can&#39;t even be written:</p>
+<pre><code class="language-rust">enum Connection {
+    Disconnected,
+    Connecting { attempt: u32 },
+    Connected { session_id: String },
+    Failed { reason: String },
+}
+</code></pre>
+<p>There&#39;s no session id unless you&#39;re connected, and <code>match</code> makes every function handle every state.</p>
+<h2>Enum state machines</h2>
+<p>Add <strong>transitions</strong> and you have a state machine. Matching on <code>(state, event)</code> pairs lists every allowed move in one place, and taking <code>self</code> <strong>by value</strong> means the old state is consumed: nobody can keep using a stale one.</p>
+<pre><code class="language-rust">#[derive(Debug)]
+enum Order {
+    Cart { items: u32 },
+    Paid { items: u32, payment_id: String },
+    Shipped { tracking: String },
+    Cancelled,
+}
+
+#[derive(Debug)]
+enum Event {
+    AddItem,
+    Pay(String),
+    Ship(String),
+    Cancel,
+}
+
+impl Order {
+    fn apply(self, event: Event) -&gt; Result&lt;Order, (Order, String)&gt; {
+        match (self, event) {
+            (Order::Cart { items }, Event::AddItem) =&gt; Ok(Order::Cart { items: items + 1 }),
+            (Order::Cart { items }, Event::Pay(id)) if items &gt; 0 =&gt; Ok(Order::Paid { items, payment_id: id }),
+            (Order::Paid { .. }, Event::Ship(tracking)) =&gt; Ok(Order::Shipped { tracking }),
+            (Order::Cart { .. } | Order::Paid { .. }, Event::Cancel) =&gt; Ok(Order::Cancelled),
+            (state, event) =&gt; {
+                let msg = format!(&quot;cannot apply {event:?} to {state:?}&quot;);
+                Err((state, msg))
+            }
+        }
+    }
+
+    fn describe(&amp;self) -&gt; String {
+        match self {
+            Order::Cart { items } =&gt; format!(&quot;cart with {items} items&quot;),
+            Order::Paid { items, payment_id } =&gt; format!(&quot;{items} items paid ({payment_id})&quot;),
+            Order::Shipped { tracking } =&gt; format!(&quot;shipped, tracking {tracking}&quot;),
+            Order::Cancelled =&gt; String::from(&quot;cancelled&quot;),
+        }
+    }
+}
+
+fn main() {
+    let mut order = Order::Cart { items: 0 };
+    let events = [
+        Event::Pay(String::from(&quot;pay_1&quot;)),
+        Event::AddItem,
+        Event::AddItem,
+        Event::Pay(String::from(&quot;pay_2&quot;)),
+        Event::Ship(String::from(&quot;TRK9&quot;)),
+        Event::Cancel,
+    ];
+    for event in events {
+        order = match order.apply(event) {
+            Ok(next) =&gt; next,
+            Err((same, msg)) =&gt; {
+                println!(&quot;rejected: {msg}&quot;);
+                same
+            }
+        };
+        println!(&quot;now: {}&quot;, order.describe());
+    }
+}
+</code></pre>
+<pre><code class="language-text">rejected: cannot apply Pay(&quot;pay_1&quot;) to Cart { items: 0 }
+now: cart with 0 items
+now: cart with 1 items
+now: cart with 2 items
+now: 2 items paid (pay_2)
+now: shipped, tracking TRK9
+rejected: cannot apply Cancel to Shipped { tracking: &quot;TRK9&quot; }
+now: shipped, tracking TRK9
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>apply(self, ...)</code> <strong>consumes</strong> the old state and returns the new one: you can&#39;t accidentally keep using a stale state.</li>
+<li>The guard <code>if items &gt; 0</code> encodes a rule (no paying for an empty cart) right in the transition table.</li>
+<li>The final arm <code>(state, event)</code> catches every move not listed, with the state handed back inside the <code>Err</code>.</li>
+<li>Adding a state means the compiler points at every <code>match</code> that must handle it.</li>
+</ul>
+<p>Why does the error carry the state back, as <code>Err((state, msg))</code>? Because <code>apply</code> took ownership of it. If the error held only a message, a rejected event would leave the caller with nothing, and the borrow checker says so:</p>
+<pre><code class="language-rust-error">enum Light {
+    Off,
+    On,
+}
+
+impl Light {
+    fn press(self, allowed: bool) -&gt; Result&lt;Light, String&gt; {
+        if !allowed {
+            return Err(String::from(&quot;locked&quot;));
+        }
+        Ok(match self {
+            Light::Off =&gt; Light::On,
+            Light::On =&gt; Light::Off,
+        })
+    }
+}
+
+fn main() {
+    let mut light = Light::Off;
+    for allowed in [true, false, true] {
+        match light.press(allowed) {
+            Ok(next) =&gt; light = next,
+            Err(e) =&gt; println!(&quot;{e}&quot;),
+        }
+    }
+    if let Light::On = light {
+        println!(&quot;on&quot;);
+    }
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0382]: use of moved value: `light`
+</code></pre>
+<p>In the <code>Err</code> arm, <code>light</code> has been moved into <code>press</code> and nothing was put back. Returning the unchanged state inside the error (or taking <code>&amp;mut self</code> and changing it in place) solves it.</p>
+<h2>Typestate: wrong order is a compile error</h2>
+<p>When the sequence of steps is fixed in your code (not decided by runtime data), you can go further and give <strong>each state its own type</strong> (the typestate pattern from the advanced traits module). Methods exist only on the states where they make sense:</p>
+<pre><code class="language-rust-error">struct Draft {
+    text: String,
+}
+
+struct Published {
+    text: String,
+}
+
+impl Draft {
+    fn publish(self) -&gt; Published {
+        Published { text: self.text }
+    }
+}
+
+impl Published {
+    fn text(&amp;self) -&gt; &amp;str {
+        &amp;self.text
+    }
+}
+
+fn main() {
+    let post = Draft { text: String::from(&quot;Hello, crabs&quot;) }.publish();
+    println!(&quot;{}&quot;, post.text());
+    let again = post.publish();
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0599]: no method named `publish` found for struct `Published` in the current scope
+</code></pre>
+<p><strong>Which one?</strong> Use an <strong>enum</strong> when the state comes from data at run time (an order loaded from the database can be in any state). Use <strong>typestate</strong> for protocols and builders written in code (a connection must be opened before sending, a request needs a URL before <code>send</code>).</p>
+
+<h2>Your task</h2>
+<p>Write a payment state machine. <code>Payment::next(self, event)</code> returns the new state or an error string. Allowed transitions:</p>
+<ul>
+<li><code>Pending</code> + <code>Authorize(code)</code> becomes <code>Authorized { amount, auth_code: code }</code></li>
+<li><code>Pending</code> or <code>Authorized</code> + <code>Decline(reason)</code> becomes <code>Failed { reason }</code></li>
+<li><code>Authorized</code> + <code>Capture</code> becomes <code>Captured { amount }</code></li>
+<li><code>Captured</code> + <code>Refund</code> becomes <code>Refunded { amount }</code></li>
+</ul>
+<p>Anything else is <code>Err(format!(&quot;cannot {event:?} a {} payment&quot;, state.name()))</code>, where <code>name()</code> returns <code>pending</code>, <code>authorized</code>, <code>captured</code>, <code>refunded</code> or <code>failed</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>Replace the flag soup. Write <code>Connection::on(self, event: NetEvent) -&gt; Connection</code> for this enum: <code>Disconnected</code> + <code>Dial</code> becomes <code>Connecting { attempt: 1 }</code>; <code>Connecting</code> + <code>Timeout</code> retries with <code>attempt + 1</code>, but after attempt 3 gives up and becomes <code>Disconnected</code>; <code>Connecting</code> + <code>Accepted(session)</code> becomes <code>Connected { session }</code>; <code>Connected</code> + <code>Hangup</code> becomes <code>Disconnected</code>. Any other event leaves the state unchanged. Also write <code>status(&amp;self) -&gt; String</code>: <code>offline</code>, <code>dialing (attempt 2)</code>, <code>online as s-42</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Typestate: a request can only be sent once it has a URL. <code>RequestBuilder::new()</code> has no URL; <code>.url(..)</code> returns a <code>ReadyRequest</code> (a different type) holding it, and only <code>ReadyRequest</code> has <code>.header(..)</code> (chainable) and <code>.send()</code>, which returns a description like <code>GET https://arena.dev [accept: json]</code> (headers as <code>name: value</code> joined by <code>, </code>, and no brackets when there are no headers). Calling <code>send</code> on a <code>RequestBuilder</code> simply doesn&#39;t compile.</p>
+
+<p><a href="/learn/patterns-idioms/newtypes-give-plain-values-a-meaning">Previous: Newtypes: give plain values a meaning</a> <a href="/learn/patterns-idioms/conversions-and-flexible-parameters-from-into-asref">Next: Conversions and flexible parameters: From, Into, AsRef</a></p></main></div>
+  </body>
+</html>

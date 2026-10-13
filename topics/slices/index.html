@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Slices in Rust: &amp;str, &amp;[T] and ranges | RustArena</title>
+    <meta name="description" content="What slices are in Rust, how to take &amp;s[a..b] and &amp;v[a..b], why &amp;str and &amp;[T] make better parameters, and the panics to avoid." />
+    <link rel="canonical" href="https://rustarena.app/topics/slices/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Slices in Rust: &amp;str, &amp;[T] and ranges | RustArena" />
+    <meta property="og:description" content="What slices are in Rust, how to take &amp;s[a..b] and &amp;v[a..b], why &amp;str and &amp;[T] make better parameters, and the panics to avoid." />
+    <meta property="og:url" content="https://rustarena.app/topics/slices/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Slices in Rust: &str, &[T] and ranges","description":"What slices are in Rust, how to take &s[a..b] and &v[a..b], why &str and &[T] make better parameters, and the panics to avoid.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/slices/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Slices in Rust: &amp;str, &amp;[T] and ranges</h1>
+<p>What slices are in Rust, how to take &amp;s[a..b] and &amp;v[a..b], why &amp;str and &amp;[T] make better parameters, and the panics to avoid.</p>
+<p>A <strong>slice</strong> is a reference to a contiguous part of a collection: a view into some elements, without owning them. It&#39;s stored as a pointer plus a length (a <strong>fat pointer</strong>), so taking a slice never copies data.</p>
+<ul>
+<li><code>&amp;str</code> is a slice of UTF-8 text, from a <code>String</code> or a literal.</li>
+<li><code>&amp;[T]</code> is a slice of elements, from an array, a <code>Vec&lt;T&gt;</code>, or another slice.</li>
+<li><code>&amp;mut [T]</code> is a mutable slice: you can change elements, but not add or remove them.</li>
+</ul>
+<h2>Range syntax</h2>
+<table>
+<thead>
+<tr>
+<th>Range</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&amp;v[1..4]</code></td>
+<td>indexes 1, 2, 3 (end is excluded)</td>
+</tr>
+<tr>
+<td><code>&amp;v[1..=4]</code></td>
+<td>indexes 1 to 4 inclusive</td>
+</tr>
+<tr>
+<td><code>&amp;v[..3]</code></td>
+<td>from the start to index 2</td>
+</tr>
+<tr>
+<td><code>&amp;v[2..]</code></td>
+<td>from index 2 to the end</td>
+</tr>
+<tr>
+<td><code>&amp;v[..]</code></td>
+<td>everything</td>
+</tr>
+</tbody></table>
+<pre><code class="language-rust">fn main() {
+    let temps = [18, 21, 25, 23, 19];
+    let weekend = &amp;temps[3..];
+    println!(&quot;{weekend:?} has {} days&quot;, weekend.len());
+
+    let line = String::from(&quot;WARN low disk&quot;);
+    let level = &amp;line[..4];
+    println!(&quot;level={level}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">[23, 19] has 2 days
+level=WARN
+</code></pre>
+<h2>Slices make better parameters</h2>
+<p>A function taking <code>&amp;[T]</code> accepts arrays, vectors and parts of either; one taking <code>&amp;str</code> accepts literals, <code>String</code>s and substrings. <code>&amp;Vec&lt;T&gt;</code> or <code>&amp;String</code> would accept only the owned type, so prefer slices for anything you only read. (Clippy warns about <code>&amp;Vec&lt;T&gt;</code> and <code>&amp;String</code> parameters with <code>ptr_arg</code>.) A <code>&amp;Vec&lt;T&gt;</code> or <code>&amp;String</code> converts to a slice automatically when you pass it.</p>
+<pre><code class="language-rust">fn average(values: &amp;[f64]) -&gt; f64 { ... }
+
+average(&amp;readings);        // a whole Vec
+average(&amp;readings[..7]);   // the first week
+average(&amp;[1.0, 2.0]);      // an array
+</code></pre>
+<p>Because slices borrow, the borrowing rules apply: while a slice of a <code>Vec</code> is in use, you can&#39;t push to the <code>Vec</code> (error E0502). That&#39;s exactly what keeps the slice from dangling when the <code>Vec</code> reallocates.</p>
+<h2>Useful slice methods</h2>
+<p><code>len</code>, <code>is_empty</code>, <code>first</code>, <code>last</code>, <code>get(i)</code> (returns an <code>Option</code>), <code>contains</code>, <code>iter</code>, <code>split_at(mid)</code>, <code>chunks(n)</code>, <code>windows(n)</code>, <code>sort</code> and <code>reverse</code> (on <code>&amp;mut [T]</code>), <code>binary_search</code>, <code>starts_with</code>. For strings: <code>find</code>, <code>split</code>, <code>trim</code>, <code>starts_with</code>, <code>lines</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Out-of-range slices panic.</strong> <code>&amp;v[2..10]</code> on a 3-element array panics with <code>range end index 10 out of range for slice of length 3</code>. Use <code>v.get(2..10)</code>, which returns <code>None</code> instead.</li>
+<li><strong>Slicing text in the middle of a character.</strong> String ranges are in <strong>bytes</strong>, and many characters take more than one byte in UTF-8. <code>&amp;&quot;héllo&quot;[0..2]</code> panics: <code>end byte index 2 is not a char boundary; it is inside &#39;é&#39; (bytes 1..3 of string)</code>. Use <code>char_indices()</code>, <code>find</code>, or <code>chars()</code> to get safe positions.</li>
+<li><strong>Returning a slice of a local <code>String</code>.</strong> The <code>String</code> is freed at the end of the function, so the compiler refuses (E0515 or E0106). Return a <code>String</code>, or return a slice of the <em>input</em> parameter, like <code>first_word</code> below.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>fn first_word(text: &amp;str) -&gt; &amp;str {
+    match text.find(' ') {
+        Some(i) =&gt; &amp;text[..i],
+        None =&gt; text,
+    }
+}
+
+fn average(values: &amp;[f64]) -&gt; f64 {
+    let mut sum = 0.0;
+    for v in values {
+        sum += v;
+    }
+    sum / values.len() as f64
+}
+
+fn main() {
+    let line = String::from(&quot;ERROR disk full on /dev/sda1&quot;);
+    println!(&quot;level: {}&quot;, first_word(&amp;line));
+    println!(&quot;literal: {}&quot;, first_word(&quot;hello&quot;));
+
+    let temps = vec![21.5, 23.0, 19.5, 22.0, 24.5];
+    println!(&quot;all: {:.2}&quot;, average(&amp;temps));
+    println!(&quot;last three: {:.2}&quot;, average(&amp;temps[2..]));
+
+    let mut scores = [40, 10, 30, 20];
+    scores[1..].sort();
+    println!(&quot;{scores:?}&quot;);
+    let (left, right) = scores.split_at(2);
+    println!(&quot;{left:?} {right:?}&quot;);
+
+    for pair in temps.windows(2) {
+        print!(&quot;{:+.1} &quot;, pair[1] - pair[0]);
+    }
+    println!();
+    println!(&quot;{:?} {:?}&quot;, temps.get(1..3), temps.get(3..10));
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>level: ERROR
+literal: hello
+all: 22.10
+last three: 22.00
+[40, 10, 20, 30]
+[40, 10] [20, 30]
++1.5 -3.5 +2.5 +2.5 
+Some([23.0, 19.5]) None
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/slices/string-slices">Lesson: Slices</a></li></ul></main></div>
+  </body>
+</html>

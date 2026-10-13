@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Async vs threads, spawn_blocking, and locks across .await · Async Rust with Tokio (Rust) | RustArena</title>
+    <meta name="description" content="When to use which Async isn't &quot;faster threads&quot;. It makes waiting cheap. A task costs a few hundred bytes, and switching tasks at an .await is far cheaper…" />
+    <link rel="canonical" href="https://rustarena.app/learn/async/async-vs-threads-spawn-blocking-and-locks-across-await/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Async vs threads, spawn_blocking, and locks across .await · Async Rust with Tokio (Rust) | RustArena" />
+    <meta property="og:description" content="When to use which Async isn't &quot;faster threads&quot;. It makes waiting cheap. A task costs a few hundred bytes, and switching tasks at an .await is far cheaper…" />
+    <meta property="og:url" content="https://rustarena.app/learn/async/async-vs-threads-spawn-blocking-and-locks-across-await/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Async vs threads, spawn_blocking, and locks across .await","description":"When to use which Async isn't \"faster threads\". It makes waiting cheap. A task costs a few hundred bytes, and switching tasks at an .await is far cheaper…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/async/async-vs-threads-spawn-blocking-and-locks-across-await/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Async Rust with Tokio</nav>
+<p>Step 7 of 7</p>
+<h1>Async vs threads, spawn_blocking, and locks across .await</h1>
+<h2>When to use which</h2>
+<p>Async isn&#39;t &quot;faster threads&quot;. It makes <strong>waiting</strong> cheap. A task costs a few hundred bytes, and switching tasks at an <code>.await</code> is far cheaper than the OS switching threads. It does nothing to make CPU work faster.</p>
+<table>
+<thead>
+<tr>
+<th>Your program mostly...</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>waits on the network or disk, for many things at once (web servers, API clients, crawlers, chat)</td>
+<td>async with Tokio</td>
+</tr>
+<tr>
+<td>computes: parsing big files, image processing, number crunching</td>
+<td>threads: rayon, or <code>thread::scope</code></td>
+</tr>
+<tr>
+<td>does a bit of both</td>
+<td>async, sending the heavy parts to <code>spawn_blocking</code> or rayon</td>
+</tr>
+<tr>
+<td>is a small CLI tool doing one thing after another</td>
+<td>plain synchronous code; you may not need either</td>
+</tr>
+</tbody></table>
+<p>Async has costs: a runtime dependency, <code>async</code> spreading up your call chain, and harder-to-read compiler errors. Don&#39;t reach for it just because a program does some I/O.</p>
+<h2>Don&#39;t block the runtime</h2>
+<p>Tokio runs many tasks on a few worker threads, and switches between them only at <code>.await</code> points. A task that runs a long CPU loop, or calls a blocking function (<code>std::fs::read</code>, <code>std::thread::sleep</code>, a synchronous database driver), holds its worker thread the whole time, and every other task waiting for that worker stalls. A good rule of thumb: never go more than about 100 microseconds between two <code>.await</code>s.</p>
+<p>For blocking work, <strong><code>tokio::task::spawn_blocking(closure)</code></strong> runs a normal (non-async) closure on a separate pool of threads made for blocking, and gives you a <code>JoinHandle</code> to <code>.await</code>:</p>
+<pre><code class="language-rust">fn checksum(data: &amp;[u8]) -&gt; u64 {
+    // imagine this takes 200 ms of pure CPU work
+    data.iter().map(|&amp;b| u64::from(b)).sum()
+}
+
+#[tokio::main]
+async fn main() {
+    let data: Vec&lt;u8&gt; = (0..=255).cycle().take(10_000).collect();
+    let handle = tokio::task::spawn_blocking(move || checksum(&amp;data));
+    // while it runs, this worker thread is free for other tasks
+    let sum = handle.await.unwrap();
+    println!(&quot;checksum: {sum}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">checksum: 1273080
+</code></pre>
+<p>The closure must own its data (<code>move</code>), like a spawned thread. For heavy parallel CPU work, <code>spawn_blocking</code> a closure that uses rayon, so the computation spreads over all cores without touching the async workers.</p>
+<h2>std Mutex and .await</h2>
+<p>A <code>std::sync::Mutex</code> is fine in async code, <strong>as long as you never hold its guard across an <code>.await</code></strong>. A task that pauses while holding the lock keeps every other task that needs the lock waiting, possibly on the very worker thread the lock holder needs to resume on. The compiler catches the most common case: a <code>std</code> <code>MutexGuard</code> isn&#39;t <code>Send</code>, so a spawned task that holds one across an <code>.await</code> doesn&#39;t compile:</p>
+<pre><code class="language-rust-error">use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() {
+    let hits = Arc::new(Mutex::new(0));
+    let for_task = Arc::clone(&amp;hits);
+    let handle = tokio::spawn(async move {
+        let mut count = for_task.lock().unwrap();
+        *count += 1;
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        *count += 1;
+    });
+    handle.await.unwrap();
+    println!(&quot;{}&quot;, hits.lock().unwrap());
+}
+</code></pre>
+<pre><code class="language-compiler">error: future cannot be sent between threads safely
+</code></pre>
+<p>The fix is to keep the guard in a block that ends <strong>before</strong> the <code>.await</code>:</p>
+<pre><code class="language-rust">use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() {
+    let hits = Arc::new(Mutex::new(0));
+    let mut handles = Vec::new();
+    for _ in 0..4 {
+        let hits = Arc::clone(&amp;hits);
+        handles.push(tokio::spawn(async move {
+            {
+                let mut count = hits.lock().unwrap();
+                *count += 1;
+            } // the guard is dropped here, before the .await
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    println!(&quot;hits: {}&quot;, hits.lock().unwrap());
+}
+</code></pre>
+<pre><code class="language-text">hits: 4
+</code></pre>
+<p>If you really must keep data locked across an <code>.await</code> (for example, to keep writes to one connection in order), use <strong><code>tokio::sync::Mutex</code></strong>: its <code>lock().await</code> waits without blocking the thread, and its guard may be held across <code>.await</code>. It&#39;s slower than the <code>std</code> one, so use it only when you need that. Clippy&#39;s <code>await_holding_lock</code> lint warns about <code>std</code> guards held across <code>.await</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>CPU-heavy loops or blocking calls in async functions</strong>: everything else on that worker freezes. Use <code>spawn_blocking</code> (or rayon inside it).</li>
+<li><strong>Holding a <code>std</code> <code>MutexGuard</code> across <code>.await</code></strong>: put the guard in a block, or switch to <code>tokio::sync::Mutex</code> if you truly need it held.</li>
+<li><strong>Using async for CPU-bound work</strong>: it adds complexity and no speed. Use threads.</li>
+</ul>
+
+<h2>Your task</h2>
+<p><code>slow_hash</code> is expensive CPU work, so it must not run on the async workers. Write <code>async fn hash_all(passwords: Vec&lt;String&gt;) -&gt; Vec&lt;u64&gt;</code> that starts one <code>tokio::task::spawn_blocking</code> job per password (all of them before awaiting any), then awaits the handles in order and returns the hashes in the same order as <code>passwords</code>.</p>
+
+<h3>Challenge 2</h3>
+<p><code>record_visit</code> holds a <code>std</code> <code>MutexGuard</code> across the <code>.await</code>, so <code>tokio::spawn</code> rejects it (&quot;future cannot be sent between threads safely&quot;). Fix <code>record_visit</code> so the guard is dropped before the <code>.await</code> (lock again afterwards for the second push). The program should print:</p>
+<pre><code>saved /cart
+saved /home
+visit /cart
+visit /home
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>Tickets must be numbered in the order they&#39;re saved, so the lock has to stay held while the (async) save runs. That&#39;s the job for <strong><code>tokio::sync::Mutex</code></strong>. Write <code>async fn issue_ticket(counter: &amp;tokio::sync::Mutex&lt;u32&gt;) -&gt; u32</code>: lock with <code>counter.lock().await</code>, add 1 to the counter, call <code>save_ticket(number).await</code> <strong>while still holding the lock</strong>, and return the new number.</p>
+
+<p><a href="/learn/async/select-the-first-one-to-finish-wins">Previous: select!: the first one to finish wins</a> </p></main></div>
+  </body>
+</html>

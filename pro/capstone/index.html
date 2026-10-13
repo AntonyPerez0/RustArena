@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Capstone: a production-ready web service | Pro Track | RustArena</title>
+    <meta name="description" content="Put it all together in a URL shortener service with a database, structured logging, configuration, tests, a Dockerfile and a CI pipeline, the way it…" />
+    <link rel="canonical" href="https://rustarena.app/pro/capstone/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Capstone: a production-ready web service | Pro Track | RustArena" />
+    <meta property="og:description" content="Put it all together in a URL shortener service with a database, structured logging, configuration, tests, a Dockerfile and a CI pipeline, the way it…" />
+    <meta property="og:url" content="https://rustarena.app/pro/capstone/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><h1>Capstone: a production-ready web service</h1><p>Time to put everything together. You&#39;ll build a <strong>URL shortener</strong>, a small service that turns <code>https://www.rust-lang.org/learn</code> into a short link like <code>sho.rt/Xy3k9Qa</code> and redirects visitors, and you&#39;ll build it the way it would ship at work: tested, configured from the environment, logging structured events, reporting its health, shutting down cleanly, packaged as a container image, and checked by CI.</p>
+<p>Only the skeleton is provided: the public signatures the tests use, the database setup from project 09, and the tests. The design of everything in between is yours.</p>
+<p><strong>You&#39;ll practice:</strong> axum, SQLx and migrations, <code>tracing</code>, configuration, error handling, status codes, health checks, graceful shutdown, Docker multi-stage builds, and a CI pipeline.</p>
+<h2>The service</h2>
+<table>
+<thead>
+<tr>
+<th>Request</th>
+<th>Success</th>
+<th>Errors</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET /health</code></td>
+<td><code>200 {&quot;status&quot;:&quot;ok&quot;}</code></td>
+<td><code>503</code> if the database doesn&#39;t answer</td>
+</tr>
+<tr>
+<td><code>POST /api/links</code> with <code>{&quot;url&quot;: &quot;...&quot;, &quot;code&quot;: &quot;optional&quot;}</code></td>
+<td><code>201</code>, <code>Location: /api/links/{code}</code>, the link as JSON</td>
+<td><code>422</code> invalid URL or code, <code>409</code> code taken</td>
+</tr>
+<tr>
+<td><code>GET /api/links/{code}</code></td>
+<td><code>200</code> and the link as JSON</td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td><code>DELETE /api/links/{code}</code></td>
+<td><code>204</code></td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td><code>GET /{code}</code></td>
+<td><code>307</code> with <code>Location:</code> the URL, and one more hit counted</td>
+<td><code>404</code></td>
+</tr>
+</tbody></table>
+<p>A link as JSON: <code>{&quot;code&quot;: &quot;Xy3k9Qa&quot;, &quot;url&quot;: &quot;https://www.rust-lang.org/learn&quot;, &quot;short_url&quot;: &quot;http://localhost:3000/Xy3k9Qa&quot;, &quot;hits&quot;: 0, &quot;created_at&quot;: &quot;2026-05-04T10:00:00Z&quot;}</code>. Every error response is JSON too: <code>{&quot;error&quot;: &quot;the code \&quot;rust\&quot; is already taken&quot;}</code>.</p>
+<p>The rules:</p>
+<ul>
+<li><strong>URL</strong>: an absolute <code>http</code> or <code>https</code> URL with a host, at most 2048 characters. Parse it with the <code>url</code> crate; store the parsed (normalized) form.</li>
+<li><strong>Custom code</strong>: 4 to 32 ASCII letters, digits, <code>-</code> or <code>_</code>, and not <code>api</code> or <code>health</code> (they&#39;d clash with the API&#39;s own paths).</li>
+<li><strong>Generated code</strong>: 7 random letters and digits (<code>rand::distr::Alphanumeric</code>). The same URL shortened twice gets two codes.</li>
+</ul>
+<p>Configuration comes from environment variables, each with a default that works on a laptop:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>HOST</code></td>
+<td><code>0.0.0.0</code></td>
+<td>IP address to listen on</td>
+</tr>
+<tr>
+<td><code>PORT</code></td>
+<td><code>3000</code></td>
+<td>TCP port to listen on</td>
+</tr>
+<tr>
+<td><code>DATABASE_URL</code></td>
+<td><code>sqlite:shortener.db</code></td>
+<td>where the SQLite database file lives</td>
+</tr>
+<tr>
+<td><code>PUBLIC_URL</code></td>
+<td><code>http://localhost:{PORT}</code></td>
+<td>the address users see; short links start with it</td>
+</tr>
+<tr>
+<td><code>LOG_FORMAT</code></td>
+<td><code>text</code></td>
+<td>or <code>json</code></td>
+</tr>
+<tr>
+<td><code>RUST_LOG</code></td>
+<td><code>info</code></td>
+<td>read by the <code>EnvFilter</code>, as in project 10</td>
+</tr>
+</tbody></table>
+<h2>Background</h2>
+<h3>Status codes are part of the API</h3>
+<p>Clients, browsers, proxies and monitoring all act on the status code, so pick precise ones:</p>
+<ul>
+<li><strong>201 Created</strong> plus a <code>Location</code> header pointing at the new resource, not a plain 200.</li>
+<li><strong>307 Temporary Redirect</strong> for short links, not <strong>301 Moved Permanently</strong>: browsers cache permanent redirects forever, so later visits would never reach you (no hit counted) and a deleted link would keep working.</li>
+<li><strong>409 Conflict</strong> when the request is valid but clashes with existing state (a taken code). Let the database&#39;s <code>PRIMARY KEY</code> detect it, as in project 09: checking first and inserting after is a race.</li>
+<li><strong>422 Unprocessable Entity</strong> for well-formed JSON with invalid values. axum&#39;s <code>Json</code> extractor already answers <strong>400</strong> for broken JSON, <strong>415</strong> without a JSON content type, and <strong>422</strong> for missing fields.</li>
+<li><strong>500</strong> for your bugs and outages, with a generic message. Log the details (<code>tracing::error!</code>), but never send SQL errors or file paths to clients.</li>
+</ul>
+<h3>Thin handlers</h3>
+<p>A handler&#39;s job is HTTP: extract the input, call the logic, map the result to a response. Keep validation and SQL in <code>links.rs</code>, and give the crate one error type in <code>error.rs</code> that implements <code>IntoResponse</code>, so every handler can use <code>?</code> and every error becomes the right status and JSON body in one place. Shared resources (the pool, the public URL) live in <code>AppState</code>, which axum clones into each request.</p>
+<h3>Health checks and graceful shutdown</h3>
+<p>Load balancers and orchestrators (Kubernetes, ECS, Fly.io) call a health endpoint to decide whether to send traffic to an instance. A useful check proves the service can do its job, so <code>/health</code> runs <code>SELECT 1</code> and answers 503 when the database is gone.</p>
+<p>When an instance is replaced, <code>docker stop</code> or Kubernetes sends <strong>SIGTERM</strong>, waits a grace period (10 seconds for Docker, 30 for Kubernetes), then kills it. A graceful shutdown stops accepting connections, lets requests in progress finish, closes the database, and exits with code 0. In axum that&#39;s <code>axum::serve(listener, app).with_graceful_shutdown(signal)</code>, where <code>signal</code> is a future that completes on Ctrl+C or SIGTERM. Without it, every deploy cuts off users mid-request. In a container it matters even more: your program is process 1 there, and Linux doesn&#39;t apply the default &quot;terminate&quot; action to process 1, so a service that doesn&#39;t handle SIGTERM ignores it, and <code>docker stop</code> hangs for the whole grace period before killing it.</p>
+<h3>Logging requests</h3>
+<p><code>tower_http::trace::TraceLayer</code> wraps every request in a span (method, path) and logs each response with its status and latency. Its default level is DEBUG; make the span and response events INFO so they show up in production logs:</p>
+<pre><code class="language-rust">TraceLayer::new_for_http()
+    .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+    .on_response(DefaultOnResponse::new().level(Level::INFO))
+</code></pre>
+<h3>Containers</h3>
+<p>A container image packages the program with everything it needs, so it runs the same on your laptop, in CI and in production. A <strong>multi-stage</strong> Dockerfile compiles in a big image that has the Rust toolchain (<code>FROM rust:1-bookworm AS builder</code>), then copies only the binary into a small runtime image (<code>FROM debian:bookworm-slim</code>, then <code>COPY --from=builder ...</code>). The result is a fraction of the size and has no compiler or source code inside.</p>
+<ul>
+<li>Copy <code>Cargo.toml</code> and <code>Cargo.lock</code> and build the dependencies before copying <code>src/</code>, so Docker caches that slow layer until the dependencies change. (<code>cargo-chef</code> does this more robustly.)</li>
+<li>Build with <code>--locked</code>, so the image uses exactly the versions in <code>Cargo.lock</code>.</li>
+<li>Copy <code>migrations/</code> before building: <code>sqlx::migrate!</code> reads it at compile time.</li>
+<li>Run as an unprivileged <code>USER</code>, keep the SQLite file in a <code>VOLUME</code> such as <code>/data</code>, and add a <code>.dockerignore</code> so <code>target/</code> and local databases stay out of the build context.</li>
+</ul>
+<h3>CI for your service</h3>
+<p>This repository&#39;s Grade workflow tests your code here. Once the shortener moves into its own repository, it needs its own pipeline. Write it now as <code>ci.yml</code>: on every push and pull request, check formatting, run clippy with <code>-D warnings</code>, run the tests, then build the Docker image. Copied to <code>.github/workflows/ci.yml</code> in a new repository, it works as is.</p>
+<h2>Your tasks</h2>
+<ol>
+<li>Read <code>src/lib.rs</code>, <code>src/config.rs</code>, <code>tests/api.rs</code> and <code>tests/config.rs</code>. Keep the public names the tests use.</li>
+<li>Write <code>migrations/0001_create_links.sql</code>: <code>code</code> (primary key), <code>url</code>, <code>hits</code> (default 0) and <code>created_at</code> (default <code>strftime(&#39;%Y-%m-%dT%H:%M:%SZ&#39;, &#39;now&#39;)</code>).</li>
+<li>Implement <code>Config::from_env_with</code>. Run <code>cargo test --test config</code>.</li>
+<li>Write <code>AppError</code> in <code>src/error.rs</code>, then validation, code generation and the SQL in <code>src/links.rs</code> (an <code>UPDATE links SET hits = hits + 1 WHERE code = ? RETURNING url</code> counts a visit and finds the URL in one statement).</li>
+<li>Write the handlers and the router in <code>src/routes.rs</code>, and make <code>app()</code> return it. Run <code>cargo test --test api</code>.</li>
+<li>Implement <code>serve</code>, <code>shutdown_signal</code>, <code>telemetry::init</code> (reuse project 10) and <code>main</code>. Then try it for real:</li>
+</ol>
+<pre><code class="language-bash">cargo run
+curl -i localhost:3000/health
+curl -i -H &#39;Content-Type: application/json&#39; -d &#39;{&quot;url&quot;:&quot;https://www.rust-lang.org/learn&quot;}&#39; localhost:3000/api/links
+curl -i localhost:3000/&lt;the code you got&gt;
+curl -s localhost:3000/api/links/&lt;the code&gt;
+LOG_FORMAT=json RUST_LOG=debug cargo run
+</code></pre>
+<p>   Press Ctrl+C: the service should log that it&#39;s shutting down and exit.</p>
+<ol start="7">
+<li>Write <code>Dockerfile</code> and <code>.dockerignore</code>. If you have Docker (Docker Desktop on your machine works; a Codespace may not have it), build and run the image:</li>
+</ol>
+<pre><code class="language-bash">docker build -t shortener .
+docker run --rm -p 3000:3000 -v shortener-data:/data shortener
+docker stop $(docker ps -q --filter ancestor=shortener)   # graceful: exit code 0
+</code></pre>
+<ol start="8">
+<li>Write <code>ci.yml</code>, then grade: <code>bash ../../tools/grade.sh 12-capstone</code>.</li>
+</ol>
+<h2>What the grader checks</h2>
+<ul>
+<li><code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> are clean.</li>
+<li><code>tests/api.rs</code> and <code>tests/config.rs</code> are unchanged, and all tests pass.</li>
+<li>The real binary, started with <code>HOST</code>, <code>PORT</code>, <code>DATABASE_URL</code> and <code>PUBLIC_URL</code>, answers <code>/health</code>, creates a link (201), redirects (307), answers 404 for an unknown code, exits with code 0 within 10 seconds of SIGTERM, and leaves the link with its hit in the database file.</li>
+<li><code>Dockerfile</code> is a multi-stage build: two or more <code>FROM</code> lines, a named build stage, <code>cargo build --release</code>, <code>COPY --from=</code>, and a <code>CMD</code> or <code>ENTRYPOINT</code>; its final stage sets a non-root <code>USER</code>.</li>
+<li><code>.dockerignore</code> excludes <code>target</code>.</li>
+<li><code>ci.yml</code> has <code>on:</code> and <code>jobs:</code>, and runs <code>cargo fmt</code>, <code>cargo clippy</code>, <code>cargo test</code> and <code>docker build</code>.</li>
+</ul>
+<h2>Hints</h2>
+<ul>
+<li>Route paths in axum 0.8 use braces: <code>.route(&quot;/{code}&quot;, get(follow))</code>. Static routes like <code>/health</code> win over <code>/{code}</code>, which is why <code>health</code> is a reserved code.</li>
+<li><code>Redirect::temporary(&amp;url)</code> is a 307. For the 201, return a tuple: <code>(StatusCode::CREATED, [(header::LOCATION, location)], Json(body))</code>.</li>
+<li>A <code>#[derive(Deserialize)] struct CreateLink { url: String, code: Option&lt;String&gt; }</code> makes <code>code</code> optional.</li>
+<li>When a generated code collides (the 409 path), try again with a new one a few times before giving up.</li>
+<li><code>tokio::select!</code> waits for whichever future finishes first; <code>tokio::signal::unix::signal(SignalKind::terminate())</code> listens for SIGTERM. Wrap the Unix part in <code>#[cfg(unix)]</code>.</li>
+<li>If the grader&#39;s service check fails, it prints everything your program logged. Run the same <code>curl</code> commands yourself.</li>
+</ul>
+<h2>Going further</h2>
+<ul>
+<li>Add request IDs (<code>tower_http::request_id</code>) and include them in every log line.</li>
+<li>Rate-limit link creation per client IP (<code>tower_governor</code>).</li>
+<li>Expose Prometheus metrics (<code>metrics</code> and <code>metrics-exporter-prometheus</code>): links created, redirects, latency.</li>
+<li>Generate an OpenAPI description with <code>utoipa</code> and serve Swagger UI.</li>
+<li>Make the image smaller: a static musl build in <code>FROM scratch</code> or a distroless image, with <code>cargo-chef</code> for caching.</li>
+<li>Switch to PostgreSQL with <code>sqlx::PgPool</code> and run it next to the service with Docker Compose.</li>
+<li>Deploy it (Fly.io, Render, Railway or Cloud Run all run a Dockerfile) and load-test it with <code>oha</code>.</li>
+<li>Protect <code>DELETE</code> with an API key read from the environment, compared in constant time.</li>
+</ul>
+</main></div>
+  </body>
+</html>

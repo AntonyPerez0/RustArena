@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Reading files · Building Command-Line Tools (Rust) | RustArena</title>
+    <meta name="description" content="Most tools work on files. std::fs has the functions you'll use every day: Piece by piece: fs::write(path, contents) creates the file (or replaces it)…" />
+    <link rel="canonical" href="https://rustarena.app/learn/cli/reading-files/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Reading files · Building Command-Line Tools (Rust) | RustArena" />
+    <meta property="og:description" content="Most tools work on files. std::fs has the functions you'll use every day: Piece by piece: fs::write(path, contents) creates the file (or replaces it)…" />
+    <meta property="og:url" content="https://rustarena.app/learn/cli/reading-files/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Reading files","description":"Most tools work on files. std::fs has the functions you'll use every day: Piece by piece: fs::write(path, contents) creates the file (or replaces it)…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/cli/reading-files/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Building Command-Line Tools</nav>
+<p>Step 4 of 6</p>
+<h1>Reading files</h1>
+<p>Most tools work on files. <code>std::fs</code> has the functions you&#39;ll use every day:</p>
+<pre><code class="language-rust">use std::fs;
+use std::io::ErrorKind;
+
+fn main() {
+    fs::write(&quot;notes.txt&quot;, &quot;buy milk\nfeed the crab\n&quot;).expect(&quot;could not write notes.txt&quot;);
+    let text = fs::read_to_string(&quot;notes.txt&quot;).expect(&quot;could not read notes.txt&quot;);
+    println!(&quot;{} lines&quot;, text.lines().count());
+
+    match fs::read_to_string(&quot;missing.txt&quot;) {
+        Ok(t) =&gt; println!(&quot;read {} bytes&quot;, t.len()),
+        Err(e) if e.kind() == ErrorKind::NotFound =&gt; println!(&quot;missing.txt does not exist&quot;),
+        Err(e) =&gt; println!(&quot;error: {e}&quot;),
+    }
+}
+</code></pre>
+<pre><code class="language-text">2 lines
+missing.txt does not exist
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>fs::write(path, contents)</code> creates the file (or replaces it) with the given text.</li>
+<li><code>fs::read_to_string(path)</code> reads a whole file into a <code>String</code>. It returns <code>io::Result&lt;String&gt;</code>, which is <code>Result&lt;String, io::Error&gt;</code>.</li>
+<li>A relative path like <code>notes.txt</code> is relative to the <strong>current working directory</strong>: the folder the user ran the tool from, not where the program file lives.</li>
+<li><code>e.kind()</code> tells you what kind of I/O error it was: <code>ErrorKind::NotFound</code>, <code>ErrorKind::PermissionDenied</code>, <code>ErrorKind::IsADirectory</code>... Match on it when your tool should react differently (a missing config file might just mean &quot;use defaults&quot;). Printing <code>e</code> gives the OS&#39;s message, like <code>No such file or directory (os error 2)</code>.</li>
+</ul>
+<h2>Big files: line by line</h2>
+<p><code>read_to_string</code> loads the whole file into memory. That&#39;s fine for configs and most inputs; for a 20 GB log, read it <strong>line by line</strong> with a <code>BufReader</code>, which keeps only a buffer in memory:</p>
+<pre><code class="language-rust">use std::fs::File;
+use std::io::{BufRead, BufReader};
+
+fn main() -&gt; std::io::Result&lt;()&gt; {
+    std::fs::write(&quot;app.log&quot;, &quot;INFO start\nERROR disk full\nINFO stop\nERROR timeout\n&quot;)?;
+    let reader = BufReader::new(File::open(&quot;app.log&quot;)?);
+    for (i, line) in reader.lines().enumerate() {
+        let line = line?;
+        if line.starts_with(&quot;ERROR&quot;) {
+            println!(&quot;{}: {line}&quot;, i + 1);
+        }
+    }
+    Ok(())
+}
+</code></pre>
+<pre><code class="language-text">2: ERROR disk full
+4: ERROR timeout
+</code></pre>
+<ul>
+<li><code>File::open</code> opens for reading; <code>BufReader::new</code> wraps it so reads happen in big chunks instead of one system call per byte.</li>
+<li><code>.lines()</code> (from the <code>BufRead</code> trait, hence the import) yields <code>io::Result&lt;String&gt;</code> for each line, because reading can fail halfway (a disk error, invalid UTF-8). <code>let line = line?;</code> handles it.</li>
+<li>To add to a file instead of replacing it, open it with <code>OpenOptions::new().append(true).create(true).open(path)?</code> and write lines with <code>writeln!(file, &quot;...&quot;)?</code> (from <code>std::io::Write</code>).</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Checking <code>Path::new(p).exists()</code> before opening.</strong> The file can disappear between the check and the open. Just open it and handle the error.</li>
+<li><strong><code>unwrap</code> on <code>read_to_string</code></strong> of a path the user typed: a typo becomes a panic. Print a message that names the file and exit with a failure code.</li>
+<li><strong>Forgetting <code>use std::io::BufRead;</code></strong>: then <code>.lines()</code> on a <code>BufReader</code> fails with <code>error[E0599]: no method named `lines` found for struct `BufReader&lt;R&gt;` </code>, and the compiler suggests the import.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>wc</code>. For each file named in the arguments print <code>&lt;lines&gt; &lt;words&gt; &lt;bytes&gt; &lt;name&gt;</code> (words are whitespace-separated; bytes is the length of the text). If more than one file was given, end with a <code>&lt;lines&gt; &lt;words&gt; &lt;bytes&gt; total</code> line summing the files that could be read. A file that can&#39;t be read prints <code>wc: &lt;name&gt;: &lt;error&gt;</code> to stderr, the tool carries on with the other files, and exits with code 1 at the end. No arguments: <code>usage: wc &lt;file&gt;...</code> to stderr, exit code 2.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>head [-n N] &lt;file&gt;</code>: print the first N lines of the file (default 10). A bad or missing N (<code>-n x</code>, <code>-n</code> at the end) or a missing file name prints a usage line to stderr and exits 2; a file that can&#39;t be read prints <code>head: &lt;name&gt;: &lt;error&gt;</code> to stderr and exits 1.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>colsum &lt;file&gt; &lt;column&gt;</code>, a tiny CSV summarizer. The file&#39;s first line is a header of comma-separated column names; every other non-empty line has the same number of comma-separated fields. Print <code>sum of &lt;column&gt;: &lt;total&gt;</code> with two decimals. Errors go to stderr: wrong number of arguments exits 2; a file that can&#39;t be read, an unknown column (<code>unknown column &quot;x&quot;</code>) or a value that isn&#39;t a number (<code>line 3: &quot;abc&quot; is not a number</code>) exits 1.</p>
+
+<p><a href="/learn/cli/exit-codes-and-stderr">Previous: Exit codes and stderr</a> <a href="/learn/cli/reading-stdin-when-no-file-is-given">Next: Reading stdin when no file is given</a></p></main></div>
+  </body>
+</html>

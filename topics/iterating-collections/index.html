@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Iterating over collections in Rust: iter, iter_mut and into_iter | RustArena</title>
+    <meta name="description" content="The three ways to loop over a Vec, array or HashMap in Rust: &amp;v (iter), &amp;mut v (iter_mut) and v (into_iter), plus enumerate, zip and rev." />
+    <link rel="canonical" href="https://rustarena.app/topics/iterating-collections/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Iterating over collections in Rust: iter, iter_mut and into_iter | RustArena" />
+    <meta property="og:description" content="The three ways to loop over a Vec, array or HashMap in Rust: &amp;v (iter), &amp;mut v (iter_mut) and v (into_iter), plus enumerate, zip and rev." />
+    <meta property="og:url" content="https://rustarena.app/topics/iterating-collections/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Iterating over collections in Rust: iter, iter_mut and into_iter","description":"The three ways to loop over a Vec, array or HashMap in Rust: &v (iter), &mut v (iter_mut) and v (into_iter), plus enumerate, zip and rev.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/iterating-collections/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Iterating over collections in Rust: iter, iter_mut and into_iter</h1>
+<p>The three ways to loop over a Vec, array or HashMap in Rust: &amp;v (iter), &amp;mut v (iter_mut) and v (into_iter), plus enumerate, zip and rev.</p>
+<p>There are three ways to loop over a collection, and they differ in <strong>what you get</strong> for each element and <strong>what happens to the collection</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Loop</th>
+<th>Same as</th>
+<th>Each item is</th>
+<th>Collection afterwards</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>for x in &amp;v</code></td>
+<td><code>v.iter()</code></td>
+<td><code>&amp;T</code> (shared borrow)</td>
+<td>unchanged, still usable</td>
+</tr>
+<tr>
+<td><code>for x in &amp;mut v</code></td>
+<td><code>v.iter_mut()</code></td>
+<td><code>&amp;mut T</code> (can modify)</td>
+<td>modified, still usable</td>
+</tr>
+<tr>
+<td><code>for x in v</code></td>
+<td><code>v.into_iter()</code></td>
+<td><code>T</code> (owned)</td>
+<td><strong>moved</strong>: gone</td>
+</tr>
+</tbody></table>
+<pre><code class="language-rust">fn main() {
+    let mut prices = vec![100, 250, 40];
+
+    for p in &amp;prices {
+        print!(&quot;{p} &quot;);
+    }
+    println!();
+
+    for p in &amp;mut prices {
+        *p += 5;
+    }
+    println!(&quot;{prices:?}&quot;);
+
+    for p in prices {
+        print!(&quot;{} &quot;, p * 2);
+    }
+    println!();
+}
+</code></pre>
+<pre><code class="language-text">100 250 40
+[105, 255, 45]
+210 510 90
+</code></pre>
+<p>Use <code>&amp;v</code> by default. Use <code>&amp;mut v</code> to change elements in place (with <code>*x</code> to reach the value). Use <code>v</code> when you&#39;re done with the collection and want to move its elements somewhere else, like into another collection or a thread.</p>
+<h2>Index and value together: enumerate</h2>
+<p>Instead of <code>for i in 0..v.len()</code> with <code>v[i]</code>, write <code>for (i, x) in v.iter().enumerate()</code>. It&#39;s clearer, can&#39;t go out of bounds, and clippy suggests it (<code>needless_range_loop</code>). Other everyday adapters:</p>
+<ul>
+<li><code>.rev()</code>: backwards.</li>
+<li><code>.zip(other)</code>: pairs from two collections, stopping at the shorter one.</li>
+<li><code>.skip(n)</code>, <code>.take(n)</code>: skip or keep the first <code>n</code>.</li>
+<li><code>.windows(2)</code>: overlapping pairs from a slice (great for differences between neighbors).</li>
+<li><code>.chunks(3)</code>: groups of up to 3.</li>
+</ul>
+<h2>Maps and sets</h2>
+<p>Iterating a <code>HashMap</code> gives <code>(&amp;K, &amp;V)</code> tuples: <code>for (name, score) in &amp;scores</code>. Use <code>.keys()</code> or <code>.values()</code> for one side, <code>.values_mut()</code> to change values. The order is <strong>unspecified</strong>, so sort the entries (or use <code>BTreeMap</code>) before printing.</p>
+<h2>Arrays and strings</h2>
+<p>Arrays work like vectors: <code>for x in [1, 2, 3]</code> takes items by value (since the 2021 edition), <code>for x in &amp;arr</code> borrows. A <code>String</code> isn&#39;t directly iterable: choose <code>.chars()</code> (characters), <code>.bytes()</code>, <code>.lines()</code> or <code>.split_whitespace()</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Using the collection after <code>for x in v</code>:</strong> E0382, &quot;borrow of moved value: <code>v</code>&quot;. Loop over <code>&amp;v</code>.</li>
+<li><strong>Modifying through a shared borrow:</strong> <code>for x in &amp;v { *x += 1; }</code> is E0594, &quot;cannot assign to <code>*x</code>, which is behind a <code>&amp;</code> reference&quot;. Use <code>&amp;mut v</code>.</li>
+<li><strong>Forgetting <code>*</code> with <code>iter_mut</code>:</strong></li>
+</ul>
+<pre><code class="language-rust-error">fn main() {
+    let mut v = vec![1, 2, 3];
+    for x in &amp;mut v {
+        x += 1;
+    }
+    println!(&quot;{v:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0368]: binary assignment operation `+=` cannot be applied to type `&amp;mut {integer}`
+</code></pre>
+<p>Write <code>*x += 1</code>.</p>
+<ul>
+<li><strong>Pushing to a collection while looping over it:</strong> E0502. Collect changes first, then apply them.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::collections::HashMap;
+
+fn main() {
+    let names = vec![&quot;Ferris&quot;, &quot;Corro&quot;, &quot;Gopher&quot;];
+    let mut scores = vec![72, 95, 88];
+
+    for (i, name) in names.iter().enumerate() {
+        println!(&quot;{}. {name}&quot;, i + 1);
+    }
+
+    for s in &amp;mut scores {
+        *s += 5;
+    }
+
+    for (name, score) in names.iter().zip(&amp;scores) {
+        println!(&quot;{name}: {score}&quot;);
+    }
+
+    for pair in scores.windows(2) {
+        println!(&quot;change {:+}&quot;, pair[1] - pair[0]);
+    }
+
+    let mut by_name: HashMap&lt;&amp;str, i32&gt; = HashMap::new();
+    for (name, score) in names.iter().zip(scores.iter()) {
+        by_name.insert(name, *score);
+    }
+    let mut keys: Vec&lt;_&gt; = by_name.keys().collect();
+    keys.sort();
+    for k in keys {
+        println!(&quot;{k} -&gt; {}&quot;, by_name[k]);
+    }
+
+    let total: i32 = scores.into_iter().sum(); // consumes scores
+    println!(&quot;total {total}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>1. Ferris
+2. Corro
+3. Gopher
+Ferris: 77
+Corro: 100
+Gopher: 93
+change +23
+change -7
+Corro -&gt; 100
+Ferris -&gt; 77
+Gopher -&gt; 93
+total 270
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/vectors/creating-and-growing-a-vec">Lesson: Vectors</a></li><li><a href="/learn/iterators/what-an-iterator-is">Lesson: Iterators</a></li></ul></main></div>
+  </body>
+</html>

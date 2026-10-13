@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>rustup, Cargo and continuous integration | Pro Track | RustArena</title>
+    <meta name="description" content="Install Rust the way professionals do, build a small command-line crate with Cargo, and keep it clean with rustfmt, clippy and tests that run on every…" />
+    <link rel="canonical" href="https://rustarena.app/pro/toolchain/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="rustup, Cargo and continuous integration | Pro Track | RustArena" />
+    <meta property="og:description" content="Install Rust the way professionals do, build a small command-line crate with Cargo, and keep it clean with rustfmt, clippy and tests that run on every…" />
+    <meta property="og:url" content="https://rustarena.app/pro/toolchain/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><h1>rustup, Cargo and continuous integration</h1><p>On the RustArena site, one click compiled and ran your code. At work you&#39;ll run the same toolchain yourself: <strong>rustup</strong> installs Rust, <strong>Cargo</strong> builds, tests and manages dependencies, <strong>rustfmt</strong> and <strong>clippy</strong> keep code consistent, and <strong>CI</strong> runs all of it on every push so nobody merges broken code. In this project you finish a small command-line tool, <code>wordfreq</code>, and get it through the checks a Rust team&#39;s CI would run.</p>
+<p><strong>You&#39;ll practice:</strong> rustup and toolchains, Cargo commands, <code>Cargo.toml</code> and dependencies, debug and release profiles, rustfmt, clippy, unit and integration tests, and reading CI results.</p>
+<h2>Background</h2>
+<h3>rustup: one installer for every Rust</h3>
+<p>A <strong>toolchain</strong> is a compiler (<code>rustc</code>), Cargo and the standard library for one <strong>channel</strong>: <code>stable</code> (a new release every six weeks), <code>beta</code> or <code>nightly</code>, or a pinned version like <code>1.85.0</code>. rustup installs and switches them. <strong>Components</strong> are optional tools for a toolchain.</p>
+<pre><code class="language-bash">rustup show                          # installed toolchains and which one is active
+rustup update                        # upgrade stable (do it every few weeks)
+rustup component add rustfmt clippy  # the formatter and the linter
+rustup toolchain install 1.85        # an older compiler, to test your minimum version
+cargo +1.85 test                     # run one command with that toolchain
+</code></pre>
+<p>Teams often commit a <code>rust-toolchain.toml</code> so every laptop and CI machine uses the same channel:</p>
+<pre><code class="language-toml">[toolchain]
+channel = &quot;stable&quot;
+components = [&quot;rustfmt&quot;, &quot;clippy&quot;]
+</code></pre>
+<p>Versions are not <strong>editions</strong> (2018, 2021, 2024): an edition is a set of language rules each crate picks in <code>Cargo.toml</code>, and crates on different editions work together.</p>
+<h3>Cargo, the tool you&#39;ll type all day</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>cargo check</code></td>
+<td>type-check without producing a binary: the fastest feedback</td>
+</tr>
+<tr>
+<td><code>cargo build</code> / <code>cargo run -- ARGS</code></td>
+<td>compile (and run) a debug build; <code>--</code> separates your program&#39;s arguments from Cargo&#39;s</td>
+</tr>
+<tr>
+<td><code>cargo test</code></td>
+<td>build and run unit, integration and doc tests</td>
+</tr>
+<tr>
+<td><code>cargo doc --open</code></td>
+<td>generate HTML docs for your crate and every dependency</td>
+</tr>
+<tr>
+<td><code>cargo add name</code> / <code>cargo tree</code></td>
+<td>add a dependency / show the dependency graph</td>
+</tr>
+<tr>
+<td><code>cargo fmt</code> / <code>cargo clippy</code></td>
+<td>format the code / lint it</td>
+</tr>
+</tbody></table>
+<p>This package has <strong>two crates</strong>: a library (<code>src/lib.rs</code>, where the logic lives so it can be unit tested) and a binary (<code>src/main.rs</code>, which handles arguments and I/O and calls <code>wordfreq::count_words</code>). That split is how most Rust command-line tools are organized.</p>
+<h3>Cargo.toml and dependencies</h3>
+<pre><code class="language-toml">[package]
+name = &quot;wordfreq&quot;
+version = &quot;0.1.0&quot;          # semantic versioning: MAJOR.MINOR.PATCH
+edition = &quot;2024&quot;
+rust-version = &quot;1.85&quot;      # the oldest compiler you support (your MSRV)
+description = &quot;Prints the most frequent words in a text&quot;
+license = &quot;MIT&quot;            # an SPDX identifier; crates.io requires it
+
+[dependencies]
+unicode-segmentation = &quot;1&quot;
+</code></pre>
+<p><code>&quot;1&quot;</code> is a <strong>caret requirement</strong>: any version from 1.0.0 up to (not including) 2.0.0, because semver promises no breaking changes within a major version. The exact versions Cargo picked go in <strong><code>Cargo.lock</code></strong>. Commit it: it makes every build, yours and CI&#39;s, use the same code. <code>cargo update</code> moves to newer compatible versions on purpose, as its own reviewable commit.</p>
+<h3>Profiles: debug and release builds</h3>
+<p><code>cargo build</code> uses the <strong>dev</strong> profile: quick to compile, unoptimized, with debug info, and integer overflow <strong>panics</strong> so you find bugs. <code>cargo build --release</code> uses the <strong>release</strong> profile: optimized (often 10 to 100 times faster), and overflow wraps silently. Builds land in <code>target/debug/</code> and <code>target/release/</code> (here, one <code>target/</code> at the repository root shared by every project, set in <code>.cargo/config.toml</code>). Profiles are tunable:</p>
+<pre><code class="language-toml">[profile.release]
+lto = true      # link-time optimization: optimize across crates, smaller and faster binaries
+strip = true    # remove symbols from the binary: much smaller files
+</code></pre>
+<p>Never benchmark or ship a debug build.</p>
+<h3>rustfmt and clippy</h3>
+<p><strong>rustfmt</strong> formats code one standard way, so code review is about logic, not spacing. <code>cargo fmt</code> rewrites files; <code>cargo fmt --check</code> only reports. <strong>clippy</strong> is a linter with hundreds of lints for bugs, slow code and unidiomatic code; each warning links to an explanation. CI runs it with <code>-D warnings</code> so every warning is an error. When a lint is wrong for one spot, silence it there with <code>#[allow(clippy::lint_name)]</code> and a comment saying why.</p>
+<h3>Continuous integration</h3>
+<p>Open <code>.github/workflows/grade.yml</code>. On every push, GitHub Actions starts a fresh Ubuntu machine, installs stable Rust with rustfmt and clippy, restores cached dependencies and runs <code>bash tools/grade.sh &lt;project&gt;</code>: the same <code>cargo fmt --check</code>, <code>cargo clippy</code> and <code>cargo test</code> you run locally, plus project checks. A fresh machine catches &quot;works on my laptop&quot; problems (a file you forgot to commit), and a green check is what lets teammates trust and merge a change.</p>
+<h2>Your tasks</h2>
+<p>Work in <code>projects/01-toolchain</code> (<code>cd projects/01-toolchain</code>).</p>
+<ol>
+<li><strong>Check your tools.</strong> Run <code>rustup show</code>, <code>cargo --version</code> and <code>bash ../../tools/doctor.sh</code>. Then <code>cargo run -- --help</code> builds and runs the program, and <code>cargo test</code> fails with <code>not yet implemented</code>: that&#39;s what you&#39;ll fix.</li>
+<li><strong>Fill in the metadata.</strong> In <code>Cargo.toml</code>, add <code>description</code>, <code>license</code> and <code>rust-version = &quot;1.85&quot;</code> (edition 2024 needs at least 1.85).</li>
+<li><strong>Add a dependency.</strong> Splitting text into words correctly (apostrophes, decimals, accents) is harder than it looks, and Unicode already defines it. Run <code>cargo add unicode-segmentation</code>, then look at what changed in <code>Cargo.toml</code> and <code>Cargo.lock</code>, and run <code>cargo tree</code>. Read its docs with <code>cargo doc --open</code>.</li>
+<li><strong>Write the library.</strong> Complete TODO 1 and TODO 2 in <code>src/lib.rs</code>:<ul>
+<li><code>count_words</code>: <code>use unicode_segmentation::UnicodeSegmentation;</code> adds <code>unicode_words()</code> to <code>&amp;str</code>. Lowercase each word with <code>to_lowercase()</code> and count with <code>*counts.entry(word).or_insert(0) += 1</code>.</li>
+<li><code>top_words</code>: collect the pairs into a <code>Vec</code>, sort with <code>sort_by</code> comparing counts in reverse and then words (<code>Ordering::then_with</code>), and <code>truncate(n)</code>.</li>
+</ul>
+</li>
+<li><strong>Unit tests.</strong> Do TODO 3: at least 3 <code>#[test]</code> functions in <code>src/</code>, for example how <code>top_words</code> breaks ties.</li>
+<li><strong>Format and lint.</strong> <code>cargo fmt</code>, then <code>cargo clippy --all-targets</code>. <code>main.rs</code> was written in a hurry: fix every warning clippy reports (read the explanation link each time).</li>
+<li><strong>Release build.</strong> Add the <code>[profile.release]</code> section above. Run <code>cargo build</code> and <code>cargo build --release</code>, then compare <code>ls -lh ../../target/debug/wordfreq ../../target/release/wordfreq</code>. Try it: <code>cargo run --release -- --top 5 &lt; README.md</code>.</li>
+<li><strong>Grade it</strong> like CI does: <code>bash ../../tools/grade.sh 01-toolchain</code>. Then commit, push, and watch the <strong>Actions</strong> tab turn green.</li>
+</ol>
+<h2>What the grader checks</h2>
+<ul>
+<li><code>Cargo.toml</code> has a description, a license and a rust-version, depends on <code>unicode-segmentation</code>, and its release profile sets <code>lto</code> and <code>strip</code>,</li>
+<li><code>tests/cli.rs</code> is unchanged: these integration tests run the real binary through <code>CARGO_BIN_EXE_wordfreq</code>, checking output, exit codes (0 success, 1 runtime error, 2 usage error) and that errors go to standard error,</li>
+<li><code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> are clean,</li>
+<li>every test passes, and <code>src/</code> has at least 3 unit tests,</li>
+<li>the release build runs and prints the right answer.</li>
+</ul>
+<h2>Hints</h2>
+<ul>
+<li><code>cargo test name_part</code> runs only the tests whose names contain <code>name_part</code>. Add <code>-- --nocapture</code> to see <code>println!</code> output.</li>
+<li>Reproduce a failing integration test by hand: <code>printf &#39;a b a&#39; | cargo run -- --top 1</code>.</li>
+<li><code>cargo clippy --fix --allow-dirty</code> applies the machine-fixable suggestions. Read the diff before committing.</li>
+</ul>
+<h2>Going further</h2>
+<ul>
+<li>Prove your <code>rust-version</code> is honest: <code>rustup toolchain install 1.85 &amp;&amp; cargo +1.85 test</code>.</li>
+<li>Run <code>cargo run --release &lt; big.txt | head -n 1</code> on a large file: <code>println!</code> panics when <code>head</code> closes the pipe. Write through <code>std::io::stdout().lock()</code> with <code>writeln!</code> and stop quietly on <code>ErrorKind::BrokenPipe</code>.</li>
+</ul>
+</main></div>
+  </body>
+</html>

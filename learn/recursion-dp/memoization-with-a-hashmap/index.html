@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Memoization with a HashMap · Recursion and Dynamic Programming (Rust) | RustArena</title>
+    <meta name="description" content="The slow Fibonacci recomputes the same values again and again. Memoization fixes that: the first time you compute an answer for some input, store it in a…" />
+    <link rel="canonical" href="https://rustarena.app/learn/recursion-dp/memoization-with-a-hashmap/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Memoization with a HashMap · Recursion and Dynamic Programming (Rust) | RustArena" />
+    <meta property="og:description" content="The slow Fibonacci recomputes the same values again and again. Memoization fixes that: the first time you compute an answer for some input, store it in a…" />
+    <meta property="og:url" content="https://rustarena.app/learn/recursion-dp/memoization-with-a-hashmap/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Memoization with a HashMap","description":"The slow Fibonacci recomputes the same values again and again. Memoization fixes that: the first time you compute an answer for some input, store it in a…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/recursion-dp/memoization-with-a-hashmap/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Algorithms and data structures › Recursion and Dynamic Programming</nav>
+<p>Step 3 of 6</p>
+<h1>Memoization with a HashMap</h1>
+<p>The slow Fibonacci recomputes the same values again and again. <strong>Memoization</strong> fixes that: the first time you compute an answer for some input, store it in a HashMap (the <strong>memo</strong>); every later call with that input just looks it up. Now each different input is computed only once.</p>
+<pre><code class="language-rust">use std::collections::HashMap;
+
+fn fib(n: u64, memo: &amp;mut HashMap&lt;u64, u64&gt;) -&gt; u64 {
+    if n &lt; 2 {
+        return n;
+    }
+    if let Some(&amp;known) = memo.get(&amp;n) {
+        return known;
+    }
+    let value = fib(n - 1, memo) + fib(n - 2, memo);
+    memo.insert(n, value);
+    value
+}
+
+fn main() {
+    let mut memo = HashMap::new();
+    println!(&quot;fib(50) = {}&quot;, fib(50, &amp;mut memo));
+    println!(&quot;fib(90) = {}&quot;, fib(90, &amp;mut memo));
+    println!(&quot;memo holds {} answers&quot;, memo.len());
+}
+</code></pre>
+<pre><code class="language-text">fib(50) = 12586269025
+fib(90) = 2880067194370816120
+memo holds 89 answers
+</code></pre>
+<p><code>fib(90)</code> the slow way would take about 10¹⁹ calls. With the memo it&#39;s 89 entries and a couple of hundred calls: O(n).</p>
+<p>This is <strong>dynamic programming</strong> (DP), top-down style. It applies when a problem has:</p>
+<ul>
+<li><strong>overlapping subproblems</strong>: the same smaller questions come up many times, and</li>
+<li><strong>optimal substructure</strong>: the answer can be built from the answers to smaller questions.</li>
+</ul>
+<h2>Passing the memo around</h2>
+<p>Rust has no convenient global mutable variables, and that&#39;s fine: pass the memo down as <code>&amp;mut HashMap</code>. A common shape is a public function that creates the memo and a helper that does the work:</p>
+<pre><code class="language-rust">fn count(n: u64) -&gt; u64 {
+    count_with(n, &amp;mut HashMap::new())
+}
+</code></pre>
+<p>The key must describe the <strong>whole</strong> subproblem. If the answer depends on a position in a grid, the key is the position: <code>HashMap&lt;(usize, usize), u64&gt;</code>. Tuples of <code>Hash + Eq</code> types work as keys.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Checking the memo after recursing.</strong> Look up first, compute only on a miss, store before returning.</li>
+<li><strong>A new HashMap inside the recursive function.</strong> Each call gets an empty memo and nothing is ever reused.</li>
+<li><strong><code>entry().or_insert_with</code> with a recursive closure.</strong> It looks neat but can&#39;t compile: the entry holds a mutable borrow of the map while the closure needs another one.</li>
+</ul>
+<pre><code class="language-rust-error">use std::collections::HashMap;
+
+fn fib(n: u64, memo: &amp;mut HashMap&lt;u64, u64&gt;) -&gt; u64 {
+    if n &lt; 2 {
+        return n;
+    }
+    *memo.entry(n).or_insert_with(|| fib(n - 1, memo) + fib(n - 2, memo))
+}
+
+fn main() {
+    println!(&quot;{}&quot;, fib(10, &amp;mut HashMap::new()));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0500]: closure requires unique access to `*memo` but it is already borrowed
+</code></pre>
+<p>Use <code>get</code>, compute, then <code>insert</code>, as in the example.</p>
+
+<h2>Your task</h2>
+<p>A crab climbs a staircase of <code>n</code> steps, taking 1, 2 or 3 steps at a time. In how many different ways can it reach the top? <code>count_ways(4)</code> is 7 (1+1+1+1, 1+1+2, 1+2+1, 2+1+1, 2+2, 1+3, 3+1). There&#39;s 1 way to climb 0 steps (do nothing). The number of ways for <code>n</code> is the sum of the ways for <code>n - 1</code>, <code>n - 2</code> and <code>n - 3</code> (whichever exist). Write the memoized helper <code>ways_from</code>. The tests ask for <code>n = 70</code>, which takes about 10¹⁸ calls without the memo.</p>
+
+<h3>Challenge 2</h3>
+<p>A delivery robot moves through a warehouse grid from the top-left cell to the bottom-right cell, only ever moving <strong>right</strong> or <strong>down</strong>. <code>#</code> cells are shelves it can&#39;t enter. Write <code>fn count_paths(grid: &amp;[&amp;str]) -&gt; u64</code>: the number of different routes (0 if the start or the end is a shelf, or the grid is empty).</p>
+<p>Recursively, the number of routes from cell <code>(r, c)</code> is the routes from the cell below plus the routes from the cell to the right; from the bottom-right cell it&#39;s 1. Memoize on the position with a <code>HashMap&lt;(usize, usize), u64&gt;</code>. The tests include an empty 18 by 18 grid, which has over two billion routes.</p>
+
+<h3>Challenge 3</h3>
+<p>A search engine splits hashtags into words: can <code>&quot;applepenapple&quot;</code> be written as a sequence of dictionary words? Yes: apple + pen + apple. Write <code>fn can_segment(text: &amp;str, words: &amp;[&amp;str]) -&gt; bool</code> (words may be reused; an empty text can always be segmented).</p>
+<p>Recursively: the text from position <code>start</code> can be segmented if some dictionary word matches at <code>start</code> and the rest (from <code>start + word.len()</code>) can be segmented. Without a memo, a text like <code>&quot;aaaa...ab&quot;</code> with the words <code>a</code>, <code>aa</code>, <code>aaa</code>, <code>aaaa</code> makes the recursion try an astronomical number of splits. Memoize on <code>start</code> with a <code>HashMap&lt;usize, bool&gt;</code>. Use <code>text[start..].starts_with(word)</code>. (The tests use ASCII text, so byte positions are fine.)</p>
+
+<p><a href="/learn/recursion-dp/branching-recursion-and-backtracking">Previous: Branching recursion and backtracking</a> <a href="/learn/recursion-dp/bottom-up-dp-filling-a-table">Next: Bottom-up DP: filling a table</a></p></main></div>
+  </body>
+</html>

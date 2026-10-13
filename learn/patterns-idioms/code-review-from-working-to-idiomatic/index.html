@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Code review: from working to idiomatic · Design Patterns and Idioms (Rust) | RustArena</title>
+    <meta name="description" content="At work, most of the Rust you write gets reviewed before it's merged, and much of what reviewers flag is the same short list. Many of those comments are…" />
+    <link rel="canonical" href="https://rustarena.app/learn/patterns-idioms/code-review-from-working-to-idiomatic/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Code review: from working to idiomatic · Design Patterns and Idioms (Rust) | RustArena" />
+    <meta property="og:description" content="At work, most of the Rust you write gets reviewed before it's merged, and much of what reviewers flag is the same short list. Many of those comments are…" />
+    <meta property="og:url" content="https://rustarena.app/learn/patterns-idioms/code-review-from-working-to-idiomatic/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Code review: from working to idiomatic","description":"At work, most of the Rust you write gets reviewed before it's merged, and much of what reviewers flag is the same short list. Many of those comments are…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/patterns-idioms/code-review-from-working-to-idiomatic/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Design Patterns and Idioms</nav>
+<p>Step 7 of 7</p>
+<h1>Code review: from working to idiomatic</h1>
+<p>At work, most of the Rust you write gets <strong>reviewed</strong> before it&#39;s merged, and much of what reviewers flag is the same short list. Many of those comments are automated by <strong>clippy</strong> (<code>cargo clippy</code>), and the rest you now know from this course. Here are the classics, with the clippy lint name where there is one:</p>
+<table>
+<thead>
+<tr>
+<th>You wrote</th>
+<th>Reviewers ask for</th>
+<th>clippy lint</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>for i in 0..v.len() { v[i] ... }</code></td>
+<td><code>for x in &amp;v</code>, or an iterator chain</td>
+<td><code>needless_range_loop</code></td>
+</tr>
+<tr>
+<td><code>fn f(v: &amp;Vec&lt;T&gt;)</code>, <code>fn g(s: &amp;String)</code></td>
+<td><code>&amp;[T]</code>, <code>&amp;str</code></td>
+<td><code>ptr_arg</code></td>
+</tr>
+<tr>
+<td><code>.clone()</code> to calm the borrow checker</td>
+<td>borrow, or restructure</td>
+<td><code>redundant_clone</code> (opt-in)</td>
+</tr>
+<tr>
+<td><code>v.len() == 0</code></td>
+<td><code>v.is_empty()</code></td>
+<td><code>len_zero</code></td>
+</tr>
+<tr>
+<td><code>if x == true</code></td>
+<td><code>if x</code></td>
+<td><code>bool_comparison</code></td>
+</tr>
+<tr>
+<td><code>return x;</code> as the last line</td>
+<td>just <code>x</code></td>
+<td><code>needless_return</code></td>
+</tr>
+<tr>
+<td><code>match o { Some(x) =&gt; Some(f(x)), None =&gt; None }</code></td>
+<td><code>o.map(f)</code></td>
+<td><code>manual_map</code></td>
+</tr>
+<tr>
+<td><code>match o { Some(x) =&gt; x, None =&gt; d }</code></td>
+<td><code>o.unwrap_or(d)</code></td>
+<td><code>manual_unwrap_or</code></td>
+</tr>
+<tr>
+<td><code>if a { if b { .. } }</code></td>
+<td><code>if a &amp;&amp; b { .. }</code></td>
+<td><code>collapsible_if</code></td>
+</tr>
+<tr>
+<td>a loop that sets <code>found = true</code></td>
+<td><code>.any(..)</code> / <code>.find(..)</code> / <code>.position(..)</code></td>
+<td>(<code>manual_find</code> and friends)</td>
+</tr>
+<tr>
+<td><code>.unwrap()</code> on input</td>
+<td><code>?</code>, <code>match</code>, a typed error</td>
+<td><code>unwrap_used</code> (opt-in)</td>
+</tr>
+<tr>
+<td><code>status: String</code> with <code>&quot;shipped&quot;</code></td>
+<td><code>enum Status</code></td>
+<td>(design; no lint)</td>
+</tr>
+</tbody></table>
+<p>Teams switch on stricter lints per project, in <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[lints.clippy]
+unwrap_used = &quot;warn&quot;
+pedantic = { level = &quot;warn&quot;, priority = -1 }
+</code></pre>
+<p>and CI runs <code>cargo clippy -- -D warnings</code> so warnings fail the build.</p>
+<h2>A small refactor</h2>
+<p>Both versions below print the same thing. The first is what a newcomer from another language writes; the second is what a reviewer hopes to see.</p>
+<pre><code class="language-rust">fn average_score(scores: &amp;Vec&lt;u32&gt;) -&gt; f64 {
+    if scores.len() == 0 {
+        return 0.0;
+    }
+    let mut sum = 0;
+    for i in 0..scores.len() {
+        sum = sum + scores[i];
+    }
+    return sum as f64 / scores.len() as f64;
+}
+
+fn main() {
+    println!(&quot;{:.2}&quot;, average_score(&amp;vec![70, 85, 90]));
+    println!(&quot;{:.2}&quot;, average_score(&amp;vec![]));
+}
+</code></pre>
+<pre><code class="language-text">81.67
+0.00
+</code></pre>
+<pre><code class="language-rust">fn average_score(scores: &amp;[u32]) -&gt; f64 {
+    if scores.is_empty() {
+        return 0.0;
+    }
+    let sum: u32 = scores.iter().sum();
+    sum as f64 / scores.len() as f64
+}
+
+fn main() {
+    println!(&quot;{:.2}&quot;, average_score(&amp;[70, 85, 90]));
+    println!(&quot;{:.2}&quot;, average_score(&amp;[]));
+}
+</code></pre>
+<pre><code class="language-text">81.67
+0.00
+</code></pre>
+<p>(The early <code>return</code> for the empty case is fine: <code>needless_return</code> only flags a <code>return</code> on the <strong>last</strong> line.)</p>
+<h2>How to refactor safely</h2>
+<ol>
+<li><strong>Pin the behavior first</strong>: make sure tests cover what the code does today, including edge cases (empty input, ties, bad input). On this site, the hidden tests play that role.</li>
+<li><strong>One change at a time</strong>, re-running the tests after each: types first (<code>&amp;Vec</code> to <code>&amp;[T]</code>, strings to enums), then loops to iterators, then error handling.</li>
+<li><strong>Watch for behavior changes hiding in &quot;cleanups&quot;</strong>: <code>max_by_key</code> returns the <strong>last</strong> maximum on ties while a hand-written <code>&gt;</code> loop keeps the <strong>first</strong>; replacing <code>unwrap</code> with <code>unwrap_or_default</code> turns a crash into silently wrong data. A refactor that changes behavior isn&#39;t a refactor.</li>
+<li><strong>Turning panics into errors</strong> does change the signature (<code>-&gt; Result&lt;..&gt;</code>). That&#39;s an improvement, but it&#39;s an API change your callers must know about.</li>
+</ol>
+
+<h2>Your task</h2>
+<p>This order-processing code works on valid input, but it failed review. Refactor it:</p>
+<ul>
+<li><code>parse_orders</code> takes <code>&amp;str</code> and returns <code>Result&lt;Vec&lt;Order&gt;, String&gt;</code> instead of panicking. Errors name the line: <code>line 2: bad id</code>, <code>line 1: missing customer</code> (also for an empty customer field), <code>line 3: unknown status &quot;lost&quot;</code>, <code>line 1: bad price &quot;abc&quot;</code>.</li>
+<li>The status becomes <code>enum Status { Pending, Shipped, Cancelled }</code> (derive <code>Debug, Clone, Copy, PartialEq</code>); the text values stay <code>pending</code>, <code>shipped</code>, <code>cancelled</code>.</li>
+<li>Slices instead of <code>&amp;Vec</code>, iterators instead of index loops, no <code>.clone()</code>, no <code>.unwrap()</code>, no <code>== true</code>/<code>== false</code>.</li>
+</ul>
+<p><code>total</code>, <code>shipped_revenue</code> and <code>customers_with_pending</code> must behave exactly as before (the names come out sorted, without duplicates).</p>
+
+<h3>Challenge 2</h3>
+<p>A smaller review. Refactor these two functions: take <code>&amp;[String]</code>, return <code>Option&lt;&amp;str&gt;</code> from <code>longest_name</code> (<code>None</code> for an empty list, instead of an empty String), and use iterators. Keep the behavior: on a tie, <code>longest_name</code> returns the <strong>first</strong> of the longest names. No <code>.clone()</code>, no index loops, no <code>return</code>, no <code>len() == 0</code>, no <code>== true</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Clippy flagged every function here. Rewrite each one with the idiom its comment names, keeping the behavior: no <code>match</code>, no <code>for</code> loops, no <code>return</code>, and no nested <code>if</code>s left.</p>
+
+<p><a href="/learn/patterns-idioms/returning-iterators">Previous: Returning iterators</a> </p></main></div>
+  </body>
+</html>

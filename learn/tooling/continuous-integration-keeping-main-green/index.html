@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Continuous integration: keeping main green · Debugging, Docs and Tooling (Rust) | RustArena</title>
+    <meta name="description" content="Tests, clippy and rustfmt only protect a codebase if they run every time. Continuous integration (CI) is a server that checks out every pushed commit and…" />
+    <link rel="canonical" href="https://rustarena.app/learn/tooling/continuous-integration-keeping-main-green/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Continuous integration: keeping main green · Debugging, Docs and Tooling (Rust) | RustArena" />
+    <meta property="og:description" content="Tests, clippy and rustfmt only protect a codebase if they run every time. Continuous integration (CI) is a server that checks out every pushed commit and…" />
+    <meta property="og:url" content="https://rustarena.app/learn/tooling/continuous-integration-keeping-main-green/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Continuous integration: keeping main green","description":"Tests, clippy and rustfmt only protect a codebase if they run every time. Continuous integration (CI) is a server that checks out every pushed commit and…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/tooling/continuous-integration-keeping-main-green/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Debugging, Docs and Tooling</nav>
+<p>Step 7 of 7</p>
+<h1>Continuous integration: keeping main green</h1>
+<p>Tests, clippy and rustfmt only protect a codebase if they run <em>every time</em>. <strong>Continuous integration (CI)</strong> is a server that checks out every pushed commit and pull request, runs the checks, and reports a green tick or a red cross. With <strong>branch protection</strong> turned on, a pull request can&#39;t be merged until CI is green, so the main branch always builds, passes its tests and follows the team&#39;s rules.</p>
+<h2>A GitHub Actions workflow</h2>
+<p>On GitHub, CI is a YAML file in <code>.github/workflows/</code>. A typical Rust one:</p>
+<pre><code class="language-yaml"># .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Formatting
+        run: cargo fmt --all --check
+      - name: Lints
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --all-features
+      - name: Docs
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+</code></pre>
+<ul>
+<li><code>on</code>: when to run: pushes to <code>main</code>, and every pull request.</li>
+<li><code>actions/checkout</code> gets the code; <code>dtolnay/rust-toolchain</code> installs Rust with clippy and rustfmt; <code>Swatinem/rust-cache</code> caches compiled dependencies between runs (builds go from minutes to seconds).</li>
+<li>Each <code>run</code> step is a shell command. A command that exits with a non-zero code fails the step, and the job stops there.</li>
+<li><code>-- -D warnings</code> turns clippy&#39;s warnings into errors (<code>-D</code> is &quot;deny&quot;), so a warning fails CI instead of scrolling past. <code>--all-targets</code> lints tests and examples too.</li>
+<li><code>RUSTDOCFLAGS: -D warnings</code> fails on broken intra-doc links in the docs.</li>
+</ul>
+<p>Exit codes are how every tool tells CI &quot;pass&quot; or &quot;fail&quot;. Here&#39;s a tiny custom check, the kind teams add for their own rules, that finds forgotten debugging code:</p>
+<pre><code class="language-rust">fn main() {
+    let source = &quot;fn main() {\n    let x = dbg!(2 + 2);\n    println!(\&quot;{x}\&quot;);\n}\n&quot;;
+    let mut problems = 0;
+    for (i, line) in source.lines().enumerate() {
+        if line.contains(&quot;dbg!(&quot;) || line.contains(&quot;todo!(&quot;) {
+            println!(&quot;line {}: leftover debug code: {}&quot;, i + 1, line.trim());
+            problems += 1;
+        }
+    }
+    println!(&quot;{problems} problem(s)&quot;);
+    // A real check would end with: std::process::exit(if problems &gt; 0 { 1 } else { 0 });
+}
+</code></pre>
+<pre><code class="language-text">line 2: leftover debug code: let x = dbg!(2 + 2);
+1 problem(s)
+</code></pre>
+<h2>Beyond the basics</h2>
+<ul>
+<li>A <strong>matrix</strong> runs the same job on several operating systems or Rust versions (<code>stable</code>, <code>beta</code>, and your <strong>MSRV</strong>, the minimum supported Rust version declared as <code>rust-version</code> in <code>Cargo.toml</code>).</li>
+<li><code>cargo audit</code> and <code>cargo deny</code> check dependencies for known security advisories and unwanted licenses.</li>
+<li>Run the same commands locally before pushing (<code>cargo fmt &amp;&amp; cargo clippy --all-targets -- -D warnings &amp;&amp; cargo test</code>). Many teams put them in a script or a git pre-push hook, so CI is a formality.</li>
+</ul>
+<h2>Reading a red CI run</h2>
+<p>Open the failed step&#39;s log and read it like any compiler or test output: the first error is usually the real one. A failing <code>fmt --check</code> shows a diff of what rustfmt would change; a failing clippy step shows the lint; a failing test shows the panic message.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>&quot;Works on my machine&quot;</strong>: CI starts from a clean checkout, so a file you forgot to commit, or a test that depends on your local setup, fails there. That&#39;s CI doing its job.</li>
+<li><strong>Disabling a failing check to merge faster.</strong> Fix it, or mark the one test <code>#[ignore]</code> with an issue link if it&#39;s genuinely flaky.</li>
+<li><strong>Letting CI get slow.</strong> Cache dependencies, and split long jobs so feedback arrives in minutes.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>This pull request&#39;s CI is red. The log says:</p>
+<pre><code class="language-text">Run cargo clippy --all-targets -- -D warnings
+error: unneeded `return` statement
+  --&gt; src/lib.rs:22:5
+   |
+22 |     return Some(format!(&quot;{}.{}.{}&quot;, bumped.0, bumped.1, bumped.2));
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Run cargo test
+test tests::bumps_minor_and_resets_patch ... FAILED
+assertion `left == right` failed
+  left: Some(&quot;1.5.2&quot;)
+ right: Some(&quot;1.5.0&quot;)
+</code></pre>
+<p>Make it green: fix the clippy error, fix the bug the test found (a minor bump must reset the patch number to 0), keep the existing test, and add tests until you have at least <strong>3</strong> and they catch every planted bug (in <code>major</code> and <code>patch</code> bumps, version parsing, and unknown parts).</p>
+
+<h3>Challenge 2</h3>
+<p>Get this library function ready for CI: the file has <code>#![deny(missing_docs)]</code>, so document <code>slugify</code> (a summary line and an <code># Examples</code> section) and the crate (a <code>//!</code> line). Then write at least <strong>3 tests</strong> that catch every planted bug. <code>slugify</code> keeps ASCII letters and digits (lowercased) and turns every run of other characters into a single <code>-</code>, with no dash at the start or end: <code>&quot;Hello, World!&quot;</code> becomes <code>hello-world</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>CI jobs often skip work when a pull request only touches documentation. <code>should_run_ci</code> decides: it returns <code>true</code> if any changed file is a Rust file (<code>.rs</code>) or is <code>Cargo.toml</code> or <code>Cargo.lock</code>, and <code>false</code> otherwise (including when nothing changed). Write the tests module and at least <strong>3 tests</strong> that catch every planted bug.</p>
+
+<p><a href="/learn/tooling/configuring-clippy-and-rustfmt">Previous: Configuring clippy and rustfmt</a> </p></main></div>
+  </body>
+</html>

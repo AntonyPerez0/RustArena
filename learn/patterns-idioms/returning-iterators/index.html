@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Returning iterators · Design Patterns and Idioms (Rust) | RustArena</title>
+    <meta name="description" content="A function that returns a Vec decides for the caller: it computes everything and allocates a new vector, even if the caller only wanted the first match,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/patterns-idioms/returning-iterators/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Returning iterators · Design Patterns and Idioms (Rust) | RustArena" />
+    <meta property="og:description" content="A function that returns a Vec decides for the caller: it computes everything and allocates a new vector, even if the caller only wanted the first match,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/patterns-idioms/returning-iterators/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Returning iterators","description":"A function that returns a Vec decides for the caller: it computes everything and allocates a new vector, even if the caller only wanted the first match,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/patterns-idioms/returning-iterators/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Design Patterns and Idioms</nav>
+<p>Step 6 of 7</p>
+<h1>Returning iterators</h1>
+<p>A function that returns a <code>Vec</code> decides for the caller: it computes <strong>everything</strong> and allocates a new vector, even if the caller only wanted the first match, or a count, or to feed the items into another chain. Returning an <strong>iterator</strong> hands the caller a lazy sequence instead: nothing runs until they consume it, and they choose how.</p>
+<pre><code class="language-rust">struct User {
+    name: String,
+    active: bool,
+    score: u32,
+}
+
+struct Team {
+    users: Vec&lt;User&gt;,
+}
+
+impl Team {
+    fn active(&amp;self) -&gt; impl Iterator&lt;Item = &amp;User&gt; {
+        self.users.iter().filter(|u| u.active)
+    }
+
+    fn names(&amp;self) -&gt; impl Iterator&lt;Item = &amp;str&gt; {
+        self.users.iter().map(|u| u.name.as_str())
+    }
+}
+
+fn total(scores: impl IntoIterator&lt;Item = u32&gt;) -&gt; u32 {
+    scores.into_iter().sum()
+}
+
+fn main() {
+    let team = Team {
+        users: vec![
+            User { name: String::from(&quot;ana&quot;), active: true, score: 70 },
+            User { name: String::from(&quot;bo&quot;), active: false, score: 95 },
+            User { name: String::from(&quot;cy&quot;), active: true, score: 40 },
+        ],
+    };
+    let strong: Vec&lt;&amp;str&gt; = team.active().filter(|u| u.score &gt; 50).map(|u| u.name.as_str()).collect();
+    println!(&quot;{strong:?}&quot;);
+    println!(&quot;{}&quot;, team.names().collect::&lt;Vec&lt;_&gt;&gt;().join(&quot;, &quot;));
+    println!(&quot;{}&quot;, total(team.active().map(|u| u.score)));
+    println!(&quot;{}&quot;, total(vec![1, 2, 3]));
+    println!(&quot;{:?}&quot;, team.active().next().map(|u| &amp;u.name));
+}
+</code></pre>
+<pre><code class="language-text">[&quot;ana&quot;]
+ana, bo, cy
+110
+6
+Some(&quot;ana&quot;)
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>-&gt; impl Iterator&lt;Item = &amp;User&gt;</code> says &quot;some iterator yielding <code>&amp;User</code>&quot;, without naming its long real type (<code>Filter&lt;std::slice::Iter&lt;&#39;_, User&gt;, {closure}&gt;</code>). The caller can chain more adapters onto it.</li>
+<li>The returned iterator <strong>borrows</strong> <code>self</code>. In edition 2024 that&#39;s automatic; in older code you&#39;ll see <code>-&gt; impl Iterator&lt;Item = &amp;User&gt; + &#39;_</code> to say so explicitly.</li>
+<li><code>.next()</code> on the result only does enough work to find the first active user: laziness means no wasted effort.</li>
+<li>On the input side, <code>impl IntoIterator&lt;Item = u32&gt;</code> accepts a <code>Vec</code>, an array, a range or any iterator chain.</li>
+</ul>
+<h2>When branches return different iterators</h2>
+<p>Each adapter chain has its own type, so this doesn&#39;t compile:</p>
+<pre><code class="language-rust-error">fn pick(v: &amp;[u32], only_even: bool) -&gt; impl Iterator&lt;Item = &amp;u32&gt; {
+    if only_even {
+        v.iter().filter(|x| *x % 2 == 0)
+    } else {
+        v.iter()
+    }
+}
+
+fn main() {
+    println!(&quot;{}&quot;, pick(&amp;[1, 2, 3], true).count());
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0308]: `if` and `else` have incompatible types
+</code></pre>
+<p><code>impl Trait</code> means <strong>one</strong> concrete type chosen by the function. When it truly varies, return a <strong>trait object</strong>: <code>Box&lt;dyn Iterator&lt;Item = &amp;u32&gt; + &#39;_&gt;</code>, with <code>Box::new(...)</code> around each branch. It costs one allocation and dynamic calls, which is usually fine.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>collect()</code> inside the function, then <code>.iter()</code> outside</strong>: an allocation for nothing. Return the iterator and let the caller collect if they need to.</li>
+<li><strong>Returning an iterator over a local <code>Vec</code></strong>: the <code>Vec</code> is dropped when the function returns, so a borrowing iterator can&#39;t outlive it (<code>returns a value referencing data owned by the current function</code>). Return <code>vec.into_iter()</code>, which takes ownership, instead.</li>
+<li><strong>Forgetting it&#39;s lazy</strong>: <code>team.active().map(|u| println!(&quot;{}&quot;, u.name));</code> prints nothing (and the compiler warns <code>unused Map that must be used</code>). Use a <code>for</code> loop for side effects.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Give <code>Log</code> three methods that return iterators (no <code>Vec</code> in their return types): <code>errors()</code> yields the lines that start with <code>ERROR</code>; <code>with_level(level)</code> yields the <strong>message part</strong> of the lines that start with exactly that level followed by a space, so <code>with_level(&quot;WARN&quot;)</code> on <code>WARN disk 91%</code> yields <code>disk 91%</code> (and skips <code>WARNING ...</code>); <code>numbered()</code> yields <code>(line_number, line)</code> pairs counting from 1.</p>
+
+<h3>Challenge 2</h3>
+<p>Infinite iterators are fine when they&#39;re lazy. Write <code>fn fibonacci() -&gt; impl Iterator&lt;Item = u64&gt;</code> (0, 1, 1, 2, 3, 5, ...) and <code>fn multiples(n: u32) -&gt; impl Iterator&lt;Item = u32&gt;</code> (n, 2n, 3n, ... forever). The callers decide how many to take. <code>std::iter::successors</code> or a struct implementing <code>Iterator</code> both work.</p>
+
+<h3>Challenge 3</h3>
+<p>Return different iterators from different branches. Write <code>fn select&lt;&#39;a&gt;(items: &amp;&#39;a [Item], filter: Filter) -&gt; Box&lt;dyn Iterator&lt;Item = &amp;&#39;a Item&gt; + &#39;a&gt;</code> where <code>Filter::All</code> yields every item, <code>Filter::InStock</code> only items with <code>qty &gt; 0</code>, and <code>Filter::Category(name)</code> only items whose category equals <code>name</code>.</p>
+
+<p><a href="/learn/patterns-idioms/raii-guards-and-drop">Previous: RAII guards and Drop</a> <a href="/learn/patterns-idioms/code-review-from-working-to-idiomatic">Next: Code review: from working to idiomatic</a></p></main></div>
+  </body>
+</html>

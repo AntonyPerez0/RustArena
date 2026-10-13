@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Structs and impl blocks in Rust: methods and associated functions | RustArena</title>
+    <meta name="description" content="How to define a struct in Rust, add methods with impl, choose between &amp;self, &amp;mut self and self, and write a new() constructor." />
+    <link rel="canonical" href="https://rustarena.app/topics/structs-and-methods/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Structs and impl blocks in Rust: methods and associated functions | RustArena" />
+    <meta property="og:description" content="How to define a struct in Rust, add methods with impl, choose between &amp;self, &amp;mut self and self, and write a new() constructor." />
+    <meta property="og:url" content="https://rustarena.app/topics/structs-and-methods/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Structs and impl blocks in Rust: methods and associated functions","description":"How to define a struct in Rust, add methods with impl, choose between &self, &mut self and self, and write a new() constructor.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/structs-and-methods/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Structs and impl blocks in Rust: methods and associated functions</h1>
+<p>How to define a struct in Rust, add methods with impl, choose between &amp;self, &amp;mut self and self, and write a new() constructor.</p>
+<p>A <strong>struct</strong> groups related values under one name, with a named <strong>field</strong> for each:</p>
+<pre><code class="language-rust">struct Account {
+    owner: String,
+    balance: u64,
+}
+</code></pre>
+<p>Create one by giving every field a value: <code>Account { owner: String::from(&quot;Ferris&quot;), balance: 0 }</code>. If a variable has the same name as a field, you can write it once (<strong>field init shorthand</strong>): <code>Account { owner, balance: 0 }</code>. Read fields with a dot: <code>acct.balance</code>. To change a field, the whole variable must be <code>let mut</code>; Rust has no per-field mutability.</p>
+<h2>impl blocks: methods</h2>
+<p>Behavior goes in an <code>impl</code> block. A <strong>method</strong> is a function whose first parameter is some form of <code>self</code>, and you call it with a dot:</p>
+<table>
+<thead>
+<tr>
+<th>First parameter</th>
+<th>Meaning</th>
+<th>Called on</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&amp;self</code></td>
+<td>borrow the value to read</td>
+<td>any instance</td>
+<td>getters, calculations, formatting</td>
+</tr>
+<tr>
+<td><code>&amp;mut self</code></td>
+<td>borrow it to change it</td>
+<td>a <code>let mut</code> instance</td>
+<td>deposits, pushes, updates</td>
+</tr>
+<tr>
+<td><code>self</code></td>
+<td>take ownership</td>
+<td>the instance is moved</td>
+<td>converting or consuming: <code>into_*</code>, <code>finish</code>, builder <code>build</code></td>
+</tr>
+</tbody></table>
+<p>Most methods take <code>&amp;self</code> or <code>&amp;mut self</code>. Taking <code>self</code> means the caller can&#39;t use the value afterwards, which is exactly right for things like closing an account or turning a builder into the finished object.</p>
+<h2>Associated functions and new</h2>
+<p>A function in an <code>impl</code> block <strong>without</strong> <code>self</code> is an <strong>associated function</strong>, called with <code>::</code> on the type. The idiomatic constructor is <code>new</code>:</p>
+<pre><code class="language-rust">impl Account {
+    fn new(owner: &amp;str) -&gt; Self {
+        Self { owner: owner.to_string(), balance: 0 }
+    }
+}
+
+let acct = Account::new(&quot;Ferris&quot;);
+</code></pre>
+<p>Inside an <code>impl</code>, <code>Self</code> is an alias for the type being implemented. Rust has no special constructor syntax; <code>new</code> is just a convention, and you can have others (<code>with_capacity</code>, <code>from_parts</code>, <code>open</code>). If a type has an obvious empty value, also derive or implement <code>Default</code>.</p>
+<h2>Printing a struct</h2>
+<p><code>println!(&quot;{}&quot;, acct)</code> doesn&#39;t compile until you implement <code>Display</code>. For debugging, add <code>#[derive(Debug)]</code> above the struct and print with <code>{:?}</code> or the multi-line <code>{:#?}</code>. <code>dbg!(&amp;acct)</code> prints the file, line and value to standard error.</p>
+<h2>Tuple structs and unit structs</h2>
+<p><code>struct Meters(f64);</code> is a <strong>tuple struct</strong>: fields are accessed as <code>.0</code>, <code>.1</code>. A one-field tuple struct is a <strong>newtype</strong>, used to give a plain value its own type so you can&#39;t mix up <code>Meters</code> and <code>Seconds</code>. <code>struct Marker;</code> is a <strong>unit struct</strong> with no fields, useful as a type-level tag.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Missing a field:</strong> <code>Point { x: 1 }</code> is E0063, &quot;missing field <code>y</code> in initializer of <code>Point</code>&quot;. Every field must be set (struct update syntax <code>..Default::default()</code> fills the rest).</li>
+<li><strong>Calling a <code>&amp;mut self</code> method on an immutable variable:</strong> E0596, &quot;cannot borrow <code>acct</code> as mutable, as it is not declared as mutable&quot;. Add <code>mut</code>.</li>
+<li><strong>Changing a field in a <code>&amp;self</code> method:</strong> E0594, &quot;cannot assign to <code>self.balance</code>, which is behind a <code>&amp;</code> reference&quot;. Make it <code>&amp;mut self</code>.</li>
+<li><strong>Calling an associated function with a dot</strong> (<code>acct.new(...)</code>) or a method with <code>::</code> without passing the instance. <code>Account::summary(&amp;acct)</code> works, but <code>acct.summary()</code> is the normal form.</li>
+</ul>
+<h2>At work</h2>
+<p>Keep fields private (no <code>pub</code>) when the struct has rules to protect, like &quot;balance never goes negative&quot;, and expose methods that enforce them. Return <code>Result</code> from methods that can fail. Small getters returning <code>&amp;str</code> or <code>&amp;[T]</code> avoid needless clones.</p>
+
+<h2>Example</h2>
+<pre><code>#[derive(Debug)]
+struct Account {
+    owner: String,
+    balance: u64,
+}
+
+impl Account {
+    fn new(owner: &amp;str) -&gt; Self {
+        Self { owner: owner.to_string(), balance: 0 }
+    }
+
+    fn deposit(&amp;mut self, amount: u64) {
+        self.balance += amount;
+    }
+
+    fn withdraw(&amp;mut self, amount: u64) -&gt; Result&lt;(), String&gt; {
+        if amount &gt; self.balance {
+            return Err(format!(&quot;insufficient funds: have {}, need {}&quot;, self.balance, amount));
+        }
+        self.balance -= amount;
+        Ok(())
+    }
+
+    fn summary(&amp;self) -&gt; String {
+        format!(&quot;{} has {} coins&quot;, self.owner, self.balance)
+    }
+
+    fn close(self) -&gt; u64 {
+        self.balance
+    }
+}
+
+fn main() {
+    let mut acct = Account::new(&quot;Ferris&quot;);
+    acct.deposit(100);
+    println!(&quot;{}&quot;, acct.summary());
+
+    match acct.withdraw(250) {
+        Ok(()) =&gt; println!(&quot;withdrew 250&quot;),
+        Err(e) =&gt; println!(&quot;error: {e}&quot;),
+    }
+    acct.withdraw(30).expect(&quot;enough money&quot;);
+    println!(&quot;{acct:?}&quot;);
+
+    let paid_out = acct.close(); // acct is moved; it can't be used after this
+    println!(&quot;closed, paid out {paid_out}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>Ferris has 100 coins
+error: insufficient funds: have 100, need 250
+Account { owner: &quot;Ferris&quot;, balance: 70 }
+closed, paid out 70
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/structs/grouping-data-with-a-struct">Lesson: Structs</a></li><li><a href="/learn/methods/impl-blocks-and-your-first-method">Lesson: Methods</a></li></ul></main></div>
+  </body>
+</html>

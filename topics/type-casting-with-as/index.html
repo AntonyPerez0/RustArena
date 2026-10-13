@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Converting between number types in Rust (as, From and TryFrom) | RustArena</title>
+    <meta name="description" content="How to convert i32 to f64, u64 to usize and back in Rust with as, From and TryFrom, and the truncation and wrapping traps of as." />
+    <link rel="canonical" href="https://rustarena.app/topics/type-casting-with-as/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Converting between number types in Rust (as, From and TryFrom) | RustArena" />
+    <meta property="og:description" content="How to convert i32 to f64, u64 to usize and back in Rust with as, From and TryFrom, and the truncation and wrapping traps of as." />
+    <meta property="og:url" content="https://rustarena.app/topics/type-casting-with-as/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Converting between number types in Rust (as, From and TryFrom)","description":"How to convert i32 to f64, u64 to usize and back in Rust with as, From and TryFrom, and the truncation and wrapping traps of as.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/type-casting-with-as/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Converting between number types in Rust (as, From and TryFrom)</h1>
+<p>How to convert i32 to f64, u64 to usize and back in Rust with as, From and TryFrom, and the truncation and wrapping traps of as.</p>
+<p>Rust never converts between number types behind your back. An <code>i32</code> won&#39;t silently become an <code>i64</code>, even though that would always be safe:</p>
+<pre><code class="language-rust-error">fn main() {
+    let items: i32 = 7;
+    let total: i64 = items;
+    println!(&quot;{total}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0308]: mismatched types
+</code></pre>
+<p>That strictness is deliberate: implicit conversions are a classic source of bugs in C and JavaScript. You choose the conversion, and there are three tools.</p>
+<h2>1. <code>as</code>: fast, never fails, can lose information</h2>
+<p><code>value as Type</code> converts between any number types (and <code>char</code>/<code>u8</code>, <code>bool</code> to integer):</p>
+<pre><code class="language-rust">fn main() {
+    let sum = 87 + 92 + 78;
+    let count = 3;
+    let average = sum as f64 / count as f64;
+    println!(&quot;{average:.2}&quot;);
+    println!(&quot;{}&quot;, 3.99_f64 as i32);
+    println!(&quot;{}&quot;, 300_i32 as u8);
+    println!(&quot;{}&quot;, -1_i32 as u32);
+    println!(&quot;{}&quot;, 1e10_f64 as i32);
+    println!(&quot;{}&quot;, &#39;A&#39; as u8);
+}
+</code></pre>
+<pre><code class="language-text">85.67
+3
+44
+4294967295
+2147483647
+65
+</code></pre>
+<p>Read the output carefully, because each line is a rule:</p>
+<ul>
+<li><strong>Float to integer</strong> drops the fraction (rounds toward zero): <code>3.99</code> becomes <code>3</code>. Out-of-range values <strong>saturate</strong> to the type&#39;s <code>MAX</code> or <code>MIN</code>, and <code>NaN</code> becomes <code>0</code>.</li>
+<li><strong>Integer to a smaller integer</strong> keeps only the low bits: <code>300 as u8</code> is <code>44</code> (300 - 256).</li>
+<li><strong>Signed to unsigned</strong> reinterprets the bits: <code>-1</code> becomes <code>u32::MAX</code>.</li>
+<li><strong>Integer division happens before the cast.</strong> <code>(sum / count) as f64</code> would compute <code>85</code> first. Cast the operands, then divide.</li>
+</ul>
+<h2>2. <code>From</code> / <code>into()</code>: lossless conversions</h2>
+<p>When every value of the source type fits in the target, the standard library implements <code>From</code>: <code>i64::from(x)</code> for an <code>i32</code>, <code>f64::from(x)</code> for an <code>i32</code> or <code>f32</code>, <code>u32::from(c)</code> for a <code>char</code>. The same conversion is available as <code>x.into()</code> when the target type is known. If someone later changes the source type so the conversion could lose data, <code>From</code> stops compiling, while <code>as</code> keeps quietly truncating.</p>
+<h2>3. <code>TryFrom</code> / <code>try_into()</code>: checked conversions</h2>
+<p>For conversions that might not fit, <code>u8::try_from(x)</code> returns a <code>Result</code>: <code>Ok(value)</code> if it fits, <code>Err(...)</code> if not. This is how you safely turn a <code>u64</code> from a file into a <code>usize</code> index, or an <code>i32</code> from user input into a <code>u8</code>.</p>
+<h2>At work</h2>
+<ul>
+<li>Prefer <code>From</code>/<code>into()</code> for widening and <code>TryFrom</code> for narrowing. Keep <code>as</code> for float/int math where you&#39;ve thought about the rounding.</li>
+<li>Clippy&#39;s pedantic lints (<code>cast_possible_truncation</code>, <code>cast_sign_loss</code>) flag risky <code>as</code> casts; many teams enable them in code that handles money or sizes.</li>
+<li><code>as</code> between floats and integers never panics, so it&#39;s easy to hide a bug: a huge value silently saturates.</li>
+<li>To round instead of truncate, call <code>.round()</code> first: <code>2.7_f64.round() as i32</code> is <code>3</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>fn main() {
+    let cents: i32 = 1999;
+    let dollars = f64::from(cents) / 100.0;
+    println!(&quot;price ${dollars:.2}&quot;);
+
+    let big: i64 = i64::from(cents) * 1_000_000;
+    println!(&quot;wide math: {big}&quot;);
+
+    for raw in [200_i32, 300, -5] {
+        match u8::try_from(raw) {
+            Ok(b) =&gt; println!(&quot;{raw} fits in a u8: {b}&quot;),
+            Err(e) =&gt; println!(&quot;{raw} does not fit: {e}&quot;),
+        }
+    }
+
+    let ratio = 2.0_f64 / 3.0;
+    println!(&quot;truncated {} rounded {}&quot;, (ratio * 100.0) as i32, (ratio * 100.0).round() as i32);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>price $19.99
+wide math: 1999000000
+200 fits in a u8: 200
+300 does not fit: number too large to fit in target type
+-5 does not fit: number too small to fit in target type
+truncated 66 rounded 67
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/types/integer-types-and-literals">Lesson: Numbers, Booleans and Characters</a></li><li><a href="/learn/std-traits/from-and-into">Lesson: Standard Library Traits</a></li></ul></main></div>
+  </body>
+</html>

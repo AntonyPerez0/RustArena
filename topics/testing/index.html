@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Unit testing in Rust: #[test], assert_eq! and cargo test | RustArena</title>
+    <meta name="description" content="How to write tests in Rust: #[test] functions, assert!, assert_eq! with messages, should_panic, tests returning Result, and unit vs integration tests." />
+    <link rel="canonical" href="https://rustarena.app/topics/testing/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Unit testing in Rust: #[test], assert_eq! and cargo test | RustArena" />
+    <meta property="og:description" content="How to write tests in Rust: #[test] functions, assert!, assert_eq! with messages, should_panic, tests returning Result, and unit vs integration tests." />
+    <meta property="og:url" content="https://rustarena.app/topics/testing/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Unit testing in Rust: #[test], assert_eq! and cargo test","description":"How to write tests in Rust: #[test] functions, assert!, assert_eq! with messages, should_panic, tests returning Result, and unit vs integration tests.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/testing/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Unit testing in Rust: #[test], assert_eq! and cargo test</h1>
+<p>How to write tests in Rust: #[test] functions, assert!, assert_eq! with messages, should_panic, tests returning Result, and unit vs integration tests.</p>
+<p>Rust has testing built in: no framework to install. A <strong>test</strong> is a function marked <code>#[test]</code>; <code>cargo test</code> compiles your crate in test mode, runs every test, and reports which passed.</p>
+<h2>Unit tests live next to the code</h2>
+<pre><code class="language-rust">pub fn apply_discount(price_cents: u64, percent: u64) -&gt; u64 {
+    price_cents - price_cents * percent / 100
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ten_percent_off() {
+        assert_eq!(apply_discount(1000, 10), 900);
+    }
+
+    #[test]
+    fn zero_percent_changes_nothing() {
+        assert_eq!(apply_discount(1999, 0), 1999, &quot;0% should keep the price&quot;);
+    }
+}
+</code></pre>
+<ul>
+<li><code>#[cfg(test)]</code> compiles the module only for <code>cargo test</code>, so tests add nothing to your real program.</li>
+<li><code>use super::*;</code> brings the parent module&#39;s items into scope, <strong>including private functions</strong>: unit tests can test internals.</li>
+</ul>
+<pre><code class="language-text">$ cargo test
+running 2 tests
+test tests::ten_percent_off ... ok
+test tests::zero_percent_changes_nothing ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+</code></pre>
+<p><code>cargo test discount</code> runs only tests whose name contains &quot;discount&quot;. Output from <code>println!</code> in passing tests is hidden; <code>cargo test -- --nocapture</code> shows it.</p>
+<h2>The assertion macros</h2>
+<table>
+<thead>
+<tr>
+<th>Macro</th>
+<th>Fails when</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>assert!(cond)</code></td>
+<td><code>cond</code> is false</td>
+</tr>
+<tr>
+<td><code>assert_eq!(left, right)</code></td>
+<td>they&#39;re not equal; prints both values</td>
+</tr>
+<tr>
+<td><code>assert_ne!(left, right)</code></td>
+<td>they&#39;re equal</td>
+</tr>
+</tbody></table>
+<p>All accept a trailing message with format arguments: <code>assert_eq!(total, 30, &quot;cart total for {items:?}&quot;)</code>. The values compared with <code>assert_eq!</code> must implement <code>PartialEq</code> and <code>Debug</code>, so derive both on your types. Floats rarely compare exactly; assert that the difference is small: <code>assert!((a - b).abs() &lt; 1e-9)</code>.</p>
+<h2>Testing failures</h2>
+<ul>
+<li><code>#[should_panic(expected = &quot;divide by zero&quot;)]</code> passes only if the test panics with a message containing that text.</li>
+<li>A test can return <code>Result&lt;(), E&gt;</code> and use <code>?</code> inside; returning <code>Err</code> fails the test.</li>
+<li>For functions returning <code>Result</code>, assert on the error: <code>assert!(parse(&quot;x&quot;).is_err())</code> or <code>assert_eq!(parse(&quot;x&quot;), Err(ParseError::Empty))</code>.</li>
+</ul>
+<h2>Integration tests and doc tests</h2>
+<ul>
+<li>Files in a top-level <code>tests/</code> directory are <strong>integration tests</strong>: each one is a separate crate that can only use your library&#39;s public API, the way real users would.</li>
+<li>Code blocks in <code>///</code> doc comments are compiled and run as <strong>doc tests</strong> by <code>cargo test</code>, so examples in your documentation can&#39;t go stale.</li>
+</ul>
+<h2>Good tests at work</h2>
+<ul>
+<li>Name tests as sentences describing behavior: <code>rejects_empty_username</code>, not <code>test1</code>.</li>
+<li>One behavior per test, with the edge cases: empty input, zero, negative numbers, unicode, the maximum value.</li>
+<li>Test through the public interface where possible; tests that poke at internals break on every refactor.</li>
+<li>Keep tests deterministic: no real clock, no network, no random numbers without a fixed seed.</li>
+<li>Run <code>cargo test</code> in CI on every pull request, alongside <code>cargo clippy</code> and <code>cargo fmt --check</code>.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>use super::*;</code></strong>: &quot;cannot find function <code>apply_discount</code> in this scope&quot;.</li>
+<li><strong>Comparing types without <code>PartialEq</code> or <code>Debug</code></strong> in <code>assert_eq!</code> (E0369 or E0277): derive them.</li>
+<li><strong><code>#[should_panic]</code> without <code>expected</code></strong>: the test passes for <em>any</em> panic, including the wrong one.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>pub fn apply_discount(price_cents: u64, percent: u64) -&gt; u64 {
+    assert!(percent &lt;= 100, &quot;percent must be at most 100, got {percent}&quot;);
+    price_cents - price_cents * percent / 100
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ParseError {
+    Empty,
+    NotANumber(String),
+}
+
+pub fn parse_qty(s: &amp;str) -&gt; Result&lt;u32, ParseError&gt; {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err(ParseError::Empty);
+    }
+    s.parse().map_err(|_| ParseError::NotANumber(s.to_string()))
+}
+
+fn main() {
+    println!(&quot;{}&quot;, apply_discount(1000, 10));
+    println!(&quot;{:?}&quot;, parse_qty(&quot; 7 &quot;));
+    println!(&quot;{:?}&quot;, parse_qty(&quot;&quot;));
+    println!(&quot;{:?}&quot;, parse_qty(&quot;seven&quot;));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ten_percent_off() {
+        assert_eq!(apply_discount(1000, 10), 900);
+    }
+
+    #[test]
+    fn full_discount_is_free() {
+        assert_eq!(apply_discount(1999, 100), 0, &quot;100% off should cost nothing&quot;);
+    }
+
+    #[test]
+    #[should_panic(expected = &quot;at most 100&quot;)]
+    fn rejects_discount_over_100() {
+        apply_discount(1000, 150);
+    }
+
+    #[test]
+    fn parses_with_whitespace() -&gt; Result&lt;(), ParseError&gt; {
+        assert_eq!(parse_qty(&quot; 42\n&quot;)?, 42);
+        Ok(())
+    }
+
+    #[test]
+    fn reports_empty_and_bad_input() {
+        assert_eq!(parse_qty(&quot;   &quot;), Err(ParseError::Empty));
+        assert_eq!(parse_qty(&quot;4x&quot;), Err(ParseError::NotANumber(&quot;4x&quot;.to_string())));
+    }
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>900
+Ok(7)
+Err(Empty)
+Err(NotANumber(&quot;seven&quot;))
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/testing/your-first-test">Lesson: Testing</a></li></ul></main></div>
+  </body>
+</html>

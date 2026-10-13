@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Borrowing and references in Rust (&amp;T and &amp;mut T) | RustArena</title>
+    <meta name="description" content="How borrowing works in Rust: shared references &amp;T, mutable references &amp;mut T, the one writer or many readers rule, and dereferencing with *." />
+    <link rel="canonical" href="https://rustarena.app/topics/borrowing-and-references/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Borrowing and references in Rust (&amp;T and &amp;mut T) | RustArena" />
+    <meta property="og:description" content="How borrowing works in Rust: shared references &amp;T, mutable references &amp;mut T, the one writer or many readers rule, and dereferencing with *." />
+    <meta property="og:url" content="https://rustarena.app/topics/borrowing-and-references/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Borrowing and references in Rust (&T and &mut T)","description":"How borrowing works in Rust: shared references &T, mutable references &mut T, the one writer or many readers rule, and dereferencing with *.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/borrowing-and-references/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Borrowing and references in Rust (&amp;T and &amp;mut T)</h1>
+<p>How borrowing works in Rust: shared references &amp;T, mutable references &amp;mut T, the one writer or many readers rule, and dereferencing with *.</p>
+<p>Moving a value into every function that needs to look at it would be painful. <strong>Borrowing</strong> lets code use a value without taking ownership: you hand out a <strong>reference</strong>, and the owner keeps the value.</p>
+<ul>
+<li><code>&amp;value</code> creates a <strong>shared reference</strong> (<code>&amp;T</code>): read-only access.</li>
+<li><code>&amp;mut value</code> creates a <strong>mutable reference</strong> (<code>&amp;mut T</code>): read and write access. The variable itself must be declared <code>mut</code>.</li>
+</ul>
+<pre><code class="language-rust">fn count_words(text: &amp;str) -&gt; usize {
+    text.split_whitespace().count()
+}
+
+fn add_signature(text: &amp;mut String) {
+    text.push_str(&quot; -- Ferris&quot;);
+}
+
+fn main() {
+    let mut note = String::from(&quot;ship it on friday&quot;);
+    println!(&quot;{} words&quot;, count_words(&amp;note));
+    add_signature(&amp;mut note);
+    println!(&quot;{note}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">4 words
+ship it on friday -- Ferris
+</code></pre>
+<p><code>note</code> is never moved, so <code>main</code> can keep using it.</p>
+<h2>The borrowing rules</h2>
+<p>At any moment, a value can have <strong>either</strong>:</p>
+<ul>
+<li>any number of shared references <code>&amp;T</code>, <strong>or</strong></li>
+<li>exactly one mutable reference <code>&amp;mut T</code>,</li>
+</ul>
+<p>but not both. And a reference can never outlive the value it points to.</p>
+<p>This &quot;many readers or one writer&quot; rule is checked at compile time by the <strong>borrow checker</strong>. It&#39;s what prevents a whole family of bugs:</p>
+<ul>
+<li><strong>Iterator invalidation:</strong> pushing to a <code>Vec</code> can move its elements to a new heap block. Any reference into the old block would dangle. The rule stops you from pushing while a reference into the <code>Vec</code> is alive.</li>
+<li><strong>Data races:</strong> two threads writing the same memory at once can&#39;t happen if only one <code>&amp;mut</code> exists.</li>
+<li><strong>Dangling pointers:</strong> references to freed memory are rejected.</li>
+</ul>
+<h2>Borrows end at their last use</h2>
+<p>A borrow lasts from where it&#39;s created to the <strong>last place it&#39;s used</strong>, not to the end of the block (this is called <strong>non-lexical lifetimes</strong>). This compiles, because <code>first</code> isn&#39;t used after the <code>push</code>:</p>
+<pre><code class="language-rust">fn main() {
+    let mut scores = vec![10, 20];
+    let first = &amp;scores[0];
+    println!(&quot;first {first}&quot;);
+    scores.push(30);
+    println!(&quot;{scores:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">first 10
+[10, 20, 30]
+</code></pre>
+<p>Move the <code>println!</code> of <code>first</code> below the <code>push</code> and you get error E0502.</p>
+<h2>Dereferencing with <code>*</code></h2>
+<p>To read or change the value behind a reference, use <code>*</code>: <code>*count += 1</code>. Method calls and field access dereference automatically (<code>text.len()</code>, <code>player.score</code>), and so does <code>println!</code>, so you mostly need <code>*</code> for assignment and arithmetic on numbers.</p>
+<h2>The errors you&#39;ll meet</h2>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>E0502</td>
+<td>mutable borrow while a shared borrow is still in use (or the reverse)</td>
+</tr>
+<tr>
+<td>E0499</td>
+<td>two mutable borrows alive at once</td>
+</tr>
+<tr>
+<td>E0596</td>
+<td><code>&amp;mut</code> of something not declared <code>mut</code>, or behind a <code>&amp;</code></td>
+</tr>
+<tr>
+<td>E0597</td>
+<td>the value is dropped while a reference to it is still used</td>
+</tr>
+<tr>
+<td>E0506</td>
+<td>assigning to a value while it&#39;s borrowed</td>
+</tr>
+<tr>
+<td>E0515</td>
+<td>returning a reference to a local variable</td>
+</tr>
+</tbody></table>
+<p>Each one is the compiler finding a real bug pattern, not being pedantic.</p>
+<h2>Best practices</h2>
+<ul>
+<li>Accept <code>&amp;str</code> and <code>&amp;[T]</code> in functions that only read; accept <code>&amp;mut T</code> when you modify the caller&#39;s value; take ownership only to store or consume.</li>
+<li>Keep borrows short: copy small values out (<code>let first = v[0];</code>) instead of holding a reference across a mutation.</li>
+<li>When the borrow checker fights you, the usual fixes are reordering statements, splitting a function in two, or using indices instead of references, not <code>.clone()</code> everywhere.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>fn total(prices: &amp;[u32]) -&gt; u32 {
+    let mut sum = 0;
+    for p in prices {
+        sum += p;
+    }
+    sum
+}
+
+fn apply_discount(prices: &amp;mut [u32], percent: u32) {
+    for p in prices.iter_mut() {
+        *p -= *p * percent / 100;
+    }
+}
+
+fn bump(counter: &amp;mut u32) {
+    *counter += 1;
+}
+
+fn main() {
+    let mut cart = vec![100, 250, 40];
+    let before = total(&amp;cart);
+    apply_discount(&amp;mut cart, 10);
+    let after = total(&amp;cart);
+    println!(&quot;{cart:?}&quot;);
+    println!(&quot;before {before}, after {after}&quot;);
+
+    let mut visits = 0;
+    bump(&amp;mut visits);
+    bump(&amp;mut visits);
+    println!(&quot;visits {visits}&quot;);
+
+    let r1 = &amp;cart;
+    let r2 = &amp;cart;
+    println!(&quot;two readers: {} {}&quot;, r1.len(), r2[0]);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>[90, 225, 36]
+before 390, after 351
+visits 2
+two readers: 3 90
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/borrowing/references-borrowing-a-value">Lesson: Borrowing</a></li></ul></main></div>
+  </body>
+</html>

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Set operations: union, intersection, difference · HashMaps and sets (Rust) | RustArena</title>
+    <meta name="description" content="Sets can be combined the way you did with Venn diagrams at school. Who came on both days? Who came at all? Which required skills is a candidate missing?…" />
+    <link rel="canonical" href="https://rustarena.app/learn/hashmaps/set-operations-union-intersection-difference/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Set operations: union, intersection, difference · HashMaps and sets (Rust) | RustArena" />
+    <meta property="og:description" content="Sets can be combined the way you did with Venn diagrams at school. Who came on both days? Who came at all? Which required skills is a candidate missing?…" />
+    <meta property="og:url" content="https://rustarena.app/learn/hashmaps/set-operations-union-intersection-difference/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Set operations: union, intersection, difference","description":"Sets can be combined the way you did with Venn diagrams at school. Who came on both days? Who came at all? Which required skills is a candidate missing?…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/hashmaps/set-operations-union-intersection-difference/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Structuring data › HashMaps and sets</nav>
+<p>Step 5 of 6</p>
+<h1>Set operations: union, intersection, difference</h1>
+<p>Sets can be combined the way you did with Venn diagrams at school. Who came on both days? Who came at all? Which required skills is a candidate missing?</p>
+<pre><code class="language-rust">use std::collections::BTreeSet;
+
+fn main() {
+    let monday = BTreeSet::from([&quot;ana&quot;, &quot;bo&quot;, &quot;cy&quot;, &quot;dee&quot;]);
+    let tuesday = BTreeSet::from([&quot;bo&quot;, &quot;dee&quot;, &quot;eli&quot;]);
+
+    println!(&quot;both days: {:?}&quot;, &amp;monday &amp; &amp;tuesday);
+    println!(&quot;either day: {:?}&quot;, &amp;monday | &amp;tuesday);
+    println!(&quot;only monday: {:?}&quot;, &amp;monday - &amp;tuesday);
+    println!(&quot;exactly one day: {:?}&quot;, &amp;monday ^ &amp;tuesday);
+
+    for name in monday.intersection(&amp;tuesday) {
+        println!(&quot;{name} came twice&quot;);
+    }
+    println!(&quot;{}&quot;, tuesday.is_subset(&amp;monday));
+}
+</code></pre>
+<pre><code class="language-text">both days: {&quot;bo&quot;, &quot;dee&quot;}
+either day: {&quot;ana&quot;, &quot;bo&quot;, &quot;cy&quot;, &quot;dee&quot;, &quot;eli&quot;}
+only monday: {&quot;ana&quot;, &quot;cy&quot;}
+exactly one day: {&quot;ana&quot;, &quot;cy&quot;, &quot;eli&quot;}
+bo came twice
+dee came twice
+false
+</code></pre>
+<ul>
+<li><p><code>BTreeSet::from([...])</code> builds a set from an array in one go (<code>HashSet::from</code>, <code>HashMap::from([(k, v), ...])</code> and <code>BTreeMap::from</code> work the same way).</p>
+</li>
+<li><p>The operators build a <strong>new</strong> set from two borrowed ones:</p>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Method</th>
+<th>Elements in the result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&amp;a &amp; &amp;b</code></td>
+<td><code>a.intersection(&amp;b)</code></td>
+<td>in both</td>
+</tr>
+<tr>
+<td><code>&amp;a | &amp;b</code></td>
+<td><code>a.union(&amp;b)</code></td>
+<td>in either</td>
+</tr>
+<tr>
+<td><code>&amp;a - &amp;b</code></td>
+<td><code>a.difference(&amp;b)</code></td>
+<td>in <code>a</code> but not in <code>b</code></td>
+</tr>
+<tr>
+<td><code>&amp;a ^ &amp;b</code></td>
+<td><code>a.symmetric_difference(&amp;b)</code></td>
+<td>in exactly one of them</td>
+</tr>
+</tbody></table>
+</li>
+<li><p>The methods don&#39;t build a set; they give you the elements one by one, ready for a <code>for</code> loop. Each element comes as a reference (<code>&amp;&amp;str</code> here, <code>&amp;String</code> for a set of Strings): clone it if you need an owned copy.</p>
+</li>
+<li><p><code>is_subset</code>, <code>is_superset</code> and <code>is_disjoint</code> (no elements in common) answer yes/no questions.</p>
+</li>
+</ul>
+<p>The same operators and methods work on HashSet. The results are HashSets too, so sort them before printing.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><p><strong>Forgetting the <code>&amp;</code>s.</strong> The operators take the sets by reference:</p>
+<pre><code class="language-rust-error">use std::collections::BTreeSet;
+
+fn main() {
+    let a = BTreeSet::from([1, 2]);
+    let b = BTreeSet::from([2, 3]);
+    let c = a &amp; b;
+    println!(&quot;{:?}&quot;, c);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0369]: no implementation for `BTreeSet&lt;{integer}&gt; &amp; BTreeSet&lt;{integer}&gt;`
+</code></pre>
+<p>Write <code>&amp;a &amp; &amp;b</code>.</p>
+</li>
+<li><p><strong>Mixing up the direction of <code>-</code>.</strong> <code>&amp;a - &amp;b</code> is &quot;a without b&quot;; <code>&amp;b - &amp;a</code> is a different set.</p>
+</li>
+</ul>
+
+<h2>Your task</h2>
+<p>A job board matches candidates to roles. Write <code>fn missing_skills(required: &amp;HashSet&lt;String&gt;, have: &amp;HashSet&lt;String&gt;) -&gt; Vec&lt;String&gt;</code> that returns the required skills the candidate doesn&#39;t have, sorted alphabetically.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>fn common_friends(a: &amp;[&amp;str], b: &amp;[&amp;str]) -&gt; Vec&lt;String&gt;</code> that returns the names appearing in both friend lists, each once, in alphabetical order. The lists may contain repeats. Build a <code>BTreeSet</code> from each list and use <code>intersection</code> (its results come out sorted).</p>
+
+<h3>Challenge 3</h3>
+<p>Compare the tags of two articles. The input is two lines of space-separated tags. Print the shared tags, the tags only in the first article, the tags only in the second (each list sorted and space-separated, or <code>(none)</code> if empty), and the <strong>similarity</strong>: shared tags as a percentage of all distinct tags, rounded down (print <code>0%</code> if there are no tags at all).</p>
+<p>For <code>rust web async</code> and <code>web rust cli tui</code>:</p>
+<pre><code>shared: rust web
+only first: async
+only second: cli tui
+similarity: 40%
+</code></pre>
+
+<p><a href="/learn/hashmaps/hashset-have-i-seen-this-before">Previous: HashSet: have I seen this before?</a> <a href="/learn/hashmaps/your-own-keys-and-grouping">Next: Your own keys, and grouping</a></p></main></div>
+  </body>
+</html>

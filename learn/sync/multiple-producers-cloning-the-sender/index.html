@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Multiple producers: cloning the Sender · Sharing data between threads (Rust) | RustArena</title>
+    <meta name="description" content="The mp in mpsc: any number of threads can send into one channel. Each thread gets its own Sender by cloning it: let tx = tx.clone(); makes a new Sender…" />
+    <link rel="canonical" href="https://rustarena.app/learn/sync/multiple-producers-cloning-the-sender/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Multiple producers: cloning the Sender · Sharing data between threads (Rust) | RustArena" />
+    <meta property="og:description" content="The mp in mpsc: any number of threads can send into one channel. Each thread gets its own Sender by cloning it: let tx = tx.clone(); makes a new Sender…" />
+    <meta property="og:url" content="https://rustarena.app/learn/sync/multiple-producers-cloning-the-sender/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Multiple producers: cloning the Sender","description":"The mp in mpsc: any number of threads can send into one channel. Each thread gets its own Sender by cloning it: let tx = tx.clone(); makes a new Sender…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/sync/multiple-producers-cloning-the-sender/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Sharing data between threads</nav>
+<p>Step 2 of 7</p>
+<h1>Multiple producers: cloning the Sender</h1>
+<p>The <em>mp</em> in <code>mpsc</code>: any number of threads can send into one channel. Each thread gets its own <code>Sender</code> by <strong>cloning</strong> it:</p>
+<pre><code class="language-rust">use std::sync::mpsc;
+use std::thread;
+
+fn main() {
+    let (tx, rx) = mpsc::channel();
+    for worker in 1..=3 {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let checked = worker * 100;
+            tx.send((worker, checked)).unwrap();
+        });
+    }
+    drop(tx);
+
+    let mut results: Vec&lt;(u32, u32)&gt; = rx.iter().collect();
+    results.sort();
+    for (worker, checked) in results {
+        println!(&quot;worker {worker} checked {checked} files&quot;);
+    }
+}
+</code></pre>
+<pre><code class="language-text">worker 1 checked 100 files
+worker 2 checked 200 files
+worker 3 checked 300 files
+</code></pre>
+<ul>
+<li><code>let tx = tx.clone();</code> makes a new <code>Sender</code> for the same channel and shadows the name inside the loop, so the <em>clone</em> is what moves into each closure.</li>
+<li>Messages from different threads arrive in whatever order the threads happen to run. So each message carries who sent it, and <code>main</code> <strong>sorts</strong> before printing. Never rely on arrival order between producers.</li>
+<li><code>drop(tx)</code> throws away <code>main</code>&#39;s own <code>Sender</code>. That line matters more than it looks.</li>
+</ul>
+<h2>The forgotten sender</h2>
+<p>The receiving loop ends only when <strong>every</strong> <code>Sender</code> is gone. The workers&#39; clones are dropped when the workers finish, but the original <code>tx</code> belongs to <code>main</code>. Without <code>drop(tx)</code>, <code>main</code> waits for a message from itself that never comes, and the program hangs forever:</p>
+<pre><code class="language-rust">let (tx, rx) = mpsc::channel();
+for worker in 1..=3 {
+    let tx = tx.clone();
+    thread::spawn(move || tx.send(worker).unwrap());
+}
+// no drop(tx) here...
+for n in rx {
+    println!(&quot;{n}&quot;); // prints 3 numbers, then waits forever
+}
+</code></pre>
+<p>This is the most common channel bug. On this site it shows up as the time limit running out.</p>
+<h2>Bounded channels and backpressure</h2>
+<p><code>mpsc::channel()</code> is <strong>unbounded</strong>: <code>send</code> never waits, so a fast producer can pile up millions of unread messages in memory. <code>mpsc::sync_channel(n)</code> holds at most <code>n</code> messages; when it&#39;s full, <code>send</code> waits until the receiver catches up. That&#39;s <strong>backpressure</strong>: the slow side automatically slows the fast side down. Production pipelines usually use bounded channels.</p>
+<p>At work you&#39;ll also meet the <code>crossbeam-channel</code> crate (channels with several receivers, and waiting on several channels at once) and Tokio&#39;s async channels (module 33).</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>drop(tx)</code></strong>: the program hangs.</li>
+<li><strong>Moving <code>tx</code> instead of cloning it</strong> in a loop: <code>error[E0382]: use of moved value: `tx` </code> with the note &quot;value moved into closure here, in previous iteration of loop&quot;.</li>
+<li><strong>Printing in arrival order</strong> from several producers: the output changes between runs. Collect, then sort (or use a <code>BTreeMap</code>).</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Three store threads report their sales over one channel. Spawn one thread per store; each sends every sale as a <code>(store, amount)</code> message. Don&#39;t forget the original sender. The main thread adds the sales up per store in the <code>BTreeMap</code> and prints the totals (a <code>BTreeMap</code> iterates in key order):</p>
+<pre><code>east: 190
+north: 245
+south: 320
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>This program prints nothing and then hits the time limit: it waits forever. Find out why and fix it by adding <strong>one line</strong>, so it prints <code>sum of squares: 55</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>fn search_parallel(docs: Vec&lt;String&gt;, needle: &amp;str) -&gt; Vec&lt;usize&gt;</code>. Spawn one thread per document (with <code>thread::spawn</code>); each thread sends its document&#39;s <strong>index</strong> over a channel if the document contains <code>needle</code>. Return the indices sorted ascending. A spawned thread can&#39;t borrow <code>needle</code>, so give each thread its own <code>String</code> copy of it.</p>
+
+<p><a href="/learn/sync/channels-sending-messages-between-threads">Previous: Channels: sending messages between threads</a> <a href="/learn/sync/arc-shared-ownership-across-threads">Next: Arc: shared ownership across threads</a></p></main></div>
+  </body>
+</html>

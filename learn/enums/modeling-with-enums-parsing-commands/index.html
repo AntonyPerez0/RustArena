@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Modeling with enums: parsing commands · Enums and Option (Rust) | RustArena</title>
+    <meta name="description" content="Enums and Option together let you design types where bad data simply can't exist. Two patterns come up constantly at work. States that carry their own…" />
+    <link rel="canonical" href="https://rustarena.app/learn/enums/modeling-with-enums-parsing-commands/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Modeling with enums: parsing commands · Enums and Option (Rust) | RustArena" />
+    <meta property="og:description" content="Enums and Option together let you design types where bad data simply can't exist. Two patterns come up constantly at work. States that carry their own…" />
+    <meta property="og:url" content="https://rustarena.app/learn/enums/modeling-with-enums-parsing-commands/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Modeling with enums: parsing commands","description":"Enums and Option together let you design types where bad data simply can't exist. Two patterns come up constantly at work. States that carry their own…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/enums/modeling-with-enums-parsing-commands/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Structuring data › Enums and Option</nav>
+<p>Step 7 of 7</p>
+<h1>Modeling with enums: parsing commands</h1>
+<p>Enums and Option together let you design types where bad data simply can&#39;t exist. Two patterns come up constantly at work.</p>
+<h2>States that carry their own data</h2>
+<p>Picture a network connection modeled with a struct:</p>
+<pre><code class="language-rust">struct Connection {
+    connected: bool,
+    connecting: bool,
+    attempt: u32,      // only meaningful while connecting
+    session_id: u64,   // only meaningful while connected
+}
+</code></pre>
+<p>What does <code>connected: true, connecting: true</code> mean? What&#39;s the session id of a disconnected connection? Every function has to remember the unwritten rules. As an enum, each state carries exactly the data that makes sense for it, and impossible combinations can&#39;t be built:</p>
+<pre><code class="language-rust">enum Connection {
+    Disconnected,
+    Connecting { attempt: u32 },
+    Connected { session_id: u64 },
+}
+
+fn status(conn: &amp;Connection) -&gt; String {
+    match conn {
+        Connection::Disconnected =&gt; String::from(&quot;offline&quot;),
+        Connection::Connecting { attempt } =&gt; format!(&quot;connecting (attempt {})&quot;, attempt),
+        Connection::Connected { session_id } =&gt; format!(&quot;online, session {}&quot;, session_id),
+    }
+}
+
+fn main() {
+    let states = [
+        Connection::Disconnected,
+        Connection::Connecting { attempt: 2 },
+        Connection::Connected { session_id: 9041 },
+    ];
+    for s in &amp;states {
+        println!(&quot;{}&quot;, status(s));
+    }
+}
+</code></pre>
+<pre><code class="language-text">offline
+connecting (attempt 2)
+online, session 9041
+</code></pre>
+<h2>Parse once, at the edge</h2>
+<p>Text from users, files and networks is messy. The robust approach is to turn it into an enum <strong>as soon as it enters the program</strong>, with a function that returns <code>Option</code> (or, later, <code>Result</code>). Everything after that works with clean, typed values: no more string comparisons scattered around, no &quot;what if the number is missing?&quot; deep inside the logic. People call this <strong>parse, don&#39;t validate</strong>.</p>
+<pre><code class="language-rust">enum ChatCommand {
+    Join(String),
+    Nick(String),
+    Quit,
+}
+
+fn parse(line: &amp;str) -&gt; Option&lt;ChatCommand&gt; {
+    let mut words = line.split_whitespace();
+    let Some(name) = words.next() else {
+        return None;
+    };
+    let command = match name {
+        &quot;/join&quot; =&gt; {
+            let Some(room) = words.next() else {
+                return None;
+            };
+            ChatCommand::Join(room.to_string())
+        }
+        &quot;/nick&quot; =&gt; {
+            let Some(nick) = words.next() else {
+                return None;
+            };
+            ChatCommand::Nick(nick.to_string())
+        }
+        &quot;/quit&quot; =&gt; ChatCommand::Quit,
+        _ =&gt; return None,
+    };
+    Some(command)
+}
+
+fn run(cmd: &amp;ChatCommand) -&gt; String {
+    match cmd {
+        ChatCommand::Join(room) =&gt; format!(&quot;joining #{}&quot;, room),
+        ChatCommand::Nick(nick) =&gt; format!(&quot;you are now {}&quot;, nick),
+        ChatCommand::Quit =&gt; String::from(&quot;bye&quot;),
+    }
+}
+
+fn main() {
+    let lines = [&quot;/join rust&quot;, &quot;/nick ferris&quot;, &quot;/dance&quot;, &quot;/join&quot;, &quot;/quit&quot;];
+    for line in lines {
+        if let Some(cmd) = parse(line) {
+            println!(&quot;{}&quot;, run(&amp;cmd));
+        } else {
+            println!(&quot;can&#39;t parse: {}&quot;, line);
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">joining #rust
+you are now ferris
+can&#39;t parse: /dance
+can&#39;t parse: /join
+bye
+</code></pre>
+<ul>
+<li><code>words.next()</code> gives the words one at a time, as <code>Some(word)</code> or <code>None</code> when they run out.</li>
+<li><code>let command = match name { ... };</code> uses <code>match</code> as an expression. The <code>_ =&gt; return None</code> arm leaves the function early: <code>return</code> never produces a value, so Rust accepts it in an arm of any type.</li>
+<li><code>run</code> doesn&#39;t parse anything. By the time a <code>ChatCommand</code> exists, it&#39;s guaranteed valid, and the <code>match</code> guarantees every command is handled.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>fn parse_command(line: &amp;str) -&gt; Option&lt;Command&gt;</code> for a warehouse robot. Valid lines are:</p>
+<ul>
+<li><code>forward N</code> where N is a whole number that isn&#39;t negative (a <code>u32</code>): <code>Command::Forward(N)</code></li>
+<li><code>left</code>, <code>right</code> and <code>report</code>: <code>Command::Left</code>, <code>Command::Right</code>, <code>Command::Report</code></li>
+</ul>
+<p>Anything else is <code>None</code>: an unknown word, a missing or invalid number, an empty line, or extra words after a complete command (<code>left now</code>).</p>
+
+<h3>Challenge 2</h3>
+<p>Same technique for a bank: write <code>fn parse_transaction(line: &amp;str) -&gt; Option&lt;Transaction&gt;</code>. Valid lines are:</p>
+<ul>
+<li><code>deposit N</code> and <code>withdraw N</code> (N is a <code>u64</code>)</li>
+<li><code>transfer N NAME</code>: <code>Transaction::Transfer { amount: N, to: NAME }</code></li>
+<li><code>balance</code></li>
+</ul>
+<p>Anything else is <code>None</code>, including missing or invalid numbers, a transfer without a name, and extra words.</p>
+
+<h3>Challenge 3</h3>
+<p>Put it all together: a robot program that reads commands from standard input. The starter has <code>Direction</code> (with turning methods), <code>Command</code> and a working <code>parse_command</code>. Write a <code>Robot</code> struct (position and facing) with methods, and a <code>main</code> that runs each line:</p>
+<ul>
+<li>The robot starts at <code>0,0</code> facing <code>North</code>. North is y + 1, East x + 1, South y - 1, West x - 1.</li>
+<li><code>forward N</code> moves N steps; <code>left</code> and <code>right</code> turn.</li>
+<li><code>report</code> prints the position and direction like <code>2,3 East</code> (<code>{:?}</code> prints a Direction&#39;s name).</li>
+<li>A line that doesn&#39;t parse prints <code>invalid: </code> followed by the line.</li>
+</ul>
+<p>For example:</p>
+<pre><code class="language-text">forward 3
+right
+forward 2
+report
+</code></pre>
+<p>prints <code>2,3 East</code>.</p>
+
+<p><a href="/learn/enums/methods-on-enums-and-matches">Previous: Methods on enums and matches!</a> </p></main></div>
+  </body>
+</html>

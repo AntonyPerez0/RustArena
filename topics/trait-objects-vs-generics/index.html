@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Trait objects vs generics in Rust: dyn Trait vs impl Trait | RustArena</title>
+    <meta name="description" content="When to use generics (impl Trait, static dispatch) and when to use trait objects (dyn Trait, Box&lt;dyn Trait&gt;, dynamic dispatch) in Rust." />
+    <link rel="canonical" href="https://rustarena.app/topics/trait-objects-vs-generics/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Trait objects vs generics in Rust: dyn Trait vs impl Trait | RustArena" />
+    <meta property="og:description" content="When to use generics (impl Trait, static dispatch) and when to use trait objects (dyn Trait, Box&lt;dyn Trait&gt;, dynamic dispatch) in Rust." />
+    <meta property="og:url" content="https://rustarena.app/topics/trait-objects-vs-generics/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Trait objects vs generics in Rust: dyn Trait vs impl Trait","description":"When to use generics (impl Trait, static dispatch) and when to use trait objects (dyn Trait, Box\u003cdyn Trait>, dynamic dispatch) in Rust.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/trait-objects-vs-generics/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Trait objects vs generics in Rust: dyn Trait vs impl Trait</h1>
+<p>When to use generics (impl Trait, static dispatch) and when to use trait objects (dyn Trait, Box&lt;dyn Trait&gt;, dynamic dispatch) in Rust.</p>
+<p>Rust gives you two ways to write code that works with &quot;any type implementing <code>Shape</code>&quot;:</p>
+<pre><code class="language-rust">fn print_area(s: &amp;impl Shape)       // generics: static dispatch
+fn print_area(s: &amp;dyn Shape)        // trait object: dynamic dispatch
+</code></pre>
+<p>Both compile and print the same thing. The difference is <strong>when</strong> the compiler decides which <code>area</code> method to call.</p>
+<h2>Generics: static dispatch</h2>
+<p>With <code>impl Shape</code> or <code>&lt;T: Shape&gt;</code>, the compiler generates a separate copy of the function for each concrete type (<strong>monomorphization</strong>). Calls are direct and can be inlined, so it&#39;s as fast as hand-written code. But each use has <strong>one</strong> concrete type: a <code>Vec&lt;T&gt;</code> holds only circles, or only squares.</p>
+<h2>Trait objects: dynamic dispatch</h2>
+<p><code>dyn Shape</code> means &quot;some type implementing <code>Shape</code>, decided at run time&quot;. A trait object is always behind a pointer (<code>&amp;dyn Shape</code>, <code>Box&lt;dyn Shape&gt;</code>, <code>Arc&lt;dyn Shape&gt;</code>), stored as two pointers: one to the data, one to a <strong>vtable</strong>, a table of that type&#39;s method addresses. Each call looks up the method in the table, a small cost that prevents inlining.</p>
+<p>What you get in return: <strong>different types in one collection</strong>.</p>
+<pre><code class="language-rust-error">trait Shape {
+    fn area(&amp;self) -&gt; f64;
+}
+struct Circle(f64);
+struct Square(f64);
+impl Shape for Circle {
+    fn area(&amp;self) -&gt; f64 { 3.14 * self.0 * self.0 }
+}
+impl Shape for Square {
+    fn area(&amp;self) -&gt; f64 { self.0 * self.0 }
+}
+
+fn main() {
+    let shapes = vec![Circle(1.0), Square(2.0)];
+    println!(&quot;{}&quot;, shapes.len());
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0308]: mismatched types
+</code></pre>
+<p>A <code>Vec</code> holds one type, so <code>Circle</code> and <code>Square</code> can&#39;t share it. <code>Vec&lt;Box&lt;dyn Shape&gt;&gt;</code> can: <code>vec![Box::new(Circle(1.0)), Box::new(Square(2.0))]</code>.</p>
+<p>The same applies to return types: <code>fn make(round: bool) -&gt; impl Shape</code> must return <strong>one</strong> concrete type on every path (otherwise: &quot;<code>if</code> and <code>else</code> have incompatible types&quot;). Return <code>Box&lt;dyn Shape&gt;</code> to choose at run time.</p>
+<h2>Choosing</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Generics / <code>impl Trait</code></th>
+<th><code>dyn Trait</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Dispatch</td>
+<td>compile time, inlinable</td>
+<td>run time, via vtable</td>
+</tr>
+<tr>
+<td>Mixed types in one collection</td>
+<td>no</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Binary size</td>
+<td>grows per type used</td>
+<td>one copy</td>
+</tr>
+<tr>
+<td>Trait requirements</td>
+<td>any trait</td>
+<td>must be <strong>dyn compatible</strong></td>
+</tr>
+<tr>
+<td>Typical use</td>
+<td>utility functions, iterators, closures, hot loops</td>
+<td>plugin lists, UI widgets, handlers, <code>Box&lt;dyn Error&gt;</code></td>
+</tr>
+</tbody></table>
+<p>Default to generics. Reach for <code>dyn</code> when you need a heterogeneous collection, want to choose an implementation at run time (from config), or want to keep compile times and binary size down for rarely called code.</p>
+<h2>The third option: an enum</h2>
+<p>If you know every type up front (<code>Circle</code>, <code>Square</code>, <code>Triangle</code>), an <code>enum Shape { Circle(f64), Square(f64) }</code> with <code>match</code> is often the simplest and fastest choice: no boxing, no vtable, and the compiler checks every case. Trait objects win when other code (or other crates) must be able to add new types.</p>
+<h2>dyn compatibility</h2>
+<p>Not every trait can be a trait object. A trait whose methods are generic, return <code>Self</code>, or that requires <code>Sized</code> can&#39;t work through a vtable:</p>
+<pre><code class="language-rust-error">fn main() {
+    let items: Vec&lt;Box&lt;dyn Clone&gt;&gt; = Vec::new();
+    println!(&quot;{}&quot;, items.len());
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0038]: the trait `Clone` is not dyn compatible
+</code></pre>
+<p>(Older compilers call this &quot;object safety&quot;.) Add <code>where Self: Sized</code> to a problematic method to exclude it from the vtable, or split the trait.</p>
+
+<h2>Example</h2>
+<pre><code>trait Shape {
+    fn area(&amp;self) -&gt; f64;
+    fn name(&amp;self) -&gt; String;
+}
+
+struct Circle(f64);
+struct Square(f64);
+
+impl Shape for Circle {
+    fn area(&amp;self) -&gt; f64 {
+        3.14159 * self.0 * self.0
+    }
+    fn name(&amp;self) -&gt; String {
+        format!(&quot;circle r={}&quot;, self.0)
+    }
+}
+
+impl Shape for Square {
+    fn area(&amp;self) -&gt; f64 {
+        self.0 * self.0
+    }
+    fn name(&amp;self) -&gt; String {
+        format!(&quot;square side={}&quot;, self.0)
+    }
+}
+
+// Static dispatch: one copy per concrete type.
+fn describe(s: &amp;impl Shape) -&gt; String {
+    format!(&quot;{} has area {:.2}&quot;, s.name(), s.area())
+}
+
+// Dynamic dispatch: one copy, decides at run time.
+fn total_area(shapes: &amp;[Box&lt;dyn Shape&gt;]) -&gt; f64 {
+    shapes.iter().map(|s| s.area()).sum()
+}
+
+fn make(round: bool, size: f64) -&gt; Box&lt;dyn Shape&gt; {
+    if round { Box::new(Circle(size)) } else { Box::new(Square(size)) }
+}
+
+fn main() {
+    println!(&quot;{}&quot;, describe(&amp;Circle(1.0)));
+    println!(&quot;{}&quot;, describe(&amp;Square(2.0)));
+
+    let shapes: Vec&lt;Box&lt;dyn Shape&gt;&gt; = vec![make(true, 1.0), make(false, 2.0), make(false, 0.5)];
+    for s in &amp;shapes {
+        println!(&quot;- {}&quot;, s.name());
+    }
+    println!(&quot;total area {:.2}&quot;, total_area(&amp;shapes));
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>circle r=1 has area 3.14
+square side=2 has area 4.00
+- circle r=1
+- square side=2
+- square side=0.5
+total area 7.39
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/trait-objects/dyn-trait-many-types-in-one-vec">Lesson: Trait Objects</a></li><li><a href="/learn/generics/generic-functions">Lesson: Generics</a></li></ul></main></div>
+  </body>
+</html>

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>macro_rules! in Rust: writing your own macros | RustArena</title>
+    <meta name="description" content="How to write declarative macros in Rust with macro_rules!: matchers, fragment specifiers like expr and ident, repetition with $(...),*, and when to use them." />
+    <link rel="canonical" href="https://rustarena.app/topics/macro-rules/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="macro_rules! in Rust: writing your own macros | RustArena" />
+    <meta property="og:description" content="How to write declarative macros in Rust with macro_rules!: matchers, fragment specifiers like expr and ident, repetition with $(...),*, and when to use them." />
+    <meta property="og:url" content="https://rustarena.app/topics/macro-rules/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"macro_rules! in Rust: writing your own macros","description":"How to write declarative macros in Rust with macro_rules!: matchers, fragment specifiers like expr and ident, repetition with $(...),*, and when to use them.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/macro-rules/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>macro_rules! in Rust: writing your own macros</h1>
+<p>How to write declarative macros in Rust with macro_rules!: matchers, fragment specifiers like expr and ident, repetition with $(...),*, and when to use them.</p>
+<p>You&#39;ve been calling macros since your first program: <code>println!</code>, <code>vec!</code>, <code>format!</code>, <code>assert_eq!</code>. A <strong>macro</strong> is code that writes code at compile time. <code>macro_rules!</code> lets you write your own <strong>declarative macros</strong>: you describe input patterns, and what each one expands to.</p>
+<h2>A first macro</h2>
+<pre><code class="language-rust">macro_rules! square {
+    ($x:expr) =&gt; {
+        $x * $x
+    };
+}
+
+fn main() {
+    println!(&quot;{}&quot;, square!(7));
+    println!(&quot;{}&quot;, square!(2 + 3));
+}
+</code></pre>
+<pre><code class="language-text">49
+25
+</code></pre>
+<ul>
+<li>Each <strong>rule</strong> is <code>(matcher) =&gt; { expansion };</code>. Rules are tried top to bottom; the first that matches is used.</li>
+<li><code>$x:expr</code> matches any expression and names it <code>$x</code>. <code>square!(2 + 3)</code> gives 25, not 11: macros work on syntax trees, not text, so <code>$x</code> stays one expression. (Unlike C&#39;s <code>#define</code>.)</li>
+</ul>
+<h2>Fragment specifiers</h2>
+<table>
+<thead>
+<tr>
+<th>Specifier</th>
+<th>Matches</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>expr</code></td>
+<td>an expression: <code>1 + 2</code>, <code>foo(x)</code>, <code>vec![1]</code></td>
+</tr>
+<tr>
+<td><code>ident</code></td>
+<td>an identifier: <code>count</code>, <code>Player</code></td>
+</tr>
+<tr>
+<td><code>ty</code></td>
+<td>a type: <code>u32</code>, <code>Vec&lt;String&gt;</code></td>
+</tr>
+<tr>
+<td><code>literal</code></td>
+<td>a literal: <code>42</code>, <code>&quot;hi&quot;</code>, <code>true</code></td>
+</tr>
+<tr>
+<td><code>pat</code></td>
+<td>a pattern: <code>Some(x)</code>, <code>1..=5</code></td>
+</tr>
+<tr>
+<td><code>block</code></td>
+<td>a <code>{ ... }</code> block</td>
+</tr>
+<tr>
+<td><code>tt</code></td>
+<td>a single token tree (the most flexible)</td>
+</tr>
+</tbody></table>
+<h2>Repetition</h2>
+<p><code>$( ... ),*</code> matches zero or more comma-separated items; <code>+</code> means one or more; <code>?</code> means optional. Repeat the same group in the expansion to emit code per item:</p>
+<pre><code class="language-rust">macro_rules! hashmap {
+    ($($key:expr =&gt; $value:expr),* $(,)?) =&gt; {{
+        let mut map = std::collections::HashMap::new();
+        $( map.insert($key, $value); )*
+        map
+    }};
+}
+
+let ages = hashmap! { &quot;Ferris&quot; =&gt; 7, &quot;Corro&quot; =&gt; 3 };
+</code></pre>
+<p><code>$(,)?</code> accepts an optional trailing comma. The double braces <code>{{ ... }}</code> make the expansion a block expression, so the macro can be used where a value is expected.</p>
+<h2>Hygiene</h2>
+<p>Variables created inside a macro (like <code>map</code> above) can&#39;t clash with the caller&#39;s variables of the same name: <code>macro_rules!</code> is <strong>hygienic</strong> for local variables. Items (functions, types) are not, so refer to them with full paths (<code>$crate::helper</code>, <code>::std::collections::HashMap</code>) in macros you export.</p>
+<h2>When to write a macro</h2>
+<p>Reach for a function or a generic first: they&#39;re easier to read, type-check and debug. Macros earn their place when you need something functions can&#39;t do:</p>
+<ul>
+<li>a variable number of arguments (<code>vec!</code>, <code>println!</code>),</li>
+<li>generating repetitive items (<code>impl</code> blocks for many types, enum variants with matching methods),</li>
+<li>small domain-specific syntax (<code>hashmap!{ k =&gt; v }</code>, test tables),</li>
+<li>code that needs the caller&#39;s tokens, like <code>stringify!(expr)</code> for assertion messages.</li>
+</ul>
+<p><code>#[macro_export]</code> makes a macro available to other crates. <code>cargo expand</code> (an installable tool) shows what macros expand to, which is the best way to debug them.</p>
+<h2>Errors</h2>
+<p>Calling a macro with input no rule matches gives errors like <code>no rules expected `,` </code> or <code>unexpected end of macro invocation</code>. Errors inside the expansion point into the macro&#39;s body.</p>
+<h2>Procedural macros</h2>
+<p><code>#[derive(Serialize)]</code>, <code>#[tokio::main]</code> and <code>#[test]</code>-like attributes are <strong>procedural macros</strong>: Rust functions, in a separate crate, that receive a token stream and return a new one. They&#39;re far more powerful (and more work) than <code>macro_rules!</code>; most developers use them every day but rarely write one.</p>
+
+<h2>Example</h2>
+<pre><code>use std::collections::BTreeMap;
+
+macro_rules! square {
+    ($x:expr) =&gt; {
+        $x * $x
+    };
+}
+
+// Variadic: zero or more key =&gt; value pairs, optional trailing comma.
+macro_rules! btreemap {
+    ($($key:expr =&gt; $value:expr),* $(,)?) =&gt; {{
+        let mut map = BTreeMap::new();
+        $( map.insert($key, $value); )*
+        map
+    }};
+}
+
+// Several rules, tried in order.
+macro_rules! max_of {
+    ($x:expr) =&gt; { $x };
+    ($x:expr, $($rest:expr),+) =&gt; {{
+        let a = $x;
+        let b = max_of!($($rest),+);
+        if a &gt; b { a } else { b }
+    }};
+}
+
+// Generating items: one function per identifier.
+macro_rules! unit_fns {
+    ($($name:ident =&gt; $factor:expr),* $(,)?) =&gt; {
+        $( fn $name(v: f64) -&gt; f64 { v * $factor } )*
+    };
+}
+
+unit_fns! {
+    km_to_miles =&gt; 0.621371,
+    kg_to_pounds =&gt; 2.20462,
+}
+
+// stringify! turns the caller's tokens into text.
+macro_rules! check {
+    ($cond:expr) =&gt; {
+        println!(&quot;{:&lt;22} {}&quot;, stringify!($cond), if $cond { &quot;ok&quot; } else { &quot;FAILED&quot; });
+    };
+}
+
+fn main() {
+    println!(&quot;{} {}&quot;, square!(7), square!(2 + 3));
+    let stock = btreemap! { &quot;potion&quot; =&gt; 5, &quot;sword&quot; =&gt; 1, &quot;arrow&quot; =&gt; 40, };
+    println!(&quot;{stock:?}&quot;);
+    println!(&quot;max {}&quot;, max_of!(3, 17, 9, 12));
+    println!(&quot;{:.2} miles, {:.1} lb&quot;, km_to_miles(10.0), kg_to_pounds(5.0));
+    check!(square!(4) == 16);
+    check!(stock.len() &gt; 5);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>49 25
+{&quot;arrow&quot;: 40, &quot;potion&quot;: 5, &quot;sword&quot;: 1}
+max 17
+6.21 miles, 11.0 lb
+square!(4) == 16       ok
+stock.len() &gt; 5        FAILED
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/macros/your-first-macro-rules-macro">Lesson: Macros</a></li></ul></main></div>
+  </body>
+</html>

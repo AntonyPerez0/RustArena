@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>PhantomData and typestate · Advanced Traits (Rust) | RustArena</title>
+    <meta name="description" content="Type-level programming means letting types carry information the compiler checks, so whole classes of bugs become compile errors. The most useful form at…" />
+    <link rel="canonical" href="https://rustarena.app/learn/advanced-traits/phantomdata-and-typestate/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="PhantomData and typestate · Advanced Traits (Rust) | RustArena" />
+    <meta property="og:description" content="Type-level programming means letting types carry information the compiler checks, so whole classes of bugs become compile errors. The most useful form at…" />
+    <meta property="og:url" content="https://rustarena.app/learn/advanced-traits/phantomdata-and-typestate/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"PhantomData and typestate","description":"Type-level programming means letting types carry information the compiler checks, so whole classes of bugs become compile errors. The most useful form at…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/advanced-traits/phantomdata-and-typestate/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Advanced Traits</nav>
+<p>Step 6 of 7</p>
+<h1>PhantomData and typestate</h1>
+<p><strong>Type-level programming</strong> means letting types carry information the compiler checks, so whole classes of bugs become compile errors. The most useful form at work is <strong>typestate</strong>: the state of an object is part of its type, and each state has only the methods that make sense in it.</p>
+<pre><code class="language-rust">use std::marker::PhantomData;
+
+struct Locked;
+struct Closed;
+struct Open;
+
+struct Door&lt;State&gt; {
+    name: String,
+    _state: PhantomData&lt;State&gt;,
+}
+
+impl Door&lt;Locked&gt; {
+    fn new(name: &amp;str) -&gt; Door&lt;Locked&gt; {
+        Door { name: name.to_string(), _state: PhantomData }
+    }
+    fn unlock(self) -&gt; Door&lt;Closed&gt; {
+        println!(&quot;{}: unlocked&quot;, self.name);
+        Door { name: self.name, _state: PhantomData }
+    }
+}
+
+impl Door&lt;Closed&gt; {
+    fn open(self) -&gt; Door&lt;Open&gt; {
+        println!(&quot;{}: opened&quot;, self.name);
+        Door { name: self.name, _state: PhantomData }
+    }
+    fn lock(self) -&gt; Door&lt;Locked&gt; {
+        println!(&quot;{}: locked&quot;, self.name);
+        Door { name: self.name, _state: PhantomData }
+    }
+}
+
+impl Door&lt;Open&gt; {
+    fn close(self) -&gt; Door&lt;Closed&gt; {
+        println!(&quot;{}: closed&quot;, self.name);
+        Door { name: self.name, _state: PhantomData }
+    }
+}
+
+fn main() {
+    let door = Door::new(&quot;vault&quot;);
+    let door = door.unlock().open();
+    let door = door.close();
+    let _door = door.lock();
+    println!(&quot;{}&quot;, std::mem::size_of::&lt;Door&lt;Open&gt;&gt;() == std::mem::size_of::&lt;String&gt;());
+}
+</code></pre>
+<pre><code class="language-text">vault: unlocked
+vault: opened
+vault: closed
+vault: locked
+true
+</code></pre>
+<p>How it works:</p>
+<ul>
+<li><code>Locked</code>, <code>Closed</code> and <code>Open</code> are empty structs used only as <strong>markers</strong>. No value of them is ever created.</li>
+<li><code>Door&lt;Locked&gt;</code> and <code>Door&lt;Open&gt;</code> are different types, and each <code>impl</code> block adds methods to just one of them. A locked door simply has no <code>open</code> method.</li>
+<li>Each transition takes <code>self</code> <strong>by value</strong> and returns the door in its new state. The old value is moved, so you can&#39;t keep using a stale <code>Door&lt;Closed&gt;</code> after opening it.</li>
+<li>Methods every state needs go in a generic impl: <code>impl&lt;S&gt; Door&lt;S&gt; { fn name(&amp;self) -&gt; &amp;str { &amp;self.name } }</code>.</li>
+</ul>
+<p>Trying to open a locked door isn&#39;t a runtime error; it doesn&#39;t compile:</p>
+<pre><code class="language-rust-error">use std::marker::PhantomData;
+
+struct Locked;
+struct Closed;
+
+struct Door&lt;S&gt; {
+    name: String,
+    _state: PhantomData&lt;S&gt;,
+}
+
+impl Door&lt;Locked&gt; {
+    fn new(name: &amp;str) -&gt; Self {
+        Door { name: name.to_string(), _state: PhantomData }
+    }
+}
+
+impl Door&lt;Closed&gt; {
+    fn open(self) -&gt; String {
+        self.name
+    }
+}
+
+fn main() {
+    let door = Door::new(&quot;vault&quot;);
+    println!(&quot;{}&quot;, door.open());
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0599]: no method named `open` found for struct `Door&lt;Locked&gt;` in the current scope
+</code></pre>
+<h2>Why PhantomData?</h2>
+<p>Rust rejects a type parameter that no field uses: <code>struct Door&lt;State&gt; { name: String }</code> fails with <code>error[E0392]: type parameter `State` is never used</code>. <strong><code>PhantomData&lt;State&gt;</code></strong> (from <code>std::marker</code>) is a field of size zero that says &quot;act as if this struct holds a <code>State</code>&quot;. It costs nothing at runtime, as the <code>size_of</code> line shows: the door is exactly as big as its <code>String</code>. You create it with the value <code>PhantomData</code>.</p>
+<h2>Where you&#39;ll meet typestate</h2>
+<p>Builders that can&#39;t be finished before the required fields are set, connections that can&#39;t send before they&#39;re authenticated, and hardware drivers (embedded Rust uses it so a pin configured as an input has no <code>set_high</code> method). It&#39;s worth it when misuse is costly; for simple cases an enum with a runtime check is easier to read. The patterns module comes back to this.</p>
+
+<h2>Your task</h2>
+<p>Finish a typestate HTTP request builder that can&#39;t be sent until a URL is set. <code>RequestBuilder::new()</code> starts as <code>RequestBuilder&lt;NoUrl&gt;</code> with method <code>GET</code>. Add:</p>
+<ul>
+<li><code>url(self, url: &amp;str) -&gt; RequestBuilder&lt;HasUrl&gt;</code>, only on <code>RequestBuilder&lt;NoUrl&gt;</code>.</li>
+<li><code>method(self, m: &amp;str) -&gt; Self</code> and <code>header(self, name: &amp;str, value: &amp;str) -&gt; Self</code>, available in <strong>both</strong> states (a generic impl).</li>
+<li><code>send(self) -&gt; String</code>, only on <code>RequestBuilder&lt;HasUrl&gt;</code>. It returns the method, a space, the URL, then each header as <code> [Name: value]</code> in the order they were added: <code>POST https://api.shop/orders [Accept: json]</code>.</li>
+</ul>
+
+<h3>Challenge 2</h3>
+<p>A blog post goes Draft, then Review, then Published. Finish the typestate <code>Post</code>:</p>
+<ul>
+<li>On <code>Post&lt;Draft&gt;</code>: <code>write(&amp;mut self, text: &amp;str)</code> appends text, and <code>submit(self) -&gt; Post&lt;Review&gt;</code>.</li>
+<li>On <code>Post&lt;Review&gt;</code>: <code>approve(self) -&gt; Post&lt;Published&gt;</code> and <code>reject(self) -&gt; Post&lt;Draft&gt;</code> (the text is kept).</li>
+<li>On <code>Post&lt;Published&gt;</code>: <code>content(&amp;self) -&gt; &amp;str</code>. Only published posts can be read.</li>
+</ul>
+
+<h3>Challenge 3</h3>
+<p>Write a database connection with three states from scratch. Use marker structs <code>Disconnected</code>, <code>Connected</code> and <code>Authenticated</code> and a <code>Connection&lt;S&gt;</code> holding a <code>host: String</code> and a <code>PhantomData&lt;S&gt;</code>.</p>
+<ul>
+<li><code>Connection::new(host: &amp;str)</code> creates a <code>Connection&lt;Disconnected&gt;</code>; <code>connect(self)</code> returns a <code>Connection&lt;Connected&gt;</code>.</li>
+<li><code>login(self, password: &amp;str)</code> on <code>Connection&lt;Connected&gt;</code> returns <code>Result&lt;Connection&lt;Authenticated&gt;, Connection&lt;Connected&gt;&gt;</code>: <code>Ok</code> when the password is <code>&quot;hunter2&quot;</code>, otherwise <code>Err</code> with the connection given back so the caller can retry.</li>
+<li><code>query(&amp;self, sql: &amp;str) -&gt; String</code> only on <code>Connection&lt;Authenticated&gt;</code>, returning <code>&quot;&lt;host&gt; ran: &lt;sql&gt;&quot;</code>.</li>
+<li><code>host(&amp;self) -&gt; &amp;str</code> in every state.</li>
+</ul>
+
+<p><a href="/learn/advanced-traits/newtypes-the-orphan-rule-and-type-aliases">Previous: Newtypes, the orphan rule and type aliases</a> <a href="/learn/advanced-traits/the-never-type-and-sized">Next: The never type and Sized</a></p></main></div>
+  </body>
+</html>

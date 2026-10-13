@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-BSzB2ET4.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DM48fDIe.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Shaping the JSON: rename, default, skip · JSON and Serialization with serde (Rust) | RustArena</title>
+    <meta name="description" content="The JSON you exchange is often designed by someone else: a JavaScript frontend uses camelCase, an API has a field called type (a Rust keyword), a config…" />
+    <link rel="canonical" href="https://rustarena.app/learn/serde/shaping-the-json-rename-default-skip/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Shaping the JSON: rename, default, skip · JSON and Serialization with serde (Rust) | RustArena" />
+    <meta property="og:description" content="The JSON you exchange is often designed by someone else: a JavaScript frontend uses camelCase, an API has a field called type (a Rust keyword), a config…" />
+    <meta property="og:url" content="https://rustarena.app/learn/serde/shaping-the-json-rename-default-skip/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Shaping the JSON: rename, default, skip","description":"The JSON you exchange is often designed by someone else: a JavaScript frontend uses camelCase, an API has a field called type (a Rust keyword), a config…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/serde/shaping-the-json-rename-default-skip/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › JSON and Serialization with serde</nav>
+<p>Step 3 of 6</p>
+<h1>Shaping the JSON: rename, default, skip</h1>
+<p>The JSON you exchange is often designed by someone else: a JavaScript frontend uses <code>camelCase</code>, an API has a field called <code>type</code> (a Rust keyword), a config file leaves out settings that have sensible defaults. <strong>serde attributes</strong> let your Rust structs keep Rust names and still match the JSON exactly.</p>
+<pre><code class="language-rust">use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = &quot;camelCase&quot;)]
+struct ServerConfig {
+    host_name: String,
+    #[serde(default = &quot;default_port&quot;)]
+    port: u16,
+    #[serde(default)]
+    max_connections: u32,
+    #[serde(skip_serializing_if = &quot;Option::is_none&quot;)]
+    admin_email: Option&lt;String&gt;,
+}
+
+fn default_port() -&gt; u16 {
+    8080
+}
+
+fn main() {
+    let cfg: ServerConfig = serde_json::from_str(r#&quot;{&quot;hostName&quot;: &quot;arena.local&quot;}&quot;#).unwrap();
+    println!(&quot;{} {} {} {:?}&quot;, cfg.host_name, cfg.port, cfg.max_connections, cfg.admin_email);
+    println!(&quot;{}&quot;, serde_json::to_string(&amp;cfg).unwrap());
+}
+</code></pre>
+<pre><code class="language-text">arena.local 8080 0 None
+{&quot;hostName&quot;:&quot;arena.local&quot;,&quot;port&quot;:8080,&quot;maxConnections&quot;:0}
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>#[serde(rename_all = &quot;camelCase&quot;)]</code> on the struct renames every field in both directions: <code>host_name</code> is <code>hostName</code> in JSON. Other choices: <code>&quot;snake_case&quot;</code>, <code>&quot;kebab-case&quot;</code>, <code>&quot;SCREAMING_SNAKE_CASE&quot;</code>, <code>&quot;PascalCase&quot;</code>, <code>&quot;lowercase&quot;</code>, <code>&quot;UPPERCASE&quot;</code>.</li>
+<li><code>#[serde(rename = &quot;type&quot;)]</code> on one field renames just that field. It&#39;s how you handle JSON keys that are Rust keywords: name the field <code>kind</code> and rename it.</li>
+<li><code>Option&lt;T&gt;</code> fields are special: a <strong>missing</strong> key (or <code>null</code>) becomes <code>None</code>. No attribute needed.</li>
+<li><code>#[serde(default)]</code> fills a missing field with <code>Default::default()</code> (0, <code>&quot;&quot;</code>, empty <code>Vec</code>, <code>false</code>). <code>#[serde(default = &quot;default_port&quot;)]</code> calls your function instead; the string is a path to a function with no arguments.</li>
+<li><code>#[serde(skip_serializing_if = &quot;Option::is_none&quot;)]</code> leaves the key out of the output instead of writing <code>null</code>. It takes any function <code>fn(&amp;T) -&gt; bool</code>; <code>&quot;Vec::is_empty&quot;</code> is another favorite.</li>
+<li><code>#[serde(skip)]</code> ignores a field completely (it must implement <code>Default</code>, since it&#39;s filled with the default when reading).</li>
+</ul>
+<h2>Strict configs: deny_unknown_fields</h2>
+<p>Ignoring unknown fields is great for APIs, bad for config files: a typo like <code>&quot;prot&quot;: 9000</code> would silently be ignored and you&#39;d run on the default port. <code>#[serde(deny_unknown_fields)]</code> turns it into an error:</p>
+<pre><code class="language-rust">use serde::Deserialize;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Limits {
+    users: u32,
+    rooms: u32,
+}
+
+fn main() {
+    match serde_json::from_str::&lt;Limits&gt;(r#&quot;{&quot;users&quot;: 50, &quot;roms&quot;: 4}&quot;#) {
+        Ok(l) =&gt; println!(&quot;{} users, {} rooms&quot;, l.users, l.rooms),
+        Err(e) =&gt; println!(&quot;config error: {e}&quot;),
+    }
+}
+</code></pre>
+<pre><code class="language-text">config error: unknown field `roms`, expected `users` or `rooms` at line 1 column 20
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>#[serde(default)]</code> on a type without <code>Default</code>.</strong> The derive expands to a call to <code>Default::default()</code>, so you get <code>the trait bound ... Default is not satisfied</code>. Derive or implement <code>Default</code>, or use <code>default = &quot;some_fn&quot;</code>.</li>
+<li><strong>Writing the function instead of its path</strong>: <code>default = &quot;default_port()&quot;</code> is an error; it&#39;s <code>default = &quot;default_port&quot;</code>.</li>
+<li><strong>Mixing up the two renames.</strong> <code>rename_all</code> goes on the struct (or enum) and applies a casing rule; <code>rename</code> goes on one field and gives it an exact name.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>A payment provider sends webhooks like <code>{&quot;eventId&quot;: &quot;ev_1&quot;, &quot;type&quot;: &quot;charge&quot;, &quot;amountCents&quot;: 1299, &quot;currency&quot;: &quot;EUR&quot;, &quot;customerEmail&quot;: &quot;a@b.io&quot;}</code>. Complete <code>Webhook</code> so that:</p>
+<ul>
+<li>keys are camelCase (<code>event_id</code> is <code>eventId</code>), and the field <code>kind</code> is the JSON key <code>type</code>,</li>
+<li>a missing <code>currency</code> means <code>&quot;USD&quot;</code> (write <code>fn default_currency() -&gt; String</code>),</li>
+<li><code>customer_email</code> is optional, and when it&#39;s <code>None</code> the key is left out of the output entirely.</li>
+</ul>
+
+<h3>Challenge 2</h3>
+<p>Game settings files only list what the player changed. Put <code>#[serde(default)]</code> on the <strong>struct</strong> itself (not on a field): then every missing field comes from the struct&#39;s <code>Default</code> impl. Write that <code>impl Default for Settings</code> with volume <code>80</code>, difficulty <code>&quot;normal&quot;</code> and subtitles <code>true</code>, and add the attribute.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>fn load_limits(json: &amp;str) -&gt; Result&lt;Limits, String&gt;</code> for a strict config. The JSON keys are kebab-case (<code>max-users</code>, <code>max-rooms</code>), unknown keys must be <strong>rejected</strong> (so a typo is caught), and on error return the serde message as a String with <code>config: </code> in front, for example <code>config: unknown field ...</code>.</p>
+
+<p><a href="/learn/serde/from-json-back-into-structs">Previous: From JSON back into structs</a> <a href="/learn/serde/enums-in-json">Next: Enums in JSON</a></p></main></div>
+  </body>
+</html>
