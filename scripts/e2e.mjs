@@ -884,14 +884,15 @@ await test("keyboard: skip link, focus moves to the new page, editor can be left
   if (!left) throw new Error("Escape then Tab did not leave the code editor");
 });
 
-// The other Arena sites (C/C++ and Java) are linked from the header, the phone menu and the footer.
+// The other Arena sites (C/C++, Java and Python) are linked from the header, the phone menu and the footer.
 // Only the links are checked: the tests never leave this site.
-const ARENA_NAMES = ["C/C++ Arena", "Java Arena", "RustArena"];
+const ARENA_NAMES = ["C/C++ Arena", "Java Arena", "RustArena", "Python Arena"];
 const SISTERS = [
   ["C/C++ Arena", "https://cpparena.com/"],
   ["Java Arena", "https://javaarena.com/"],
+  ["Python Arena", "https://pythonarena.org/"],
 ];
-/** A list of all three Arenas: in order, this one marked as here (not a link), the other two linked. */
+/** A list of all the Arenas: in order, this one marked as here (not a link), the others linked. */
 async function arenaList(list, where) {
   const names = await list.locator(".arena-name").allTextContents();
   if (names.join(" | ") !== ARENA_NAMES.join(" | ")) throw new Error(`${where} lists ${names.join(" | ")}`);
@@ -899,7 +900,7 @@ async function arenaList(list, where) {
   if (!(await here.textContent())?.includes("You're here") || (await here.locator("a").count())) throw new Error(`${where}: RustArena isn't marked "You're here", or is a link`);
   await arenaLinks(list, where);
 }
-/** Exactly the two sister sites' links, opening in a new tab. */
+/** Exactly the sister sites' links, opening in a new tab. */
 async function arenaLinks(scope, where) {
   const links = await scope.locator("a").evaluateAll((as) => as.map((a) => ({ text: a.textContent, href: a.getAttribute("href"), target: a.target, rel: a.rel })));
   if (links.length !== SISTERS.length) throw new Error(`${where} has ${links.length} links`);
@@ -910,7 +911,7 @@ async function arenaLinks(scope, where) {
   });
 }
 
-await test("arena sites: the header button lists all three, the footer row links the others, and phones get them in the menu", async () => {
+await test("arena sites: the header button lists all four, the footer row links the others, and phones get them in the menu", async () => {
   await apGo("/learn");
   const btn = ap.getByRole("button", { name: "Other Arena sites" });
   if (!(await btn.isVisible()) || (await btn.getAttribute("aria-expanded")) !== "false") throw new Error("the header button isn't shown closed");
@@ -950,8 +951,8 @@ await test("arena sites: the header button lists all three, the footer row links
     await btn.click();
     await pop.waitFor();
     if (await ap.locator("#main-nav.nav-open").count()) throw new Error("opening the Arena list left the menu open");
-    await ap.keyboard.press("Tab");
-    await ap.keyboard.press("Tab");
+    // Tab to the list's last link.
+    for (let i = 0; i < SISTERS.length; i++) await ap.keyboard.press("Tab");
     const fit = await pop.evaluate((l) => {
       const box = l.getBoundingClientRect();
       const link = document.activeElement.getBoundingClientRect();
@@ -979,7 +980,7 @@ await test("arena sites: the header button lists all three, the footer row links
 
   const family = ap.locator(".arena-family");
   await family.getByRole("heading", { name: "Arena sites" }).waitFor();
-  if ((await family.locator("li").count()) !== 3) throw new Error("the footer row doesn't have three Arenas");
+  if ((await family.locator("li").count()) !== ARENA_NAMES.length) throw new Error("the footer row doesn't have all four Arenas");
   await arenaList(family, "the footer row");
 
   const phone = await browser.newContext({ viewport: { width: 360, height: 780 }, isMobile: true, hasTouch: true, serviceWorkers: "block", colorScheme: "dark" });
