@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>A first look at thiserror and anyhow · Custom Error Types (Rust) | RustArena</title>
+    <meta name="description" content="Writing Display, Error, source and From by hand is a lot of repetitive code. Two crates (Rust libraries) remove almost all of it, and you'll find them in…" />
+    <link rel="canonical" href="https://rustarena.app/learn/custom-errors/a-first-look-at-thiserror-and-anyhow/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="A first look at thiserror and anyhow · Custom Error Types (Rust) | RustArena" />
+    <meta property="og:description" content="Writing Display, Error, source and From by hand is a lot of repetitive code. Two crates (Rust libraries) remove almost all of it, and you'll find them in…" />
+    <meta property="og:url" content="https://rustarena.app/learn/custom-errors/a-first-look-at-thiserror-and-anyhow/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"A first look at thiserror and anyhow","description":"Writing Display, Error, source and From by hand is a lot of repetitive code. Two crates (Rust libraries) remove almost all of it, and you'll find them in…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/custom-errors/a-first-look-at-thiserror-and-anyhow/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Custom Error Types</nav>
+<p>Step 7 of 7</p>
+<h1>A first look at thiserror and anyhow</h1>
+<p>Writing Display, Error, <code>source</code> and <code>From</code> by hand is a lot of repetitive code. Two crates (Rust libraries) remove almost all of it, and you&#39;ll find them in most Rust codebases at work. Add them to a project&#39;s <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[dependencies]
+thiserror = &quot;2&quot;
+anyhow = &quot;1&quot;
+</code></pre>
+<h2>thiserror: error enums without the boilerplate</h2>
+<p><code>thiserror</code> provides a <strong>derive macro</strong>, like <code>#[derive(Debug)]</code>, that writes the Display, Error and From implementations for you:</p>
+<pre><code class="language-rust">use std::num::ParseIntError;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+enum ConfigError {
+    #[error(&quot;missing &#39;=&#39; in line {0:?}&quot;)]
+    MissingEquals(String),
+    #[error(&quot;invalid number&quot;)]
+    BadNumber(#[from] ParseIntError),
+}
+
+fn parse_line(line: &amp;str) -&gt; Result&lt;(String, u32), ConfigError&gt; {
+    let (key, value) = line
+        .split_once(&#39;=&#39;)
+        .ok_or_else(|| ConfigError::MissingEquals(line.to_string()))?;
+    let value: u32 = value.trim().parse()?;
+    Ok((key.trim().to_string(), value))
+}
+
+fn main() {
+    for line in [&quot;timeout = 30&quot;, &quot;retries = lots&quot;, &quot;verbose&quot;] {
+        match parse_line(line) {
+            Ok((key, value)) =&gt; println!(&quot;{key} = {value}&quot;),
+            Err(ConfigError::BadNumber(cause)) =&gt; println!(&quot;invalid number ({cause})&quot;),
+            Err(e) =&gt; println!(&quot;error: {e}&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">timeout = 30
+invalid number (invalid digit found in string)
+error: missing &#39;=&#39; in line &quot;verbose&quot;
+</code></pre>
+<ul>
+<li><code>#[derive(Debug, Error)]</code>: <code>Error</code> here is thiserror&#39;s derive (brought in by <code>use thiserror::Error;</code>). It implements <code>std::error::Error</code> for the enum.</li>
+<li><code>#[error(&quot;...&quot;)]</code> on each variant is its Display message. <code>{0}</code> refers to the first field of a tuple variant; named fields are used by name, like <code>#[error(&quot;cannot buy {requested} tickets&quot;)]</code>. Format specs like <code>{0:?}</code> work too.</li>
+<li><code>#[from]</code> on a field writes <code>impl From&lt;ParseIntError&gt; for ConfigError</code>, so <code>?</code> converts, <em>and</em> makes <code>source()</code> return that field.</li>
+</ul>
+<p>It&#39;s still an ordinary enum: callers match on it exactly as before. That&#39;s why thiserror is the usual choice for <strong>libraries</strong> and for any module whose callers need to tell errors apart.</p>
+<h2>anyhow: one error type for applications</h2>
+<p>In application code you often don&#39;t match on errors at all: you add context and report them. <code>anyhow</code> gives you one type, <code>anyhow::Error</code>, that holds any error (like <code>Box&lt;dyn Error&gt;</code>, but with more features), and the alias <code>anyhow::Result&lt;T&gt;</code> for <code>Result&lt;T, anyhow::Error&gt;</code>.</p>
+<pre><code class="language-rust">use anyhow::{bail, Context, Result};
+
+fn parse_port(text: &amp;str) -&gt; Result&lt;u16&gt; {
+    let port: u16 = text
+        .trim()
+        .parse()
+        .with_context(|| format!(&quot;invalid port {text:?}&quot;))?;
+    if port &lt; 1024 {
+        bail!(&quot;port {port} is reserved&quot;);
+    }
+    Ok(port)
+}
+
+fn main() {
+    for text in [&quot;8080&quot;, &quot;80&quot;, &quot;http&quot;] {
+        match parse_port(text) {
+            Ok(port) =&gt; println!(&quot;listening on {port}&quot;),
+            Err(e) =&gt; println!(&quot;error: {e:#}&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">listening on 8080
+error: port 80 is reserved
+error: invalid port &quot;http&quot;: invalid digit found in string
+</code></pre>
+<ul>
+<li><code>use anyhow::Result;</code> replaces the standard <code>Result</code> in this file with anyhow&#39;s one-parameter version. <code>Result&lt;u16&gt;</code> means <code>Result&lt;u16, anyhow::Error&gt;</code>.</li>
+<li><code>.with_context(|| ...)</code> (from the <code>Context</code> trait) wraps the error with a message saying what you were doing. The original error becomes its source. <code>.context(&quot;fixed text&quot;)</code> does the same with a fixed message.</li>
+<li><code>bail!(&quot;...&quot;)</code> returns an error with that message right away: short for <code>return Err(anyhow!(&quot;...&quot;))</code>.</li>
+<li><code>{:#}</code> prints the whole chain joined by <code>: </code>. Plain <code>{}</code> prints only the outermost message (<code>invalid port &quot;http&quot;</code>).</li>
+<li><code>fn main() -&gt; anyhow::Result&lt;()&gt;</code> is a very common signature: an error at the end prints its full chain.</li>
+</ul>
+<h2>Which one?</h2>
+<ul>
+<li><strong>Library, or callers need to match on errors:</strong> thiserror. Your error enum is part of your API.</li>
+<li><strong>Application code, where errors are reported rather than handled:</strong> anyhow, with plenty of <code>context</code>.</li>
+<li>Many projects use both: thiserror inside their library modules, anyhow in <code>main</code> and the command handlers.</li>
+</ul>
+<p>Module 39 goes deep into both crates (<code>ensure!</code>, error chains in <code>main</code>, mixing them, designing error types for a real service).</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>A thiserror variant without <code>#[error(...)]</code>.</strong> Then no Display gets written and the enum doesn&#39;t compile as an error. Every variant needs a message.</li>
+<li><strong>anyhow in a library&#39;s public API.</strong> Callers can&#39;t match on an <code>anyhow::Error</code>, so they can&#39;t react to specific failures. Use it in applications.</li>
+<li><strong>Context that repeats the cause.</strong> <code>.context(&quot;parse error&quot;)</code> adds nothing to <code>invalid digit found in string</code>. Say what you were doing: <code>.context(&quot;reading the port from config.toml&quot;)</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Rewrite <code>TicketError</code> with thiserror. Add an <code>#[error(...)]</code> attribute to each variant so that:</p>
+<ul>
+<li><code>SoldOut</code> displays as <code>the event is sold out</code></li>
+<li><code>TooMany { requested: 9, max: 6 }</code> displays as <code>cannot buy 9 tickets, the limit is 6</code></li>
+<li><code>UnknownEvent(&quot;Rust Fest&quot;)</code> displays as <code>no event called &#39;Rust Fest&#39;</code></li>
+</ul>
+
+<h3>Challenge 2</h3>
+<p>Write <code>ScoreError</code> with thiserror (derive <code>Debug</code> and <code>Error</code>):</p>
+<ul>
+<li><code>MissingColon</code>, displayed as <code>expected NAME:POINTS</code></li>
+<li><code>BadPoints</code>, wrapping a <code>ParseIntError</code> with <code>#[from]</code>, displayed as <code>points are not a number</code></li>
+</ul>
+<p>Then write <code>fn parse_score(line: &amp;str) -&gt; Result&lt;(String, u32), ScoreError&gt;</code> for lines like <code>ferris:120</code> (trim both parts), using <code>?</code> for the parse.</p>
+
+<h3>Challenge 3</h3>
+<p>Use anyhow. Write <code>fn load_limit(text: &amp;str) -&gt; anyhow::Result&lt;u32&gt;</code> that reads a rate limit:</p>
+<ul>
+<li>parse the trimmed text as a <code>u32</code>; on failure add context with <code>with_context</code> so that the full chain (<code>{:#}</code>) is <code>limit &quot;abc&quot; is not a number: invalid digit found in string</code> (the original text, in quotes, via <code>{text:?}</code>)</li>
+<li>a limit of <code>0</code> fails with <code>bail!</code> and the message <code>limit must be at least 1</code></li>
+</ul>
+
+<p><a href="/learn/custom-errors/panic-or-result-the-guidelines">Previous: panic or Result? The guidelines</a> </p></main></div>
+  </body>
+</html>

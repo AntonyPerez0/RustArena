@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Deriving the standard traits · Traits (Rust) | RustArena</title>
+    <meta name="description" content="Many standard traits have one obvious implementation: compare the fields one by one, copy every field, print every field. For those, #[derive(...)]…" />
+    <link rel="canonical" href="https://rustarena.app/learn/traits/deriving-the-standard-traits/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Deriving the standard traits · Traits (Rust) | RustArena" />
+    <meta property="og:description" content="Many standard traits have one obvious implementation: compare the fields one by one, copy every field, print every field. For those, #[derive(...)]…" />
+    <meta property="og:url" content="https://rustarena.app/learn/traits/deriving-the-standard-traits/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Deriving the standard traits","description":"Many standard traits have one obvious implementation: compare the fields one by one, copy every field, print every field. For those, #[derive(...)]…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/traits/deriving-the-standard-traits/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Traits</nav>
+<p>Step 6 of 6</p>
+<h1>Deriving the standard traits</h1>
+<p>Many standard traits have one obvious implementation: compare the fields one by one, copy every field, print every field. For those, <code>#[derive(...)]</code> writes the <code>impl</code> for you. You&#39;ve used <code>#[derive(Debug)]</code> since the structs module; here&#39;s the whole family.</p>
+<table>
+<thead>
+<tr>
+<th>Derive</th>
+<th>What you get</th>
+<th>Needs</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Debug</code></td>
+<td><code>{:?}</code> and <code>{:#?}</code></td>
+<td>every field is <code>Debug</code></td>
+</tr>
+<tr>
+<td><code>Clone</code></td>
+<td><code>.clone()</code>, a deep copy</td>
+<td>every field is <code>Clone</code></td>
+</tr>
+<tr>
+<td><code>Copy</code></td>
+<td>values are copied instead of moved</td>
+<td><code>Clone</code>, and every field is <code>Copy</code> (no <code>String</code>, no <code>Vec</code>)</td>
+</tr>
+<tr>
+<td><code>PartialEq</code></td>
+<td><code>==</code> and <code>!=</code>, field by field</td>
+<td>every field is <code>PartialEq</code></td>
+</tr>
+<tr>
+<td><code>Eq</code></td>
+<td>a promise that <code>x == x</code> is always true</td>
+<td><code>PartialEq</code>; not possible with <code>f64</code> fields (NaN != NaN)</td>
+</tr>
+<tr>
+<td><code>Hash</code></td>
+<td>can be a <code>HashMap</code> key or in a <code>HashSet</code></td>
+<td>usually derived together with <code>Eq</code></td>
+</tr>
+<tr>
+<td><code>PartialOrd</code></td>
+<td><code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code></td>
+<td><code>PartialEq</code></td>
+</tr>
+<tr>
+<td><code>Ord</code></td>
+<td><code>.sort()</code>, <code>.max()</code>, <code>BTreeMap</code> keys</td>
+<td><code>Eq</code> and <code>PartialOrd</code></td>
+</tr>
+<tr>
+<td><code>Default</code></td>
+<td><code>Type::default()</code>: zeros, <code>false</code>, empty strings and vectors</td>
+<td>every field is <code>Default</code></td>
+</tr>
+</tbody></table>
+<pre><code class="language-rust">#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum Priority {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Ticket {
+    priority: Priority,
+    id: u32,
+}
+
+#[derive(Debug, Default)]
+struct Settings {
+    volume: u8,
+    muted: bool,
+    nickname: String,
+}
+
+fn main() {
+    let mut tickets = vec![
+        Ticket { priority: Priority::High, id: 7 },
+        Ticket { priority: Priority::Low, id: 3 },
+        Ticket { priority: Priority::High, id: 2 },
+    ];
+    tickets.sort();
+    for t in &amp;tickets {
+        println!(&quot;{:?} #{}&quot;, t.priority, t.id);
+    }
+
+    let p = Priority::Medium;
+    let q = p; // Copy: p is still usable
+    println!(&quot;{} {}&quot;, p == q, Priority::High &gt; Priority::Low);
+    let s = Settings::default();
+    println!(&quot;volume {}, muted {}, nickname {:?}&quot;, s.volume, s.muted, s.nickname);
+}
+</code></pre>
+<pre><code class="language-text">Low #3
+High #2
+High #7
+true true
+volume 0, muted false, nickname &quot;&quot;
+</code></pre>
+<p>How derived comparisons work:</p>
+<ul>
+<li><strong>Structs</strong> compare field by field <strong>in the order the fields are written</strong>: first <code>priority</code>, and only if those are equal, <code>id</code>. That&#39;s why the two High tickets end up sorted by id. Reordering the fields changes the sort order.</li>
+<li><strong>Enums</strong> compare by the order the variants are written: <code>Low &lt; Medium &lt; High</code>. Put variants in a meaningful order and sorting comes for free.</li>
+</ul>
+<h2>Which ones should you derive?</h2>
+<p>Derive <code>Debug</code> on almost everything: error messages and <code>dbg!</code> need it, and tests need it for <code>assert_eq!</code>. For small value types (ids, coordinates, enums without data), <code>Clone, Copy, PartialEq, Eq, Hash</code> is a common set. Libraries derive every standard trait that makes sense for a type, because users of the library can&#39;t add them later (the orphan rule). Don&#39;t derive what doesn&#39;t make sense: <code>Copy</code> on a big struct hides expensive copies, and <code>Default</code> for a type with no sensible empty value invites bugs.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>Copy</code> with a <code>String</code> field.</strong> A <code>String</code> owns heap memory, so it can&#39;t be copied bit by bit:</li>
+</ul>
+<pre><code class="language-rust-error">#[derive(Clone, Copy)]
+struct Player {
+    name: String,
+    hp: u32,
+}
+
+fn main() {}
+</code></pre>
+<pre><code class="language-compiler">error[E0204]: the trait `Copy` cannot be implemented for this type
+</code></pre>
+<ul>
+<li><strong><code>Eq</code> or <code>Ord</code> with an <code>f64</code> field</strong>: <code>error[E0277]: the trait bound `f64: Eq` is not satisfied</code>. Floats only have <code>PartialEq</code>/<code>PartialOrd</code>. Store cents as an integer, or compare floats by hand.</li>
+<li><strong>Deriving <code>Copy</code> without <code>Clone</code>, or <code>Ord</code> without <code>PartialOrd</code> and <code>Eq</code>.</strong> Each needs the traits listed in its &quot;Needs&quot; column. The error names the missing one.</li>
+<li><strong>Expecting <code>derive(Display)</code>.</strong> It doesn&#39;t exist; there&#39;s no single obvious way to show a type to users. Write it by hand (previous step).</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Release versions need to be compared, sorted, copied, used in a <code>HashSet</code> and printed with <code>{:?}</code>. Add <strong>one</strong> <code>#[derive(...)]</code> line to <code>Version</code> so all the hidden tests compile and pass. The field order already gives the right sort order (major, then minor, then patch).</p>
+
+<h3>Challenge 2</h3>
+<p>Fill the blank so <code>Config</code> gets a <code>default()</code> with every field set to its type&#39;s empty value, and the struct update syntax fills in the rest. The program should print <code>3 false &quot;&quot;</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>A ladder ranks players by <code>rank</code> first and then by <code>name</code> (alphabetically). Add the derives <code>Rank</code> and <code>Player</code> need, then write <code>fn top_player(players: &amp;[Player]) -&gt; Option&lt;Player&gt;</code> that returns a clone of the highest player, or <code>None</code> for an empty slice. Use the derived comparison (<code>&gt;</code>) rather than comparing fields yourself. With the derived order, between two players of the same rank the name that sorts <strong>later</strong> counts as higher: a Gold <code>cal</code> beats a Gold <code>bea</code>.</p>
+
+<p><a href="/learn/traits/multiple-bounds-where-clauses-and-returning-impl-trait">Previous: Multiple bounds, where clauses and returning impl Trait</a> </p></main></div>
+  </body>
+</html>

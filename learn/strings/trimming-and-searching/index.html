@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Trimming and searching · Strings in depth (Rust) | RustArena</title>
+    <meta name="description" content="Input is full of stray spaces, prefixes, brackets and markers. These methods clean it up and find things in it. None of them change the string: they…" />
+    <link rel="canonical" href="https://rustarena.app/learn/strings/trimming-and-searching/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Trimming and searching · Strings in depth (Rust) | RustArena" />
+    <meta property="og:description" content="Input is full of stray spaces, prefixes, brackets and markers. These methods clean it up and find things in it. None of them change the string: they…" />
+    <meta property="og:url" content="https://rustarena.app/learn/strings/trimming-and-searching/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Trimming and searching","description":"Input is full of stray spaces, prefixes, brackets and markers. These methods clean it up and find things in it. None of them change the string: they…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/strings/trimming-and-searching/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Structuring data › Strings in depth</nav>
+<p>Step 4 of 7</p>
+<h1>Trimming and searching</h1>
+<p>Input is full of stray spaces, prefixes, brackets and markers. These methods clean it up and find things in it. None of them change the string: they return a new <code>&amp;str</code> (a view of part of the original) or an answer.</p>
+<pre><code class="language-rust">fn main() {
+    println!(&quot;{:?}&quot;, &quot;  padded\t\n&quot;.trim());
+    println!(&quot;{:?}&quot;, &quot;  padded  &quot;.trim_start());
+    println!(&quot;{:?}&quot;, &quot;007&quot;.trim_start_matches(&#39;0&#39;));
+    println!(&quot;{:?}&quot;, &quot;--name--&quot;.trim_matches(&#39;-&#39;));
+    println!(&quot;{:?}&quot;, &quot;$12.50&quot;.strip_prefix(&#39;<div id="root"></div>#39;));
+    println!(&quot;{:?}&quot;, &quot;12.50&quot;.strip_prefix(&#39;<div id="root"></div>#39;));
+    println!(&quot;{:?}&quot;, &quot;report.pdf&quot;.strip_suffix(&quot;.pdf&quot;));
+    println!(&quot;{:?} {:?}&quot;, &quot;banana&quot;.find(&quot;an&quot;), &quot;banana&quot;.rfind(&quot;an&quot;));
+    println!(&quot;{:?}&quot;, &quot;banana&quot;.find(&#39;z&#39;));
+    println!(&quot;{}&quot;, &quot;Error: disk&quot;.to_lowercase().starts_with(&quot;error&quot;));
+}
+</code></pre>
+<pre><code class="language-text">&quot;padded&quot;
+&quot;padded  &quot;
+&quot;7&quot;
+&quot;name&quot;
+Some(&quot;12.50&quot;)
+None
+Some(&quot;report&quot;)
+Some(1) Some(3)
+None
+true
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>trim()</code>, <code>trim_start()</code>, <code>trim_end()</code></td>
+<td>the text without whitespace at both ends / the start / the end</td>
+</tr>
+<tr>
+<td><code>trim_matches(p)</code>, <code>trim_start_matches(p)</code>, <code>trim_end_matches(p)</code></td>
+<td>the text with <strong>every</strong> repeat of <code>p</code> removed from those ends</td>
+</tr>
+<tr>
+<td><code>strip_prefix(p)</code>, <code>strip_suffix(p)</code></td>
+<td><code>Some(rest)</code> with <strong>one</strong> <code>p</code> removed, or <code>None</code> if it isn&#39;t there</td>
+</tr>
+<tr>
+<td><code>starts_with(p)</code>, <code>ends_with(p)</code>, <code>contains(p)</code></td>
+<td><code>bool</code></td>
+</tr>
+<tr>
+<td><code>find(p)</code>, <code>rfind(p)</code></td>
+<td><code>Option&lt;usize&gt;</code>: the <strong>byte</strong> position of the first / last match</td>
+</tr>
+</tbody></table>
+<p>The pattern <code>p</code> can be a char, a <code>&amp;str</code>, an array of chars, or a closure: <code>&quot;abc123&quot;.trim_end_matches(|c: char| c.is_ascii_digit())</code> gives <code>&quot;abc&quot;</code>.</p>
+<p><code>strip_prefix</code> is the one to reach for when you <em>require</em> a prefix: its <code>None</code> tells you the input was malformed, and it fits <code>let ... else</code> perfectly.</p>
+<h2>Putting them together: parsing log lines</h2>
+<pre><code class="language-rust">fn main() {
+    let lines = [
+        &quot;  [WARN] disk 91% full  &quot;,
+        &quot;[INFO] user ana logged in&quot;,
+        &quot;# a comment&quot;,
+        &quot;[ERROR] payment failed: card declined&quot;,
+        &quot;garbage&quot;,
+    ];
+    for raw in lines {
+        let line = raw.trim();
+        if line.starts_with(&#39;#&#39;) {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix(&#39;[&#39;) else {
+            continue;
+        };
+        let Some(end) = rest.find(&#39;]&#39;) else {
+            continue;
+        };
+        let level = &amp;rest[..end];
+        let message = rest[end + 1..].trim_start();
+        println!(&quot;{level} | {message}&quot;);
+    }
+}
+</code></pre>
+<pre><code class="language-text">WARN | disk 91% full
+INFO | user ana logged in
+ERROR | payment failed: card declined
+</code></pre>
+<p>Slicing with positions from <code>find</code> is safe: <code>find</code> returns the byte where the match <em>starts</em>, always a char boundary, and <code>]</code> is one byte long, so <code>end + 1</code> is a boundary too.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Ignoring the result.</strong> <code>input.trim();</code> on its own line does nothing: it returns the trimmed text and you threw it away. The compiler warns <code>unused return value of ... that must be used</code>. Write <code>let input = input.trim();</code>.</li>
+<li><strong>Treating <code>find</code>&#39;s result as a character count.</strong> It&#39;s a byte position, which is exactly what slicing needs, but not &quot;the 3rd letter&quot;.</li>
+<li><strong>Case.</strong> <code>line.contains(&quot;error&quot;)</code> misses <code>ERROR</code>. Lowercase first when case doesn&#39;t matter.</li>
+<li><strong><code>trim_start_matches</code> where you meant <code>strip_prefix</code>.</strong> <code>&quot;$5&quot;.trim_start_matches(&#39;<div id="root"></div>#39;)</code> removes both dollars; <code>strip_prefix</code> removes exactly one and tells you whether it was there.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>fn parse_price(text: &amp;str) -&gt; Option&lt;u32&gt;</code> that turns a price like <code>&quot;$12.50&quot;</code> into cents (<code>1250</code>). Rules: surrounding spaces are allowed; the price must start with <code>$</code> (check it with <code>strip_prefix</code>); the dollars must be a whole number; the cents part is optional but, if there&#39;s a <code>.</code>, it must be exactly two digits. <code>&quot;$3&quot;</code> is <code>300</code>, <code>&quot;12.50&quot;</code> (no <code>$</code>) and <code>&quot;$1.5&quot;</code> are <code>None</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>Hashtags arrive in every shape. Write <code>fn clean_tag(raw: &amp;str) -&gt; String</code> that trims whitespace, removes all leading <code>#</code> characters and lowercases the rest: <code>&quot;  #RustLang &quot;</code> gives <code>&quot;rustlang&quot;</code>, <code>&quot;##Crab&quot;</code> gives <code>&quot;crab&quot;</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Read log lines and report the errors. A line is an error if, after trimming, it starts with <code>[ERROR]</code>. For each error print its message (the text after <code>[ERROR]</code>, trimmed), then a final line <code>N errors</code>. Other lines are ignored.</p>
+
+<p><a href="/learn/strings/splitting-lines-split-splitn-split-once">Previous: Splitting: lines, split, splitn, split_once</a> <a href="/learn/strings/building-strings">Next: Building strings</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Global state: OnceLock and LazyLock · Sharing data between threads (Rust) | RustArena</title>
+    <meta name="description" content="Some data really is global: a lookup table used everywhere, a counter for ids, a config loaded at startup. A static item lives for the whole program and…" />
+    <link rel="canonical" href="https://rustarena.app/learn/sync/global-state-oncelock-and-lazylock/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Global state: OnceLock and LazyLock · Sharing data between threads (Rust) | RustArena" />
+    <meta property="og:description" content="Some data really is global: a lookup table used everywhere, a counter for ids, a config loaded at startup. A static item lives for the whole program and…" />
+    <meta property="og:url" content="https://rustarena.app/learn/sync/global-state-oncelock-and-lazylock/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Global state: OnceLock and LazyLock","description":"Some data really is global: a lookup table used everywhere, a counter for ids, a config loaded at startup. A static item lives for the whole program and…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/sync/global-state-oncelock-and-lazylock/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Sharing data between threads</nav>
+<p>Step 7 of 7</p>
+<h1>Global state: OnceLock and LazyLock</h1>
+<p>Some data really is global: a lookup table used everywhere, a counter for ids, a config loaded at startup. A <strong><code>static</code></strong> item lives for the whole program and every thread can see it, so its type must be <code>Sync</code>. A static&#39;s starting value must be computable at compile time, and statics are immutable: <code>COUNTER += 1</code> on a <code>static COUNTER: u32</code> fails with <code>error[E0594]: cannot assign to immutable static item `COUNTER` </code>.</p>
+<p>Three tools cover nearly every need:</p>
+<ul>
+<li><strong>Atomics</strong> can be created at compile time, so <code>static NEXT_ID: AtomicU64 = AtomicU64::new(1);</code> is a global counter, no <code>unsafe</code> needed. (<code>Mutex::new</code> works in a static too.)</li>
+<li><strong><code>LazyLock&lt;T&gt;</code></strong> (<code>std::sync</code>) holds a value that&#39;s built at run time, by a closure that runs on <strong>first use</strong>, exactly once, even if several threads get there at the same moment. After that it derefs to <code>T</code>. Use it for tables and other values that can&#39;t be built at compile time: <code>static PRICES: HashMap&lt;..&gt; = HashMap::new();</code> fails with <code>error[E0015]: cannot call non-const associated function</code>.</li>
+<li><strong><code>OnceLock&lt;T&gt;</code></strong> is a slot you fill once at run time: <code>get_or_init(|| ...)</code> returns the value, initializing it on the first call; <code>set(value)</code> fills it (and returns <code>Err</code> if it was already full); <code>get()</code> returns <code>Option&lt;&amp;T&gt;</code>. Use it when the value depends on something only known while running, like a command-line argument.</li>
+</ul>
+<pre><code class="language-rust">use std::collections::HashMap;
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+
+static NEXT_TICKET: AtomicU64 = AtomicU64::new(1);
+
+static PRICES: LazyLock&lt;HashMap&lt;&amp;&#39;static str, u32&gt;&gt; =
+    LazyLock::new(|| HashMap::from([(&quot;standard&quot;, 40), (&quot;vip&quot;, 120), (&quot;child&quot;, 15)]));
+
+fn next_ticket() -&gt; u64 {
+    NEXT_TICKET.fetch_add(1, Ordering::Relaxed)
+}
+
+fn main() {
+    let mut tickets: Vec&lt;u64&gt; = thread::scope(|s| {
+        let handles: Vec&lt;_&gt; = (0..3).map(|_| s.spawn(next_ticket)).collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    tickets.sort();
+    println!(&quot;tickets issued: {tickets:?}&quot;);
+    println!(&quot;vip costs {}&quot;, PRICES[&quot;vip&quot;]);
+    println!(&quot;student price: {:?}&quot;, PRICES.get(&quot;student&quot;));
+}
+</code></pre>
+<pre><code class="language-text">tickets issued: [1, 2, 3]
+vip costs 120
+student price: None
+</code></pre>
+<p><code>s.spawn(next_ticket)</code> passes the function itself as the thread&#39;s closure. Which thread got which ticket varies, so the tickets are sorted before printing; <code>fetch_add</code> guarantees no two threads get the same number.</p>
+<p><code>OnceLock</code> with <code>get_or_init</code> is the classic &quot;load once&quot; helper:</p>
+<pre><code class="language-rust">use std::sync::OnceLock;
+
+struct Config {
+    region: String,
+    retries: u32,
+}
+
+static CONFIG: OnceLock&lt;Config&gt; = OnceLock::new();
+
+fn config() -&gt; &amp;&#39;static Config {
+    CONFIG.get_or_init(|| {
+        println!(&quot;loading config (only once)&quot;);
+        Config { region: String::from(&quot;eu-west&quot;), retries: 3 }
+    })
+}
+
+fn main() {
+    println!(&quot;{} with {} retries&quot;, config().region, config().retries);
+    println!(&quot;still {}&quot;, config().region);
+}
+</code></pre>
+<pre><code class="language-text">loading config (only once)
+eu-west with 3 retries
+still eu-west
+</code></pre>
+<h2>At work</h2>
+<ul>
+<li>Globals make code harder to test, since every test shares them. Prefer passing state explicitly (an <code>Arc&lt;AppState&gt;</code> given to each request handler is the norm in web services, module 41). Keep globals for true constants: lookup tables, compiled regexes (<code>static RE: LazyLock&lt;Regex&gt;</code>).</li>
+<li>Older code uses the <code>lazy_static!</code> macro or the <code>once_cell</code> crate. <code>LazyLock</code> and <code>OnceLock</code> replaced both in the standard library.</li>
+<li><code>static mut</code> exists, but every access is <code>unsafe</code> (module 36). Use an atomic, a <code>Mutex</code> or a <code>OnceLock</code> instead.</li>
+</ul>
+<h2>Which tool when</h2>
+<table>
+<thead>
+<tr>
+<th>You need</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Hand values from one thread to another</td>
+<td>a channel (<code>mpsc</code>)</td>
+</tr>
+<tr>
+<td>Many threads read the same data</td>
+<td><code>Arc&lt;T&gt;</code> (or borrow it with <code>thread::scope</code>)</td>
+</tr>
+<tr>
+<td>Many threads change the same data</td>
+<td><code>Arc&lt;Mutex&lt;T&gt;&gt;</code> (<code>RwLock</code> if reads dominate)</td>
+</tr>
+<tr>
+<td>A shared counter or flag</td>
+<td>an atomic</td>
+</tr>
+<tr>
+<td>A global built once</td>
+<td><code>LazyLock</code> / <code>OnceLock</code></td>
+</tr>
+</tbody></table>
+
+<h2>Your task</h2>
+<p>Shipping fees (in cents) are a global table: <code>&quot;local&quot;</code> 300, <code>&quot;national&quot;</code> 700, <code>&quot;eu&quot;</code> 1500, <code>&quot;world&quot;</code> 3500. Declare <code>static SHIPPING: LazyLock&lt;HashMap&lt;&amp;&#39;static str, u64&gt;&gt;</code> built on first use, and write <code>fn total_with_shipping(zone: &amp;str, subtotal: u64) -&gt; Option&lt;u64&gt;</code> that adds the zone&#39;s fee to <code>subtotal</code>, or returns <code>None</code> for an unknown zone.</p>
+
+<h3>Challenge 2</h3>
+<p>A greeting is set once at startup from the server&#39;s name, then read everywhere. With <code>static GREETING: OnceLock&lt;String&gt;</code>, write:</p>
+<ul>
+<li><code>fn init_greeting(name: &amp;str) -&gt; bool</code>: stores <code>&quot;Welcome to {name}&quot;</code> and returns <code>true</code>, or returns <code>false</code> (changing nothing) if a greeting was already set.</li>
+<li><code>fn greeting() -&gt; &amp;&#39;static str</code>: the stored greeting, or <code>&quot;Welcome&quot;</code> if none was set yet.</li>
+</ul>
+
+<h3>Challenge 3</h3>
+<p>Write a global id generator and use it from several threads. Declare <code>static NEXT_ID: AtomicU64</code> starting at 1 and <code>fn next_id() -&gt; u64</code> that hands out the next id. In a <code>thread::scope</code>, run 4 threads that each take 3 ids and return them in a <code>Vec</code>. Collect all 12 ids, sort them, and print:</p>
+<pre><code>ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+count: 12
+</code></pre>
+
+<p><a href="/learn/sync/atomics-lock-free-counters-and-flags">Previous: Atomics: lock-free counters and flags</a> </p></main></div>
+  </body>
+</html>

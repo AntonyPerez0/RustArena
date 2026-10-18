@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Match in Rust: pattern matching explained | RustArena</title>
+    <meta name="description" content="How Rust's match works: literals, ranges, | alternatives, guards, @ bindings, destructuring tuples, structs and enums, and exhaustiveness." />
+    <link rel="canonical" href="https://rustarena.app/topics/match/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Match in Rust: pattern matching explained | RustArena" />
+    <meta property="og:description" content="How Rust's match works: literals, ranges, | alternatives, guards, @ bindings, destructuring tuples, structs and enums, and exhaustiveness." />
+    <meta property="og:url" content="https://rustarena.app/topics/match/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Match in Rust: pattern matching explained","description":"How Rust's match works: literals, ranges, | alternatives, guards, @ bindings, destructuring tuples, structs and enums, and exhaustiveness.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/match/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Match in Rust: pattern matching explained</h1>
+<p>How Rust's match works: literals, ranges, | alternatives, guards, @ bindings, destructuring tuples, structs and enums, and exhaustiveness.</p>
+<p><code>match</code> compares a value against a list of <strong>patterns</strong>, top to bottom, and runs the first arm that fits. It&#39;s an expression, so it produces a value, and it&#39;s <strong>exhaustive</strong>: every possible value must be covered.</p>
+<pre><code class="language-rust">fn describe(code: u16) -&gt; &amp;&#39;static str {
+    match code {
+        200 =&gt; &quot;ok&quot;,
+        301 | 302 =&gt; &quot;redirect&quot;,
+        400..=499 =&gt; &quot;client error&quot;,
+        500..=599 =&gt; &quot;server error&quot;,
+        _ =&gt; &quot;unknown&quot;,
+    }
+}
+
+fn main() {
+    for code in [200, 302, 404, 503, 42] {
+        println!(&quot;{code}: {}&quot;, describe(code));
+    }
+}
+</code></pre>
+<pre><code class="language-text">200: ok
+302: redirect
+404: client error
+503: server error
+42: unknown
+</code></pre>
+<h2>Pattern cheat sheet</h2>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Matches</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>5</code>, <code>&#39;x&#39;</code>, <code>&quot;quit&quot;</code>, <code>true</code></td>
+<td>that exact literal</td>
+</tr>
+<tr>
+<td><code>1..=9</code>, <code>&#39;a&#39;..=&#39;z&#39;</code></td>
+<td>an inclusive range</td>
+</tr>
+<tr>
+<td><code>A | B</code></td>
+<td>either pattern</td>
+</tr>
+<tr>
+<td><code>n</code> (a name)</td>
+<td>anything, and binds it to <code>n</code></td>
+</tr>
+<tr>
+<td><code>_</code></td>
+<td>anything, binds nothing</td>
+</tr>
+<tr>
+<td><code>(x, 0)</code></td>
+<td>a tuple whose second item is 0</td>
+</tr>
+<tr>
+<td><code>Point { x, y: 0 }</code></td>
+<td>a struct, binding <code>x</code>, requiring <code>y == 0</code></td>
+</tr>
+<tr>
+<td><code>Some(v)</code>, <code>Err(e)</code></td>
+<td>an enum variant, binding its data</td>
+</tr>
+<tr>
+<td><code>[first, .., last]</code></td>
+<td>a slice with at least two elements</td>
+</tr>
+<tr>
+<td><code>n @ 1..=9</code></td>
+<td>a range, also binding the value to <code>n</code></td>
+</tr>
+<tr>
+<td><code>x if x &gt; 100</code></td>
+<td>anything, but only if the <strong>guard</strong> is true</td>
+</tr>
+</tbody></table>
+<h2>Destructuring</h2>
+<p>Patterns take values apart. This works in <code>match</code>, <code>if let</code>, <code>let</code> and function parameters:</p>
+<pre><code class="language-rust">match (dx, dy) {
+    (0, 0) =&gt; &quot;standing still&quot;,
+    (0, _) =&gt; &quot;vertical&quot;,
+    (_, 0) =&gt; &quot;horizontal&quot;,
+    _ =&gt; &quot;diagonal&quot;,
+}
+</code></pre>
+<p><code>..</code> skips the remaining fields of a struct (<code>Player { name, .. }</code>) or items of a tuple or slice.</p>
+<h2>Exhaustiveness</h2>
+<pre><code class="language-rust-error">enum Direction {
+    North,
+    East,
+    South,
+    West,
+}
+
+fn turn(d: Direction) -&gt; &amp;&#39;static str {
+    match d {
+        Direction::North =&gt; &quot;up&quot;,
+        Direction::East =&gt; &quot;right&quot;,
+        Direction::South =&gt; &quot;down&quot;,
+    }
+}
+
+fn main() {
+    println!(&quot;{}&quot;, turn(Direction::West));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0004]: non-exhaustive patterns: `Direction::West` not covered
+</code></pre>
+<p>For integers and strings you can&#39;t list every value, so finish with <code>_ =&gt;</code> (or a name to use the value). For your own enums, prefer listing every variant so that adding one later points you at every <code>match</code> to update.</p>
+<h2>match vs if let</h2>
+<p>When you only care about one pattern, <code>if let</code> is shorter: <code>if let Some(price) = lookup(item) { ... }</code>. Its sibling <code>let ... else</code> handles the &quot;bail out if it doesn&#39;t match&quot; case: <code>let Some(user) = find(id) else { return; };</code>. And <code>matches!(value, pattern)</code> gives a <code>bool</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><p><strong>Matching against a variable.</strong> A plain name in a pattern doesn&#39;t compare, it <strong>binds a new variable</strong> that matches everything:</p>
+<pre><code class="language-rust">let target = 5;
+match guess {
+    target =&gt; println!(&quot;always runs!&quot;), // shadows `target`
+}
+</code></pre>
+<p>rustc warns &quot;unreachable pattern&quot; for the arms after it. Use a guard: <code>g if g == target =&gt; ...</code>.</p>
+</li>
+<li><p><strong>Arms with different types.</strong> Every arm must produce the same type: E0308, &quot;<code>match</code> arms have incompatible types&quot;.</p>
+</li>
+<li><p><strong>Overlapping ranges</strong> in the wrong order: the first matching arm wins, so put specific patterns before general ones.</p>
+</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>#[derive(Debug)]
+enum Event {
+    Click { x: i32, y: i32 },
+    Key(char),
+    Scroll(i32),
+    Resize(u32, u32),
+}
+
+fn handle(e: &amp;Event) -&gt; String {
+    match e {
+        Event::Click { x: 0, y: 0 } =&gt; String::from(&quot;click at the origin&quot;),
+        Event::Click { x, y } if *x &lt; 0 || *y &lt; 0 =&gt; format!(&quot;click off screen at ({x}, {y})&quot;),
+        Event::Click { x, .. } =&gt; format!(&quot;click in column {x}&quot;),
+        Event::Key(c @ ('q' | 'Q')) =&gt; format!(&quot;quit key {c:?}&quot;),
+        Event::Key(c) if c.is_ascii_digit() =&gt; format!(&quot;digit {c}&quot;),
+        Event::Key(c) =&gt; format!(&quot;key {c}&quot;),
+        Event::Scroll(0) =&gt; String::from(&quot;no scroll&quot;),
+        Event::Scroll(n @ 1..) =&gt; format!(&quot;scroll down {n}&quot;),
+        Event::Scroll(n) =&gt; format!(&quot;scroll up {}&quot;, -n),
+        Event::Resize(w, h) =&gt; format!(&quot;resize to {w}x{h}&quot;),
+    }
+}
+
+fn main() {
+    let events = [
+        Event::Click { x: 0, y: 0 },
+        Event::Click { x: -5, y: 3 },
+        Event::Click { x: 40, y: 12 },
+        Event::Key('Q'),
+        Event::Key('7'),
+        Event::Key('a'),
+        Event::Scroll(3),
+        Event::Scroll(-2),
+        Event::Resize(800, 600),
+    ];
+    for e in &amp;events {
+        println!(&quot;{:&lt;28} -&gt; {}&quot;, format!(&quot;{e:?}&quot;), handle(e));
+    }
+
+    let scores = [72, 95, 88];
+    match scores {
+        [first, .., last] =&gt; println!(&quot;first {first}, last {last}&quot;),
+    }
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>Click { x: 0, y: 0 }         -&gt; click at the origin
+Click { x: -5, y: 3 }        -&gt; click off screen at (-5, 3)
+Click { x: 40, y: 12 }       -&gt; click in column 40
+Key('Q')                     -&gt; quit key 'Q'
+Key('7')                     -&gt; digit 7
+Key('a')                     -&gt; key a
+Scroll(3)                    -&gt; scroll down 3
+Scroll(-2)                   -&gt; scroll up 2
+Resize(800, 600)             -&gt; resize to 800x600
+first 72, last 88
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/enums/enums-one-of-a-fixed-set-of-variants">Lesson: Enums and Option</a></li><li><a href="/learn/patterns/literals-ranges-and">Lesson: Patterns and matching</a></li></ul></main></div>
+  </body>
+</html>

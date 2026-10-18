@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>The Error trait and Box&lt;dyn Error&gt; · Custom Error Types (Rust) | RustArena</title>
+    <meta name="description" content="The standard library has a trait that marks a type as &quot;an error&quot;: std::error::Error. Implementing it is one line, because all of its methods have default…" />
+    <link rel="canonical" href="https://rustarena.app/learn/custom-errors/the-error-trait-and-box-dyn-error/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="The Error trait and Box&lt;dyn Error&gt; · Custom Error Types (Rust) | RustArena" />
+    <meta property="og:description" content="The standard library has a trait that marks a type as &quot;an error&quot;: std::error::Error. Implementing it is one line, because all of its methods have default…" />
+    <meta property="og:url" content="https://rustarena.app/learn/custom-errors/the-error-trait-and-box-dyn-error/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"The Error trait and Box\u003cdyn Error>","description":"The standard library has a trait that marks a type as \"an error\": std::error::Error. Implementing it is one line, because all of its methods have default…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/custom-errors/the-error-trait-and-box-dyn-error/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Custom Error Types</nav>
+<p>Step 3 of 7</p>
+<h1>The Error trait and Box&lt;dyn Error&gt;</h1>
+<p>The standard library has a trait that marks a type as &quot;an error&quot;: <code>std::error::Error</code>. Implementing it is one line, because all of its methods have default versions:</p>
+<pre><code class="language-rust">impl std::error::Error for WithdrawError {}
+</code></pre>
+<p>There&#39;s one requirement: the type must already implement <code>Debug</code> and <code>Display</code>. That&#39;s the contract of an error in Rust: it can be shown to developers (<code>{:?}</code>) and to users (<code>{}</code>).</p>
+<p>Why bother? Because code that works with <em>any</em> error, from the standard library, from crates like <code>anyhow</code>, and from your own programs, works through this trait. <code>ParseIntError</code>, <code>ParseFloatError</code> and <code>std::io::Error</code> all implement it.</p>
+<h2>Box<dyn Error>: &quot;some error&quot;</h2>
+<p>A function that can fail in several different ways, with different error types, needs one return type that fits them all. The standard answer is <code>Box&lt;dyn Error&gt;</code>:</p>
+<ul>
+<li><code>dyn Error</code> means &quot;a value of some type that implements <code>Error</code>; which one is decided at run time&quot;. Module 25 covers these <strong>trait objects</strong>.</li>
+<li><code>Box&lt;...&gt;</code> puts that value on the heap, because different error types have different sizes. Module 29 covers <code>Box</code>.</li>
+</ul>
+<p>Together: <code>Result&lt;T, Box&lt;dyn Error&gt;&gt;</code> means &quot;a <code>T</code>, or any kind of error&quot;. And <code>?</code> converts any error type that implements <code>Error</code> into a <code>Box&lt;dyn Error&gt;</code> for you. Even a plain <code>&amp;str</code> or <code>String</code> message converts.</p>
+<pre><code class="language-rust">use std::error::Error;
+use std::fmt;
+
+#[derive(Debug)]
+struct EmptyLine;
+
+impl fmt::Display for EmptyLine {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        write!(f, &quot;line is empty&quot;)
+    }
+}
+
+impl Error for EmptyLine {}
+
+fn parse_order(line: &amp;str) -&gt; Result&lt;(String, u32), Box&lt;dyn Error&gt;&gt; {
+    let line = line.trim();
+    if line.is_empty() {
+        return Err(Box::new(EmptyLine));
+    }
+    let (item, qty) = line.split_once(&#39;,&#39;).ok_or(&quot;expected ITEM,QTY&quot;)?;
+    let qty: u32 = qty.trim().parse()?;
+    Ok((item.to_string(), qty))
+}
+
+fn main() {
+    for line in [&quot;apples, 3&quot;, &quot;pears,many&quot;, &quot;&quot;, &quot;plums&quot;] {
+        match parse_order(line) {
+            Ok((item, qty)) =&gt; println!(&quot;{qty} x {item}&quot;),
+            Err(e) =&gt; println!(&quot;error: {e}&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">3 x apples
+error: invalid digit found in string
+error: line is empty
+error: expected ITEM,QTY
+</code></pre>
+<p>Three different error types flow through one return type:</p>
+<ul>
+<li><code>EmptyLine</code>, your own (a <strong>unit struct</strong>: an error with no data), boxed by hand with <code>Box::new</code>.</li>
+<li>A <code>&amp;str</code> message: <code>ok_or(&quot;expected ITEM,QTY&quot;)</code> makes a <code>Result&lt;_, &amp;str&gt;</code>, and <code>?</code> boxes the message.</li>
+<li><code>ParseIntError</code> from <code>parse</code>, boxed by <code>?</code>.</li>
+</ul>
+<p>The caller prints each with <code>{}</code>; the box forwards to the real error&#39;s Display.</p>
+<h2>main returning Box<dyn Error></h2>
+<p>This fixes the problem from the last module: <code>read_line</code> fails with <code>io::Error</code>, <code>parse</code> with <code>ParseIntError</code>, and a <code>main</code> returning <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> accepts both:</p>
+<pre><code class="language-rust">use std::error::Error;
+use std::io::BufRead;
+
+fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+    let mut total: i64 = 0;
+    for line in std::io::stdin().lock().lines() {
+        let line = line?;
+        let amount: i64 = line.trim().parse()?;
+        total += amount;
+    }
+    println!(&quot;total: {total}&quot;);
+    Ok(())
+}
+</code></pre>
+<pre><code class="language-text">120
+-45
+30
+</code></pre>
+<pre><code class="language-text">total: 105
+</code></pre>
+<p><code>fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> is the standard signature for small programs, scripts and examples.</p>
+<h2>The trade-off</h2>
+<p>A <code>Box&lt;dyn Error&gt;</code> has forgotten its concrete type. The caller can print it, but can&#39;t <code>match</code> on your variants (getting the type back needs downcasting, module 25). So:</p>
+<ul>
+<li><strong>Applications</strong> (a <code>main</code>, a script, a command-line tool) mostly just report errors: <code>Box&lt;dyn Error&gt;</code> (or <code>anyhow</code>, step 7) is great.</li>
+<li><strong>Libraries</strong> and modules whose callers need to react to specific failures should return a concrete error enum.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Implementing Error without Display:</strong></li>
+</ul>
+<pre><code class="language-rust-error">#[derive(Debug)]
+struct EmptyLine;
+
+impl std::error::Error for EmptyLine {}
+
+fn main() {}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: `EmptyLine` doesn&#39;t implement `std::fmt::Display`
+</code></pre>
+<ul>
+<li><strong>Returning your error unboxed.</strong> <code>return Err(EmptyLine);</code> in a function returning <code>Box&lt;dyn Error&gt;</code> is a <code>mismatched types</code> error: <code>expected `Box&lt;dyn Error&gt;`, found `EmptyLine` </code>. Write <code>Err(Box::new(EmptyLine))</code> or <code>Err(EmptyLine.into())</code>. Only <code>?</code> boxes automatically.</li>
+<li><strong>Comparing <code>Box&lt;dyn Error&gt;</code> results with <code>assert_eq!</code>.</strong> They don&#39;t implement <code>PartialEq</code>. In tests, compare the message: <code>assert_eq!(err.to_string(), &quot;line is empty&quot;)</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>The starter has a <code>TooMany</code> error with Display already written.</p>
+<ol>
+<li>Make it a real error type by implementing <code>Error</code> for it.</li>
+<li>Write <code>parse_ticket_count</code>: trim the input, parse it as a <code>u32</code> with <code>?</code>, and if the count is above 10, return a boxed <code>TooMany { requested: &lt;count&gt;, max: 10 }</code>. Otherwise return the count.</li>
+</ol>
+
+<h3>Challenge 2</h3>
+<p>A thermostat log has one temperature (<code>f64</code>) per line. Make <code>main</code> return <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> and:</p>
+<ul>
+<li>for each line, use <code>?</code> on the line itself (<code>line?</code>) and on the parse, then print <code>reading &lt;n&gt;: &lt;temperature&gt;</code> (counting from 1)</li>
+<li>at the end print <code>max: &lt;highest&gt;</code>. If there were no readings, fail instead with the message <code>no readings</code>: <code>max.ok_or(&quot;no readings&quot;)?</code> turns the <code>Option</code> into an error that <code>?</code> boxes.</li>
+</ul>
+<p>For input <code>21.5</code>, <code>19</code>, <code>23.25</code> the output is:</p>
+<pre><code>reading 1: 21.5
+reading 2: 19
+reading 3: 23.25
+max: 23.25
+</code></pre>
+<p>A line that isn&#39;t a number, or empty input, ends the program with exit code 1.</p>
+
+<h3>Challenge 3</h3>
+<p>A map app reads coordinates as <code>LAT,LON</code>, like <code>52.52,13.40</code>. Write <code>fn parse_coordinates(text: &amp;str) -&gt; Result&lt;(f64, f64), Box&lt;dyn Error&gt;&gt;</code>:</p>
+<ul>
+<li>no comma: the error message is <code>expected LAT,LON</code></li>
+<li>either number invalid: pass on the <code>ParseFloatError</code> unchanged (its message is <code>invalid float literal</code>, or <code>cannot parse float from empty string</code> for an empty part)</li>
+<li>latitude outside -90 to 90: <code>latitude &lt;lat&gt; is out of range</code> (build it with <code>format!</code> and <code>.into()</code>)</li>
+</ul>
+<p>Trim the parts around the comma.</p>
+
+<p><a href="/learn/custom-errors/display-messages-for-people">Previous: Display: messages for people</a> <a href="/learn/custom-errors/from-teaching-to-convert-errors">Next: From: teaching ? to convert errors</a></p></main></div>
+  </body>
+</html>

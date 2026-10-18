@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Changing values through &amp;mut with * · Borrowing (Rust) | RustArena</title>
+    <meta name="description" content="Method calls work through a &amp;mut automatically. But operators and assignment that act on the value itself need the dereference operator : r means &quot;the…" />
+    <link rel="canonical" href="https://rustarena.app/learn/borrowing/changing-values-through-and-mut-with/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Changing values through &amp;mut with * · Borrowing (Rust) | RustArena" />
+    <meta property="og:description" content="Method calls work through a &amp;mut automatically. But operators and assignment that act on the value itself need the dereference operator : r means &quot;the…" />
+    <meta property="og:url" content="https://rustarena.app/learn/borrowing/changing-values-through-and-mut-with/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Changing values through &mut with *","description":"Method calls work through a &mut automatically. But operators and assignment that act on the value itself need the dereference operator : r means \"the…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/borrowing/changing-values-through-and-mut-with/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Ownership › Borrowing</nav>
+<p>Step 3 of 7</p>
+<h1>Changing values through &amp;mut with *</h1>
+<p>Method calls work through a <code>&amp;mut</code> automatically. But operators and assignment that act on the value itself need the <strong>dereference operator</strong> <code>*</code>: <code>*r</code> means &quot;the value <code>r</code> points to&quot;. Without it, you&#39;d be doing arithmetic on the reference:</p>
+<pre><code class="language-rust-error">fn add_one(count: &amp;mut i32) {
+    count += 1;
+}
+
+fn main() {
+    let mut c = 0;
+    add_one(&amp;mut c);
+    println!(&quot;{}&quot;, c);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0368]: binary assignment operation `+=` cannot be applied to type `&amp;mut i32`
+ --&gt; src/main.rs:2:5
+  |
+2 |     count += 1;
+  |     -----^^^^^
+  |     |
+  |     cannot use `+=` on type `&amp;mut i32`
+  |
+help: `+=` can be used on `i32` if you dereference the left-hand side
+  |
+2 |     *count += 1;
+  |     +
+</code></pre>
+<p>With <code>*</code> it works:</p>
+<pre><code class="language-rust">fn add_points(score: &amp;mut u32, points: u32) {
+    *score += points;
+}
+
+fn reset(name: &amp;mut String) {
+    *name = String::from(&quot;(empty slot)&quot;);   // the old String is dropped here
+}
+
+fn main() {
+    let mut score = 100;
+    add_points(&amp;mut score, 25);
+    add_points(&amp;mut score, 5);
+    println!(&quot;score: {}&quot;, score);
+
+    let mut slot = String::from(&quot;Ferris&quot;);
+    reset(&amp;mut slot);
+    println!(&quot;slot: {}&quot;, slot);
+}
+</code></pre>
+<pre><code class="language-text">score: 130
+slot: (empty slot)
+</code></pre>
+<p><code>*name = String::from(...)</code> replaces the whole value behind the reference. Ownership still works: the old <code>String</code> (&quot;Ferris&quot;) is dropped right there, and the caller&#39;s variable now owns the new one.</p>
+<p>When do you need <code>*</code>?</p>
+<table>
+<thead>
+<tr>
+<th>You write</th>
+<th>Need <code>*</code>?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>r.push_str(&quot;x&quot;)</code>, <code>r.len()</code> (method calls)</td>
+<td>No: automatic</td>
+</tr>
+<tr>
+<td><code>println!(&quot;{}&quot;, r)</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>*r += 1</code>, <code>*r = 0</code>, <code>*r * 2</code> (operators and assignment on the value)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>if *r &gt; 10</code> (comparing with a plain number)</td>
+<td>Yes</td>
+</tr>
+</tbody></table>
+<p>You can also read a <code>Copy</code> value out through a reference: <code>let copy = *r;</code>.</p>
+<h2>Changing every element: for x in &amp;mut v</h2>
+<p><code>for x in &amp;mut v</code> borrows the vector mutably and gives you a <code>&amp;mut</code> to each element in turn, so you change elements with <code>*x</code>:</p>
+<pre><code class="language-rust">fn main() {
+    let mut prices = vec![100, 250, 40];
+    for price in &amp;mut prices {
+        *price = *price * 9 / 10;     // 10% off
+    }
+    println!(&quot;{:?}&quot;, prices);
+}
+</code></pre>
+<pre><code class="language-text">[90, 225, 36]
+</code></pre>
+<p>If <code>prices</code> arrives in a function as a <code>&amp;mut Vec&lt;u32&gt;</code> parameter, it&#39;s already a mutable reference: loop with <code>for price in prices</code>.</p>
+<p>The three ways to loop over a vector:</p>
+<table>
+<thead>
+<tr>
+<th>Loop</th>
+<th>Each <code>x</code> is</th>
+<th>The vector afterwards</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>for x in v</code></td>
+<td>the element itself (moved out)</td>
+<td>gone</td>
+</tr>
+<tr>
+<td><code>for x in &amp;v</code></td>
+<td><code>&amp;T</code>, read-only</td>
+<td>unchanged, still usable</td>
+</tr>
+<tr>
+<td><code>for x in &amp;mut v</code></td>
+<td><code>&amp;mut T</code>, change it with <code>*x</code></td>
+<td>changed, still usable</td>
+</tr>
+</tbody></table>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting the <code>*</code>.</strong> <code>count += 1</code> gives E0368; <code>r = 5</code> gives <code>error[E0308]: mismatched types</code> (<code>expected &amp;mut i32, found integer</code>), and the help suggests the <code>*</code>.</li>
+<li><strong>Adding <code>*</code> to method calls.</strong> <code>(*name).push_str(&quot;x&quot;)</code> works but nobody writes it: <code>name.push_str(&quot;x&quot;)</code> does the same.</li>
+<li><strong>Assigning through a <code>&amp;</code></strong>: <code>error[E0594]: cannot assign to `*score`, which is behind a `&amp;` reference</code>. The parameter must be <code>&amp;mut</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>A small bank account. Write <code>deposit</code>, which adds <code>amount</code> to the balance it borrows, and <code>withdraw</code>, which takes <code>amount</code> out <strong>only if</strong> the balance is at least <code>amount</code>. <code>withdraw</code> returns <code>true</code> if it took the money and <code>false</code> (leaving the balance unchanged) if there wasn&#39;t enough.</p>
+
+<h3>Challenge 2</h3>
+<p><code>heal</code> should add <code>amount</code> to the hit points but never go above <code>max</code>. It&#39;s missing every <code>*</code>: fix the function (read the compiler&#39;s help lines) so the program prints:</p>
+<pre><code>hp: 60
+hp: 100
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>Write <code>clamp_all</code>. It borrows a vector of sensor readings mutably and changes every reading below <code>low</code> to <code>low</code> and every reading above <code>high</code> to <code>high</code>. Readings in between stay as they are.</p>
+<p>For example, readings <code>[-5, 12, 40]</code> with <code>low</code> 0 and <code>high</code> 30 become <code>[0, 12, 30]</code>.</p>
+
+<p><a href="/learn/borrowing/mutable-references">Previous: Mutable references</a> <a href="/learn/borrowing/the-rules-many-readers-or-one-writer">Next: The rules: many readers or one writer</a></p></main></div>
+  </body>
+</html>

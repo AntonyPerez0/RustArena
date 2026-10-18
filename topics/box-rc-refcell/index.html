@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Box, Rc and RefCell in Rust: smart pointers explained | RustArena</title>
+    <meta name="description" content="When to use Box&lt;T&gt;, Rc&lt;T&gt;, RefCell&lt;T&gt;, Rc&lt;RefCell&lt;T&gt;&gt; and Weak&lt;T&gt; in Rust, with the trade-offs and the runtime borrow panic to avoid." />
+    <link rel="canonical" href="https://rustarena.app/topics/box-rc-refcell/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Box, Rc and RefCell in Rust: smart pointers explained | RustArena" />
+    <meta property="og:description" content="When to use Box&lt;T&gt;, Rc&lt;T&gt;, RefCell&lt;T&gt;, Rc&lt;RefCell&lt;T&gt;&gt; and Weak&lt;T&gt; in Rust, with the trade-offs and the runtime borrow panic to avoid." />
+    <meta property="og:url" content="https://rustarena.app/topics/box-rc-refcell/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Box, Rc and RefCell in Rust: smart pointers explained","description":"When to use Box\u003cT>, Rc\u003cT>, RefCell\u003cT>, Rc\u003cRefCell\u003cT>> and Weak\u003cT> in Rust, with the trade-offs and the runtime borrow panic to avoid.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/box-rc-refcell/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Box, Rc and RefCell in Rust: smart pointers explained</h1>
+<p>When to use Box&lt;T&gt;, Rc&lt;T&gt;, RefCell&lt;T&gt;, Rc&lt;RefCell&lt;T&gt;&gt; and Weak&lt;T&gt; in Rust, with the trade-offs and the runtime borrow panic to avoid.</p>
+<p>A <strong>smart pointer</strong> is a type that acts like a reference but also owns and manages what it points to. You&#39;ve already used two: <code>String</code> and <code>Vec&lt;T&gt;</code>. The standard library adds three you&#39;ll meet constantly.</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Gives you</th>
+<th>Cost</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Box&lt;T&gt;</code></td>
+<td>one owner, value on the heap</td>
+<td>one allocation</td>
+<td>recursive types, trait objects, large values</td>
+</tr>
+<tr>
+<td><code>Rc&lt;T&gt;</code></td>
+<td>several owners (single thread), read-only</td>
+<td>allocation + reference count</td>
+<td>shared data in trees and graphs, caches</td>
+</tr>
+<tr>
+<td><code>RefCell&lt;T&gt;</code></td>
+<td>mutation through a shared reference, checked at run time</td>
+<td>a borrow flag</td>
+<td>interior mutability</td>
+</tr>
+<tr>
+<td><code>Rc&lt;RefCell&lt;T&gt;&gt;</code></td>
+<td>several owners that can all mutate</td>
+<td>both</td>
+<td>shared mutable state in one thread</td>
+</tr>
+<tr>
+<td><code>Weak&lt;T&gt;</code></td>
+<td>a non-owning link to <code>Rc</code> data</td>
+<td>a second count</td>
+<td>parent pointers, breaking cycles</td>
+</tr>
+<tr>
+<td><code>Arc&lt;T&gt;</code>, <code>Mutex&lt;T&gt;</code></td>
+<td>the thread-safe versions of <code>Rc</code>, <code>RefCell</code></td>
+<td>atomic operations, locking</td>
+<td>sharing across threads</td>
+</tr>
+</tbody></table>
+<h2>Box<T>: single ownership on the heap</h2>
+<p><code>Box::new(x)</code> moves <code>x</code> to the heap and gives you a pointer that owns it. The box frees the value when it&#39;s dropped. You need it for <strong>recursive types</strong> (a tree node containing nodes: without a box the type would have infinite size, error E0072) and for <strong>trait objects</strong> like <code>Box&lt;dyn Error&gt;</code> or <code>Vec&lt;Box&lt;dyn Shape&gt;&gt;</code>.</p>
+<h2>Rc<T>: shared ownership</h2>
+<p><strong><code>Rc</code></strong> (reference counted) lets several parts of a program own the same value. <code>Rc::clone(&amp;rc)</code> doesn&#39;t copy the data, it increments a counter; the value is freed when the last <code>Rc</code> is dropped. <code>Rc::strong_count(&amp;rc)</code> shows the count. The data inside is <strong>read-only</strong>:</p>
+<pre><code class="language-rust-error">use std::rc::Rc;
+
+fn main() {
+    let shared = Rc::new(vec![1, 2]);
+    shared.push(3);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0596]: cannot borrow data in an `Rc` as mutable
+</code></pre>
+<p><code>Rc</code> is not thread-safe (its counter isn&#39;t atomic). The compiler stops you from sending it to another thread; use <code>Arc</code> there.</p>
+<h2>RefCell<T>: borrow checking at run time</h2>
+<p><strong><code>RefCell</code></strong> moves the borrowing rules from compile time to run time. <code>.borrow()</code> gives a shared borrow, <code>.borrow_mut()</code> a mutable one, both through a plain <code>&amp;RefCell&lt;T&gt;</code>. This is <strong>interior mutability</strong>. The rules still apply: if you call <code>borrow_mut()</code> while another borrow is alive, the program <strong>panics</strong> with <code>RefCell already borrowed</code>. Keep borrows short (don&#39;t hold one across a call that might borrow again), or use <code>try_borrow_mut()</code> to get a <code>Result</code>.</p>
+<p>For <code>Copy</code> values, <strong><code>Cell&lt;T&gt;</code></strong> is simpler: <code>get()</code> and <code>set()</code>, no borrows, no panics.</p>
+<h2>Rc&lt;RefCell<T>&gt;: shared and mutable</h2>
+<p>Combine them when several owners must change the same data, such as observers sharing a log, or nodes in a graph. Each owner holds an <code>Rc</code>, and calls <code>.borrow_mut()</code> to change the value.</p>
+<h2>Weak<T>: avoiding cycles</h2>
+<p>Two <code>Rc</code>s pointing at each other never reach a count of zero, so they <strong>leak</strong>. Make one direction <strong>weak</strong>: <code>Rc::downgrade(&amp;rc)</code> gives a <code>Weak</code>, which doesn&#39;t keep the value alive; <code>weak.upgrade()</code> returns <code>Option&lt;Rc&lt;T&gt;&gt;</code>. Trees typically use <code>Rc</code> for children and <code>Weak</code> for the parent link.</p>
+<h2>Advice at work</h2>
+<ul>
+<li>Reach for plain ownership and references first. <code>Rc&lt;RefCell&lt;T&gt;&gt;</code> everywhere is often a sign the data structure should be redesigned (indices into a <code>Vec</code>, or an arena).</li>
+<li>Write <code>Rc::clone(&amp;x)</code> rather than <code>x.clone()</code>, so readers see it&#39;s a cheap pointer copy.</li>
+<li>In multithreaded code the pair is <code>Arc&lt;Mutex&lt;T&gt;&gt;</code> (or <code>Arc&lt;RwLock&lt;T&gt;&gt;</code>).</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::cell::{Cell, RefCell};
+use std::rc::{Rc, Weak};
+
+#[derive(Debug)]
+enum Tree {
+    Leaf(i32),
+    Node(Box&lt;Tree&gt;, Box&lt;Tree&gt;),
+}
+
+fn sum(t: &amp;Tree) -&gt; i32 {
+    match t {
+        Tree::Leaf(v) =&gt; *v,
+        Tree::Node(l, r) =&gt; sum(l) + sum(r),
+    }
+}
+
+struct Team {
+    name: String,
+    members: RefCell&lt;Vec&lt;Rc&lt;Player&gt;&gt;&gt;,
+}
+
+struct Player {
+    name: String,
+    team: RefCell&lt;Weak&lt;Team&gt;&gt;,
+    score: Cell&lt;u32&gt;,
+}
+
+fn main() {
+    let tree = Tree::Node(Box::new(Tree::Leaf(1)), Box::new(Tree::Node(Box::new(Tree::Leaf(2)), Box::new(Tree::Leaf(3)))));
+    println!(&quot;tree sum {}&quot;, sum(&amp;tree));
+
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let writer_a = Rc::clone(&amp;log);
+    let writer_b = Rc::clone(&amp;log);
+    writer_a.borrow_mut().push(&quot;a: started&quot;);
+    writer_b.borrow_mut().push(&quot;b: started&quot;);
+    println!(&quot;{:?}, {} owners&quot;, log.borrow(), Rc::strong_count(&amp;log));
+
+    let team = Rc::new(Team { name: String::from(&quot;Crabs&quot;), members: RefCell::new(Vec::new()) });
+    let ferris = Rc::new(Player { name: String::from(&quot;Ferris&quot;), team: RefCell::new(Weak::new()), score: Cell::new(0) });
+    *ferris.team.borrow_mut() = Rc::downgrade(&amp;team);
+    team.members.borrow_mut().push(Rc::clone(&amp;ferris));
+
+    ferris.score.set(ferris.score.get() + 10);
+    let team_name = ferris.team.borrow().upgrade().map(|t| t.name.clone());
+    println!(&quot;{} plays for {:?} with {} points&quot;, ferris.name, team_name, ferris.score.get());
+    println!(&quot;team has {} member(s)&quot;, team.members.borrow().len());
+
+    let first = log.borrow();
+    println!(&quot;second borrow_mut while reading: {}&quot;, log.try_borrow_mut().is_err());
+    println!(&quot;first entry {}&quot;, first[0]);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>tree sum 6
+[&quot;a: started&quot;, &quot;b: started&quot;], 3 owners
+Ferris plays for Some(&quot;Crabs&quot;) with 10 points
+team has 1 member(s)
+second borrow_mut while reading: true
+first entry a: started
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/smart-pointers/box-a-value-on-the-heap">Lesson: Smart Pointers</a></li></ul></main></div>
+  </body>
+</html>

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>The rules: many readers or one writer · Borrowing (Rust) | RustArena</title>
+    <meta name="description" content="Here is the rule at the heart of the borrow checker. For any value, at any moment, you can have either: any number of &amp; references (many readers), or…" />
+    <link rel="canonical" href="https://rustarena.app/learn/borrowing/the-rules-many-readers-or-one-writer/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="The rules: many readers or one writer · Borrowing (Rust) | RustArena" />
+    <meta property="og:description" content="Here is the rule at the heart of the borrow checker. For any value, at any moment, you can have either: any number of &amp; references (many readers), or…" />
+    <meta property="og:url" content="https://rustarena.app/learn/borrowing/the-rules-many-readers-or-one-writer/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"The rules: many readers or one writer","description":"Here is the rule at the heart of the borrow checker. For any value, at any moment, you can have either: any number of & references (many readers), or…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/borrowing/the-rules-many-readers-or-one-writer/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Ownership › Borrowing</nav>
+<p>Step 4 of 7</p>
+<h1>The rules: many readers or one writer</h1>
+<p>Here is the rule at the heart of the borrow checker. For any value, at any moment, you can have <strong>either</strong>:</p>
+<ul>
+<li>any number of <code>&amp;</code> references (many readers), <strong>or</strong></li>
+<li>exactly one <code>&amp;mut</code> reference (one writer),</li>
+</ul>
+<p>but <strong>not both at once</strong>. (There&#39;s a second rule, &quot;references must always be valid&quot;, in step 6.)</p>
+<p>Many Rust programmers find the names <strong>shared reference</strong> (<code>&amp;</code>) and <strong>exclusive reference</strong> (<code>&amp;mut</code>) clearer than &quot;immutable&quot; and &quot;mutable&quot;: a <code>&amp;mut</code> is about having the value to yourself.</p>
+<p>Many readers are fine, because nobody changes anything:</p>
+<pre><code class="language-rust">fn main() {
+    let motto = String::from(&quot;one writer or many readers&quot;);
+    let r1 = &amp;motto;
+    let r2 = &amp;motto;
+    let r3 = r1;          // &amp; references are Copy: this copies the pointer
+    println!(&quot;{} | {} | {}&quot;, r1, r2, r3);
+}
+</code></pre>
+<pre><code class="language-text">one writer or many readers | one writer or many readers | one writer or many readers
+</code></pre>
+<h2>Two writers: E0499</h2>
+<pre><code class="language-rust-error">fn main() {
+    let mut log = String::from(&quot;start&quot;);
+    let a = &amp;mut log;
+    let b = &amp;mut log;
+    a.push_str(&quot; / a&quot;);
+    b.push_str(&quot; / b&quot;);
+    println!(&quot;{}&quot;, log);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0499]: cannot borrow `log` as mutable more than once at a time
+ --&gt; src/main.rs:4:13
+  |
+3 |     let a = &amp;mut log;
+  |             -------- first mutable borrow occurs here
+4 |     let b = &amp;mut log;
+  |             ^^^^^^^^ second mutable borrow occurs here
+5 |     a.push_str(&quot; / a&quot;);
+  |     - first borrow later used here
+</code></pre>
+<h2>A reader and a writer: E0502</h2>
+<p>This one prevents a real, classic bug:</p>
+<pre><code class="language-rust-error">fn main() {
+    let mut scores = vec![10, 20, 30];
+    let first = &amp;scores[0];
+    scores.push(40);
+    println!(&quot;{}&quot;, first);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0502]: cannot borrow `scores` as mutable because it is also borrowed as immutable
+ --&gt; src/main.rs:4:5
+  |
+3 |     let first = &amp;scores[0];
+  |                  ------ immutable borrow occurs here
+4 |     scores.push(40);
+  |     ^^^^^^^^^^^^^^^ mutable borrow occurs here
+5 |     println!(&quot;{}&quot;, first);
+  |                    ----- immutable borrow later used here
+</code></pre>
+<p>Why is this dangerous? <code>push</code> needs room. If the vector&#39;s heap block is full, <code>push</code> allocates a bigger block, copies the elements over and <strong>frees the old block</strong>. <code>first</code> would still point into the old one:</p>
+<pre><code class="language-text">before the push:   scores ──► [10, 20, 30]          capacity 3: full
+                               ▲
+                             first
+
+after the push:    scores ──► [10, 20, 30, 40, _, _]   a new, bigger block
+                              [10, 20, 30]  ◄── first  the old block: FREED
+</code></pre>
+<p>Reading <code>first</code> would be a use-after-free. In C++, holding a reference into a <code>std::vector</code> across a <code>push_back</code> is exactly this bug, and it compiles without a word. Rust refuses to compile it. Note that <code>push</code> doesn&#39;t take a <code>&amp;mut</code> you can see: method calls borrow the value automatically, <code>&amp;mut</code> for <code>push</code>, <code>&amp;</code> for <code>len</code>.</p>
+<h2>Why this rule matters even more with threads</h2>
+<p>A <strong>data race</strong> happens when two threads access the same memory at the same time, at least one of them writes, and nothing coordinates them. The result depends on timing: data gets corrupted, sometimes, on some machines. &quot;Many readers or one writer&quot; makes data races impossible to compile. You&#39;ll see in the threads module that the same rule you&#39;re learning here is what makes concurrent Rust safe.</p>
+<h2>Fixing these errors</h2>
+<ul>
+<li><strong>Copy out what you need</strong> instead of keeping a reference: <code>let first = scores[0];</code> copies an <code>i32</code>, so there&#39;s no borrow left.</li>
+<li><strong>Finish reading before writing</strong>: the next step shows that a borrow ends at its last use, so reordering often fixes the error.</li>
+<li><strong>Collect first, change later</strong>: you can&#39;t push to a vector while looping over it with <code>for x in &amp;v</code>. Work out what to add in the loop, then add it afterwards.</li>
+</ul>
+<pre><code class="language-rust">fn main() {
+    let mut scores = vec![10, 20, 30];
+    let first = scores[0];      // a copy of the number, not a borrow
+    scores.push(40);
+    println!(&quot;first was {}, now {} scores&quot;, first, scores.len());
+}
+</code></pre>
+<pre><code class="language-text">first was 10, now 4 scores
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Holding a reference into a vector while pushing to it</strong> (E0502).</li>
+<li><strong>Changing a vector inside <code>for x in &amp;v</code></strong> (E0502): the loop holds a shared borrow of the whole vector until it ends.</li>
+<li><strong>Two <code>&amp;mut</code> to the same value</strong> (E0499), including passing <code>&amp;mut x</code> to a function while another <code>&amp;mut x</code> is still in use.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Every score of 100 or more earns a bonus round, which is added as a <code>10</code> at the end of the list. The program tries to <code>push</code> while looping over <code>&amp;scores</code>, which is E0502. Fix it <strong>without</strong> <code>.clone()</code>: for example, count the bonus rounds in the loop, then push them after it. It should print:</p>
+<pre><code>[120, 80, 100, 45, 10, 10]
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>Two mutable references to <code>score</code> exist at the same time (E0499). Fix it so only one writer is active at any moment, for example by using a single <code>&amp;mut</code>, so it prints:</p>
+<pre><code>team score: 15
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>Write <code>append_doubles</code>. It borrows a vector mutably and appends, at the end, the double of every <strong>original</strong> element: <code>[1, 2, 3]</code> becomes <code>[1, 2, 3, 2, 4, 6]</code>. You can&#39;t push while looping over the vector by reference, so loop over the <strong>indexes</strong> of the original length instead. No <code>.clone()</code>.</p>
+
+<p><a href="/learn/borrowing/changing-values-through-and-mut-with">Previous: Changing values through &amp;mut with *</a> <a href="/learn/borrowing/borrows-end-at-their-last-use">Next: Borrows end at their last use</a></p></main></div>
+  </body>
+</html>

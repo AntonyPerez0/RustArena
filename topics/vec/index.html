@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Vec in Rust: creating, adding, removing and iterating | RustArena</title>
+    <meta name="description" content="A practical guide to Rust's Vec&lt;T&gt;: vec!, push and pop, get vs indexing, insert and remove, sort, retain, dedup, and with_capacity." />
+    <link rel="canonical" href="https://rustarena.app/topics/vec/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Vec in Rust: creating, adding, removing and iterating | RustArena" />
+    <meta property="og:description" content="A practical guide to Rust's Vec&lt;T&gt;: vec!, push and pop, get vs indexing, insert and remove, sort, retain, dedup, and with_capacity." />
+    <meta property="og:url" content="https://rustarena.app/topics/vec/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Vec in Rust: creating, adding, removing and iterating","description":"A practical guide to Rust's Vec\u003cT>: vec!, push and pop, get vs indexing, insert and remove, sort, retain, dedup, and with_capacity.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/vec/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Vec in Rust: creating, adding, removing and iterating</h1>
+<p>A practical guide to Rust's Vec&lt;T&gt;: vec!, push and pop, get vs indexing, insert and remove, sort, retain, dedup, and with_capacity.</p>
+<p><code>Vec&lt;T&gt;</code> is Rust&#39;s growable array: a list of values of the same type, stored next to each other on the heap. It&#39;s the collection you&#39;ll use most.</p>
+<h2>Creating</h2>
+<pre><code class="language-rust">let mut scores: Vec&lt;u32&gt; = Vec::new();  // empty, type given
+let names = vec![&quot;Ferris&quot;, &quot;Corro&quot;];     // with values, type inferred
+let zeros = vec![0; 10];                 // ten zeros
+let mut buf = Vec::with_capacity(1000);  // room for 1000 before reallocating
+</code></pre>
+<h2>Reading</h2>
+<ul>
+<li><code>v[i]</code> returns the element, and <strong>panics</strong> if <code>i</code> is out of range: <code>index out of bounds: the len is 3 but the index is 3</code>.</li>
+<li><code>v.get(i)</code> returns an <code>Option&lt;&amp;T&gt;</code>: <code>None</code> instead of a panic. Use it when the index comes from outside (user input, a file).</li>
+<li><code>v.first()</code>, <code>v.last()</code>, <code>v.len()</code>, <code>v.is_empty()</code>, <code>v.contains(&amp;x)</code>, <code>v.iter().position(|x| ...)</code>.</li>
+</ul>
+<h2>Adding and removing</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Does</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>push(x)</code></td>
+<td>add at the end</td>
+<td>fast (amortized O(1))</td>
+</tr>
+<tr>
+<td><code>pop()</code></td>
+<td>remove the last, returns <code>Option&lt;T&gt;</code></td>
+<td>fast</td>
+</tr>
+<tr>
+<td><code>insert(i, x)</code></td>
+<td>add at index <code>i</code>, shifting the rest right</td>
+<td>O(n)</td>
+</tr>
+<tr>
+<td><code>remove(i)</code></td>
+<td>take out index <code>i</code>, shifting the rest left</td>
+<td>O(n)</td>
+</tr>
+<tr>
+<td><code>swap_remove(i)</code></td>
+<td>take out index <code>i</code>, filling the gap with the last</td>
+<td>fast, changes order</td>
+</tr>
+<tr>
+<td><code>truncate(n)</code>, <code>clear()</code></td>
+<td>drop elements past <code>n</code> / all of them</td>
+<td></td>
+</tr>
+<tr>
+<td><code>extend(other)</code></td>
+<td>append everything from an iterator</td>
+<td></td>
+</tr>
+<tr>
+<td><code>retain(|x| ...)</code></td>
+<td>keep only elements that pass a test</td>
+<td>O(n)</td>
+</tr>
+<tr>
+<td><code>dedup()</code></td>
+<td>remove consecutive duplicates (sort first)</td>
+<td>O(n)</td>
+</tr>
+</tbody></table>
+<h2>Sorting</h2>
+<p><code>sort()</code> for types with a natural order (integers, strings). <code>sort_by_key(|p| p.age)</code> to sort by a field, <code>sort_by(|a, b| b.score.cmp(&amp;a.score))</code> for full control (this one sorts descending). <code>f64</code> has no total order, so <code>sort()</code> on floats doesn&#39;t compile; use <code>sort_by(|a, b| a.total_cmp(b))</code>. <code>sort_unstable*</code> variants are a bit faster when equal elements don&#39;t need to keep their order.</p>
+<h2>Iterating</h2>
+<ul>
+<li><code>for x in &amp;v</code>: borrow each element (<code>&amp;T</code>); <code>v</code> is still usable afterwards.</li>
+<li><code>for x in &amp;mut v</code>: change elements in place (<code>*x += 1</code>).</li>
+<li><code>for x in v</code>: consume the vector, taking each element by value.</li>
+</ul>
+<h2>Capacity</h2>
+<p>A <code>Vec</code> has a <strong>length</strong> (elements in use) and a <strong>capacity</strong> (room reserved). When <code>push</code> exceeds the capacity, it allocates a bigger block (roughly double) and moves everything. That&#39;s why holding a reference into a <code>Vec</code> while pushing is forbidden (E0502), and why <code>with_capacity</code> helps when you know the size up front.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Indexing with the wrong integer type.</strong> Indexes are <code>usize</code>:</li>
+</ul>
+<pre><code class="language-rust-error">fn main() {
+    let v = vec![10, 20, 30];
+    let i: i32 = 1;
+    println!(&quot;{}&quot;, v[i]);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: the type `[{integer}]` cannot be indexed by `i32`
+</code></pre>
+<p>Convert with <code>v[i as usize]</code> (if <code>i</code> can&#39;t be negative) or use <code>usize</code> for the variable.</p>
+<ul>
+<li><strong><code>v.len() - 1</code> on an empty vector</strong> panics (<code>attempt to subtract with overflow</code>). Use <code>v.last()</code>.</li>
+<li><strong>Moving out with an index:</strong> <code>let s = names[0];</code> for a <code>Vec&lt;String&gt;</code> is E0507. Borrow (<code>&amp;names[0]</code>) or <code>clone()</code>.</li>
+<li><strong>Removing while iterating:</strong> use <code>retain</code> instead of a loop with <code>remove</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>#[derive(Debug)]
+struct Item {
+    name: &amp;'static str,
+    qty: u32,
+}
+
+fn main() {
+    let mut inventory = vec![
+        Item { name: &quot;sword&quot;, qty: 1 },
+        Item { name: &quot;potion&quot;, qty: 5 },
+        Item { name: &quot;arrow&quot;, qty: 0 },
+        Item { name: &quot;shield&quot;, qty: 2 },
+    ];
+    inventory.push(Item { name: &quot;map&quot;, qty: 1 });
+    println!(&quot;{} kinds of item&quot;, inventory.len());
+
+    inventory.retain(|it| it.qty &gt; 0);
+    inventory.sort_by_key(|it| it.name);
+    let names: Vec&lt;&amp;str&gt; = inventory.iter().map(|it| it.name).collect();
+    println!(&quot;{names:?}&quot;);
+
+    for it in &amp;mut inventory {
+        it.qty *= 2;
+    }
+    println!(&quot;potions: {:?}&quot;, inventory.iter().find(|it| it.name == &quot;potion&quot;).map(|it| it.qty));
+
+    println!(&quot;index 1: {:?}&quot;, inventory.get(1));
+    println!(&quot;index 9: {:?}&quot;, inventory.get(9));
+    let last = inventory.pop();
+    println!(&quot;popped {last:?}, {} left&quot;, inventory.len());
+
+    let mut readings: Vec&lt;f64&gt; = vec![3.5, -1.0, 2.25, 9.0];
+    readings.sort_by(|a, b| a.total_cmp(b));
+    println!(&quot;{readings:?}&quot;);
+
+    let mut tags = vec![&quot;b&quot;, &quot;a&quot;, &quot;b&quot;, &quot;c&quot;, &quot;a&quot;];
+    tags.sort();
+    tags.dedup();
+    println!(&quot;{tags:?}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>5 kinds of item
+[&quot;map&quot;, &quot;potion&quot;, &quot;shield&quot;, &quot;sword&quot;]
+potions: Some(10)
+index 1: Some(Item { name: &quot;potion&quot;, qty: 10 })
+index 9: None
+popped Some(Item { name: &quot;sword&quot;, qty: 2 }), 3 left
+[-1.0, 2.25, 3.5, 9.0]
+[&quot;a&quot;, &quot;b&quot;, &quot;c&quot;]
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/vectors/creating-and-growing-a-vec">Lesson: Vectors</a></li></ul></main></div>
+  </body>
+</html>

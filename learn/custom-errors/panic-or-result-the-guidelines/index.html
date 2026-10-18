@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>panic or Result? The guidelines · Custom Error Types (Rust) | RustArena</title>
+    <meta name="description" content="You now have every tool. The hard part at work is choosing. These are the guidelines most Rust teams follow (they come from the Rust book and the Rust…" />
+    <link rel="canonical" href="https://rustarena.app/learn/custom-errors/panic-or-result-the-guidelines/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="panic or Result? The guidelines · Custom Error Types (Rust) | RustArena" />
+    <meta property="og:description" content="You now have every tool. The hard part at work is choosing. These are the guidelines most Rust teams follow (they come from the Rust book and the Rust…" />
+    <meta property="og:url" content="https://rustarena.app/learn/custom-errors/panic-or-result-the-guidelines/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"panic or Result? The guidelines","description":"You now have every tool. The hard part at work is choosing. These are the guidelines most Rust teams follow (they come from the Rust book and the Rust…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/custom-errors/panic-or-result-the-guidelines/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Custom Error Types</nav>
+<p>Step 6 of 7</p>
+<h1>panic or Result? The guidelines</h1>
+<p>You now have every tool. The hard part at work is choosing. These are the guidelines most Rust teams follow (they come from the Rust book and the Rust API guidelines):</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Bad user input, missing file, network timeout, invalid data</td>
+<td><code>Result</code></td>
+</tr>
+<tr>
+<td>A business rule says no (insufficient funds, sold out)</td>
+<td><code>Result</code></td>
+</tr>
+<tr>
+<td>A bug: a broken invariant, a state the code assumes is impossible</td>
+<td><code>panic!</code> (often through <code>expect</code>, <code>assert!</code> or <code>unreachable!</code>)</td>
+</tr>
+<tr>
+<td>Tests, examples, quick prototypes</td>
+<td><code>unwrap</code>/<code>expect</code> are fine</td>
+</tr>
+<tr>
+<td>Library functions</td>
+<td><code>Result</code>, and panic only when the <em>caller</em> broke a documented rule</td>
+</tr>
+</tbody></table>
+<p>The key question: <strong>can this happen when the program is correct?</strong> A user typing <code>abc</code> happens in a correct program, so it&#39;s a <code>Result</code>. An index that your own code computed being out of range only happens if your code is wrong, so a panic (which points straight at the bug) is right.</p>
+<h2>Offer both, like the standard library</h2>
+<p>The standard library often provides a panicking version and a checking version, so the caller picks:</p>
+<table>
+<thead>
+<tr>
+<th>Panics on failure</th>
+<th>Returns <code>Option</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>v[i]</code></td>
+<td><code>v.get(i)</code></td>
+</tr>
+<tr>
+<td><code>a / b</code> (b is 0)</td>
+<td><code>a.checked_div(b)</code></td>
+</tr>
+<tr>
+<td><code>a + b</code> (overflow, debug build)</td>
+<td><code>a.checked_add(b)</code></td>
+</tr>
+</tbody></table>
+<p>If a function can panic, its documentation says so under a <code># Panics</code> heading, so callers know the rule they must follow:</p>
+<pre><code class="language-rust">/// Returns the average of the scores.
+///
+/// # Panics
+///
+/// Panics if `scores` is empty.
+fn average(scores: &amp;[u32]) -&gt; u32 {
+    assert!(!scores.is_empty(), &quot;average of no scores&quot;);
+    let mut total = 0;
+    for score in scores {
+        total += score;
+    }
+    total / scores.len() as u32
+}
+</code></pre>
+<p><code>assert!(condition, &quot;message&quot;)</code> panics with the message when the condition is false. It&#39;s the usual way to check a rule the caller must follow.</p>
+<h2>Validate once, then trust the type</h2>
+<p>A useful pattern: check a value once, when it&#39;s created, and wrap it in a type that can only hold valid values. After that, the rest of the code needs no checks and no <code>Result</code>s.</p>
+<pre><code class="language-rust">#[derive(Debug, PartialEq)]
+enum PercentError {
+    TooLarge(u32),
+}
+
+struct Percent(u32);
+
+impl Percent {
+    fn new(value: u32) -&gt; Result&lt;Percent, PercentError&gt; {
+        if value &gt; 100 {
+            return Err(PercentError::TooLarge(value));
+        }
+        Ok(Percent(value))
+    }
+
+    fn of(&amp;self, amount: u32) -&gt; u32 {
+        amount * self.0 / 100
+    }
+}
+
+fn main() {
+    let discount = Percent::new(25).expect(&quot;25 is a valid percentage&quot;);
+    println!(&quot;25% of 80 is {}&quot;, discount.of(80));
+    match Percent::new(150) {
+        Ok(_) =&gt; println!(&quot;accepted&quot;),
+        Err(e) =&gt; println!(&quot;rejected: {e:?}&quot;),
+    }
+}
+</code></pre>
+<pre><code class="language-text">25% of 80 is 20
+rejected: TooLarge(150)
+</code></pre>
+<p><code>Percent::new</code> returns a <code>Result</code>, because the number might come from a user. But <code>of</code> can&#39;t fail: a <code>Percent</code> can only be built through <code>new</code>, so its value is always 0 to 100. And the <code>expect</code> on <code>Percent::new(25)</code> is fine: 25 is a constant, so failure would be a bug, and the message says what was assumed. (To make sure nobody builds a <code>Percent</code> without <code>new</code>, the field would be made private; module 28 shows how.)</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Panicking in a library on bad input.</strong> A web server using your parsing library would crash on one bad request. Return a <code>Result</code>.</li>
+<li><strong>Returning <code>Result</code> for bugs.</strong> If the only way to get an <code>Err</code> is a programming mistake, callers end up writing <code>.unwrap()</code> everywhere anyway. Panic (with a clear message) and document it.</li>
+<li><strong><code>unwrap</code> with no explanation.</strong> When failure would be a bug, <code>expect(&quot;why this can&#39;t fail&quot;)</code> documents the invariant for the next reader.</li>
+</ul>
+
+<h2>Your task</h2>
+<p><code>apply_discount</code> is part of a pricing library, but it panics on an unknown discount code, which can come straight from a customer&#39;s input. Change it to return <code>Result&lt;u32, DiscountError&gt;</code>: an unknown code (codes are case-sensitive) returns <code>Err(DiscountError::UnknownCode(&lt;the code&gt;))</code>, and a known code returns the discounted price in <code>Ok</code>.</p>
+
+<h3>Challenge 2</h3>
+<p><code>nth_score</code> panics when <code>n</code> is out of range, because indexing panics. The index comes from a user&#39;s request, so return a <code>Result</code> instead: use <code>scores.get(n)</code> and turn <code>None</code> into <code>Err(ScoreError::OutOfRange { index: n, len: scores.len() })</code>. Don&#39;t use <code>[n]</code> indexing.</p>
+
+<h3>Challenge 3</h3>
+<p>Write a validated type from scratch: a network port that&#39;s always usable.</p>
+<ul>
+<li><code>PortError</code> (derive <code>Debug</code> and <code>PartialEq</code>) with variants <code>NotANumber(ParseIntError)</code>, <code>Zero</code> and <code>Reserved(u16)</code></li>
+<li><code>struct Port(u16);</code></li>
+<li><code>impl Port</code> with <code>fn parse(text: &amp;str) -&gt; Result&lt;Port, PortError&gt;</code>: trim and parse as <code>u16</code> (a parse error becomes <code>NotANumber</code>), then reject <code>0</code> (<code>Zero</code>) and anything below 1024 (<code>Reserved(port)</code>), and <code>fn number(&amp;self) -&gt; u16</code>, which returns the port number</li>
+</ul>
+
+<p><a href="/learn/custom-errors/source-chains-errors-with-causes">Previous: Source chains: errors with causes</a> <a href="/learn/custom-errors/a-first-look-at-thiserror-and-anyhow">Next: A first look at thiserror and anyhow</a></p></main></div>
+  </body>
+</html>

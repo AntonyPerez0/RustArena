@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Concurrency with threads, channels and rayon | Pro Track | RustArena</title>
+    <meta name="description" content="Build a parallel log indexer, first with threads and channels, then with rayon, and prove it gives the same answers as the single-threaded version, faster." />
+    <link rel="canonical" href="https://rustarena.app/pro/concurrency/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Concurrency with threads, channels and rayon | Pro Track | RustArena" />
+    <meta property="og:description" content="Build a parallel log indexer, first with threads and channels, then with rayon, and prove it gives the same answers as the single-threaded version, faster." />
+    <meta property="og:url" content="https://rustarena.app/pro/concurrency/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><h1>Concurrency with threads, channels and rayon</h1><p>Every machine you&#39;ll deploy to has several cores, and a program that uses one of them leaves most of the hardware idle. Rust is famous for &quot;fearless concurrency&quot;: a <strong>data race</strong> (two threads touching the same memory, at least one writing, without synchronization) is a compile error, not a 3 a.m. bug. What the compiler can&#39;t do is choose a design for you, stop <strong>deadlocks</strong>, or make parallel code fast. That&#39;s your job here.</p>
+<p>You&#39;ll build a log indexer that counts lines, levels, services and words across many log files, three ways: threads sharing a lock, threads sending messages, and rayon. Then you&#39;ll prove they all give the serial answer, and measure which is faster.</p>
+<p><strong>You&#39;ll practice:</strong> <code>std::thread::spawn</code> and <code>thread::scope</code>, <code>Arc</code>, <code>Mutex</code> and atomics, <code>mpsc</code> channels, rayon, <code>Send</code> and <code>Sync</code>, deadlocks, and measuring speedups in release mode.</p>
+<h2>The project</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/index.rs</code></td>
+<td><code>Index</code>: the counts, with <code>add_document</code> and <code>merge</code> (provided)</td>
+</tr>
+<tr>
+<td><code>src/lib.rs</code></td>
+<td><code>index_serial</code>, the single-threaded reference (provided)</td>
+</tr>
+<tr>
+<td><code>src/shared.rs</code>, <code>src/channels.rs</code>, <code>src/with_rayon.rs</code></td>
+<td><strong>your three versions</strong></td>
+</tr>
+<tr>
+<td><code>src/main.rs</code></td>
+<td>the benchmark: times all four on 58 MB of generated logs</td>
+</tr>
+</tbody></table>
+<pre><code class="language-bash">cd projects/06-concurrency
+cargo test                           # do they agree with index_serial?
+cargo run --release                  # how fast is each one?
+cargo run --release -- --threads 2   # try 1, 2, 4, 8...
+</code></pre>
+<h2>Background</h2>
+<h3>Threads, <code>&#39;static</code> and scopes</h3>
+<p><code>thread::spawn(closure)</code> starts an OS thread and returns a <code>JoinHandle</code>; <code>join()</code> waits for it and returns <code>Err</code> if it panicked. The closure must be <code>&#39;static</code> (own everything it uses, usually via <code>move</code>), because the new thread may outlive the function that started it. To share read-only data, wrap it in an <code>Arc</code> (an atomically reference-counted pointer) and give each thread a clone: a pointer copy, not a data copy.</p>
+<p><code>thread::scope(|s| { s.spawn(...); })</code> waits for every thread spawned in it before returning, so those threads may <strong>borrow</strong> local data. No <code>Arc</code> needed.</p>
+<h3>Send and Sync</h3>
+<p>Two marker traits, implemented automatically by the compiler:</p>
+<ul>
+<li><code>Send</code>: a value may <strong>move</strong> to another thread. <code>Rc</code> isn&#39;t <code>Send</code>: its reference count isn&#39;t atomic, so two threads cloning it could corrupt it.</li>
+<li><code>Sync</code>: a value may be <strong>shared</strong> (<code>&amp;T</code>) between threads. <code>RefCell</code> isn&#39;t <code>Sync</code>: its borrow flag isn&#39;t atomic. A <code>Mutex&lt;T&gt;</code> is <code>Sync</code> because the lock serializes access.</li>
+</ul>
+<p><code>thread::spawn</code> requires its closure to be <code>Send</code>, so passing an <code>Rc</code> to a thread fails to compile (<code>src/lib.rs</code> has an example that the doc tests prove does not compile). That&#39;s how safe Rust rules out data races. It does not rule out <em>logic</em> races, like two threads reading a balance and both deciding there&#39;s enough money.</p>
+<h3>Shared state: <code>Arc&lt;Mutex&lt;T&gt;&gt;</code></h3>
+<pre><code class="language-rust">let total = Arc::new(Mutex::new(Index::default()));
+// in each thread, with its own clone of the Arc:
+total.lock().unwrap().merge(part);   // the guard unlocks at the end of the statement
+</code></pre>
+<p>The lock is held as long as the guard lives. Every moment a thread holds it, the others wait, so keep critical sections short: do the work on local data and lock only to combine. <code>lock()</code> returns <code>Err</code> if another thread panicked while holding it (&quot;poisoning&quot;). For a single counter, an atomic (<code>AtomicUsize::fetch_add</code>) needs no lock at all.</p>
+<h3>Message passing: channels</h3>
+<p>&quot;Don&#39;t communicate by sharing memory; share memory by communicating.&quot; <code>mpsc::channel()</code> gives a <code>Sender</code> (clone it for each producer) and a <code>Receiver</code> (one consumer). Each worker owns its data, and the only thing that crosses threads is the finished result. <code>for msg in rx</code> ends when <strong>every</strong> <code>Sender</code> has been dropped. <code>mpsc::sync_channel(n)</code> is bounded: <code>send</code> blocks when it&#39;s full, which is how you stop fast producers from using all your memory (backpressure).</p>
+<h3>rayon and work stealing</h3>
+<pre><code class="language-rust">use rayon::prelude::*;
+let total: u64 = docs.par_iter().map(|d| d.len() as u64).sum();
+</code></pre>
+<p><code>par_iter()</code> runs the iterator on rayon&#39;s global pool (one thread per core). Work is split in halves recursively; each thread keeps a queue of pieces, and an idle thread <strong>steals</strong> from a busy one&#39;s queue, so uneven work balances itself with no tuning. <code>fold</code> gives each piece its own accumulator, and <code>reduce</code> combines them pairwise, so the combining operation must be associative (merging indexes is).</p>
+<h3>Deadlocks</h3>
+<p>The compiler can&#39;t see these, and a deadlocked program just stops:</p>
+<ul>
+<li>Two threads lock mutexes A and B in opposite orders, and each waits for the other forever. Fix: always lock in one fixed order, or hold one lock at a time.</li>
+<li>A thread locks a <code>Mutex</code> it already holds (Rust&#39;s <code>Mutex</code> is not re-entrant).</li>
+<li>A loop over a <code>Receiver</code> while a <code>Sender</code> is still alive somewhere, even your own original.</li>
+<li>Holding a lock while blocking: sending into a full <code>sync_channel</code>, or <code>join()</code>ing a thread that needs that lock.</li>
+</ul>
+<p>The tests run every version with a 60-second limit, so a deadlock fails with a hint instead of hanging CI.</p>
+<h3>Measuring</h3>
+<p>Always benchmark with <code>--release</code>; debug builds are many times slower. Take the best of several rounds to filter noise. The serial part of a job limits the speedup (Amdahl&#39;s law): here that&#39;s merging, so merge whole indexes, not single words. More threads than cores rarely helps.</p>
+<h2>Your tasks</h2>
+<ol>
+<li>Read <code>src/index.rs</code> and <code>src/lib.rs</code>, then run <code>cargo run --release</code> to see the serial time (the next version panics with <code>todo!</code>).</li>
+<li><strong>Part 1</strong> (<code>src/shared.rs</code>): <code>index_shared</code>, with <code>thread::spawn</code>, an atomic work counter and <code>Arc&lt;Mutex&lt;Index&gt;&gt;</code>. The comments walk you through it.</li>
+<li><strong>Part 2</strong> (<code>src/channels.rs</code>): <code>index_channels</code>, with <code>thread::scope</code>, one slice of documents per thread, and an <code>mpsc</code> channel.</li>
+<li><strong>Part 3</strong> (<code>src/with_rayon.rs</code>): <code>index_rayon</code>, with <code>par_iter</code>.</li>
+<li><code>cargo test</code>, then <code>cargo run --release</code> with different <code>--threads</code> values. Which version wins on your machine, and why?</li>
+<li>Grade (<code>bash ../../tools/grade.sh 06-concurrency</code>), then commit and push.</li>
+</ol>
+<h2>What the grader checks</h2>
+<ul>
+<li><code>cargo fmt</code> and <code>cargo clippy</code> are clean; the tests, <code>lib.rs</code> and <code>main.rs</code> are unchanged.</li>
+<li>All tests pass: every version, with 0 to 64 threads, empty and uneven inputs, matches <code>index_serial</code>.</li>
+<li>Each part uses its tool (<code>thread::spawn</code> + <code>Arc</code> + <code>Mutex</code>; <code>thread::scope</code> + a channel; rayon&#39;s <code>par_iter</code>) and doesn&#39;t call <code>index_serial</code>.</li>
+<li>The release benchmark: no parallel version may be more than 25% slower than serial. That&#39;s a deliberately low bar for noisy shared CI machines; on 4 cores you should see 2 to 4 times faster.</li>
+</ul>
+<h2>Hints</h2>
+<ul>
+<li><code>threads</code> can be 0 (treat it as 1) or larger than the number of documents (some threads get nothing, which must still work).</li>
+<li><code>while let Some(doc) = docs.get(next.fetch_add(1, Ordering::Relaxed))</code> is a whole work queue in one line.</li>
+<li>With <code>docs.chunks(n)</code>, use <code>n = docs.len().div_ceil(threads)</code>, but never 0: <code>chunks(0)</code> panics.</li>
+<li>If a test times out, look for a <code>Sender</code> you didn&#39;t <code>drop</code>.</li>
+</ul>
+<h2>Going further</h2>
+<ul>
+<li>In <code>index_shared</code>, lock once per <em>line</em> instead of once per document and measure the difference. That&#39;s lock contention.</li>
+<li>Write a deliberate deadlock with two mutexes locked in opposite orders, watch it hang, then fix it.</li>
+<li>Replace the <code>mpsc</code> channel with a bounded <code>sync_channel(1)</code>. Does it still work if you receive <em>after</em> the scope ends? Why not?</li>
+<li>Implement a parallel merge sort with <code>rayon::join</code>.</li>
+<li>Profile with <code>perf</code> or <code>cargo flamegraph</code> (project 11) to see where the serial time goes.</li>
+</ul>
+</main></div>
+  </body>
+</html>

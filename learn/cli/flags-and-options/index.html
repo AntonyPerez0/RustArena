@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Flags and options · Building Command-Line Tools (Rust) | RustArena</title>
+    <meta name="description" content="Real tools take three kinds of arguments: Positional arguments: meaning comes from position, like the pattern and file in grep error app.log. Flags:…" />
+    <link rel="canonical" href="https://rustarena.app/learn/cli/flags-and-options/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Flags and options · Building Command-Line Tools (Rust) | RustArena" />
+    <meta property="og:description" content="Real tools take three kinds of arguments: Positional arguments: meaning comes from position, like the pattern and file in grep error app.log. Flags:…" />
+    <meta property="og:url" content="https://rustarena.app/learn/cli/flags-and-options/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Flags and options","description":"Real tools take three kinds of arguments: Positional arguments: meaning comes from position, like the pattern and file in grep error app.log. Flags:…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/cli/flags-and-options/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Building Command-Line Tools</nav>
+<p>Step 2 of 6</p>
+<h1>Flags and options</h1>
+<p>Real tools take three kinds of arguments:</p>
+<ul>
+<li><strong>Positional arguments</strong>: meaning comes from position, like the pattern and file in <code>grep error app.log</code>.</li>
+<li><strong>Flags</strong>: on/off switches, a short form <code>-i</code> and a long form <code>--ignore-case</code>.</li>
+<li><strong>Options</strong>: a name followed by a value, like <code>--max 5</code> or <code>-m 5</code>.</li>
+</ul>
+<p>The standard way to parse them by hand is a loop over an iterator, with <code>match</code> on each argument. Taking a <strong>slice of strings</strong> instead of reading <code>env::args()</code> inside the function makes the parser easy to test, so <code>main</code> just does <code>let args: Vec&lt;String&gt; = env::args().skip(1).collect();</code> and passes <code>&amp;args</code>:</p>
+<pre><code class="language-rust">struct Config {
+    pattern: String,
+    files: Vec&lt;String&gt;,
+    ignore_case: bool,
+    max: Option&lt;usize&gt;,
+}
+
+fn parse_args(args: &amp;[String]) -&gt; Result&lt;Config, String&gt; {
+    let mut pattern = None;
+    let mut files = Vec::new();
+    let mut ignore_case = false;
+    let mut max = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            &quot;-i&quot; | &quot;--ignore-case&quot; =&gt; ignore_case = true,
+            &quot;-m&quot; | &quot;--max&quot; =&gt; {
+                let value = iter.next().ok_or(&quot;missing value for --max&quot;)?;
+                let n = value.parse().map_err(|_| format!(&quot;invalid number for --max: {value}&quot;))?;
+                max = Some(n);
+            }
+            flag if flag.starts_with(&#39;-&#39;) =&gt; return Err(format!(&quot;unknown flag: {flag}&quot;)),
+            _ if pattern.is_none() =&gt; pattern = Some(arg.clone()),
+            _ =&gt; files.push(arg.clone()),
+        }
+    }
+    let pattern = pattern.ok_or(&quot;missing pattern&quot;)?;
+    Ok(Config { pattern, files, ignore_case, max })
+}
+
+fn main() {
+    let tries = [
+        vec![&quot;-i&quot;, &quot;error&quot;, &quot;app.log&quot;],
+        vec![&quot;--max&quot;, &quot;2&quot;, &quot;warn&quot;, &quot;a.log&quot;, &quot;b.log&quot;],
+        vec![&quot;error&quot;, &quot;-x&quot;],
+        vec![&quot;-m&quot;],
+    ];
+    for t in tries {
+        let args: Vec&lt;String&gt; = t.iter().map(|s| s.to_string()).collect();
+        match parse_args(&amp;args) {
+            Ok(c) =&gt; println!(&quot;pattern={} files={:?} ignore_case={} max={:?}&quot;, c.pattern, c.files, c.ignore_case, c.max),
+            Err(e) =&gt; println!(&quot;error: {e}&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">pattern=error files=[&quot;app.log&quot;] ignore_case=true max=None
+pattern=warn files=[&quot;a.log&quot;, &quot;b.log&quot;] ignore_case=false max=Some(2)
+error: unknown flag: -x
+error: missing value for --max
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>while let Some(arg) = iter.next()</code> instead of <code>for</code>: an option needs to <strong>take the next argument</strong> as its value, which <code>iter.next()</code> inside the loop does.</li>
+<li><code>match arg.as_str()</code> matches a <code>String</code> against string literals; <code>|</code> gives the short and long forms the same arm.</li>
+<li><code>ok_or(&quot;...&quot;)</code> turns the <code>None</code> of a missing value into an error, and <code>?</code> returns it. A <code>&amp;str</code> error converts into the <code>String</code> error type automatically.</li>
+<li>The guard <code>flag if flag.starts_with(&#39;-&#39;)</code> catches unknown flags, so a typo like <code>--ignore-cse</code> is reported instead of being treated as a file name.</li>
+<li>All the results land in a <strong>Config struct</strong>. The rest of the program reads the config, never the raw arguments.</li>
+</ul>
+<h2>Conventions users expect</h2>
+<ul>
+<li><code>-h</code>/<code>--help</code> prints help; <code>-V</code>/<code>--version</code> prints the version.</li>
+<li><code>--</code> means &quot;end of options&quot;: everything after it is positional, so you can search for a pattern that starts with <code>-</code>.</li>
+<li><code>-</code> as a file name means standard input (step 5).</li>
+<li>Order usually doesn&#39;t matter: <code>grep -i error</code> and <code>grep error -i</code> both work (ours does too).</li>
+</ul>
+<p>In real projects the <strong>clap</strong> crate handles all of this and generates <code>--help</code> for you (last step). Writing a parser once by hand shows you what clap does and helps when you write small tools without dependencies.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Using a <code>for</code> loop</strong> and then calling <code>iter.next()</code> inside it: <code>for arg in iter</code> moves the iterator into the loop (<code>borrow of moved value: iter</code>), and <code>for arg in &amp;mut iter</code> borrows it mutably for the whole loop, so a second <code>iter.next()</code> is refused. Use <code>while let</code>.</li>
+<li><strong>Not rejecting unknown flags</strong>: they silently become positional arguments, and the user&#39;s typo becomes &quot;file not found: --verbos&quot;.</li>
+<li><strong>Parsing in <code>main</code> with <code>env::args()</code> directly</strong>: then you can only test it by running the program. A function taking <code>&amp;[String]</code> can be tested with plain vectors.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>parse_args</code> for a log-search tool. Flags: <code>-i</code>/<code>--ignore-case</code>, <code>-n</code>/<code>--line-numbers</code>, and the option <code>-m N</code>/<code>--max N</code>. The first positional argument is the pattern, the optional second one is the file; a third positional is an error. Errors (exact text): <code>missing pattern</code>, <code>unexpected argument: &lt;arg&gt;</code>, <code>unknown flag: &lt;flag&gt;</code>, <code>missing value for --max</code>, <code>invalid number for --max: &lt;value&gt;</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>Users also type <code>--max=5</code> and group short flags as <code>-in</code>. Write <code>fn expand(args: &amp;[String]) -&gt; Vec&lt;String&gt;</code> that normalizes the arguments before parsing: a long option with <code>=</code> (<code>--max=5</code>) becomes two arguments (<code>--max</code>, <code>5</code>); a single dash followed by <strong>two or more letters</strong> (<code>-in</code>) becomes one flag per letter (<code>-i</code>, <code>-n</code>). Everything else is kept as is, and after a <code>--</code> argument nothing more is changed (the <code>--</code> itself is kept).</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>seq</code>: <code>seq [-s SEP] [-w] FIRST LAST</code> prints the whole numbers from FIRST to LAST (inclusive, counting down if LAST is smaller), separated by SEP (default: a newline). With <code>-w</code>, pad every number with zeros to the width of the widest one (<code>08</code>, <code>09</code>, <code>10</code>). The options may come before or after the numbers, and you can assume the arguments are valid.</p>
+
+<p><a href="/learn/cli/command-line-arguments">Previous: Command-line arguments</a> <a href="/learn/cli/exit-codes-and-stderr">Next: Exit codes and stderr</a></p></main></div>
+  </body>
+</html>

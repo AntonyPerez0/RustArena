@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Logging, tracing and configuration | Pro Track | RustArena</title>
+    <meta name="description" content="Make a service you can operate. Structured logs and spans with tracing, log levels from the environment, and validated configuration." />
+    <link rel="canonical" href="https://rustarena.app/pro/observability/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Logging, tracing and configuration | Pro Track | RustArena" />
+    <meta property="og:description" content="Make a service you can operate. Structured logs and spans with tracing, log levels from the environment, and validated configuration." />
+    <meta property="og:url" content="https://rustarena.app/pro/observability/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><h1>Logging, tracing and configuration</h1><p>It&#39;s 3 a.m., orders are failing in production, and all you have is what the service wrote down. Was it one customer or all of them? Which attempt failed? Code that&#39;s easy to operate answers those questions from its logs, and refuses to start with a bad setting instead of misbehaving for hours.</p>
+<p><code>orderd</code> processes a batch of orders: it prices them, rejects suspicious ones and charges customers, retrying when the payment gateway times out. The logic works. The logging is <code>println!</code> debugging, and there&#39;s no configuration at all. You&#39;ll fix both.</p>
+<p><strong>You&#39;ll practice:</strong> <code>tracing</code> events, spans and fields, <code>#[instrument]</code>, <code>tracing-subscriber</code> with <code>EnvFilter</code> and JSON output, layered configuration with serde and TOML, validation, and testing what your code logs.</p>
+<h2>Background</h2>
+<h3>Events, spans and fields</h3>
+<p><code>tracing</code> is the standard for logging in Rust (Tokio, axum, SQLx and most big crates use it). It has two building blocks:</p>
+<ul>
+<li>An <strong>event</strong> is something that happened, at a <strong>level</strong>: <code>info!(total_cents, &quot;order accepted&quot;)</code>.</li>
+<li>A <strong>span</strong> is a period of time with context, like &quot;processing order 4&quot;. Every event inside a span is tagged with the span&#39;s fields, so you write the order id once and every line about that order carries it.</li>
+</ul>
+<p>Fields make logs <strong>structured</strong>: <code>key = value</code> pairs that a machine can filter on (<code>order_id=4</code>) instead of words buried in a sentence. <code>%x</code> records a value with <code>Display</code>, <code>?x</code> with <code>Debug</code>, and a bare <code>total_cents</code> uses the variable of that name.</p>
+<pre><code class="language-rust">#[instrument(skip_all, fields(order_id = order.id, customer = %order.customer))]
+pub fn process_order(order: &amp;Order, config: &amp;Config) -&gt; Outcome { ... }
+
+let result = info_span!(&quot;charge&quot;, attempt).in_scope(|| gateway_charge(customer, attempt));
+warn!(error = %err, &quot;payment attempt failed&quot;);
+</code></pre>
+<p><code>#[instrument]</code> wraps a function in a span named after it. By default it records every argument; <code>skip_all</code> plus explicit <code>fields(...)</code> keeps big or secret values (passwords, whole configs) out of your logs.</p>
+<p>Pick levels the way teams do: <strong>ERROR</strong> means someone should look, <strong>WARN</strong> means unexpected but handled, <strong>INFO</strong> marks normal business milestones, <strong>DEBUG</strong> is detail for developers, and <strong>TRACE</strong> is everything.</p>
+<h3>Subscribers: where logs go</h3>
+<p><code>tracing</code> only emits; a <strong>subscriber</strong> decides what to keep and how to write it. With <code>tracing-subscriber</code> you stack layers on a registry:</p>
+<ul>
+<li><code>EnvFilter</code> reads <code>RUST_LOG</code>: <code>warn</code>, <code>debug</code>, or per module like <code>error,orderd::orders=debug</code>. Operators change verbosity without a rebuild.</li>
+<li><code>fmt::layer()</code> writes readable text; <code>fmt::layer().json()</code> writes one JSON object per line for log collectors (Loki, Elasticsearch, Datadog, CloudWatch), including the current span and the list of spans.</li>
+</ul>
+<p>Logs go to <strong>stderr</strong>; <strong>stdout</strong> is for the program&#39;s real output (here, the summary line), so <code>orderd &gt; summary.txt</code> works. Turn color codes off when stderr isn&#39;t a terminal, or your log files fill with <code>\x1b[32m</code>.</p>
+<h3>Configuration</h3>
+<p>Settings come in layers, each overriding the one before: <strong>defaults</strong>, then a <strong>TOML file</strong> (<code>ORDERD_CONFIG</code> names it), then <strong>environment variables</strong> (how containers and CI pass settings). The result is checked once, at startup, and turned into a typed <code>Config</code>. If you hold a <code>Config</code>, every value in it is valid, and nobody re-checks it deep in the code.</p>
+<ul>
+<li>Deserialize the file into a struct whose fields are all <code>Option&lt;T&gt;</code>, with <code>#[serde(deny_unknown_fields)]</code>: a typo like <code>max_atempts</code> must be an error, not silently ignored.</li>
+<li>Errors name the setting and the bad value. <code>orderd</code> exits with code 2 (the convention for &quot;started wrong&quot;) before doing any work.</li>
+<li><code>from_sources</code> takes the environment as a function instead of calling <code>std::env::var</code>. In Rust 2024 <code>std::env::set_var</code> is <code>unsafe</code> (other threads may be reading the environment), so tests shouldn&#39;t change the real environment. Passing it in makes configuration a pure function you can test with any values.</li>
+</ul>
+<h3>Testing logs</h3>
+<p><code>tests/telemetry.rs</code> installs a small <code>Layer</code> that records every event with the fields of its spans, runs the batch, and checks the result. Read it: it&#39;s how you&#39;d test logging in a real codebase.</p>
+<h2>The logging contract</h2>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Level</th>
+<th>Fields</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>span <code>process_batch</code></td>
+<td></td>
+<td><code>service</code>, <code>orders</code> (count)</td>
+<td><code>process_batch</code></td>
+</tr>
+<tr>
+<td>span <code>process_order</code></td>
+<td></td>
+<td><code>order_id</code>, <code>customer</code></td>
+<td><code>process_order</code></td>
+</tr>
+<tr>
+<td>span <code>charge</code></td>
+<td></td>
+<td><code>attempt</code></td>
+<td>one per payment attempt</td>
+</tr>
+<tr>
+<td>event <code>&quot;priced line&quot;</code></td>
+<td>DEBUG</td>
+<td><code>sku</code>, <code>quantity</code>, <code>line_cents</code></td>
+<td>each line of an order</td>
+</tr>
+<tr>
+<td>event <code>&quot;order rejected&quot;</code></td>
+<td>WARN</td>
+<td><code>reason</code></td>
+<td>empty or over-limit orders</td>
+</tr>
+<tr>
+<td>event <code>&quot;payment attempt failed&quot;</code></td>
+<td>WARN</td>
+<td><code>error</code></td>
+<td>inside its <code>charge</code> span</td>
+</tr>
+<tr>
+<td>event <code>&quot;order accepted&quot;</code></td>
+<td>INFO</td>
+<td><code>total_cents</code></td>
+<td></td>
+</tr>
+<tr>
+<td>event <code>&quot;payment failed&quot;</code></td>
+<td>ERROR</td>
+<td><code>error</code></td>
+<td>after the last attempt, or a permanent error</td>
+</tr>
+<tr>
+<td>event <code>&quot;batch finished&quot;</code></td>
+<td>INFO</td>
+<td><code>accepted</code>, <code>rejected</code>, <code>failed</code>, <code>revenue_cents</code></td>
+<td>end of the batch</td>
+</tr>
+</tbody></table>
+<h2>Your tasks</h2>
+<ol>
+<li><strong>Configuration.</strong> Implement <code>from_sources</code> in <code>src/config.rs</code> (the doc comment lists every key, variable and rule). Run <code>cargo test --test config</code>.</li>
+<li><strong>Subscriber.</strong> Implement <code>telemetry::init</code> in <code>src/telemetry.rs</code>: an <code>EnvFilter</code> defaulting to <code>info</code>, then a text or JSON <code>fmt</code> layer writing to stderr.</li>
+<li><strong>Instrumentation.</strong> In <code>src/orders.rs</code>, replace every <code>println!</code>/<code>eprintln!</code> with the spans and events in the table. Run <code>cargo test --test telemetry</code>.</li>
+<li>Run it every way an operator would:</li>
+</ol>
+<pre><code class="language-bash">cargo run
+RUST_LOG=debug cargo run
+RUST_LOG=warn ORDERD_LOG_FORMAT=json cargo run
+RUST_LOG=info,orderd::orders=debug cargo run
+ORDERD_CONFIG=config/orderd.toml ORDERD_PAYMENT_MAX_ATTEMPTS=2 cargo run
+ORDERD_PAYMENT_MAX_ATTEMPTS=0 cargo run; echo &quot;exit code $?&quot;
+cargo test
+bash ../../tools/grade.sh 10-observability
+</code></pre>
+<h2>What the grader checks</h2>
+<ul>
+<li><code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> are clean.</li>
+<li>The three test files are unchanged, and all their tests pass.</li>
+<li><code>src/orders.rs</code> has no <code>println!</code>, <code>eprintln!</code> or <code>dbg!</code> left.</li>
+<li><code>RUST_LOG=warn</code> with JSON output prints only WARN and ERROR lines, each a JSON object, with the summary alone on stdout.</li>
+<li><code>RUST_LOG=debug</code> with <code>config/orderd.toml</code> prints readable DEBUG lines inside the order spans.</li>
+</ul>
+<h2>Hints</h2>
+<ul>
+<li>A generic helper keeps the environment parsing short: <code>fn from_env&lt;T: FromStr&gt;(env: &amp;impl Fn(&amp;str) -&gt; Option&lt;String&gt;, var: &amp;&#39;static str) -&gt; Result&lt;Option&lt;T&gt;, ConfigError&gt; where T::Err: Display</code>. Give <code>LogFormat</code> a <code>FromStr</code> impl to use it.</li>
+<li><code>EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy()</code> gives you the <code>info</code> default.</li>
+<li>The two <code>fmt</code> layers have different types, so call <code>.init()</code> in each <code>match</code> arm rather than storing the layer in a variable.</li>
+<li><code>std::io::stderr().is_terminal()</code> (from <code>std::io::IsTerminal</code>) tells you whether to use color.</li>
+<li>If a telemetry test fails, its message prints everything that was logged, with the spans each event was in.</li>
+</ul>
+<h2>Going further</h2>
+<ul>
+<li>Export spans to Jaeger or Grafana Tempo with <code>tracing-opentelemetry</code>, and follow one order across services.</li>
+<li>Write logs to a rotating file without slowing the program down using <code>tracing-appender</code>&#39;s non-blocking writer.</li>
+<li>Add a <code>--check-config</code> flag that loads and prints the configuration, then exits: handy in deployment pipelines.</li>
+<li>Compare your loader with the <code>figment</code> or <code>config</code> crates. What do they add, and what do they hide?</li>
+<li>Reload the log level while the program runs with <code>tracing_subscriber::reload</code>.</li>
+</ul>
+</main></div>
+  </body>
+</html>

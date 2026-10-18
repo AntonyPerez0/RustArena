@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Stack and heap: where values live · Ownership (Rust) | RustArena</title>
+    <meta name="description" content="Every value your program works with is stored somewhere in the computer's memory. To understand Rust's most famous feature, ownership, you first need a…" />
+    <link rel="canonical" href="https://rustarena.app/learn/ownership/stack-and-heap-where-values-live/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Stack and heap: where values live · Ownership (Rust) | RustArena" />
+    <meta property="og:description" content="Every value your program works with is stored somewhere in the computer's memory. To understand Rust's most famous feature, ownership, you first need a…" />
+    <meta property="og:url" content="https://rustarena.app/learn/ownership/stack-and-heap-where-values-live/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Stack and heap: where values live","description":"Every value your program works with is stored somewhere in the computer's memory. To understand Rust's most famous feature, ownership, you first need a…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/ownership/stack-and-heap-where-values-live/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Ownership › Ownership</nav>
+<p>Step 1 of 6</p>
+<h1>Stack and heap: where values live</h1>
+<p>Every value your program works with is stored somewhere in the computer&#39;s memory. To understand Rust&#39;s most famous feature, <strong>ownership</strong>, you first need a picture of the two places a running program keeps its data: the <strong>stack</strong> and the <strong>heap</strong>.</p>
+<h2>The stack</h2>
+<p>The <strong>stack</strong> holds the local variables of the functions that are running right now. Each function call gets its own block of space, a <strong>stack frame</strong>, big enough for all of its variables. When the function returns, its whole frame is thrown away in one go. Making and removing frames is just moving a pointer up and down, so the stack is extremely fast.</p>
+<p>The catch: everything on the stack must have a <strong>size known at compile time</strong>. An <code>i32</code> is always 4 bytes, an <code>f64</code> 8 bytes, an array <code>[i32; 3]</code> 12 bytes. The compiler lays out each frame before the program ever runs.</p>
+<h2>The heap</h2>
+<p>What about text the user types in, or a list that grows while the program runs? Their size isn&#39;t known until run time, and it can change. That data goes on the <strong>heap</strong>: a big pool of memory where the program can ask for a block of any size while it runs. Asking for a block is called <strong>allocating</strong>. The <strong>allocator</strong> finds free space and hands back its address, a <strong>pointer</strong>. When the program is done with the block, it must give it back (<strong>free</strong> it) so the space can be reused.</p>
+<p>A <code>String</code> uses both. The text lives on the heap. The <code>String</code> value itself is a small, fixed-size <strong>handle</strong> on the stack holding three numbers: a pointer to the text, its <strong>length</strong> (bytes in use) and its <strong>capacity</strong> (bytes reserved).</p>
+<pre><code class="language-text">fn main() {
+    let lives = 3;
+    let name = String::from(&quot;Ferris&quot;);
+}
+
+      STACK (main&#39;s frame)                     HEAP
+     ┌───────┬──────────────────┐
+     │ lives │ 3                │
+     ├───────┼──────────────────┤          ┌───┬───┬───┬───┬───┬───┐
+     │ name  │ ptr  ────────────┼────────► │ F │ e │ r │ r │ i │ s │
+     │       │ len       6      │          └───┴───┴───┴───┴───┴───┘
+     │       │ capacity  6      │
+     └───────┴──────────────────┘
+</code></pre>
+<p>A <code>Vec</code> is built the same way: pointer, length and capacity on the stack, the elements on the heap. That&#39;s why both can grow: when they run out of capacity, they allocate a bigger block on the heap and move their contents there, while the handle on the stack keeps the same size.</p>
+<p>You can check sizes with <code>std::mem::size_of::&lt;T&gt;()</code>, which tells you how many bytes a value of type <code>T</code> takes on the stack. The <code>::&lt;T&gt;</code> part names the type you&#39;re asking about. Since Rust 1.80, <code>size_of</code> is one of the few functions available everywhere without its full path, so you can also write just <code>size_of::&lt;T&gt;()</code>, as this example does.</p>
+<pre><code class="language-rust">fn main() {
+    let short = String::from(&quot;hi&quot;);
+    let long = String::from(&quot;a much longer piece of text&quot;);
+    println!(&quot;i32: {} bytes&quot;, size_of::&lt;i32&gt;());
+    println!(&quot;[i32; 3]: {} bytes&quot;, size_of::&lt;[i32; 3]&gt;());
+    println!(&quot;String handle: {} bytes&quot;, size_of::&lt;String&gt;());
+    println!(&quot;text on the heap: {} and {} bytes&quot;, short.len(), long.len());
+}
+</code></pre>
+<pre><code class="language-text">i32: 4 bytes
+[i32; 3]: 12 bytes
+String handle: 24 bytes
+text on the heap: 2 and 27 bytes
+</code></pre>
+<p>The handle is 24 bytes (three 8-byte numbers on a 64-bit machine) whether the text is 2 bytes or 2 gigabytes. The text itself is somewhere else.</p>
+<h2>Who cleans up the heap?</h2>
+<p>Stack memory cleans itself up when a function returns. Heap memory doesn&#39;t: something has to free each block, <strong>exactly once</strong>, <strong>after</strong> the last time it&#39;s used. Programming languages answer this in three ways:</p>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Languages</th>
+<th>The catch</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>You free memory by hand</td>
+<td>C, C++ (<code>malloc</code>/<code>free</code>, <code>new</code>/<code>delete</code>)</td>
+<td>Forget it: a <strong>memory leak</strong>. Free twice: a <strong>double free</strong>. Use the memory after freeing it: a <strong>use-after-free</strong>. These bugs crash programs and are the classic source of security holes.</td>
+</tr>
+<tr>
+<td>A <strong>garbage collector</strong> finds unused memory while the program runs</td>
+<td>Java, Python, Go, JavaScript, C#</td>
+<td>Safe, but it costs CPU time and memory, and can pause the program at moments you don&#39;t control.</td>
+</tr>
+<tr>
+<td><strong>Ownership</strong>: the compiler works out where to free, using rules it checks at compile time</td>
+<td>Rust</td>
+<td>You have to follow the rules. That&#39;s what this module teaches.</td>
+</tr>
+</tbody></table>
+<p>Microsoft and Google&#39;s Chrome team have both reported that around 70% of their serious security bugs are memory-safety bugs like these. Rust&#39;s ownership rules make use-after-free and double free impossible in normal (safe) Rust, with no garbage collector and no run-time cost: the compiler inserts the code that frees memory exactly where it belongs.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Thinking a <code>String</code> holds its text inline.</strong> It holds a <em>pointer</em> to the text. Copying the handle doesn&#39;t copy the text, which is exactly why the next steps matter.</li>
+<li><strong>Thinking string literals live on the heap.</strong> <code>&quot;hi&quot;</code> is stored in the program&#39;s binary, read-only. <code>String::from(&quot;hi&quot;)</code> copies those bytes into a new heap block that the <code>String</code> is responsible for.</li>
+<li><strong>Mixing up length and capacity.</strong> <code>.len()</code> is how many bytes are in use. The capacity is how many are reserved, so that pushing more text doesn&#39;t have to allocate every time.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Fill in the blanks so the program prints the size of the <code>String</code> handle (the type name goes inside <code>::&lt;&gt;</code>) and the number of bytes the city&#39;s text takes on the heap. It should print:</p>
+<pre><code>handle: 24 bytes
+city text: 4 bytes
+motto text: 17 bytes
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>A <code>Vec</code> is a handle too. Fill in the type on the <code>Vec handle</code> line (a vector of <code>i32</code>) and the method that counts the vector&#39;s elements, so the program prints:</p>
+<pre><code>array: 16 bytes
+Vec handle: 24 bytes
+8 readings, still a 24-byte handle
+</code></pre>
+<p>Notice the difference: the array&#39;s numbers are all on the stack (4 × 4 bytes), while the Vec&#39;s numbers are on the heap.</p>
+
+<h3>Challenge 3</h3>
+<p>A <code>String</code> can grow because its text is on the heap. Starting from the empty <code>String</code> in the starter code (<code>String::new()</code> makes a <code>String</code> with no text yet), write a <code>for</code> loop that runs 4 times. Each time, push <code>&quot;==&quot;</code> onto <code>bar</code> with <code>push_str</code> and print <code>bar</code>. After the loop, print its length. The output should be:</p>
+<pre><code>==
+====
+======
+========
+bar: 8 bytes
+</code></pre>
+
+<p> <a href="/learn/ownership/owners-and-scope">Next: Owners and scope</a></p></main></div>
+  </body>
+</html>

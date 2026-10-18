@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Nested enums and ignoring parts · Patterns and matching (Rust) | RustArena</title>
+    <meta name="description" content="Patterns nest exactly as deep as your data does. An enum variant can hold a struct-like set of fields, and those fields can hold other enums; one pattern…" />
+    <link rel="canonical" href="https://rustarena.app/learn/patterns/nested-enums-and-ignoring-parts/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Nested enums and ignoring parts · Patterns and matching (Rust) | RustArena" />
+    <meta property="og:description" content="Patterns nest exactly as deep as your data does. An enum variant can hold a struct-like set of fields, and those fields can hold other enums; one pattern…" />
+    <meta property="og:url" content="https://rustarena.app/learn/patterns/nested-enums-and-ignoring-parts/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Nested enums and ignoring parts","description":"Patterns nest exactly as deep as your data does. An enum variant can hold a struct-like set of fields, and those fields can hold other enums; one pattern…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/patterns/nested-enums-and-ignoring-parts/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Structuring data › Patterns and matching</nav>
+<p>Step 4 of 6</p>
+<h1>Nested enums and ignoring parts</h1>
+<p>Patterns nest exactly as deep as your data does. An enum variant can hold a struct-like set of fields, and those fields can hold other enums; one pattern can look at all of it.</p>
+<pre><code class="language-rust">enum Button {
+    Left,
+    Right,
+}
+
+enum Event {
+    Key(char),
+    Click { x: i32, y: i32, button: Button },
+    Scroll(i32),
+    Quit,
+}
+
+fn handle(event: &amp;Event) -&gt; String {
+    match event {
+        Event::Key(&#39;q&#39;) | Event::Quit =&gt; String::from(&quot;quit&quot;),
+        Event::Key(c @ &#39;0&#39;..=&#39;9&#39;) =&gt; format!(&quot;digit {c}&quot;),
+        Event::Key(c) =&gt; format!(&quot;key {c}&quot;),
+        Event::Click { button: Button::Right, .. } =&gt; String::from(&quot;open menu&quot;),
+        Event::Click { x, y, button: Button::Left } =&gt; format!(&quot;left click at ({x}, {y})&quot;),
+        Event::Scroll(0) =&gt; String::from(&quot;no scroll&quot;),
+        Event::Scroll(n) if *n &gt; 0 =&gt; format!(&quot;scroll down {n}&quot;),
+        Event::Scroll(n) =&gt; format!(&quot;scroll up {}&quot;, -n),
+    }
+}
+
+fn main() {
+    let events = [
+        Event::Key(&#39;7&#39;),
+        Event::Key(&#39;w&#39;),
+        Event::Click { x: 10, y: 20, button: Button::Left },
+        Event::Click { x: 5, y: 5, button: Button::Right },
+        Event::Scroll(-3),
+        Event::Scroll(4),
+        Event::Key(&#39;q&#39;),
+        Event::Quit,
+    ];
+    for e in &amp;events {
+        println!(&quot;{}&quot;, handle(e));
+    }
+}
+</code></pre>
+<pre><code class="language-text">digit 7
+key w
+left click at (10, 20)
+open menu
+scroll up 3
+scroll down 4
+quit
+quit
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>Event::Key(&#39;q&#39;) | Event::Quit</code> combines a variant with a literal inside it and another variant, with <code>|</code>.</li>
+<li><code>Event::Click { button: Button::Right, .. }</code> looks <em>inside</em> the click at its <code>button</code> field and checks it&#39;s <code>Button::Right</code>. The <code>..</code> ignores <code>x</code> and <code>y</code>.</li>
+<li><code>Event::Click { x, y, button: Button::Left }</code> binds <code>x</code> and <code>y</code> and requires a left button.</li>
+<li><code>Event::Scroll(n) if *n &gt; 0</code>: since <code>handle</code> takes <code>&amp;Event</code>, <code>n</code> is a <code>&amp;i32</code>. Comparing needs the number itself, so the guard says <code>*n</code>. Printing works on the reference directly.</li>
+<li>The compiler checks the whole nested structure for exhaustiveness: remove the <code>Button::Left</code> arm and it tells you that <code>&amp;Event::Click { button: Button::Left, .. }</code> isn&#39;t covered (with a <code>&amp;</code>, because <code>handle</code> matches on a reference).</li>
+</ul>
+<h2><code>_</code>, <code>_name</code> and <code>..</code></h2>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>_</code></td>
+<td>match one value, don&#39;t bind it (nothing is moved or borrowed)</td>
+</tr>
+<tr>
+<td><code>_name</code></td>
+<td>bind the value (it <strong>is</strong> moved or borrowed) but don&#39;t warn if it&#39;s unused</td>
+</tr>
+<tr>
+<td><code>..</code></td>
+<td>skip all remaining fields or elements</td>
+</tr>
+</tbody></table>
+<h2>Common mistake: moving out while matching</h2>
+<p>Matching on an owned value with a binding moves the data out of it:</p>
+<pre><code class="language-rust-error">fn main() {
+    let name: Option&lt;String&gt; = Some(String::from(&quot;Ferris&quot;));
+    match name {
+        Some(n) =&gt; println!(&quot;hi {n}&quot;),
+        None =&gt; println!(&quot;nobody&quot;),
+    }
+    println!(&quot;{:?}&quot;, name);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0382]: borrow of partially moved value: `name`
+</code></pre>
+<p><code>Some(n)</code> moved the String into <code>n</code>, so <code>name</code> is no longer whole. Match on a reference instead (<code>match &amp;name</code>), and <code>n</code> becomes a <code>&amp;String</code>. If you don&#39;t need the value at all, <code>Some(_)</code> doesn&#39;t move anything.</p>
+
+<h2>Your task</h2>
+<p>A checkout supports three payment methods. Write <code>fn total_charge(p: &amp;Payment) -&gt; u32</code>, the amount charged in cents including the card fee:</p>
+<ul>
+<li><code>Cash(cents)</code>: just <code>cents</code></li>
+<li>an <code>Amex</code> card: <code>cents + cents * 3 / 100</code> (3% fee)</li>
+<li>any other card: <code>cents + cents / 100</code> (1% fee)</li>
+<li><code>Voucher</code>: 0</li>
+</ul>
+
+<h3>Challenge 2</h3>
+<p>Fill in the three blanks: match the nested <code>Status::Active</code>, bind the <code>days</code> field of <code>Suspended</code>, and ignore the other fields of a closed account.</p>
+
+<h3>Challenge 3</h3>
+<p>A warehouse robot gets commands. Write <code>fn command_label(cmd: &amp;Command) -&gt; String</code>:</p>
+<ul>
+<li>a <code>Move</code> with 0 steps (any direction): <code>&quot;stay&quot;</code></li>
+<li><code>Move</code> north N: <code>&quot;up N&quot;</code>; south: <code>&quot;down N&quot;</code>; east or west: <code>&quot;sideways N&quot;</code></li>
+<li><code>Wait(s)</code>: <code>&quot;wait Ns&quot;</code> (for example <code>&quot;wait 5s&quot;</code>)</li>
+<li><code>Stop</code>: <code>&quot;stop&quot;</code></li>
+</ul>
+
+<p><a href="/learn/patterns/destructuring-structs-and-tuples">Previous: Destructuring structs and tuples</a> <a href="/learn/patterns/while-let-and-slice-patterns">Next: while let and slice patterns</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Reading lifetime errors · Lifetimes (Rust) | RustArena</title>
+    <meta name="description" content="Lifetime errors look scary but come in a handful of shapes, and each shape has a short list of fixes. Here's the field guide. Error What it means Usual…" />
+    <link rel="canonical" href="https://rustarena.app/learn/lifetimes/reading-lifetime-errors/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Reading lifetime errors · Lifetimes (Rust) | RustArena" />
+    <meta property="og:description" content="Lifetime errors look scary but come in a handful of shapes, and each shape has a short list of fixes. Here's the field guide. Error What it means Usual…" />
+    <meta property="og:url" content="https://rustarena.app/learn/lifetimes/reading-lifetime-errors/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Reading lifetime errors","description":"Lifetime errors look scary but come in a handful of shapes, and each shape has a short list of fixes. Here's the field guide. Error What it means Usual…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/lifetimes/reading-lifetime-errors/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Lifetimes</nav>
+<p>Step 7 of 7</p>
+<h1>Reading lifetime errors</h1>
+<p>Lifetime errors look scary but come in a handful of shapes, and each shape has a short list of fixes. Here&#39;s the field guide.</p>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>What it means</th>
+<th>Usual fixes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>E0106</code> missing lifetime specifier</td>
+<td>A signature or struct returns/holds a reference, and elision can&#39;t tell where from.</td>
+<td>Add <code>&#39;a</code> to tie the output to the right inputs; or return owned data; or <code>&#39;static</code> for literals.</td>
+</tr>
+<tr>
+<td><code>E0597</code> <code>x</code> does not live long enough</td>
+<td>A value is dropped while a reference to it is still used later.</td>
+<td>Move the value to an outer scope; use the reference earlier; own the data.</td>
+</tr>
+<tr>
+<td><code>E0515</code> cannot return reference to local variable</td>
+<td>A function returns a reference to something it created.</td>
+<td>Return the owned value (<code>String</code>, <code>Vec</code>).</td>
+</tr>
+<tr>
+<td><code>E0716</code> temporary value dropped while borrowed</td>
+<td>You borrowed from a value that was never stored in a variable.</td>
+<td>Store it in a <code>let</code> first.</td>
+</tr>
+<tr>
+<td>lifetime may not live long enough</td>
+<td>A function&#39;s body returns a reference with a different lifetime than its signature promised.</td>
+<td>Fix the signature (often rule 3 guessed <code>self</code>), or return what it promises.</td>
+</tr>
+<tr>
+<td><code>E0499</code> / <code>E0502</code> borrow conflicts</td>
+<td>Two borrows overlap (borrowing module). With methods: often a result tied to <code>&amp;mut self</code> that should be tied to <code>&#39;a</code>.</td>
+<td>Shorter borrows; return <code>&amp;&#39;a T</code> from the data, not from <code>self</code>.</td>
+</tr>
+</tbody></table>
+<p>The temporary one deserves an example, because it surprises everyone once:</p>
+<pre><code class="language-rust-error">fn main() {
+    let label = format!(&quot;v{}&quot;, 2).as_str();
+    println!(&quot;{label}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0716]: temporary value dropped while borrowed
+ --&gt; src/main.rs:2:17
+  |
+2 |     let label = format!(&quot;v{}&quot;, 2).as_str();
+  |                 ^^^^^^^^^^^^^^^^^         - temporary value is freed at the end of this statement
+  |                 |
+  |                 creates a temporary value which is freed while still in use
+3 |     println!(&quot;{label}&quot;);
+  |                ----- borrow later used here
+  |
+  = note: consider using a `let` binding to create a longer lived value
+</code></pre>
+<p>The <code>String</code> from <code>format!</code> has no owner variable, so it&#39;s dropped at the <code>;</code>. The fix is in the note: give it an owner first (or just use the <code>String</code>).</p>
+<pre><code class="language-rust">fn main() {
+    let owned = format!(&quot;v{}&quot;, 2);
+    let label = owned.as_str();
+    println!(&quot;{label}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">v2
+</code></pre>
+<h2>A method for any lifetime error</h2>
+<ol>
+<li><strong>Find the value</strong> the error is about (the name in backticks).</li>
+<li><strong>Find where it&#39;s dropped</strong>: the label <code>dropped here while still borrowed</code>, or the end of a function for E0515.</li>
+<li><strong>Find the late use</strong>: <code>borrow later used here</code>.</li>
+<li><strong>Pick a fix</strong>: make the owner live longer, end the use sooner, own the data, or (for signatures) describe the real relationship with <code>&#39;a</code>.</li>
+</ol>
+<p>Resist adding annotations at random until it compiles. Each error describes a real dangling reference that would have crashed or corrupted data in C. Once you see <em>which</em> value would dangle, the fix is usually one line.</p>
+
+<h2>Your task</h2>
+<p>This program has three different lifetime errors (compile it to see them all). Fix each one in the way you think is best. The program must print:</p>
+<pre><code>winner: lifetimes
+tag: #rust
+version: v1.85
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p><code>Highlight</code> marks a word inside a longer text without copying the text. The code is almost right, but the struct is missing its lifetime. Add the lifetime parameter to the struct and the <code>impl</code> block (and wherever else the compiler asks) so it prints:</p>
+<pre><code>the borrow [checker] is your friend
+checker
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>Starting from nothing, write a <code>Sentences</code> splitter in the style of the tokenizer from step 4:</p>
+<ul>
+<li><code>struct Sentences&lt;&#39;a&gt;</code> that keeps the rest of the text still to be read,</li>
+<li><code>fn new(text: &amp;&#39;a str) -&gt; Self</code>,</li>
+<li><code>fn next_sentence(&amp;mut self) -&gt; Option&lt;&amp;&#39;a str&gt;</code> that returns the next piece of text up to a <code>.</code> (without the <code>.</code>), trimmed, skipping empty pieces, and <code>None</code> at the end.</li>
+</ul>
+<p>For <code>&quot;Hi. How are you.  Fine.&quot;</code> the sentences are <code>Hi</code>, <code>How are you</code> and <code>Fine</code>. Text after the last <code>.</code> counts as a sentence too. The hidden tests collect every sentence into a <code>Vec</code> while calling <code>next_sentence</code> again, which only compiles if the sentences borrow from the text (<code>&#39;a</code>), not from the splitter.</p>
+
+<p><a href="/learn/lifetimes/when-to-return-owned-data-instead">Previous: When to return owned data instead</a> </p></main></div>
+  </body>
+</html>

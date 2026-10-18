@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Implementing Display · Traits (Rust) | RustArena</title>
+    <meta name="description" content="{} in println! and format! works with any type that implements the standard trait std::fmt::Display. Numbers and strings implement it; your types don't,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/traits/implementing-display/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Implementing Display · Traits (Rust) | RustArena" />
+    <meta property="og:description" content="{} in println! and format! works with any type that implements the standard trait std::fmt::Display. Numbers and strings implement it; your types don't,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/traits/implementing-display/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Implementing Display","description":"{} in println! and format! works with any type that implements the standard trait std::fmt::Display. Numbers and strings implement it; your types don't,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/traits/implementing-display/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Traits</nav>
+<p>Step 4 of 6</p>
+<h1>Implementing Display</h1>
+<p><code>{}</code> in <code>println!</code> and <code>format!</code> works with any type that implements the standard trait <code>std::fmt::Display</code>. Numbers and strings implement it; your types don&#39;t, until you write it. You met this briefly for error types; here&#39;s the full picture.</p>
+<pre><code class="language-rust">use std::fmt;
+
+struct Money {
+    cents: i64,
+}
+
+impl fmt::Display for Money {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        let sign = if self.cents &lt; 0 { &quot;-&quot; } else { &quot;&quot; };
+        let abs = self.cents.abs();
+        write!(f, &quot;{}${}.{:02}&quot;, sign, abs / 100, abs % 100)
+    }
+}
+
+fn main() {
+    let price = Money { cents: 1205 };
+    let refund = Money { cents: -350 };
+    println!(&quot;Price: {price}&quot;);
+    println!(&quot;Refund: {}&quot;, refund);
+    let text = price.to_string();
+    println!(&quot;{} characters&quot;, text.len());
+}
+</code></pre>
+<pre><code class="language-text">Price: $12.05
+Refund: -$3.50
+6 characters
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>use std::fmt;</code> lets you write <code>fmt::Display</code>, <code>fmt::Formatter</code> and <code>fmt::Result</code> instead of the full paths.</li>
+<li>The one required method is <code>fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result</code>. Copy that signature; you&#39;ll write it many times. (Docs and editors often show <code>Formatter&lt;&#39;_&gt;</code>; the <code>&#39;_</code> is a lifetime, the topic of a later module, and you may leave it out.)</li>
+<li><code>f</code> is where the text goes. <code>write!(f, ...)</code> works like <code>format!</code> but writes into <code>f</code>, and it returns the <code>fmt::Result</code> you need, so it&#39;s the last expression (no semicolon).</li>
+<li>Implementing <code>Display</code> also gives you <code>.to_string()</code> for free: the standard library implements <code>ToString</code> for every type that implements <code>Display</code>.</li>
+</ul>
+<h2>Display or Debug?</h2>
+<p><code>Debug</code> (<code>{:?}</code>) is for developers: derive it on almost every type and get a faithful dump of the fields. <code>Display</code> (<code>{}</code>) is for users: you choose the exact format, so it <strong>can&#39;t be derived</strong>. Should <code>Money</code> show <code>$12.05</code>, <code>12.05 USD</code> or <code>12,05 €</code>? Only you know.</p>
+<p>Several lines? Use <code>writeln!(f, ...)?;</code> for each line except the last, then end with <code>write!</code>. The <code>?</code> passes a formatting error on, like you did with <code>Result</code> in the errors module.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>A semicolon after the last <code>write!</code>.</strong> The method then returns <code>()</code> instead of <code>fmt::Result</code>:</li>
+</ul>
+<pre><code class="language-rust-error">use std::fmt;
+
+struct Tag(String);
+
+impl fmt::Display for Tag {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        write!(f, &quot;#{}&quot;, self.0);
+    }
+}
+
+fn main() {
+    println!(&quot;{}&quot;, Tag(String::from(&quot;rust&quot;)));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0308]: mismatched types
+</code></pre>
+<ul>
+<li><strong><code>println!</code> inside <code>fmt</code>.</strong> It prints straight to the screen instead of into the result, so <code>format!(&quot;{}&quot;, x)</code> and <code>x.to_string()</code> get an empty string. Always write into <code>f</code>.</li>
+<li><strong><code>write!(f, &quot;{}&quot;, self)</code> inside <code>Display</code> for the same type.</strong> That calls <code>fmt</code> again, forever, until the program crashes with a stack overflow. Format the fields, not <code>self</code>.</li>
+<li><strong>Using <code>{}</code> on a type without <code>Display</code></strong> gives <code>error[E0277]: `Money` doesn&#39;t implement `std::fmt::Display` </code>. The compiler suggests <code>{:?}</code>, which is fine for debugging but not for output users read.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Implement <code>Display</code> for <code>Temperature</code> so it shows the value with one decimal place followed by <code>°C</code>: <code>21.5°C</code>, <code>-3.0°C</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>Race results. Implement <code>Display</code> for <code>RaceTime</code> (a number of seconds) so it shows <code>m:ss</code> under an hour, like <code>1:05</code> or <code>0:09</code>, and <code>h:mm:ss</code> from one hour on, like <code>1:01:05</code>. Minutes and seconds after the first number always have two digits.</p>
+
+<h3>Challenge 3</h3>
+<p>Playing cards. Implement <code>Display</code> for <strong>both</strong> types:</p>
+<ul>
+<li><code>Suit</code> shows as <code>♠</code>, <code>♥</code>, <code>♦</code> or <code>♣</code>.</li>
+<li><code>Card</code> shows its rank then its suit: rank 1 is <code>A</code>, 11 is <code>J</code>, 12 is <code>Q</code>, 13 is <code>K</code>, anything else is the number. So <code>A♠</code>, <code>10♥</code>, <code>Q♦</code>.</li>
+</ul>
+<p>Inside <code>Card</code>&#39;s <code>fmt</code> you can use <code>{}</code> on <code>self.suit</code>, because <code>Suit</code> implements <code>Display</code> too.</p>
+
+<p><a href="/learn/traits/traits-as-parameters-bounds-and-impl-trait">Previous: Traits as parameters: bounds and impl Trait</a> <a href="/learn/traits/multiple-bounds-where-clauses-and-returning-impl-trait">Next: Multiple bounds, where clauses and returning impl Trait</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Async/await in Rust with Tokio: the basics | RustArena</title>
+    <meta name="description" content="Getting started with async Rust: futures, async fn and .await, #[tokio::main], tokio::spawn, join!, async sleep, and when to use async vs threads." />
+    <link rel="canonical" href="https://rustarena.app/topics/async-await-tokio/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Async/await in Rust with Tokio: the basics | RustArena" />
+    <meta property="og:description" content="Getting started with async Rust: futures, async fn and .await, #[tokio::main], tokio::spawn, join!, async sleep, and when to use async vs threads." />
+    <meta property="og:url" content="https://rustarena.app/topics/async-await-tokio/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Async/await in Rust with Tokio: the basics","description":"Getting started with async Rust: futures, async fn and .await, #[tokio::main], tokio::spawn, join!, async sleep, and when to use async vs threads.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/async-await-tokio/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Async/await in Rust with Tokio: the basics</h1>
+<p>Getting started with async Rust: futures, async fn and .await, #[tokio::main], tokio::spawn, join!, async sleep, and when to use async vs threads.</p>
+<p><strong>Async</strong> Rust lets one thread juggle many tasks that spend most of their time <strong>waiting</strong>: on the network, a database, a timer. While one task waits, the thread runs another. That&#39;s why web servers written with async Rust handle tens of thousands of connections with a handful of threads.</p>
+<h2>Futures are lazy</h2>
+<p>An <code>async fn</code> doesn&#39;t run when you call it. It returns a <strong>future</strong>, a value representing work that hasn&#39;t happened yet. <code>.await</code> runs the future to completion (pausing the current task while it waits) and gives you its output:</p>
+<pre><code class="language-rust">async fn fetch_price(item: &amp;str) -&gt; u32 { ... }
+
+let price = fetch_price(&quot;potion&quot;).await;
+</code></pre>
+<p>Calling an async function without awaiting it does nothing, and rustc warns: &quot;unused implementer of <code>Future</code> that must be used ... futures do nothing unless you <code>.await</code> or poll them&quot;.</p>
+<p><code>.await</code> is only allowed inside async code:</p>
+<pre><code class="language-rust-error">async fn fetch() -&gt; u32 {
+    5
+}
+
+fn main() {
+    let n = fetch().await;
+    println!(&quot;{n}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0728]: `await` is only allowed inside `async` functions and blocks
+</code></pre>
+<h2>A runtime: Tokio</h2>
+<p>Rust&#39;s standard library defines futures but doesn&#39;t include a <strong>runtime</strong> to drive them. <strong>Tokio</strong> is the one most teams use. Add it to <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[dependencies]
+tokio = { version = &quot;1&quot;, features = [&quot;full&quot;] }
+</code></pre>
+<p>and mark <code>main</code>:</p>
+<pre><code class="language-rust">#[tokio::main]
+async fn main() {
+    let price = fetch_price(&quot;potion&quot;).await;
+    println!(&quot;{price}&quot;);
+}
+</code></pre>
+<p><code>#[tokio::main]</code> starts a multi-threaded runtime and runs your async <code>main</code> on it.</p>
+<h2>Running things concurrently</h2>
+<p>Awaiting one future after another runs them <strong>in sequence</strong>. To run them at the same time:</p>
+<ul>
+<li><strong><code>tokio::join!(a, b, c)</code></strong> runs several futures concurrently in the current task and returns all their outputs, <strong>in argument order</strong>. <code>try_join!</code> stops at the first <code>Err</code>.</li>
+<li><strong><code>tokio::spawn(future)</code></strong> starts an independent <strong>task</strong> that the runtime may run on any worker thread. It returns a <code>JoinHandle</code>; <code>handle.await</code> gives <code>Result&lt;T, JoinError&gt;</code> (<code>Err</code> if the task panicked). Spawned tasks must be <code>Send + &#39;static</code>, like threads, so use <code>async move</code> and owned data.</li>
+<li><strong><code>tokio::select!</code></strong> waits on several futures and continues with whichever finishes <strong>first</strong> (timeouts, cancellation).</li>
+</ul>
+<h2>Don&#39;t block the runtime</h2>
+<p>Inside async code, never call blocking functions such as <code>std::thread::sleep</code>, heavy CPU loops, or blocking file and network I/O: they freeze a whole worker thread and every task on it. Use the async versions (<code>tokio::time::sleep</code>, <code>tokio::fs</code>, <code>tokio::net</code>), and move CPU-heavy or blocking work to <code>tokio::task::spawn_blocking</code>.</p>
+<h2>Async vs threads</h2>
+<table>
+<thead>
+<tr>
+<th>Use async when</th>
+<th>Use threads when</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>many tasks mostly waiting on I/O (servers, crawlers, chat)</td>
+<td>a few CPU-heavy jobs (image processing, compression)</td>
+</tr>
+<tr>
+<td>you need timeouts and cancellation everywhere</td>
+<td>the code calls blocking libraries</td>
+</tr>
+<tr>
+<td>you use async libraries (axum, reqwest, sqlx)</td>
+<td>simplicity matters more than scale</td>
+</tr>
+</tbody></table>
+<p>For CPU-bound data parallelism, <code>rayon</code> is usually simpler than both.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li>Forgetting <code>.await</code> (the work never happens).</li>
+<li><code>std::sync::Mutex</code> guards held across <code>.await</code> (the future isn&#39;t <code>Send</code>; use <code>tokio::sync::Mutex</code> or drop the guard first).</li>
+<li>Expecting spawned tasks to print in a fixed order. Collect their results through <code>JoinHandle</code>s or <code>join!</code>, then print.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::time::Duration;
+use tokio::time::sleep;
+
+async fn fetch_price(item: &amp;str, delay_ms: u64) -&gt; u32 {
+    sleep(Duration::from_millis(delay_ms)).await; // pretend this is a network call
+    match item {
+        &quot;potion&quot; =&gt; 30,
+        &quot;sword&quot; =&gt; 150,
+        _ =&gt; 0,
+    }
+}
+
+async fn checkout(items: Vec&lt;&amp;'static str&gt;) -&gt; Result&lt;u32, String&gt; {
+    let mut total = 0;
+    for item in items {
+        let price = fetch_price(item, 5).await;
+        if price == 0 {
+            return Err(format!(&quot;unknown item {item}&quot;));
+        }
+        total += price;
+    }
+    Ok(total)
+}
+
+#[tokio::main]
+async fn main() {
+    // Concurrently: both waits overlap. Results come back in argument order.
+    let (potion, sword) = tokio::join!(fetch_price(&quot;potion&quot;, 30), fetch_price(&quot;sword&quot;, 10));
+    println!(&quot;potion {potion}, sword {sword}&quot;);
+
+    // Independent tasks on the runtime; await the handles in order.
+    let mut handles = Vec::new();
+    for (i, cart) in [vec![&quot;potion&quot;, &quot;sword&quot;], vec![&quot;potion&quot;, &quot;shield&quot;], vec![&quot;sword&quot;]].into_iter().enumerate() {
+        handles.push(tokio::spawn(async move { (i, checkout(cart).await) }));
+    }
+    for h in handles {
+        let (i, result) = h.await.expect(&quot;task panicked&quot;);
+        println!(&quot;cart {i}: {result:?}&quot;);
+    }
+
+    // CPU-heavy work goes to a blocking thread, not the async workers.
+    let sum = tokio::task::spawn_blocking(|| (1..=1_000_000u64).sum::&lt;u64&gt;()).await.unwrap();
+    println!(&quot;sum {sum}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>potion 30, sword 150
+cart 0: Ok(180)
+cart 1: Err(&quot;unknown item shield&quot;)
+cart 2: Ok(150)
+sum 500000500000
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/async/futures-async-fn-and-await">Lesson: Async Rust with Tokio</a></li></ul></main></div>
+  </body>
+</html>

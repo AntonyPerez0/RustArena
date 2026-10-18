@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>From JSON back into structs · JSON and Serialization with serde (Rust) | RustArena</title>
+    <meta name="description" content="The other direction is deserialization: you derive Deserialize and ask serdejson::fromstr for a value of your type. Piece by piece: r#&quot;...&quot;is a raw…" />
+    <link rel="canonical" href="https://rustarena.app/learn/serde/from-json-back-into-structs/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="From JSON back into structs · JSON and Serialization with serde (Rust) | RustArena" />
+    <meta property="og:description" content="The other direction is deserialization: you derive Deserialize and ask serdejson::fromstr for a value of your type. Piece by piece: r#&quot;...&quot;is a raw…" />
+    <meta property="og:url" content="https://rustarena.app/learn/serde/from-json-back-into-structs/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"From JSON back into structs","description":"The other direction is deserialization: you derive Deserialize and ask serdejson::fromstr for a value of your type. Piece by piece: r#\"...\"is a raw…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/serde/from-json-back-into-structs/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › JSON and Serialization with serde</nav>
+<p>Step 2 of 6</p>
+<h1>From JSON back into structs</h1>
+<p>The other direction is <strong>deserialization</strong>: you derive <code>Deserialize</code> and ask <code>serde_json::from_str</code> for a value of your type.</p>
+<pre><code class="language-rust">use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct Reading {
+    sensor: String,
+    celsius: f64,
+}
+
+fn main() {
+    let text = r#&quot;{&quot;sensor&quot;: &quot;greenhouse&quot;, &quot;celsius&quot;: 21.5, &quot;battery&quot;: 87}&quot;#;
+    let r: Reading = serde_json::from_str(text).unwrap();
+    println!(&quot;{} reads {:.1} C&quot;, r.sensor, r.celsius);
+}
+</code></pre>
+<pre><code class="language-text">greenhouse reads 21.5 C
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>r#&quot;...&quot;#</code> is a <strong>raw string literal</strong>: backslashes and double quotes inside it are taken literally, so JSON can be pasted in without escaping every <code>&quot;</code>. (The number of <code>#</code> can grow if the text itself contains <code>&quot;#</code>.)</li>
+<li><code>from_str</code> is generic: it can produce any type that implements <code>Deserialize</code>, so you must say which one. Here the annotation <code>let r: Reading</code> does it; the turbofish <code>serde_json::from_str::&lt;Reading&gt;(text)</code> works too.</li>
+<li>It returns <code>Result&lt;Reading, serde_json::Error&gt;</code>, because input from outside can be anything.</li>
+<li>The JSON has a <code>battery</code> field that <code>Reading</code> doesn&#39;t. <strong>Unknown fields are ignored</strong> by default, which makes your program robust when an API adds fields later.</li>
+<li>Use owned types like <code>String</code> in structs you deserialize. (Borrowing <code>&amp;str</code> fields from the input is possible but needs lifetimes and fails on strings with escapes; reach for it only when profiling says so.)</li>
+</ul>
+<h2>What can go wrong</h2>
+<p>serde checks the shape of the data against your type: every field present, every value the right type and in range. Anything else is an <code>Err</code> whose message says what and where:</p>
+<pre><code class="language-rust">use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct Reading {
+    sensor: String,
+    celsius: f64,
+}
+
+fn main() {
+    let inputs = [
+        r#&quot;{&quot;sensor&quot;: &quot;attic&quot;, &quot;celsius&quot;: 30}&quot;#,
+        r#&quot;{&quot;sensor&quot;: &quot;attic&quot;}&quot;#,
+        r#&quot;{&quot;sensor&quot;: &quot;attic&quot;, &quot;celsius&quot;: &quot;hot&quot;}&quot;#,
+        r#&quot;{&quot;sensor&quot;: &quot;attic&quot;, &quot;celsius&quot;: 30&quot;#,
+    ];
+    for text in inputs {
+        match serde_json::from_str::&lt;Reading&gt;(text) {
+            Ok(r) =&gt; println!(&quot;ok: {} = {}&quot;, r.sensor, r.celsius),
+            Err(e) =&gt; println!(&quot;error: {e}&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">ok: attic = 30
+error: missing field `celsius` at line 1 column 19
+error: invalid type: string &quot;hot&quot;, expected f64 at line 1 column 36
+error: EOF while parsing an object at line 1 column 33
+</code></pre>
+<p>A JSON integer like <code>30</code> is fine for an <code>f64</code> field. The reverse isn&#39;t: <code>2.5</code> for a <code>u32</code> is an error, and so is <code>-3</code> for a <code>u32</code> or <code>300</code> for a <code>u8</code>. Your Rust types are the validation: pick them carefully.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>No type for <code>from_str</code>.</strong> <code>let r = serde_json::from_str(text).unwrap();</code> with nothing telling Rust the target type fails with <code>error[E0282]: type annotations needed</code>.</li>
+<li><strong>Unwrapping input you don&#39;t control.</strong> <code>from_str(...).unwrap()</code> on data from a user, a file or the network turns a typo into a crash. Return the error with <code>?</code> or handle it with <code>match</code>.</li>
+<li><strong>Deriving <code>Deserialize</code> but not <code>Serialize</code></strong> and then calling <code>to_string</code>: they&#39;re separate traits. Derive both when you need both directions: <code>#[derive(Serialize, Deserialize)]</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>A shop sends carts as JSON like <code>{&quot;items&quot;: [{&quot;name&quot;: &quot;mug&quot;, &quot;price&quot;: 2.5, &quot;qty&quot;: 2}]}</code>. Derive what&#39;s needed and write <code>fn cart_total(json: &amp;str) -&gt; Result&lt;f64, serde_json::Error&gt;</code> that parses the cart and returns the sum of <code>price * qty</code> over all items. Invalid JSON must give an <code>Err</code> (use <code>?</code>).</p>
+
+<h3>Challenge 2</h3>
+<p>Read a JSON array of players from standard input, like <code>[{&quot;name&quot;: &quot;Ferris&quot;, &quot;score&quot;: 950}, ...]</code>, and print the best one as <code>top: Ferris (950)</code>. If the array is empty, print <code>no players</code>. You can assume the input is valid JSON.</p>
+
+<h3>Challenge 3</h3>
+<p>A <strong>round trip</strong>: write <code>fn rename_sensor(json: &amp;str, new_name: &amp;str) -&gt; Result&lt;String, serde_json::Error&gt;</code> that parses a sensor reading, changes its <code>sensor</code> field to <code>new_name</code>, and returns it serialized again as compact JSON. The struct needs both derives. Errors go back to the caller with <code>?</code>.</p>
+
+<p><a href="/learn/serde/from-structs-to-json">Previous: From structs to JSON</a> <a href="/learn/serde/shaping-the-json-rename-default-skip">Next: Shaping the JSON: rename, default, skip</a></p></main></div>
+  </body>
+</html>

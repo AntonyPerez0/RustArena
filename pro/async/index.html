@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Async networking with Tokio | Pro Track | RustArena</title>
+    <meta name="description" content="Write an async TCP server that handles many clients at once, shares state safely, and shuts down cleanly, tested with real connections." />
+    <link rel="canonical" href="https://rustarena.app/pro/async/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Async networking with Tokio | Pro Track | RustArena" />
+    <meta property="og:description" content="Write an async TCP server that handles many clients at once, shares state safely, and shuts down cleanly, tested with real connections." />
+    <meta property="og:url" content="https://rustarena.app/pro/async/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><h1>Async networking with Tokio</h1><p>A network server spends nearly all its time waiting: for a client to send something, for a slow client to read. A thread per connection works until you have ten thousand connections and ten thousand mostly idle threads. <strong>Async</strong> Rust lets a handful of threads juggle any number of connections: a task that would wait gives its thread back to the runtime instead. <strong>Tokio</strong> is the runtime most Rust services are built on (axum, tonic, the AWS SDK...).</p>
+<p>You&#39;ll build a chat server: many clients at once, shared state, messages broadcast to everyone, and a clean shutdown. The tests start it in-process and talk to it over real TCP connections.</p>
+<p><strong>You&#39;ll practice:</strong> <code>async</code>/<code>.await</code>, <code>tokio::spawn</code> and <code>JoinSet</code>, <code>Arc&lt;Mutex&gt;</code> in async code, broadcast and watch channels, <code>select!</code>, graceful shutdown, and per-connection error handling.</p>
+<h2>The protocol</h2>
+<p>One command per line. Replies and events are lines too.</p>
+<table>
+<thead>
+<tr>
+<th>Client sends</th>
+<th>Server sends</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>NICK &lt;name&gt;</code></td>
+<td><code>OK welcome &lt;name&gt;</code>, then every joined client (you too) gets <code>JOIN &lt;name&gt;</code>. Or <code>ERR invalid name</code> (1 to 16 letters, digits, <code>_</code> or <code>-</code>), <code>ERR name taken</code>, <code>ERR already joined</code></td>
+</tr>
+<tr>
+<td><code>MSG &lt;text&gt;</code></td>
+<td>every joined client (you too) gets <code>MSG &lt;name&gt; &lt;text&gt;</code>. Or <code>ERR send NICK first</code>, <code>ERR empty message</code></td>
+</tr>
+<tr>
+<td><code>WHO</code></td>
+<td><code>USERS alice bob</code> (sorted; works before joining)</td>
+</tr>
+<tr>
+<td><code>QUIT</code></td>
+<td><code>BYE</code>, then the server closes the connection</td>
+</tr>
+<tr>
+<td>anything else</td>
+<td><code>ERR unknown command</code></td>
+</tr>
+</tbody></table>
+<ul>
+<li>Clients receive JOIN, MSG and LEAVE events only after they have joined.</li>
+<li>When a joined client leaves (QUIT or disconnect), its name is freed and everyone else gets <code>LEAVE &lt;name&gt;</code>.</li>
+<li>A line longer than 1024 bytes (<code>MAX_LINE</code>) gets <code>ERR line too long</code> and the connection is closed.</li>
+<li>On shutdown, every client gets <code>SHUTDOWN</code> and its connection is closed.</li>
+</ul>
+<p>Try it: <code>cargo run</code> in one terminal, then <code>nc 127.0.0.1 7878</code> in two more. The starter answers the first client only. The second gets nothing until the first leaves.</p>
+<h2>Background</h2>
+<h3>Futures, tasks and the runtime</h3>
+<p>An <code>async fn</code> returns a <strong>future</strong>: a value that does nothing until it&#39;s awaited. <code>#[tokio::main]</code> starts the runtime, which polls futures; at each <code>.await</code> that can&#39;t finish yet, the task steps aside and the thread runs another one. That only works if tasks actually step aside, so <strong>never block in async code</strong>: no <code>std::thread::sleep</code>, blocking file or network calls, or long CPU loops. Use <code>tokio::time::sleep</code>, <code>tokio::fs</code>, or <code>tokio::task::spawn_blocking</code>.</p>
+<p><code>tokio::spawn(future)</code> starts a <strong>task</strong>: a few hundred bytes, not a thread, so a task per connection is normal. The future must be <code>Send + &#39;static</code> because it may move between worker threads, so share data through an <code>Arc</code>. A <code>JoinSet</code> holds many tasks and lets you wait for all of them.</p>
+<h3>Shared state</h3>
+<p>A <code>std::sync::Mutex</code> inside an <code>Arc</code> is fine in async code as long as you <strong>never hold the guard across an <code>.await</code></strong>: lock, update, unlock. Holding it across an await could block a worker thread, and makes the future non-<code>Send</code>, so <code>tokio::spawn</code> refuses it (clippy&#39;s <code>await_holding_lock</code> warns too). The alternative is an <strong>actor</strong>: one task owns the state, and the others send it requests over an <code>mpsc</code> channel.</p>
+<h3>Tokio&#39;s channels</h3>
+<table>
+<thead>
+<tr>
+<th>Channel</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>mpsc</code></td>
+<td>many senders, one receiver: a work queue</td>
+</tr>
+<tr>
+<td><code>oneshot</code></td>
+<td>one value, once: &quot;here&#39;s your reply&quot;, &quot;stop now&quot;</td>
+</tr>
+<tr>
+<td><code>broadcast</code></td>
+<td>every receiver gets every message: chat events. A receiver that falls behind gets <code>RecvError::Lagged(n)</code></td>
+</tr>
+<tr>
+<td><code>watch</code></td>
+<td>only the latest value: &quot;we are shutting down&quot;</td>
+</tr>
+</tbody></table>
+<h3>select!</h3>
+<pre><code class="language-rust">loop {
+    tokio::select! {
+        line = lines.next_line() =&gt; { /* the client sent something */ }
+        event = events.recv() =&gt; { /* someone else did something */ }
+        _ = stop.changed() =&gt; { /* the server is shutting down */ }
+    }
+}
+</code></pre>
+<p><code>select!</code> waits for several futures and runs the branch of the first one to finish. The others are <strong>dropped</strong>, so each must be <em>cancellation safe</em>: dropping it mid-way must not lose data. <code>TcpListener::accept</code>, <code>Lines::next_line</code> and <code>broadcast::Receiver::recv</code> are; the docs of every Tokio method say so. <code>read_line</code> into a buffer you clear each time is not.</p>
+<h3>Graceful shutdown</h3>
+<p>Deployments stop services by sending a signal and waiting a little (Kubernetes sends SIGTERM, then kills after 30 s). A clean stop is: stop accepting, tell every connection, let each finish what it&#39;s doing, wait for all tasks, return. Here <code>run</code> takes the trigger as a parameter, <code>shutdown: impl Future</code>: the binary passes <code>tokio::signal::ctrl_c()</code>, the tests pass a oneshot receiver. Taking the listener as a parameter lets tests bind port 0 (any free port) and run in parallel.</p>
+<h3>Errors belong to one connection</h3>
+<p>A client that sends garbage, floods you or vanishes mid-write must cost you that connection, never the server. No <code>unwrap()</code> on network I/O: a failed write means the client is gone, so clean up and end the task.</p>
+<h2>Your tasks</h2>
+<ol>
+<li>Run the starter with two <code>nc</code> clients and see the second hang.</li>
+<li><strong>A task per connection</strong> (<code>src/server.rs</code>): spawn <code>serve</code> into a <code>JoinSet</code> instead of awaiting it.</li>
+<li><strong>Shared names:</strong> an <code>Arc</code> holding a <code>Mutex&lt;HashSet&lt;String&gt;&gt;</code>. Implement <code>NICK</code> and <code>WHO</code>, and free the name when a client leaves.</li>
+<li><strong>Events:</strong> a <code>broadcast</code> channel for JOIN, MSG and LEAVE. Subscribe when a client joins, and <code>select!</code> between its next line and the next event.</li>
+<li><strong>Shutdown:</strong> <code>select!</code> between <code>accept()</code> and <code>shutdown</code> in <code>run</code>; on shutdown, drop the listener, signal the connections (a <code>watch</code> channel), and wait for the <code>JoinSet</code> to empty.</li>
+<li><strong>Errors:</strong> <code>ERR line too long</code>, failed writes, disconnects.</li>
+<li>Grade (<code>bash ../../tools/grade.sh 07-async</code>), then commit and push.</li>
+</ol>
+<h2>What the grader checks</h2>
+<ul>
+<li><code>cargo fmt</code> and <code>cargo clippy</code> are clean; <code>tests/chat.rs</code> is unchanged.</li>
+<li>All tests pass, three runs in a row (timing bugs often pass once).</li>
+<li><code>src/server.rs</code> spawns tasks, uses <code>select!</code> and a <code>broadcast</code> channel; no blocking calls in <code>src/</code>.</li>
+</ul>
+<h2>Hints</h2>
+<ul>
+<li><code>run</code> gets <code>shutdown</code> by value. To use it in a <code>select!</code> inside a loop, pin it first: <code>let mut shutdown = std::pin::pin!(shutdown);</code> then <code>() = &amp;mut shutdown =&gt; break,</code>.</li>
+<li>Keep the command handling in a plain (non-async) function that returns the reply. Easy to test, and the lock can&#39;t be held across an <code>.await</code>.</li>
+<li>A client that hasn&#39;t joined has no event receiver. A helper that returns <code>std::future::pending()</code> when there&#39;s no receiver keeps the <code>select!</code> simple.</li>
+<li>Free the name <em>before</em> broadcasting LEAVE, so a client reacting to the LEAVE can take the name.</li>
+<li>Collect finished tasks in the accept loop (<code>connections.join_next()</code>), or the <code>JoinSet</code> grows forever.</li>
+</ul>
+<h2>Going further</h2>
+<ul>
+<li>Replace the <code>Mutex</code> with an actor task that owns the names and answers over <code>oneshot</code> channels.</li>
+<li><code>next_line</code> buffers a whole line before you can check its length. <code>tokio_util::codec::LinesCodec::new_with_max_length</code> stops at the limit instead. Try it.</li>
+<li>Add rooms (<code>JOIN #rust</code>) and private messages (<code>MSG @bob hi</code>).</li>
+<li>Write a load generator that connects 1,000 clients and measures messages per second.</li>
+<li>Watch your tasks live with <a href="https://github.com/tokio-rs/console">tokio-console</a>.</li>
+</ul>
+</main></div>
+  </body>
+</html>

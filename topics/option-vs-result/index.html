@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Option vs Result in Rust: which one should you return? | RustArena</title>
+    <meta name="description" content="When to return Option&lt;T&gt; and when to return Result&lt;T, E&gt; in Rust, how to convert between them with ok_or and ok(), and using ? with each." />
+    <link rel="canonical" href="https://rustarena.app/topics/option-vs-result/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Option vs Result in Rust: which one should you return? | RustArena" />
+    <meta property="og:description" content="When to return Option&lt;T&gt; and when to return Result&lt;T, E&gt; in Rust, how to convert between them with ok_or and ok(), and using ? with each." />
+    <meta property="og:url" content="https://rustarena.app/topics/option-vs-result/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Option vs Result in Rust: which one should you return?","description":"When to return Option\u003cT> and when to return Result\u003cT, E> in Rust, how to convert between them with ok_or and ok(), and using ? with each.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/option-vs-result/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Option vs Result in Rust: which one should you return?</h1>
+<p>When to return Option&lt;T&gt; and when to return Result&lt;T, E&gt; in Rust, how to convert between them with ok_or and ok(), and using ? with each.</p>
+<p>Both types say &quot;you might not get a value&quot;, but they mean different things:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>Option&lt;T&gt;</code></th>
+<th><code>Result&lt;T, E&gt;</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Variants</td>
+<td><code>Some(T)</code> / <code>None</code></td>
+<td><code>Ok(T)</code> / <code>Err(E)</code></td>
+</tr>
+<tr>
+<td>Means</td>
+<td>the value may be <strong>absent</strong>, and that&#39;s normal</td>
+<td>the operation may <strong>fail</strong>, and here&#39;s why</td>
+</tr>
+<tr>
+<td>Carries a reason</td>
+<td>no</td>
+<td>yes, the <code>E</code> value</td>
+</tr>
+<tr>
+<td>Typical std examples</td>
+<td><code>v.get(i)</code>, <code>map.get(k)</code>, <code>s.find(c)</code>, <code>iter.max()</code></td>
+<td><code>s.parse()</code>, <code>File::open</code>, <code>fs::read_to_string</code></td>
+</tr>
+<tr>
+<td>Ignoring it</td>
+<td>allowed</td>
+<td>warns <code>unused Result that must be used</code></td>
+</tr>
+</tbody></table>
+<h2>The rule of thumb</h2>
+<p>Ask: <strong>if there&#39;s no value, would the caller want to know why?</strong></p>
+<ul>
+<li>Looking up a user by id, the first element of a list, the position of a character: absence is an ordinary answer, and there&#39;s only one way to be absent. Return <code>Option</code>.</li>
+<li>Parsing input, reading a file, calling an API, validating a form: there are several ways to fail and the caller (or the user) needs to know which. Return <code>Result</code>.</li>
+</ul>
+<p>A function that returns <code>Result&lt;T, ()&gt;</code> or <code>Option</code> for something that can fail in several ways is a design smell; one returning <code>Result&lt;T, String&gt;</code> just to say &quot;not found&quot; is the opposite smell.</p>
+<p>Sometimes you need both: <code>Result&lt;Option&lt;User&gt;, DbError&gt;</code> means &quot;the query might fail, and if it worked, the user might not exist&quot;. That&#39;s a perfectly good type.</p>
+<h2>Converting between them</h2>
+<pre><code class="language-rust">fn main() {
+    let maybe_port: Option&lt;&amp;str&gt; = Some(&quot;8080&quot;);
+    let missing: Option&lt;&amp;str&gt; = None;
+
+    let a: Result&lt;&amp;str, String&gt; = maybe_port.ok_or(&quot;no port&quot;.to_string());
+    let b: Result&lt;&amp;str, String&gt; = missing.ok_or_else(|| &quot;no port&quot;.to_string());
+    println!(&quot;{a:?} {b:?}&quot;);
+
+    let parsed: Option&lt;u16&gt; = &quot;8080&quot;.parse().ok();
+    let failed: Option&lt;u16&gt; = &quot;http&quot;.parse().ok();
+    println!(&quot;{parsed:?} {failed:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">Ok(&quot;8080&quot;) Err(&quot;no port&quot;)
+Some(8080) None
+</code></pre>
+<ul>
+<li><code>option.ok_or(err)</code> / <code>option.ok_or_else(|| err)</code>: <code>None</code> becomes <code>Err(err)</code>.</li>
+<li><code>result.ok()</code>: keep the value, drop the error. <code>result.err()</code> does the opposite.</li>
+<li><code>transpose()</code> swaps <code>Option&lt;Result&lt;T, E&gt;&gt;</code> and <code>Result&lt;Option&lt;T&gt;, E&gt;</code>, handy when parsing an optional field.</li>
+</ul>
+<h2>The ? operator works on both, but not mixed</h2>
+<p>In a function returning <code>Option</code>, <code>?</code> on an <code>Option</code> returns <code>None</code> early. In a function returning <code>Result</code>, <code>?</code> on a <code>Result</code> returns the error early. Using <code>?</code> on an <code>Option</code> inside a function returning <code>Result</code> doesn&#39;t compile:</p>
+<pre><code class="language-rust-error">fn first_even(v: &amp;[i32]) -&gt; Result&lt;i32, String&gt; {
+    let x = v.iter().find(|n| *n % 2 == 0)?;
+    Ok(*x)
+}
+
+fn main() {
+    println!(&quot;{:?}&quot;, first_even(&amp;[1, 2]));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: the `?` operator can only be used on `Result`s, not `Option`s, in a function that returns `Result`
+</code></pre>
+<p>Convert first, adding the reason the <code>Option</code> couldn&#39;t: <code>.find(...).ok_or(&quot;no even number&quot;)?</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Using sentinel values</strong> like <code>-1</code> or <code>&quot;&quot;</code> for &quot;not found&quot;. That&#39;s what <code>Option</code> is for.</li>
+<li><strong><code>unwrap()</code> on either one in library code.</strong> Return it to the caller and let them decide.</li>
+<li><strong>Losing information with <code>.ok()</code>.</strong> Turning a parse error into <code>None</code> is fine for &quot;use a default if invalid&quot;; it&#39;s bad when the user needs to see the error.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::collections::HashMap;
+
+#[derive(Debug)]
+enum LoginError {
+    UnknownUser(String),
+    WrongPassword,
+}
+
+// Absence is normal here: Option.
+fn find_email(users: &amp;HashMap&lt;&amp;str, (&amp;str, &amp;str)&gt;, name: &amp;str) -&gt; Option&lt;String&gt; {
+    users.get(name).map(|(email, _)| email.to_string())
+}
+
+// Failure needs a reason: Result.
+fn login(users: &amp;HashMap&lt;&amp;str, (&amp;str, &amp;str)&gt;, name: &amp;str, password: &amp;str) -&gt; Result&lt;String, LoginError&gt; {
+    let (_, stored) = users.get(name).ok_or_else(|| LoginError::UnknownUser(name.to_string()))?;
+    if *stored != password {
+        return Err(LoginError::WrongPassword);
+    }
+    Ok(format!(&quot;welcome back, {name}&quot;))
+}
+
+fn main() {
+    let mut users = HashMap::new();
+    users.insert(&quot;ferris&quot;, (&quot;ferris@example.com&quot;, &quot;crab123&quot;));
+
+    println!(&quot;{:?}&quot;, find_email(&amp;users, &quot;ferris&quot;));
+    println!(&quot;{:?}&quot;, find_email(&amp;users, &quot;gopher&quot;));
+
+    for (name, password) in [(&quot;ferris&quot;, &quot;crab123&quot;), (&quot;ferris&quot;, &quot;hunter2&quot;), (&quot;gopher&quot;, &quot;go&quot;)] {
+        match login(&amp;users, name, password) {
+            Ok(greeting) =&gt; println!(&quot;{greeting}&quot;),
+            Err(LoginError::UnknownUser(who)) =&gt; println!(&quot;no user named {who}&quot;),
+            Err(e) =&gt; println!(&quot;login failed: {e:?}&quot;),
+        }
+    }
+
+    let port: u16 = &quot;80a&quot;.parse().ok().unwrap_or(8080);
+    println!(&quot;port {port}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>Some(&quot;ferris@example.com&quot;)
+None
+welcome back, ferris
+login failed: WrongPassword
+no user named gopher
+port 8080
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/errors/panic-or-result">Lesson: Error Handling with Result</a></li><li><a href="/learn/enums/enums-one-of-a-fixed-set-of-variants">Lesson: Enums and Option</a></li></ul></main></div>
+  </body>
+</html>

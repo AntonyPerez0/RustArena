@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Modules and visibility in Rust: mod, pub and use | RustArena</title>
+    <meta name="description" content="How Rust modules work: mod blocks and files, private by default, pub and pub(crate), paths with crate:: and super::, use, and re-exports." />
+    <link rel="canonical" href="https://rustarena.app/topics/modules-and-visibility/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Modules and visibility in Rust: mod, pub and use | RustArena" />
+    <meta property="og:description" content="How Rust modules work: mod blocks and files, private by default, pub and pub(crate), paths with crate:: and super::, use, and re-exports." />
+    <meta property="og:url" content="https://rustarena.app/topics/modules-and-visibility/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Modules and visibility in Rust: mod, pub and use","description":"How Rust modules work: mod blocks and files, private by default, pub and pub(crate), paths with crate:: and super::, use, and re-exports.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/modules-and-visibility/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Modules and visibility in Rust: mod, pub and use</h1>
+<p>How Rust modules work: mod blocks and files, private by default, pub and pub(crate), paths with crate:: and super::, use, and re-exports.</p>
+<p><strong>Modules</strong> organize code into named groups and control what&#39;s visible from outside. Every crate has a tree of modules rooted at <code>src/main.rs</code> (for a binary) or <code>src/lib.rs</code> (for a library).</p>
+<h2>Private by default</h2>
+<pre><code class="language-rust">mod bank {
+    pub struct Account {
+        pub owner: String,
+        balance: u64,          // private field
+    }
+
+    impl Account {
+        pub fn new(owner: &amp;str) -&gt; Self { ... }
+        pub fn balance(&amp;self) -&gt; u64 { self.balance }
+        fn audit(&amp;self) { ... }  // private method
+    }
+}
+</code></pre>
+<p>Everything inside a module is <strong>private</strong> to that module (and its child modules) unless marked <code>pub</code>. That includes struct <strong>fields</strong>: a <code>pub struct</code> with private fields can only be created through the functions you provide, which is how you protect rules like &quot;balance never goes negative&quot;.</p>
+<p>Using private items from outside is a compile error:</p>
+<ul>
+<li>E0603, &quot;function <code>audit</code> is private&quot;</li>
+<li>E0616, &quot;field <code>balance</code> of struct <code>Account</code> is private&quot;</li>
+<li>E0451, &quot;field <code>balance</code> of struct <code>Account</code> is private&quot; when building the struct with <code>Account { ... }</code> from outside</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Visibility</th>
+<th>Visible to</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>(nothing)</td>
+<td>this module and its children</td>
+</tr>
+<tr>
+<td><code>pub</code></td>
+<td>everyone who can see the module</td>
+</tr>
+<tr>
+<td><code>pub(crate)</code></td>
+<td>anywhere in this crate, not to users of your library</td>
+</tr>
+<tr>
+<td><code>pub(super)</code></td>
+<td>the parent module</td>
+</tr>
+</tbody></table>
+<h2>Paths and use</h2>
+<p>Refer to items with <strong>paths</strong>: <code>crate::bank::Account</code> (absolute, from the crate root), <code>super::helper</code> (the parent module), <code>self::inner</code> (this module). <code>use</code> brings a path into scope so you can write the short name:</p>
+<pre><code class="language-rust">use std::collections::{HashMap, HashSet};
+use crate::bank::Account;
+use std::io::Result as IoResult;   // rename to avoid a clash
+</code></pre>
+<p>Conventions: import types, traits and macros by name (<code>use std::collections::HashMap;</code>), but call functions through their module (<code>use std::fs;</code> then <code>fs::read_to_string(...)</code>), so readers can see where a function comes from.</p>
+<h2>Modules in files</h2>
+<p>A <code>mod bank;</code> declaration (with a semicolon instead of a body) tells the compiler to load the module from a file:</p>
+<pre><code class="language-text">src/
+├── main.rs        // mod bank;  mod report;
+├── bank.rs        // the bank module; may declare `pub mod ledger;`
+├── bank/
+│   └── ledger.rs  // bank::ledger
+└── report.rs
+</code></pre>
+<p>Files are never compiled unless some module declares them with <code>mod</code>. The older <code>bank/mod.rs</code> layout also works.</p>
+<h2>Re-exports with pub use</h2>
+<p><code>pub use</code> makes an item available at a different path. Libraries use it to offer a flat, stable API while keeping a deeper internal structure: <code>pub use crate::bank::ledger::Entry;</code> in <code>lib.rs</code> lets users write <code>mycrate::Entry</code>.</p>
+<h2>Crates and packages</h2>
+<p>A <strong>crate</strong> is one compilation unit (a library or a binary). A <strong>package</strong> is what <code>Cargo.toml</code> describes: one or more crates. Dependencies from crates.io are added under <code>[dependencies]</code> and used with their crate name: <code>use serde::Deserialize;</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>pub</code> on the struct&#39;s fields or <code>new</code></strong> and then being unable to build it from <code>main</code>.</li>
+<li><strong>Creating <code>foo.rs</code> but never writing <code>mod foo;</code></strong>: the file is ignored and its items are &quot;not found&quot;.</li>
+<li><strong>Writing <code>mod foo;</code> in several places</strong>: declare each module once, in its parent; elsewhere, <code>use</code> it.</li>
+<li><strong>Making everything <code>pub</code>.</strong> Start private and widen only what callers need. Private items can be changed freely without breaking anyone.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>mod bank {
+    pub mod ledger {
+        #[derive(Debug)]
+        pub struct Entry {
+            pub amount: i64,
+            pub note: String,
+        }
+
+        pub(crate) fn describe(e: &amp;Entry) -&gt; String {
+            format!(&quot;{:+} ({})&quot;, e.amount, e.note)
+        }
+    }
+
+    use self::ledger::Entry;
+
+    pub struct Account {
+        pub owner: String,
+        balance: i64,
+        history: Vec&lt;Entry&gt;,
+    }
+
+    impl Account {
+        pub fn new(owner: &amp;str) -&gt; Self {
+            Account { owner: owner.to_string(), balance: 0, history: Vec::new() }
+        }
+
+        pub fn deposit(&amp;mut self, amount: i64, note: &amp;str) -&gt; Result&lt;(), String&gt; {
+            check_amount(amount)?;
+            self.balance += amount;
+            self.history.push(Entry { amount, note: note.to_string() });
+            Ok(())
+        }
+
+        pub fn balance(&amp;self) -&gt; i64 {
+            self.balance
+        }
+
+        pub fn history(&amp;self) -&gt; &amp;[Entry] {
+            &amp;self.history
+        }
+    }
+
+    fn check_amount(amount: i64) -&gt; Result&lt;(), String&gt; {
+        if amount &lt;= 0 {
+            return Err(format!(&quot;amount must be positive, got {amount}&quot;));
+        }
+        Ok(())
+    }
+}
+
+pub use bank::ledger::Entry;
+use bank::Account;
+
+fn main() {
+    let mut acct = Account::new(&quot;Ferris&quot;);
+    acct.deposit(100, &quot;salary&quot;).unwrap();
+    acct.deposit(25, &quot;refund&quot;).unwrap();
+    if let Err(e) = acct.deposit(-5, &quot;oops&quot;) {
+        println!(&quot;rejected: {e}&quot;);
+    }
+    println!(&quot;{} has {}&quot;, acct.owner, acct.balance());
+    for e in acct.history() {
+        println!(&quot;  {}&quot;, bank::ledger::describe(e));
+    }
+    let first: &amp;Entry = &amp;acct.history()[0];
+    println!(&quot;{first:?}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>rejected: amount must be positive, got -5
+Ferris has 125
+  +100 (salary)
+  +25 (refund)
+Entry { amount: 100, note: &quot;salary&quot; }
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/modules/modules-and-privacy">Lesson: Modules, Crates and Cargo</a></li></ul></main></div>
+  </body>
+</html>

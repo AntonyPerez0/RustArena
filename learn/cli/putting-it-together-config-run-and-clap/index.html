@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Putting it together: Config, run() and clap · Building Command-Line Tools (Rust) | RustArena</title>
+    <meta name="description" content="Every well-built Rust CLI ends up with the same shape: Parsing turns strings into a typed value (a Config struct, or an enum with one variant per…" />
+    <link rel="canonical" href="https://rustarena.app/learn/cli/putting-it-together-config-run-and-clap/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Putting it together: Config, run() and clap · Building Command-Line Tools (Rust) | RustArena" />
+    <meta property="og:description" content="Every well-built Rust CLI ends up with the same shape: Parsing turns strings into a typed value (a Config struct, or an enum with one variant per…" />
+    <meta property="og:url" content="https://rustarena.app/learn/cli/putting-it-together-config-run-and-clap/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Putting it together: Config, run() and clap","description":"Every well-built Rust CLI ends up with the same shape: Parsing turns strings into a typed value (a Config struct, or an enum with one variant per…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/cli/putting-it-together-config-run-and-clap/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Building Command-Line Tools</nav>
+<p>Step 6 of 6</p>
+<h1>Putting it together: Config, run() and clap</h1>
+<p>Every well-built Rust CLI ends up with the same shape:</p>
+<pre><code class="language-rust">fn main() -&gt; ExitCode {
+    let args: Vec&lt;String&gt; = std::env::args().skip(1).collect();
+    let command = match parse_args(&amp;args) {      // 1. arguments -&gt; a typed Config/Command
+        Ok(c) =&gt; c,
+        Err(msg) =&gt; {
+            eprintln!(&quot;{msg}\n{USAGE}&quot;);
+            return ExitCode::from(2);            //    usage errors: exit 2
+        }
+    };
+    match run(command) {                         // 2. do the work, returning Result
+        Ok(()) =&gt; ExitCode::SUCCESS,
+        Err(e) =&gt; {
+            eprintln!(&quot;error: {e}&quot;);             // 3. report on stderr
+            ExitCode::FAILURE                    //    failures: exit 1
+        }
+    }
+}
+</code></pre>
+<ul>
+<li><strong>Parsing</strong> turns strings into a typed value (a <code>Config</code> struct, or an enum with one variant per subcommand). After this point, nothing looks at raw arguments.</li>
+<li><strong><code>run</code></strong> does the work and returns <code>Result</code>, so it can use <code>?</code> everywhere (with anyhow and context from the last module, in a real project).</li>
+<li><strong><code>main</code></strong> is the only place that knows about exit codes and the usage text.</li>
+<li>The decisions inside <code>run</code> live in small functions over <code>&amp;str</code> and plain values, which unit tests can call directly.</li>
+</ul>
+<h2>clap: what teams use for real</h2>
+<p>Hand-written parsing is fine for small tools. For anything bigger, teams use the <strong>clap</strong> crate. You describe the arguments as a struct, and <code>#[derive(Parser)]</code> generates the parser, <code>--help</code>, <code>--version</code>, clear error messages (including suggestions for misspelled flags), and exit code 2 for usage errors. clap isn&#39;t available on this site, so here&#39;s what it looks like (not compiled):</p>
+<pre><code class="language-toml">[dependencies]
+clap = { version = &quot;4&quot;, features = [&quot;derive&quot;] }
+</code></pre>
+<pre><code class="language-rust">use clap::{Parser, Subcommand};
+
+/// A tiny todo list
+#[derive(Parser)]
+#[command(version)]
+struct Cli {
+    /// File that stores the tasks
+    #[arg(short, long, default_value = &quot;todo.txt&quot;)]
+    file: String,
+
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Show all tasks
+    List,
+    /// Add a task
+    Add { text: Vec&lt;String&gt; },
+    /// Mark task N as done
+    Done { n: usize },
+}
+
+fn main() {
+    let cli = Cli::parse(); // on bad arguments: prints the error and exits with 2
+    match cli.command {
+        Command::List =&gt; { /* ... */ }
+        Command::Add { text } =&gt; { /* ... */ }
+        Command::Done { n } =&gt; { /* ... */ }
+    }
+}
+</code></pre>
+<p>The <code>///</code> doc comments become the help text:</p>
+<pre><code class="language-text">$ todo --help
+A tiny todo list
+
+Usage: todo [OPTIONS] &lt;COMMAND&gt;
+
+Commands:
+  list  Show all tasks
+  add   Add a task
+  done  Mark task N as done
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+  -f, --file &lt;FILE&gt;  File that stores the tasks [default: todo.txt]
+  -h, --help         Print help
+  -V, --version      Print version
+</code></pre>
+<p>Notice it&#39;s the same design as this module&#39;s: a typed struct, an enum of subcommands, <code>match</code> in <code>main</code>. The <strong>Pro Track</strong> builds a complete CLI with clap, anyhow and integration tests; everything you practiced here carries over directly.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Business logic in <code>main</code>.</strong> It can&#39;t be unit-tested and mixes concerns. Move it to functions.</li>
+<li><strong><code>process::exit</code> deep in helper functions</strong>: the code becomes impossible to test and skips cleanup. Return errors; let <code>main</code> decide.</li>
+<li><strong>A usage message that doesn&#39;t say what&#39;s wrong.</strong> Print the specific problem first (<code>unknown command &quot;lst&quot;</code>), then the usage.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Build <code>todo</code>, a todo list stored in <code>todo.txt</code>, one task per line written as <code>[ ] text</code> or <code>[x] text</code> (done). Commands:</p>
+<ul>
+<li><code>list</code>: print each task as <code>1. [ ] buy milk</code>; if there are none (or the file doesn&#39;t exist yet), print <code>no tasks</code>.</li>
+<li><code>add &lt;words&gt;...</code>: append <code>[ ] &lt;words joined by spaces&gt;</code> to the file and print <code>added 3: buy milk</code> (3 is the new task&#39;s number).</li>
+<li><code>done &lt;n&gt;</code>: mark task n as done, write the file back, and print <code>done 2: feed the crab</code>. If there&#39;s no task n (that includes <code>0</code>), print <code>error: no task 7</code> to stderr and exit 1.</li>
+<li>No command, an unknown command, <code>add</code> without words or <code>done</code> without a valid number: print <code>usage: todo list | add &lt;text&gt; | done &lt;n&gt;</code> to stderr and exit 2.</li>
+</ul>
+
+<h3>Challenge 2</h3>
+<p>Test the hard part without files: write <code>fn mark_done(contents: &amp;str, n: usize) -&gt; Result&lt;String, String&gt;</code> that takes the whole <code>todo.txt</code> text and returns the new text with task n (1-based) marked <code>[x]</code>, each line ending in <code>\n</code>. A task that&#39;s already done stays done. A missing task gives <code>Err(&quot;no task 7&quot;)</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Model the arguments the way clap does: write <code>fn parse_command(args: &amp;[String]) -&gt; Result&lt;Command, String&gt;</code> for a key-value store CLI with subcommands <code>get &lt;key&gt;</code>, <code>set &lt;key&gt; &lt;value&gt;</code>, <code>del &lt;key&gt;...</code> (one or more keys) and <code>list [--limit N]</code>. Errors: no subcommand gives <code>missing command</code>; an unknown one gives <code>unknown command &quot;x&quot;</code>; anything else wrong with a subcommand&#39;s arguments gives <code>usage: &lt;subcommand&gt; ...</code> with that subcommand&#39;s usage from the list below.</p>
+<ul>
+<li><code>usage: get &lt;key&gt;</code></li>
+<li><code>usage: set &lt;key&gt; &lt;value&gt;</code></li>
+<li><code>usage: del &lt;key&gt;...</code></li>
+<li><code>usage: list [--limit N]</code></li>
+</ul>
+
+<p><a href="/learn/cli/reading-stdin-when-no-file-is-given">Previous: Reading stdin when no file is given</a> </p></main></div>
+  </body>
+</html>

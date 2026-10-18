@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Arc: shared ownership across threads · Sharing data between threads (Rust) | RustArena</title>
+    <meta name="description" content="A channel moves data from one thread to another. Sometimes many threads need to read the same data: a price list, a config, a dictionary. Cloning it for…" />
+    <link rel="canonical" href="https://rustarena.app/learn/sync/arc-shared-ownership-across-threads/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Arc: shared ownership across threads · Sharing data between threads (Rust) | RustArena" />
+    <meta property="og:description" content="A channel moves data from one thread to another. Sometimes many threads need to read the same data: a price list, a config, a dictionary. Cloning it for…" />
+    <meta property="og:url" content="https://rustarena.app/learn/sync/arc-shared-ownership-across-threads/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Arc: shared ownership across threads","description":"A channel moves data from one thread to another. Sometimes many threads need to read the same data: a price list, a config, a dictionary. Cloning it for…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/sync/arc-shared-ownership-across-threads/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Sharing data between threads</nav>
+<p>Step 3 of 7</p>
+<h1>Arc: shared ownership across threads</h1>
+<p>A channel moves data from one thread to another. Sometimes many threads need to <strong>read the same data</strong>: a price list, a config, a dictionary. Cloning it for every thread wastes memory, and scoped threads only work when all threads finish inside one function. For threads started with <code>thread::spawn</code>, you share data with <strong><code>Arc&lt;T&gt;</code></strong>.</p>
+<p>You met <code>Arc</code> briefly in the last module. It&#39;s the thread-safe version of <code>Rc</code> (module 29): <code>Arc::new(value)</code> puts the value on the heap next to a <strong>reference count</strong>. <code>Arc::clone(&amp;a)</code> makes another pointer to the <em>same</em> value and adds one to the count; no data is copied. When the last <code>Arc</code> is dropped, the value is dropped. The count is updated with atomic CPU instructions, so <code>Arc&lt;T&gt;</code> can be sent to and shared between threads (as long as <code>T</code> itself is <code>Send</code> and <code>Sync</code>).</p>
+<pre><code class="language-rust">use std::collections::HashMap;
+use std::sync::Arc;
+use std::thread;
+
+fn main() {
+    let prices: HashMap&lt;&amp;str, u32&gt; = HashMap::from([(&quot;kelp&quot;, 3), (&quot;shell&quot;, 12), (&quot;pearl&quot;, 250)]);
+    let prices = Arc::new(prices);
+    let orders = vec![vec![&quot;kelp&quot;, &quot;kelp&quot;, &quot;shell&quot;], vec![&quot;pearl&quot;], vec![&quot;shell&quot;, &quot;kelp&quot;]];
+
+    let mut handles = Vec::new();
+    for order in orders {
+        let prices = Arc::clone(&amp;prices);
+        handles.push(thread::spawn(move || order.iter().map(|item| prices[item]).sum::&lt;u32&gt;()));
+    }
+    for (i, handle) in handles.into_iter().enumerate() {
+        println!(&quot;order {i}: {}&quot;, handle.join().unwrap());
+    }
+    println!(&quot;owners of the price table now: {}&quot;, Arc::strong_count(&amp;prices));
+}
+</code></pre>
+<pre><code class="language-text">order 0: 18
+order 1: 250
+order 2: 15
+owners of the price table now: 1
+</code></pre>
+<ul>
+<li>Each thread gets its own <code>Arc</code> (a pointer), moved into its closure. All of them point at one <code>HashMap</code>.</li>
+<li><code>Arc::strong_count</code> shows how many <code>Arc</code>s point at the value. After the joins, the threads&#39; clones have been dropped, so only <code>main</code>&#39;s is left.</li>
+<li><code>Arc::clone(&amp;prices)</code> and <code>prices.clone()</code> do the same thing. Many teams prefer <code>Arc::clone(&amp;x)</code> because it makes clear that only a pointer is copied, not the whole table.</li>
+</ul>
+<h2>Arc is read-only</h2>
+<p><code>Arc&lt;T&gt;</code> hands out shared references (<code>&amp;T</code>) only. Several threads hold it at once, so letting one of them change the value would be a data race:</p>
+<pre><code class="language-rust-error">use std::sync::Arc;
+use std::thread;
+
+fn main() {
+    let stock = Arc::new(vec![1, 2, 3]);
+    let for_worker = Arc::clone(&amp;stock);
+    let handle = thread::spawn(move || {
+        for_worker.push(4);
+    });
+    handle.join().unwrap();
+    println!(&quot;{:?}&quot;, stock);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0596]: cannot borrow data in an `Arc` as mutable
+</code></pre>
+<p>To change shared data, put a lock inside the <code>Arc</code>: <code>Arc&lt;Mutex&lt;T&gt;&gt;</code>, the next step.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Cloning the data instead of the pointer</strong>: <code>Arc::new(prices.clone())</code> in the loop gives every thread its own copy. Clone the <code>Arc</code>.</li>
+<li><strong>Cloning outside the loop</strong>: one clone moved into the first thread leaves nothing for the second: <code>E0382</code>. Clone once per thread, inside the loop.</li>
+<li><strong>Using <code>Arc</code> when borrowing would do</strong>: if all threads end inside one function, <code>thread::scope</code> lets them borrow, no <code>Arc</code> needed.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Three warehouse requests are checked against one shared stock table, each in its own spawned thread. Wrap <code>stock</code> in an <code>Arc</code>, give each thread its own clone, and have each thread return its line. Join in order and print:</p>
+<pre><code>2 x helmet: ok
+5 x shield: short by 2
+1 x sword: unknown item
+</code></pre>
+<p>A request is <code>ok</code> when the stock has at least the asked quantity, <code>short by N</code> when it has less, and <code>unknown item</code> when the item isn&#39;t in the table at all.</p>
+
+<h3>Challenge 2</h3>
+<p>Fill in the two blanks: put the menu behind an <code>Arc</code>, and give the worker its own pointer to it. The program should print <code>the worker counted 3 dishes</code> and then <code>main still has 3 dishes</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>fn count_matches(lines: Arc&lt;Vec&lt;String&gt;&gt;, patterns: Vec&lt;String&gt;) -&gt; Vec&lt;usize&gt;</code>. Spawn <strong>one thread per pattern</strong> with <code>thread::spawn</code> (not a scope); each counts how many lines contain its pattern. Share the lines through the <code>Arc</code> (no copying of the lines) and return the counts in the same order as <code>patterns</code>.</p>
+
+<p><a href="/learn/sync/multiple-producers-cloning-the-sender">Previous: Multiple producers: cloning the Sender</a> <a href="/learn/sync/mutex-one-writer-at-a-time">Next: Mutex: one writer at a time</a></p></main></div>
+  </body>
+</html>

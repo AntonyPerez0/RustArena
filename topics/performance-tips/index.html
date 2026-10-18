@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Rust performance tips: release builds, allocations and iterators | RustArena</title>
+    <meta name="description" content="Practical ways to make Rust code faster: build with --release, measure first, avoid needless clones and allocations, pre-size collections, buffer output." />
+    <link rel="canonical" href="https://rustarena.app/topics/performance-tips/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Rust performance tips: release builds, allocations and iterators | RustArena" />
+    <meta property="og:description" content="Practical ways to make Rust code faster: build with --release, measure first, avoid needless clones and allocations, pre-size collections, buffer output." />
+    <meta property="og:url" content="https://rustarena.app/topics/performance-tips/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Rust performance tips: release builds, allocations and iterators","description":"Practical ways to make Rust code faster: build with --release, measure first, avoid needless clones and allocations, pre-size collections, buffer output.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/performance-tips/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Rust performance tips: release builds, allocations and iterators</h1>
+<p>Practical ways to make Rust code faster: build with --release, measure first, avoid needless clones and allocations, pre-size collections, buffer output.</p>
+<p>Rust is fast by default, but a few habits make a big difference, and a few mistakes are common enough to check first.</p>
+<h2>1. Build in release mode</h2>
+<p><code>cargo run</code> and <code>cargo build</code> produce <strong>debug</strong> builds: no optimizations, overflow checks on. They can be 10 to 100 times slower than <strong>release</strong> builds. Before measuring or comparing anything:</p>
+<pre><code class="language-text">cargo run --release
+cargo build --release   # binary in target/release/
+</code></pre>
+<p>For a little more speed, <code>[profile.release]</code> in <code>Cargo.toml</code> can set <code>lto = true</code> (link-time optimization across crates) and <code>codegen-units = 1</code>, at the cost of compile time.</p>
+<h2>2. Measure before optimizing</h2>
+<p>Guessing where time goes is usually wrong. Use real tools:</p>
+<ul>
+<li><strong>criterion</strong> (a crate) for reliable micro-benchmarks with statistics, run with <code>cargo bench</code> (the built-in <code>#[bench]</code> attribute is nightly-only).</li>
+<li><strong>perf</strong> (Linux), <strong>Instruments</strong> (macOS), or <strong>cargo flamegraph</strong> to see which functions use the CPU.</li>
+<li><code>std::time::Instant</code> for quick, rough timings of whole phases.</li>
+</ul>
+<h2>3. Fix the algorithm first</h2>
+<p>Replacing an O(n²) nested loop with a <code>HashMap</code> lookup or a sort plus binary search beats any micro-optimization. Check that membership tests in big collections use a <code>HashSet</code>, not <code>Vec::contains</code>.</p>
+<h2>4. Avoid needless allocations</h2>
+<p>Each <code>String</code>, <code>Vec</code>, <code>Box</code> or <code>.clone()</code> allocates on the heap. In hot code:</p>
+<ul>
+<li><strong>Borrow instead of cloning.</strong> Take <code>&amp;str</code> and <code>&amp;[T]</code> parameters; return references when the data already exists.</li>
+<li><strong>Pre-size collections:</strong> <code>Vec::with_capacity(n)</code>, <code>String::with_capacity(n)</code>, <code>HashMap::with_capacity(n)</code>.</li>
+<li><strong>Reuse buffers:</strong> <code>buf.clear()</code> keeps the capacity, so a loop that reads lines into one <code>String</code> allocates once.</li>
+<li><strong>Don&#39;t <code>collect</code> in the middle of a chain</strong> just to iterate again.</li>
+<li><strong><code>Cow&lt;str&gt;</code></strong> returns borrowed data when nothing changed and allocates only when it must.</li>
+</ul>
+<h2>5. Use iterators</h2>
+<p>Iterator chains (<code>iter().filter().map().sum()</code>) compile to tight loops, frequently without bounds checks, and the optimizer can vectorize them. They&#39;re at least as fast as index loops, and clearer.</p>
+<h2>6. Buffer I/O</h2>
+<p><code>println!</code> locks stdout and may flush on each line. For lots of output, lock once and wrap it in a <code>BufWriter</code>; use <code>BufReader</code> (or <code>read_to_string</code>) for input. This alone can speed up a text-processing program many times over.</p>
+<h2>7. Choose the right collection</h2>
+<table>
+<thead>
+<tr>
+<th>Need</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>push/pop at the end, index</td>
+<td><code>Vec</code></td>
+</tr>
+<tr>
+<td>push/pop at both ends (queue)</td>
+<td><code>VecDeque</code></td>
+</tr>
+<tr>
+<td>key lookup</td>
+<td><code>HashMap</code> (or <code>BTreeMap</code> if you need ordering or ranges)</td>
+</tr>
+<tr>
+<td>always take the smallest/largest</td>
+<td><code>BinaryHeap</code></td>
+</tr>
+<tr>
+<td>membership tests</td>
+<td><code>HashSet</code></td>
+</tr>
+</tbody></table>
+<h2>8. Smaller wins</h2>
+<ul>
+<li><code>sort_unstable</code> is faster than <code>sort</code> when equal elements&#39; order doesn&#39;t matter.</li>
+<li>Prefer generics (static dispatch) to <code>Box&lt;dyn Trait&gt;</code> in very hot loops.</li>
+<li>Parallelize CPU-bound work over large data with <code>rayon</code> (<code>par_iter()</code>).</li>
+<li><code>#[inline]</code> rarely helps inside one crate; the optimizer already decides well.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li>Benchmarking a debug build.</li>
+<li>Cloning to satisfy the borrow checker inside a loop.</li>
+<li>Calling <code>to_string()</code> or <code>format!</code> just to compare or look up keys (compare <code>&amp;str</code> directly).</li>
+<li><code>v.contains(&amp;x)</code> on a big <code>Vec</code> inside a loop: O(n²) overall.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::collections::HashSet;
+use std::io::{self, BufWriter, Write};
+
+// Borrows its input and returns a count: no allocation per call.
+fn count_errors(lines: &amp;[&amp;str]) -&gt; usize {
+    lines.iter().filter(|l| l.starts_with(&quot;ERROR&quot;)).count()
+}
+
+fn main() -&gt; io::Result&lt;()&gt; {
+    let log: Vec&lt;String&gt; = (0..1000).map(|i| if i % 7 == 0 { format!(&quot;ERROR job {i}&quot;) } else { format!(&quot;INFO job {i}&quot;) }).collect();
+    let views: Vec&lt;&amp;str&gt; = log.iter().map(|s| s.as_str()).collect();
+    println!(&quot;errors: {}&quot;, count_errors(&amp;views));
+
+    // Reuse one buffer instead of allocating a new String per line.
+    let mut buf = String::with_capacity(64);
+    let mut longest = 0;
+    for line in &amp;log {
+        buf.clear();
+        buf.push_str(line);
+        buf.make_ascii_uppercase();
+        longest = longest.max(buf.len());
+    }
+    println!(&quot;longest line {longest} bytes, buffer capacity still {}&quot;, buf.capacity() &gt;= 64);
+
+    // HashSet membership instead of Vec::contains in a loop.
+    let banned: HashSet&lt;u32&gt; = [7, 49, 343].into_iter().collect();
+    let allowed = (1..=1000).filter(|n| !banned.contains(n)).count();
+    println!(&quot;allowed ids: {allowed}&quot;);
+
+    // Pre-sized Vec plus an iterator chain.
+    let mut squares = Vec::with_capacity(10);
+    squares.extend((1..=10u64).map(|n| n * n));
+    println!(&quot;sum of squares {}&quot;, squares.iter().sum::&lt;u64&gt;());
+
+    // Lock stdout once and buffer many writes.
+    let stdout = io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+    for n in squares.iter().take(5) {
+        write!(out, &quot;{n} &quot;)?;
+    }
+    writeln!(out)?;
+    out.flush()?;
+    Ok(())
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>errors: 143
+longest line 13 bytes, buffer capacity still true
+allowed ids: 997
+sum of squares 385
+1 4 9 16 25 
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/performance/measure-first-and-fix-the-algorithm-first">Lesson: Performance</a></li></ul></main></div>
+  </body>
+</html>

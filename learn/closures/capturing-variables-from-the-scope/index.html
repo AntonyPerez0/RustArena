@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Capturing variables from the scope · Closures (Rust) | RustArena</title>
+    <meta name="description" content="Here is what makes closures more than short functions: a closure can use the variables of the scope it's written in. The closure captures them. withtax…" />
+    <link rel="canonical" href="https://rustarena.app/learn/closures/capturing-variables-from-the-scope/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Capturing variables from the scope · Closures (Rust) | RustArena" />
+    <meta property="og:description" content="Here is what makes closures more than short functions: a closure can use the variables of the scope it's written in. The closure captures them. withtax…" />
+    <meta property="og:url" content="https://rustarena.app/learn/closures/capturing-variables-from-the-scope/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Capturing variables from the scope","description":"Here is what makes closures more than short functions: a closure can use the variables of the scope it's written in. The closure captures them. withtax…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/closures/capturing-variables-from-the-scope/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Idiomatic Rust › Closures</nav>
+<p>Step 2 of 6</p>
+<h1>Capturing variables from the scope</h1>
+<p>Here is what makes closures more than short functions: a closure can use the variables of the scope it&#39;s written in. The closure <strong>captures</strong> them.</p>
+<pre><code class="language-rust">fn main() {
+    let tax_rate = 0.25;
+    let with_tax = |price: f64| price * (1.0 + tax_rate);
+
+    println!(&quot;{:.2}&quot;, with_tax(8.0));
+    println!(&quot;{:.2}&quot;, with_tax(20.0));
+    println!(&quot;rate is still {tax_rate}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">10.00
+25.00
+rate is still 0.25
+</code></pre>
+<p><code>with_tax</code> uses <code>tax_rate</code> without taking it as a parameter. A <code>fn</code> can&#39;t do that, even one written inside <code>main</code>:</p>
+<pre><code class="language-rust-error">fn main() {
+    let tax_rate = 0.25;
+    fn with_tax(price: f64) -&gt; f64 {
+        price * (1.0 + tax_rate)
+    }
+    println!(&quot;{:.2}&quot;, with_tax(8.0));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0434]: can&#39;t capture dynamic environment in a fn item
+</code></pre>
+<p>The compiler even suggests the fix: <code>help: use the `|| { ... }` closure form instead</code>.</p>
+<h2>Three ways to capture</h2>
+<p>The compiler looks at what the body does with each variable and captures it in the gentlest way that works:</p>
+<table>
+<thead>
+<tr>
+<th>The body...</th>
+<th>The closure captures</th>
+<th>Like writing</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>only reads <code>x</code></td>
+<td>a shared borrow</td>
+<td><code>&amp;x</code></td>
+</tr>
+<tr>
+<td>changes <code>x</code></td>
+<td>a mutable borrow</td>
+<td><code>&amp;mut x</code></td>
+</tr>
+<tr>
+<td>takes ownership of <code>x</code> (moves it somewhere)</td>
+<td>the value itself</td>
+<td>a move of <code>x</code></td>
+</tr>
+</tbody></table>
+<p>All the borrowing rules you know apply, with the closure as the borrower. A closure that changes a captured variable must itself be declared <code>mut</code>, because calling it changes something:</p>
+<pre><code class="language-rust">fn main() {
+    let mut count = 0;
+    let mut tick = || count += 1;
+
+    tick();
+    tick();
+    tick();
+    println!(&quot;ticks: {count}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">ticks: 3
+</code></pre>
+<p>The mutable borrow of <code>count</code> starts where <code>tick</code> is created and lasts until the <strong>last call</strong> of <code>tick</code>. After that, <code>count</code> is free again, so the <code>println!</code> is fine.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>mut</code> on the closure.</strong> Calling a closure that changes what it captured needs mutable access to the closure:</li>
+</ul>
+<pre><code class="language-rust-error">fn main() {
+    let mut count = 0;
+    let tick = || count += 1;
+    tick();
+    println!(&quot;{count}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0596]: cannot borrow `tick` as mutable, as it is not declared as mutable
+</code></pre>
+<ul>
+<li><strong>Using the variable while the closure still borrows it.</strong> Between creating <code>tick</code> and its last call, <code>count</code> is mutably borrowed, so you can&#39;t even read it:</li>
+</ul>
+<pre><code class="language-rust-error">fn main() {
+    let mut count = 0;
+    let mut tick = || count += 1;
+    tick();
+    println!(&quot;{count}&quot;);
+    tick();
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0502]: cannot borrow `count` as immutable because it is also borrowed as mutable
+</code></pre>
+<p>Fix it by finishing with the closure first, or by passing the value in as a parameter instead of capturing it.</p>
+
+<h2>Your task</h2>
+<p>The program has a <code>bonus</code> and a <code>score</code>. Write a closure <code>add_points</code> that takes a number of points (<code>i32</code>) and adds <code>points + bonus</code> to <code>score</code>. Call it with <code>10</code> and then with <code>20</code>, so the program prints <code>score: 40</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>A closure can capture a <code>Vec</code> mutably too. Write a closure <code>log</code> that takes a message (<code>&amp;str</code>) and pushes a numbered line onto <code>lines</code>: the first message becomes <code>&quot;1. server started&quot;</code>, the second <code>&quot;2. ...&quot;</code>, and so on (the number is <code>lines.len() + 1</code>). Log the three messages <code>server started</code>, <code>user ann logged in</code> and <code>disk 91% full</code>, in that order. The loop at the end prints them:</p>
+<pre><code>1. server started
+2. user ann logged in
+3. disk 91% full
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>The starter code doesn&#39;t compile: the first <code>println!</code> reads <code>visits</code> while the closure <code>visit</code> still borrows it mutably (it&#39;s called again later). Fix it <strong>by reordering lines</strong>, not by adding <code>.clone()</code>, so the program prints:</p>
+<pre><code>visited: [&quot;hall&quot;, &quot;kitchen&quot;, &quot;garden&quot;]
+count: 3
+</code></pre>
+
+<p><a href="/learn/closures/your-first-closure">Previous: Your first closure</a> <a href="/learn/closures/move-closures">Next: move closures</a></p></main></div>
+  </body>
+</html>

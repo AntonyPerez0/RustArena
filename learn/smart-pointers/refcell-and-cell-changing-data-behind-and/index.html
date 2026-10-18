@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>RefCell and Cell: changing data behind &amp; · Smart Pointers (Rust) | RustArena</title>
+    <meta name="description" content="The borrow checker enforces &quot;many readers or one writer&quot; at compile time. Sometimes your code follows that rule, but in a way the compiler can't see: a…" />
+    <link rel="canonical" href="https://rustarena.app/learn/smart-pointers/refcell-and-cell-changing-data-behind-and/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="RefCell and Cell: changing data behind &amp; · Smart Pointers (Rust) | RustArena" />
+    <meta property="og:description" content="The borrow checker enforces &quot;many readers or one writer&quot; at compile time. Sometimes your code follows that rule, but in a way the compiler can't see: a…" />
+    <meta property="og:url" content="https://rustarena.app/learn/smart-pointers/refcell-and-cell-changing-data-behind-and/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"RefCell and Cell: changing data behind &","description":"The borrow checker enforces \"many readers or one writer\" at compile time. Sometimes your code follows that rule, but in a way the compiler can't see: a…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/smart-pointers/refcell-and-cell-changing-data-behind-and/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Idiomatic Rust › Smart Pointers</nav>
+<p>Step 5 of 7</p>
+<h1>RefCell and Cell: changing data behind &amp;</h1>
+<p>The borrow checker enforces &quot;many readers <em>or</em> one writer&quot; at compile time. Sometimes your code follows that rule, but in a way the compiler can&#39;t see: a cache filled inside a method that takes <code>&amp;self</code>, a counter of how many times something was looked up, or (next step) data shared through an <code>Rc</code>. For those cases Rust has <strong>interior mutability</strong>: types that let you change their contents through a shared <code>&amp;</code> reference, checking the rules another way.</p>
+<ul>
+<li><strong><code>RefCell&lt;T&gt;</code></strong>: <code>.borrow()</code> gives you a <code>Ref&lt;T&gt;</code> (acts like <code>&amp;T</code>), <code>.borrow_mut()</code> gives you a <code>RefMut&lt;T&gt;</code> (acts like <code>&amp;mut T</code>). The same rule applies, but it&#39;s checked <strong>at run time</strong>: RefCell counts the borrows that are alive, and breaking the rule panics.</li>
+<li><strong><code>Cell&lt;T&gt;</code></strong>: for small <code>Copy</code> values like numbers and bools. <code>.get()</code> returns a copy, <code>.set(v)</code> replaces the value. It never hands out a reference into itself, so it can never panic.</li>
+</ul>
+<pre><code class="language-rust">use std::cell::{Cell, RefCell};
+
+struct Inventory {
+    items: RefCell&lt;Vec&lt;String&gt;&gt;,
+    lookups: Cell&lt;u32&gt;,
+}
+
+impl Inventory {
+    fn add(&amp;self, item: &amp;str) {
+        // &amp;self, not &amp;mut self: the RefCell allows the change
+        self.items.borrow_mut().push(item.to_string());
+    }
+
+    fn has(&amp;self, item: &amp;str) -&gt; bool {
+        self.lookups.set(self.lookups.get() + 1);
+        self.items.borrow().iter().any(|i| i == item)
+    }
+}
+
+fn main() {
+    let inv = Inventory { items: RefCell::new(Vec::new()), lookups: Cell::new(0) };
+    inv.add(&quot;sword&quot;);
+    inv.add(&quot;shield&quot;);
+    println!(&quot;{}&quot;, inv.has(&quot;sword&quot;));
+    println!(&quot;{}&quot;, inv.has(&quot;bow&quot;));
+    println!(&quot;{} items, {} lookups&quot;, inv.items.borrow().len(), inv.lookups.get());
+}
+</code></pre>
+<pre><code class="language-text">true
+false
+2 items, 2 lookups
+</code></pre>
+<p>Notice <code>inv</code> isn&#39;t even declared <code>mut</code>. Each <code>borrow_mut()</code> lasts only for its statement, so the borrows never overlap and nothing panics.</p>
+<h2>When the runtime check fails</h2>
+<pre><code class="language-rust">use std::cell::RefCell;
+
+fn main() {
+    let log = RefCell::new(vec![String::from(&quot;start&quot;)]);
+    let first = log.borrow(); // a shared borrow, still alive below...
+    println!(&quot;first entry: {}&quot;, first[0]);
+    log.borrow_mut().push(String::from(&quot;next&quot;)); // ...so this panics
+    println!(&quot;never printed&quot;);
+}
+</code></pre>
+<pre><code class="language-text">first entry: start
+</code></pre>
+<p>The program stops with:</p>
+<pre><code class="language-text">thread &#39;main&#39; (4321) panicked at src/main.rs:7:9:
+RefCell already borrowed
+</code></pre>
+<p><code>first</code> holds a <code>Ref</code>, and a <code>Ref</code> stays alive until the end of its scope (it has to run code when it&#39;s dropped, to lower the borrow count), not just until its last use. So <code>borrow_mut()</code> finds a reader and panics. The error behind it is called <code>BorrowMutError</code> (older Rust versions print <code>already borrowed: BorrowMutError</code>). Fixes:</p>
+<ul>
+<li>End the first borrow before mutating: put it in an inner <code>{ }</code> block, call <code>drop(first)</code>, or copy out what you need (<code>let first = log.borrow()[0].clone();</code>).</li>
+<li>Or ask instead of panicking: <code>log.try_borrow_mut()</code> returns a <code>Result</code>, <code>Err(BorrowMutError)</code> when the value is busy.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Holding a <code>borrow()</code> while something else calls <code>borrow_mut()</code></strong>, often hidden in another method. Keep borrows short: borrow, use, let go.</li>
+<li><strong><code>Cell</code> with a non-<code>Copy</code> type</strong>: <code>cell.get()</code> on a <code>Cell&lt;String&gt;</code> doesn&#39;t compile because <code>get</code> needs <code>T: Copy</code>. Use <code>RefCell</code> (or <code>Cell::take</code>/<code>Cell::replace</code>).</li>
+<li><strong>Using RefCell where <code>&amp;mut self</code> would do.</strong> Compile-time checks are free and can&#39;t panic. Reach for RefCell only when the compiler can&#39;t see that your borrows are fine.</li>
+<li>RefCell and Cell are single-threaded. The thread-safe equivalents are <code>Mutex</code> and atomics.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>A ticket desk is shared through plain <code>&amp;</code> references, so its methods take <code>&amp;self</code>. Implement:</p>
+<ul>
+<li><code>TicketDesk::new()</code>: no tickets yet; the first ticket will get id 1.</li>
+<li><code>open(&amp;self, title: &amp;str) -&gt; u32</code>: gives the ticket the next id (1, 2, 3, ...), records <code>#&lt;id&gt; &lt;title&gt;</code> in the log, and returns the id.</li>
+<li><code>log_len(&amp;self) -&gt; usize</code> and <code>last_entry(&amp;self) -&gt; Option&lt;String&gt;</code> (a copy of the newest log line).</li>
+</ul>
+<p>Use a <code>Cell&lt;u32&gt;</code> for the next id and a <code>RefCell&lt;Vec&lt;String&gt;&gt;</code> for the log.</p>
+
+<h3>Challenge 2</h3>
+<p>This program panics with <code>RefCell already borrowed</code>: it pushes to the queue while it&#39;s still iterating over it. It&#39;s meant to add, for every job greater than 1, a new job worth 10 times as much at the end of the queue, then print the queue:</p>
+<pre><code>[3, 1, 2, 30, 20]
+</code></pre>
+<p>Keep the <code>RefCell</code>. Collect the new jobs first, and push them with <code>queue.borrow_mut()</code> once the read borrow has ended.</p>
+
+<h3>Challenge 3</h3>
+<p>A <code>Report</code> computes its total lazily: the first call to <code>total()</code> adds up the numbers and caches the result, later calls return the cached value. <code>total</code> takes <code>&amp;self</code>, so use a <code>Cell&lt;Option&lt;u32&gt;&gt;</code> for the cache (<code>Option&lt;u32&gt;</code> is <code>Copy</code>, so <code>Cell</code> works).</p>
+<p>Also count how many times the total was actually computed in <code>computations: Cell&lt;u32&gt;</code>, so the tests can check the caching works. Write <code>Report::new(data)</code> and <code>total(&amp;self) -&gt; u32</code>.</p>
+
+<p><a href="/learn/smart-pointers/rc-t-shared-ownership">Previous: Rc&lt;T&gt;: shared ownership</a> <a href="/learn/smart-pointers/rc-refcell-t-shared-state-you-can-change">Next: Rc&lt;RefCell&lt;T&gt;&gt;: shared state you can change</a></p></main></div>
+  </body>
+</html>

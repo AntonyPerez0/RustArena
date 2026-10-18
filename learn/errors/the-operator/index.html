@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>The ? operator · Error Handling with Result (Rust) | RustArena</title>
+    <meta name="description" content="Most functions that hit an error can't fix it themselves. A function that parses a number doesn't know whether the right reaction is to ask the user…" />
+    <link rel="canonical" href="https://rustarena.app/learn/errors/the-operator/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="The ? operator · Error Handling with Result (Rust) | RustArena" />
+    <meta property="og:description" content="Most functions that hit an error can't fix it themselves. A function that parses a number doesn't know whether the right reaction is to ask the user…" />
+    <meta property="og:url" content="https://rustarena.app/learn/errors/the-operator/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"The ? operator","description":"Most functions that hit an error can't fix it themselves. A function that parses a number doesn't know whether the right reaction is to ask the user…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/errors/the-operator/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Error Handling with Result</nav>
+<p>Step 4 of 7</p>
+<h1>The ? operator</h1>
+<p>Most functions that hit an error can&#39;t fix it themselves. A function that parses a number doesn&#39;t know whether the right reaction is to ask the user again, skip the line, or stop the program, so it hands the error to its caller. This is called <strong>propagating</strong> the error. With <code>match</code>, it looks like this:</p>
+<pre><code class="language-rust">fn add_quantities(a: &amp;str, b: &amp;str) -&gt; Result&lt;u32, ParseIntError&gt; {
+    let x: u32 = match a.trim().parse() {
+        Ok(v) =&gt; v,
+        Err(e) =&gt; return Err(e),
+    };
+    let y: u32 = match b.trim().parse() {
+        Ok(v) =&gt; v,
+        Err(e) =&gt; return Err(e),
+    };
+    Ok(x + y)
+}
+</code></pre>
+<p>That pattern is so common that Rust has an operator for it. The <strong><code>?</code> operator</strong>, written after an expression that gives a <code>Result</code>:</p>
+<ul>
+<li>on <code>Ok(v)</code>: unwraps it, so the expression is just <code>v</code></li>
+<li>on <code>Err(e)</code>: <strong>returns</strong> <code>Err(e)</code> from the current function immediately</li>
+</ul>
+<pre><code class="language-rust">use std::num::ParseIntError;
+
+fn add_quantities(a: &amp;str, b: &amp;str) -&gt; Result&lt;u32, ParseIntError&gt; {
+    let x: u32 = a.trim().parse()?;
+    let y: u32 = b.trim().parse()?;
+    Ok(x + y)
+}
+
+fn main() {
+    println!(&quot;{:?}&quot;, add_quantities(&quot;3&quot;, &quot; 4&quot;));
+    println!(&quot;{:?}&quot;, add_quantities(&quot;3&quot;, &quot;four&quot;));
+}
+</code></pre>
+<pre><code class="language-text">Ok(7)
+Err(ParseIntError { kind: InvalidDigit })
+</code></pre>
+<p>Same behavior as the <code>match</code> version, in a third of the code. The happy path reads top to bottom, and every <code>?</code> marks a place where the function can stop early. <code>use std::num::ParseIntError;</code> lets you write the error type by its short name.</p>
+<p><code>?</code> works anywhere in the function, including inside loops:</p>
+<pre><code class="language-rust">use std::num::ParseIntError;
+
+// Sums a line of package weights like &quot;12 7 30&quot;.
+fn total_weight(line: &amp;str) -&gt; Result&lt;u32, ParseIntError&gt; {
+    let mut total = 0;
+    for word in line.split_whitespace() {
+        total += word.parse::&lt;u32&gt;()?;
+    }
+    Ok(total)
+}
+
+fn main() {
+    for line in [&quot;12 7 30&quot;, &quot;5 x 9&quot;, &quot;&quot;] {
+        match total_weight(line) {
+            Ok(kg) =&gt; println!(&quot;{line:?}: {kg} kg&quot;),
+            Err(e) =&gt; println!(&quot;{line:?}: {e}&quot;),
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-text">&quot;12 7 30&quot;: 49 kg
+&quot;5 x 9&quot;: invalid digit found in string
+&quot;&quot;: 0 kg
+</code></pre>
+<p>The first bad word stops the whole function. The caller (<code>main</code>) is where the decision gets made: here, print the problem and move on to the next line.</p>
+<h2>? on Option</h2>
+<p>In a function that returns <code>Option</code>, <code>?</code> works on <code>Option</code> values: <code>Some(v)</code> gives <code>v</code>, <code>None</code> returns <code>None</code> from the function.</p>
+<pre><code class="language-rust">fn initials(full_name: &amp;str) -&gt; Option&lt;String&gt; {
+    let mut words = full_name.split_whitespace();
+    let first = words.next()?.chars().next()?;
+    let last = words.next()?.chars().next()?;
+    Some(format!(&quot;{first}{last}&quot;))
+}
+
+fn main() {
+    println!(&quot;{:?}&quot;, initials(&quot;Ada Lovelace&quot;));
+    println!(&quot;{:?}&quot;, initials(&quot;Ferris&quot;));
+}
+</code></pre>
+<pre><code class="language-text">Some(&quot;AL&quot;)
+None
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Using <code>?</code> in a function that returns <code>()</code>.</strong> <code>?</code> returns early with the error, so the function must return a <code>Result</code> (or an <code>Option</code>). That includes <code>main</code>:</li>
+</ul>
+<pre><code class="language-rust-error">fn main() {
+    let n: i32 = &quot;5&quot;.parse()?;
+    println!(&quot;{n}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+</code></pre>
+<p>The next step shows how <code>main</code> can return a <code>Result</code>.</p>
+<ul>
+<li><strong>Mismatched error types.</strong> <code>?</code> can only pass the error on if it fits the function&#39;s error type. Here the function promises a <code>String</code> error but <code>parse</code> produces a <code>ParseIntError</code>:</li>
+</ul>
+<pre><code class="language-rust-error">fn parse_port(text: &amp;str) -&gt; Result&lt;u16, String&gt; {
+    let port: u16 = text.parse()?;
+    Ok(port)
+}
+
+fn main() {
+    println!(&quot;{:?}&quot;, parse_port(&quot;80&quot;));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: `?` couldn&#39;t convert the error to `String`
+  |                    -------^ the trait `From&lt;ParseIntError&gt;` is not implemented for `String`
+</code></pre>
+<p>The fix is to make the types line up: return <code>Result&lt;u16, ParseIntError&gt;</code>, convert the error first (with <code>map_err</code>, two steps from now), or define your own error type that knows how to absorb a <code>ParseIntError</code> (next module).</p>
+<ul>
+<li><strong>Using <code>?</code> on an <code>Option</code> in a function that returns <code>Result</code></strong> (or the other way around). They don&#39;t mix: you get <code>the `?` operator can only be used on `Result`s, not `Option`s, in a function that returns `Result`</code> (or the same message with the two swapped). Turning one into the other is also coming up with the combinators.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>A paint app reads colors as three numbers separated by spaces, like <code>255 128 0</code>. Write <code>parse_rgb</code> using <code>?</code> after each parse (no <code>match</code>, no <code>unwrap()</code> or <code>expect()</code>). The starter splits the line for you; <code>unwrap_or(&quot;&quot;)</code> gives an empty string for a missing part, which then fails to parse.</p>
+
+<h3>Challenge 2</h3>
+<p>A leaderboard shows the top three scores. Write <code>fn podium(scores: &amp;[u32]) -&gt; Option&lt;String&gt;</code> using <code>?</code> on <code>Option</code>. The scores are already sorted, best first. With at least three scores, return <code>Some(&quot;1st: 90, 2nd: 75, 3rd: 60&quot;)</code> (with the real numbers); with fewer, return <code>None</code>.</p>
+<p><code>scores.first()</code> gives the first element as an <code>Option&lt;&amp;u32&gt;</code>, and <code>scores.get(1)</code> the second.</p>
+
+<h3>Challenge 3</h3>
+<p>A receipt line lists items as <code>&lt;quantity&gt;x&lt;price in cents&gt;</code>, separated by spaces, like <code>3x250 1x1200 2x99</code>. Write <code>fn order_total(line: &amp;str) -&gt; Result&lt;u32, ParseIntError&gt;</code> that returns the total in cents (<code>3*250 + 1*1200 + 2*99 = 2148</code>). An empty line totals <code>0</code>. Any bad number (or a missing one, like <code>2x</code>) must return the parse error, using <code>?</code>.</p>
+<p>Hint for splitting: <code>item.split(&#39;x&#39;)</code> gives the pieces around the <code>x</code>.</p>
+
+<p><a href="/learn/errors/unwrap-expect-and-safe-defaults">Previous: unwrap, expect and safe defaults</a> <a href="/learn/errors/main-can-return-a-result">Next: main can return a Result</a></p></main></div>
+  </body>
+</html>

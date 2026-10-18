@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>HashMap in Rust: insert, get and the entry API | RustArena</title>
+    <meta name="description" content="How to use HashMap in Rust: insert, get, contains_key, remove, counting with entry().or_insert(), and printing keys in a stable order." />
+    <link rel="canonical" href="https://rustarena.app/topics/hashmap/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="HashMap in Rust: insert, get and the entry API | RustArena" />
+    <meta property="og:description" content="How to use HashMap in Rust: insert, get, contains_key, remove, counting with entry().or_insert(), and printing keys in a stable order." />
+    <meta property="og:url" content="https://rustarena.app/topics/hashmap/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"HashMap in Rust: insert, get and the entry API","description":"How to use HashMap in Rust: insert, get, contains_key, remove, counting with entry().or_insert(), and printing keys in a stable order.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/hashmap/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>HashMap in Rust: insert, get and the entry API</h1>
+<p>How to use HashMap in Rust: insert, get, contains_key, remove, counting with entry().or_insert(), and printing keys in a stable order.</p>
+<p>A <strong><code>HashMap&lt;K, V&gt;</code></strong> stores values by key, with average O(1) lookup. It isn&#39;t in the prelude, so import it: <code>use std::collections::HashMap;</code>.</p>
+<pre><code class="language-rust">use std::collections::HashMap;
+
+fn main() {
+    let mut stock: HashMap&lt;String, u32&gt; = HashMap::new();
+    stock.insert(String::from(&quot;apples&quot;), 12);
+    stock.insert(String::from(&quot;pears&quot;), 4);
+
+    println!(&quot;{:?}&quot;, stock.get(&quot;apples&quot;));
+    println!(&quot;{:?}&quot;, stock.get(&quot;kiwis&quot;));
+    println!(&quot;{}&quot;, stock.contains_key(&quot;pears&quot;));
+
+    let old = stock.insert(String::from(&quot;pears&quot;), 9);
+    println!(&quot;replaced {old:?}, now {}&quot;, stock[&quot;pears&quot;]);
+}
+</code></pre>
+<pre><code class="language-text">Some(12)
+None
+true
+replaced Some(4), now 9
+</code></pre>
+<ul>
+<li><code>insert</code> returns the <strong>old</strong> value as an <code>Option</code> (<code>None</code> if the key was new).</li>
+<li><code>get</code> returns <code>Option&lt;&amp;V&gt;</code>. A map with <code>String</code> keys can be searched with a <code>&amp;str</code>.</li>
+<li><code>map[&amp;key]</code> panics if the key is missing. Prefer <code>get</code> unless absence is a bug.</li>
+<li><code>remove(&amp;key)</code> returns the removed value as an <code>Option</code>.</li>
+</ul>
+<h2>The entry API</h2>
+<p>The most common map job is &quot;update the value for this key, or start it with a default&quot;. The <strong>entry API</strong> does it with one lookup:</p>
+<pre><code class="language-rust">*counts.entry(word).or_insert(0) += 1;
+</code></pre>
+<p><code>entry(key)</code> finds the slot for the key. <code>or_insert(default)</code> inserts the default if it&#39;s empty and returns a <code>&amp;mut V</code> either way; <code>*... += 1</code> updates it. Variants:</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>.or_insert(v)</code></td>
+<td>insert <code>v</code> if missing</td>
+</tr>
+<tr>
+<td><code>.or_default()</code></td>
+<td>insert <code>0</code>, <code>&quot;&quot;</code>, empty <code>Vec</code>...</td>
+</tr>
+<tr>
+<td><code>.or_insert_with(|| ...)</code></td>
+<td>build the default only when needed</td>
+</tr>
+<tr>
+<td><code>.and_modify(|v| ...).or_insert(x)</code></td>
+<td>change an existing value, or insert <code>x</code></td>
+</tr>
+</tbody></table>
+<p>Grouping is the other classic: <code>groups.entry(dept).or_default().push(name)</code> builds a <code>HashMap&lt;Dept, Vec&lt;Name&gt;&gt;</code>.</p>
+<h2>Iteration order is random</h2>
+<p>A <code>HashMap</code> iterates in an <strong>unspecified order</strong> that changes between runs (Rust seeds its hash function randomly to resist denial-of-service attacks). Never rely on it for output. When order matters:</p>
+<ul>
+<li>collect the entries into a <code>Vec</code> and sort it, or</li>
+<li>use a <strong><code>BTreeMap</code></strong>, which keeps keys sorted (O(log n) operations, same API).</li>
+</ul>
+<h2>Keys</h2>
+<p>Keys must implement <code>Eq</code> and <code>Hash</code>. Strings, integers, <code>char</code>, <code>bool</code>, tuples of those, and your own types with <code>#[derive(PartialEq, Eq, Hash)]</code> all work. <code>f64</code> doesn&#39;t (NaN isn&#39;t equal to itself); store prices in cents as integers instead.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Printing a map directly in output that must be stable</strong> (tests, reports): sort first.</li>
+<li><strong><code>get</code> then <code>insert</code></strong> (two lookups, and a borrow conflict if you hold the <code>get</code> reference): use <code>entry</code>.</li>
+<li><strong>Moving keys in:</strong> <code>map.insert(name, 1)</code> moves a <code>String</code> <code>name</code>; insert <code>name.clone()</code> if you still need it, or use <code>&amp;str</code> keys when the strings outlive the map.</li>
+<li><strong>Holding a reference from <code>get</code> while inserting</strong> is E0502: copy the value out first.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::collections::{BTreeMap, HashMap};
+
+fn main() {
+    let log = &quot;GET /home GET /about POST /login GET /home GET /home POST /login GET /pricing&quot;;
+    let mut hits: HashMap&lt;&amp;str, u32&gt; = HashMap::new();
+    for word in log.split_whitespace() {
+        if word.starts_with('/') {
+            *hits.entry(word).or_insert(0) += 1;
+        }
+    }
+
+    // Sort by count (highest first), then by path, for stable output.
+    let mut pages: Vec&lt;(&amp;str, u32)&gt; = hits.iter().map(|(k, v)| (*k, *v)).collect();
+    pages.sort_by(|a, b| b.1.cmp(&amp;a.1).then(a.0.cmp(b.0)));
+    for (page, n) in &amp;pages {
+        println!(&quot;{page:&lt;10} {n}&quot;);
+    }
+    println!(&quot;home {:?}, admin {:?}&quot;, hits.get(&quot;/home&quot;), hits.get(&quot;/admin&quot;));
+
+    let mut by_dept: BTreeMap&lt;&amp;str, Vec&lt;&amp;str&gt;&gt; = BTreeMap::new();
+    for (name, dept) in [(&quot;Ada&quot;, &quot;eng&quot;), (&quot;Grace&quot;, &quot;eng&quot;), (&quot;Linus&quot;, &quot;ops&quot;), (&quot;Ferris&quot;, &quot;eng&quot;)] {
+        by_dept.entry(dept).or_default().push(name);
+    }
+    println!(&quot;{by_dept:?}&quot;);
+
+    let mut stock: BTreeMap&lt;String, i32&gt; = BTreeMap::new();
+    stock.insert(String::from(&quot;apples&quot;), 3);
+    for fruit in [&quot;apples&quot;, &quot;pears&quot;] {
+        stock.entry(fruit.to_string()).and_modify(|n| *n += 10).or_insert(1);
+    }
+    println!(&quot;{stock:?}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>/home      3
+/login     2
+/about     1
+/pricing   1
+home Some(3), admin None
+{&quot;eng&quot;: [&quot;Ada&quot;, &quot;Grace&quot;, &quot;Ferris&quot;], &quot;ops&quot;: [&quot;Linus&quot;]}
+{&quot;apples&quot;: 13, &quot;pears&quot;: 1}
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/hashmaps/looking-things-up-with-hashmap">Lesson: HashMaps and sets</a></li></ul></main></div>
+  </body>
+</html>

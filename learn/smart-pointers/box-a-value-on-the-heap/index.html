@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Box: a value on the heap · Smart Pointers (Rust) | RustArena</title>
+    <meta name="description" content="A smart pointer is a value that points at data stored somewhere else (like a reference does) but also has extra powers, such as owning that data and…" />
+    <link rel="canonical" href="https://rustarena.app/learn/smart-pointers/box-a-value-on-the-heap/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Box: a value on the heap · Smart Pointers (Rust) | RustArena" />
+    <meta property="og:description" content="A smart pointer is a value that points at data stored somewhere else (like a reference does) but also has extra powers, such as owning that data and…" />
+    <meta property="og:url" content="https://rustarena.app/learn/smart-pointers/box-a-value-on-the-heap/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Box: a value on the heap","description":"A smart pointer is a value that points at data stored somewhere else (like a reference does) but also has extra powers, such as owning that data and…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/smart-pointers/box-a-value-on-the-heap/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Idiomatic Rust › Smart Pointers</nav>
+<p>Step 1 of 7</p>
+<h1>Box: a value on the heap</h1>
+<p>A <strong>smart pointer</strong> is a value that points at data stored somewhere else (like a reference does) but also has extra powers, such as <em>owning</em> that data and cleaning it up. You&#39;ve used two already without the name: <code>String</code> and <code>Vec&lt;T&gt;</code> each own a buffer on the heap. This module covers the smart pointers you reach for on purpose: <code>Box&lt;T&gt;</code>, <code>Rc&lt;T&gt;</code>, <code>RefCell&lt;T&gt;</code>, <code>Cell&lt;T&gt;</code> and <code>Weak&lt;T&gt;</code>.</p>
+<h2>Box<T></h2>
+<p><code>Box::new(value)</code> moves the value onto the <strong>heap</strong>. The <code>Box</code> itself is just a pointer (8 bytes on a 64-bit machine) that can live on the stack, in a struct, anywhere. The Box <strong>owns</strong> the value: when the Box goes out of scope, the value is dropped and the heap memory is freed. No manual <code>free</code>, no garbage collector.</p>
+<pre><code class="language-rust">fn main() {
+    let score = Box::new(41);
+    let next = *score + 1; // * follows the pointer to the value inside
+    println!(&quot;score = {score}, next = {next}&quot;);
+
+    let names = Box::new(vec![&quot;Ferris&quot;, &quot;Corro&quot;]);
+    println!(&quot;{} names, first is {}&quot;, names.len(), names[0]);
+}
+</code></pre>
+<pre><code class="language-text">score = 41, next = 42
+2 names, first is Ferris
+</code></pre>
+<ul>
+<li><code>*score</code> <strong>dereferences</strong> the Box: it gives you the <code>i32</code> it points to.</li>
+<li>Printing a Box prints the value inside, and methods like <code>.len()</code> and indexing work straight through the Box. You&#39;ll see how in step 3.</li>
+</ul>
+<p>When do you need a Box? Mostly in three situations:</p>
+<ol>
+<li>A type that contains <em>itself</em> (a <strong>recursive type</strong>), like a list or a tree. This step and the next.</li>
+<li>A <strong>trait object</strong>, <code>Box&lt;dyn Trait&gt;</code>, which you met in the trait objects module.</li>
+<li>A very large value you want to move around cheaply (moving a Box copies only the pointer). This one is rare.</li>
+</ol>
+<h2>Recursive types need a pointer</h2>
+<p>Here&#39;s a linked list: each node holds a number and <em>the rest of the list</em>.</p>
+<pre><code class="language-rust-error">enum List {
+    Cons(i32, List),
+    Nil,
+}
+
+fn main() {
+    let _empty = List::Nil;
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0072]: recursive type `List` has infinite size
+</code></pre>
+<p>Rust stores an enum value in one block of memory big enough for its largest variant. <code>Cons</code> contains a whole <code>List</code>, which could be a <code>Cons</code> containing a whole <code>List</code>, and so on: the size would be infinite. The compiler&#39;s help line says it all: <code>insert some indirection (e.g., a `Box`, `Rc`, or `&amp;`) to break the cycle</code>. A <code>Box&lt;List&gt;</code> is a pointer, and a pointer has the same size whatever it points to:</p>
+<pre><code class="language-rust">enum List {
+    Cons(i32, Box&lt;List&gt;),
+    Nil,
+}
+
+use List::{Cons, Nil};
+
+fn sum(list: &amp;List) -&gt; i32 {
+    match list {
+        Cons(value, rest) =&gt; value + sum(rest),
+        Nil =&gt; 0,
+    }
+}
+
+fn main() {
+    // 3 -&gt; 5 -&gt; 8 -&gt; end
+    let list = Cons(3, Box::new(Cons(5, Box::new(Cons(8, Box::new(Nil))))));
+    println!(&quot;sum = {}&quot;, sum(&amp;list));
+}
+</code></pre>
+<pre><code class="language-text">sum = 16
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>use List::{Cons, Nil};</code> lets you write <code>Cons</code> instead of <code>List::Cons</code>.</li>
+<li>Each <code>Box::new(...)</code> puts the next node on the heap. <code>Nil</code> (the empty list) ends the chain.</li>
+<li>In <code>sum</code>, matching on <code>&amp;List</code> gives <code>value: &amp;i32</code> and <code>rest: &amp;Box&lt;List&gt;</code>. Passing <code>rest</code> to <code>sum</code>, which wants a <code>&amp;List</code>, just works: Rust turns <code>&amp;Box&lt;List&gt;</code> into <code>&amp;List</code> for you. This is called <strong>deref coercion</strong>, and step 3 explains it.</li>
+<li>When <code>list</code> goes out of scope, the first node is dropped, which drops its Box, which drops the next node, and so on down the chain.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>Box::new</code> when building</strong>: <code>Cons(5, Nil)</code> is <code>error[E0308]: mismatched types</code>, expected <code>Box&lt;List&gt;</code>, found <code>List</code>. Wrap the inner list: <code>Cons(5, Box::new(Nil))</code>.</li>
+<li><strong>Boxing everything.</strong> Most values belong on the stack or inside a <code>Vec</code>. Box is for the cases above. A real program would store these numbers in a <code>Vec&lt;i32&gt;</code>, which is faster than a linked list; the list is here because it shows recursion so clearly.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Fill the blanks. The <code>Item</code> variant needs a boxed rest-of-the-shelf, and building the shelf needs to box the inner value. The program prints <code>total stock: 12</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>The list type and a helper that builds a list from a slice are written for you. Write two recursive functions:</p>
+<ul>
+<li><code>len(list: &amp;List) -&gt; usize</code>: how many numbers are in the list.</li>
+<li><code>largest(list: &amp;List) -&gt; Option&lt;i32&gt;</code>: the biggest number, or <code>None</code> for an empty list.</li>
+</ul>
+
+<h3>Challenge 3</h3>
+<p>A delivery route is a chain of stops. Using the <code>Route</code> enum below, write:</p>
+<ul>
+<li><code>build(stops: &amp;[&amp;str]) -&gt; Route</code>: the route visiting the stops in order (an empty slice gives <code>Route::End</code>).</li>
+<li><code>describe(route: &amp;Route) -&gt; String</code>: the stops joined with <code>-&gt;</code>, for example <code>Docks -&gt; Market -&gt; Arena</code>. An empty route describes as <code>(no stops)</code>.</li>
+</ul>
+<p>Use recursion for both (no Vec inside the route).</p>
+
+<p> <a href="/learn/smart-pointers/trees-with-box">Next: Trees with Box</a></p></main></div>
+  </body>
+</html>

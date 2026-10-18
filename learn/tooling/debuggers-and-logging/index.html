@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Debuggers and logging · Debugging, Docs and Tooling (Rust) | RustArena</title>
+    <meta name="description" content="Print debugging is quick, but each new question means editing and rebuilding. Two other tools cover what it can't: a debugger for exploring a running…" />
+    <link rel="canonical" href="https://rustarena.app/learn/tooling/debuggers-and-logging/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Debuggers and logging · Debugging, Docs and Tooling (Rust) | RustArena" />
+    <meta property="og:description" content="Print debugging is quick, but each new question means editing and rebuilding. Two other tools cover what it can't: a debugger for exploring a running…" />
+    <meta property="og:url" content="https://rustarena.app/learn/tooling/debuggers-and-logging/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Debuggers and logging","description":"Print debugging is quick, but each new question means editing and rebuilding. Two other tools cover what it can't: a debugger for exploring a running…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/tooling/debuggers-and-logging/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Rust at work › Debugging, Docs and Tooling</nav>
+<p>Step 3 of 7</p>
+<h1>Debuggers and logging</h1>
+<p>Print debugging is quick, but each new question means editing and rebuilding. Two other tools cover what it can&#39;t: a <strong>debugger</strong> for exploring a running program, and <strong>logging</strong> for knowing what a program did when you weren&#39;t watching.</p>
+<h2>Debuggers</h2>
+<p>A debugger runs your program under its control. You set a <strong>breakpoint</strong> on a line, the program stops there, and you can inspect every variable, see the call stack, and step forward one line at a time. Rust ships wrappers around the two common debuggers, <code>rust-gdb</code> (Linux) and <code>rust-lldb</code> (macOS), that teach them to display Rust types like <code>Vec</code> and <code>String</code> nicely. Here is a session on the dividing-by-zero program from the previous step:</p>
+<pre><code class="language-text">$ cargo build
+$ rust-gdb -q target/debug/scores
+(gdb) break src/main.rs:3
+Breakpoint 1 at 0x1547e: file src/main.rs, line 3.
+(gdb) run
+Breakpoint 1, scores::average (scores=&amp;[u32](size=2) = {70, 80}) at src/main.rs:3
+3	    total / scores.len() as u32
+(gdb) print total
+$1 = 150
+(gdb) continue
+75
+Breakpoint 1, scores::average (scores=&amp;[u32](size=0)) at src/main.rs:3
+(gdb) backtrace
+#0  scores::average (scores=&amp;[u32](size=0)) at src/main.rs:3
+#1  0x00005555555693c5 in scores::main () at src/main.rs:9
+</code></pre>
+<p>The second stop shows <code>size=0</code>: the empty round, caught before it crashes. Useful commands: <code>break file:line</code>, <code>run</code>, <code>next</code> (run the next line), <code>step</code> (go into a function call), <code>print expr</code>, <code>backtrace</code>, <code>continue</code>.</p>
+<p>Most people use a debugger through their editor. In <strong>VS Code</strong>, install the <code>rust-analyzer</code> and <code>CodeLLDB</code> extensions: a <strong>Debug</strong> button appears above <code>fn main</code> and above each test, you click in the margin to set breakpoints, and variables show up in a side panel. RustRover and other IDEs work the same way. Debug in a normal (debug) build; in <code>--release</code> builds the optimizer removes many variables.</p>
+<h2>Logging</h2>
+<p><strong>Logging</strong> is permanent, structured printing: each message has a <strong>level</strong> (<code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>, from most to least important), and you choose at run time which levels to show, without recompiling. Servers and CLIs at work log instead of using <code>println!</code>.</p>
+<p>Here&#39;s the idea in plain Rust: an ordered level enum and a minimum level that filters messages.</p>
+<pre><code class="language-rust">#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Level {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+struct Logger {
+    min: Level,
+}
+
+impl Logger {
+    fn log(&amp;self, level: Level, msg: &amp;str) {
+        if level &gt;= self.min {
+            println!(&quot;[{level:?}] {msg}&quot;);
+        }
+    }
+}
+
+fn main() {
+    let logger = Logger { min: Level::Info };
+    logger.log(Level::Debug, &quot;cache lookup for order 42&quot;);
+    logger.log(Level::Info, &quot;order 42 accepted&quot;);
+    logger.log(Level::Warn, &quot;stock for item 7 is low&quot;);
+    logger.log(Level::Error, &quot;payment service unreachable&quot;);
+}
+</code></pre>
+<pre><code class="language-text">[Info] order 42 accepted
+[Warn] stock for item 7 is low
+[Error] payment service unreachable
+</code></pre>
+<p>Deriving <code>PartialOrd</code> and <code>Ord</code> on an enum orders the variants as they&#39;re declared, so <code>level &gt;= self.min</code> compares importance. (This demo prints to stdout; real loggers write to stderr or a file.)</p>
+<p>In real projects you use crates. The <strong><code>log</code></strong> crate gives you the macros, and a separate logger crate such as <code>env_logger</code> decides where they go:</p>
+<pre><code class="language-toml">[dependencies]
+log = &quot;0.4&quot;
+env_logger = &quot;0.11&quot;
+</code></pre>
+<pre><code class="language-rust">use log::{debug, info, warn};
+
+fn main() {
+    env_logger::init(); // reads the RUST_LOG environment variable
+    info!(&quot;server starting on port {}&quot;, 8080);
+    debug!(&quot;config loaded from {}&quot;, &quot;shop.toml&quot;);
+    warn!(&quot;disk is {}% full&quot;, 91);
+}
+</code></pre>
+<pre><code class="language-text">$ RUST_LOG=info cargo run
+[2026-10-11T09:14:03Z INFO  shop] server starting on port 8080
+[2026-10-11T09:14:03Z WARN  shop] disk is 91% full
+</code></pre>
+<p>Larger services, especially async ones, use <strong><code>tracing</code></strong>, which adds <strong>spans</strong> (a named region of work, like &quot;handling request 17&quot;) and structured fields that log tools can search:</p>
+<pre><code class="language-rust">use tracing::{info, instrument};
+
+#[instrument] // log lines inside get the order_id and items fields
+fn ship(order_id: u64, items: usize) {
+    info!(items, &quot;packing order&quot;);
+}
+
+fn main() {
+    tracing_subscriber::fmt::init();
+    ship(17, 3);
+}
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Debugging a release build</strong>: variables show as <code>&lt;optimized out&gt;</code>. Use the default dev profile.</li>
+<li><strong>Logging at the wrong level</strong>: <code>info</code> for things an operator cares about, <code>debug</code> for developer detail, <code>error</code> only for real failures. If everything is <code>error</code>, nothing is.</li>
+<li><strong>Logging secrets</strong> (passwords, tokens, personal data). Logs get copied to many places.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write the two functions a logger needs. <code>parse_level</code> reads a level name like <code>RUST_LOG</code> does: case-insensitive, surrounding spaces ignored, <code>warning</code> accepted as another name for <code>warn</code>, anything else is <code>None</code>. <code>enabled(min, level)</code> says whether a message at <code>level</code> is shown when the minimum is <code>min</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>format_record(level, target, msg)</code>, which formats a log line like <code>env_logger</code> does: the level name in capitals, padded to 5 characters, then the target (the module or component), in square brackets, followed by the message:</p>
+<pre><code>[WARN  orders] stock low
+[ERROR db] timeout after 30s
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>Write a log filter. The first line of stdin is the minimum level (<code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code> or <code>error</code>). Every following line is a record like <code>WARN disk almost full</code>: a level, a space, the message.</p>
+<p>Print the records at or above the minimum, unchanged, then a summary <code>N shown, M hidden</code>. Records whose level isn&#39;t a known name are counted as hidden and reported on <strong>stderr</strong>. Example: with minimum <code>warn</code> and the records <code>INFO started</code>, <code>WARN disk almost full</code>, <code>ERROR disk full</code>, print:</p>
+<pre><code>WARN disk almost full
+ERROR disk full
+2 shown, 1 hidden
+</code></pre>
+
+<p><a href="/learn/tooling/reading-panics-and-backtraces">Previous: Reading panics and backtraces</a> <a href="/learn/tooling/documenting-code-with-rustdoc">Next: Documenting code with rustdoc</a></p></main></div>
+  </body>
+</html>

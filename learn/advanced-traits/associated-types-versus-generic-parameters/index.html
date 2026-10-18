@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Associated types versus generic parameters · Advanced Traits (Rust) | RustArena</title>
+    <meta name="description" content="You've used an associated type since the iterators module: Iterator declares type Item;, and every iterator says what its Item is. An associated type is…" />
+    <link rel="canonical" href="https://rustarena.app/learn/advanced-traits/associated-types-versus-generic-parameters/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Associated types versus generic parameters · Advanced Traits (Rust) | RustArena" />
+    <meta property="og:description" content="You've used an associated type since the iterators module: Iterator declares type Item;, and every iterator says what its Item is. An associated type is…" />
+    <meta property="og:url" content="https://rustarena.app/learn/advanced-traits/associated-types-versus-generic-parameters/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Associated types versus generic parameters","description":"You've used an associated type since the iterators module: Iterator declares type Item;, and every iterator says what its Item is. An associated type is…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/advanced-traits/associated-types-versus-generic-parameters/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Advanced Traits</nav>
+<p>Step 1 of 7</p>
+<h1>Associated types versus generic parameters</h1>
+<p>You&#39;ve used an <strong>associated type</strong> since the iterators module: <code>Iterator</code> declares <code>type Item;</code>, and every iterator says what its <code>Item</code> is. An associated type is a placeholder type inside a trait that each implementation fills in exactly once.</p>
+<pre><code class="language-rust">trait Parser {
+    type Output;
+    fn parse(&amp;self, input: &amp;str) -&gt; Option&lt;Self::Output&gt;;
+}
+
+struct IntParser;
+struct PairParser;
+
+impl Parser for IntParser {
+    type Output = i64;
+    fn parse(&amp;self, input: &amp;str) -&gt; Option&lt;i64&gt; {
+        input.trim().parse().ok()
+    }
+}
+
+impl Parser for PairParser {
+    type Output = (i32, i32);
+    fn parse(&amp;self, input: &amp;str) -&gt; Option&lt;(i32, i32)&gt; {
+        let (a, b) = input.split_once(&#39;,&#39;)?;
+        Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+    }
+}
+
+fn parse_all&lt;P: Parser&gt;(parser: &amp;P, lines: &amp;[&amp;str]) -&gt; Vec&lt;P::Output&gt; {
+    lines.iter().filter_map(|line| parser.parse(line)).collect()
+}
+
+fn main() {
+    println!(&quot;{:?}&quot;, parse_all(&amp;IntParser, &amp;[&quot;10&quot;, &quot;x&quot;, &quot; 32 &quot;]));
+    println!(&quot;{:?}&quot;, parse_all(&amp;PairParser, &amp;[&quot;1,2&quot;, &quot;3;4&quot;, &quot;5, 6&quot;]));
+}
+</code></pre>
+<pre><code class="language-text">[10, 32]
+[(1, 2), (5, 6)]
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>type Output;</code> declares the placeholder. Inside the trait you refer to it as <code>Self::Output</code>.</li>
+<li>Each <code>impl</code> picks the concrete type: <code>type Output = i64;</code>. After that, the impl&#39;s methods can write <code>i64</code> directly.</li>
+<li>Generic code names it through the type parameter: <code>P::Output</code> is &quot;whatever output this parser produces&quot;. You can also pin it in a bound: <code>P: Parser&lt;Output = i64&gt;</code> accepts only parsers that produce <code>i64</code>, just like <code>I: Iterator&lt;Item = u32&gt;</code>.</li>
+</ul>
+<h2>Why not a generic parameter?</h2>
+<p>You could write the trait as <code>trait Parser&lt;T&gt;</code> instead. The difference is how many implementations a type may have. With a generic parameter, one type can implement the trait <strong>many times</strong>, once per <code>T</code>. That&#39;s sometimes exactly right, but it means the compiler can&#39;t guess which one you mean:</p>
+<pre><code class="language-rust-error">trait ParseAs&lt;T&gt; {
+    fn parse_as(&amp;self) -&gt; Option&lt;T&gt;;
+}
+
+impl ParseAs&lt;i32&gt; for str {
+    fn parse_as(&amp;self) -&gt; Option&lt;i32&gt; {
+        self.parse().ok()
+    }
+}
+
+impl ParseAs&lt;bool&gt; for str {
+    fn parse_as(&amp;self) -&gt; Option&lt;bool&gt; {
+        self.parse().ok()
+    }
+}
+
+fn main() {
+    let n = &quot;42&quot;.parse_as();
+    println!(&quot;{:?}&quot;, n);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0283]: type annotations needed for `Option&lt;_&gt;`
+</code></pre>
+<p>Writing <code>let n: Option&lt;i32&gt; = &quot;42&quot;.parse_as();</code> fixes it, but every caller now has to annotate. With an associated type there&#39;s one impl per type, so the type alone tells the compiler the answer.</p>
+<table>
+<thead>
+<tr>
+<th>Pick</th>
+<th>When</th>
+<th>Examples in std</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>associated type</td>
+<td>each implementing type has <strong>one</strong> natural answer</td>
+<td><code>Iterator::Item</code>, <code>Deref::Target</code>, <code>FromStr::Err</code></td>
+</tr>
+<tr>
+<td>generic parameter</td>
+<td>a type should implement the trait <strong>several times</strong>, for different types</td>
+<td><code>From&lt;T&gt;</code>, <code>AsRef&lt;T&gt;</code>, <code>PartialEq&lt;Rhs&gt;</code></td>
+</tr>
+</tbody></table>
+<p>An iterator over bytes yields one kind of item (<code>u8</code>), so <code>Item</code> is associated. A <code>String</code> can be built <code>From&lt;&amp;str&gt;</code>, <code>From&lt;char&gt;</code> and <code>From&lt;Box&lt;str&gt;&gt;</code>, so <code>From&lt;T&gt;</code> is generic. Some traits use both, as you&#39;ll see in the next step.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Writing <code>Output</code> instead of <code>Self::Output</code> in the trait</strong>: the compiler says <code>cannot find type `Output` in this scope</code>. Inside the trait it always belongs to <code>Self</code>.</li>
+<li><strong>Forgetting <code>type Output = ...;</code> in an impl</strong>: <code>not all trait items implemented, missing: `Output` </code>.</li>
+<li><strong>Adding a generic parameter &quot;for flexibility&quot;</strong>: if each type would only ever implement it once, you&#39;ve just made every caller write annotations.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>The <code>Sensor</code> trait has an associated type <code>Reading</code>. Implement it for <code>Thermometer</code> (<code>Reading</code> is <code>f64</code>; the raw value is in tenths of a degree, so <code>215</code> reads as <code>21.5</code>) and for <code>DoorSwitch</code> (<code>Reading</code> is <code>bool</code>; any raw value other than <code>0</code> means open, <code>true</code>). Then write the generic <code>read_all</code>, which reads every raw value with the given sensor and returns the readings in order.</p>
+
+<h3>Challenge 2</h3>
+<p>Fill in the blanks: declare the associated type in the trait, give <code>Doubler</code> its output type, and use the associated type in the generic function&#39;s return type. The program should print <code>(8, 42)</code> and then <code>(&quot;#007&quot;, &quot;#042&quot;)</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>This time a generic parameter is the right tool: a distance in meters can sensibly be converted into <strong>several</strong> other units. Write a generic trait <code>ConvertTo&lt;T&gt;</code> with one method <code>fn convert(&amp;self) -&gt; T;</code>, and implement it twice for <code>Meters</code>: <code>ConvertTo&lt;Feet&gt;</code> (1 m = 3.28084 ft) and <code>ConvertTo&lt;Centimeters&gt;</code> (1 m = 100 cm). Callers pick the impl by the type they ask for: <code>let f: Feet = Meters(2.0).convert();</code>.</p>
+
+<p> <a href="/learn/advanced-traits/operator-traits-and-default-type-parameters">Next: Operator traits and default type parameters</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Enums in Rust: variants that carry data | RustArena</title>
+    <meta name="description" content="Rust enums explained: defining variants with and without data, matching on them, methods on enums, and modeling states that can't go wrong." />
+    <link rel="canonical" href="https://rustarena.app/topics/enums/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Enums in Rust: variants that carry data | RustArena" />
+    <meta property="og:description" content="Rust enums explained: defining variants with and without data, matching on them, methods on enums, and modeling states that can't go wrong." />
+    <meta property="og:url" content="https://rustarena.app/topics/enums/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Enums in Rust: variants that carry data","description":"Rust enums explained: defining variants with and without data, matching on them, methods on enums, and modeling states that can't go wrong.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/enums/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Enums in Rust: variants that carry data</h1>
+<p>Rust enums explained: defining variants with and without data, matching on them, methods on enums, and modeling states that can't go wrong.</p>
+<p>An <strong>enum</strong> (enumeration) is a type whose value is exactly <strong>one of</strong> a fixed set of <strong>variants</strong>. Unlike enums in C or Java, each Rust variant can carry its own data:</p>
+<pre><code class="language-rust">enum Command {
+    Quit,                        // no data
+    Move { x: i32, y: i32 },     // named fields, like a struct
+    Say(String),                 // one unnamed value
+    SetColor(u8, u8, u8),        // several unnamed values
+}
+</code></pre>
+<p>A <code>Command</code> is either a <code>Quit</code>, or a <code>Move</code> with coordinates, or a <code>Say</code> with text, never a mix. You create values with the enum name and <code>::</code>: <code>Command::Say(String::from(&quot;hi&quot;))</code>, <code>Command::Move { x: 1, y: 2 }</code>.</p>
+<h2>Using an enum: match</h2>
+<p>You get the data back out with <code>match</code>, which runs the arm whose <strong>pattern</strong> fits and binds the variant&#39;s data to names:</p>
+<pre><code class="language-rust">enum Command {
+    Quit,
+    Move { x: i32, y: i32 },
+    Say(String),
+}
+
+fn run(cmd: &amp;Command) -&gt; String {
+    match cmd {
+        Command::Quit =&gt; String::from(&quot;bye&quot;),
+        Command::Move { x, y } =&gt; format!(&quot;moving to ({x}, {y})&quot;),
+        Command::Say(text) =&gt; format!(&quot;saying {text:?}&quot;),
+    }
+}
+
+fn main() {
+    let script = [Command::Say(String::from(&quot;hi&quot;)), Command::Move { x: 3, y: -1 }, Command::Quit];
+    for cmd in &amp;script {
+        println!(&quot;{}&quot;, run(cmd));
+    }
+}
+</code></pre>
+<pre><code class="language-text">saying &quot;hi&quot;
+moving to (3, -1)
+bye
+</code></pre>
+<p><code>match</code> is <strong>exhaustive</strong>: forget a variant and the code doesn&#39;t compile (E0004, &quot;non-exhaustive patterns: <code>Command::Quit</code> not covered&quot;). When you add a variant later, the compiler lists every <code>match</code> you need to update. That&#39;s the biggest practical advantage of enums.</p>
+<h2>Methods on enums</h2>
+<p>Enums get <code>impl</code> blocks just like structs: <code>impl Command { fn is_quit(&amp;self) -&gt; bool { matches!(self, Command::Quit) } }</code>. <code>matches!</code> returns <code>true</code> if a value fits a pattern.</p>
+<h2>The enums you use every day</h2>
+<p>The standard library&#39;s two most important types are enums:</p>
+<ul>
+<li><code>Option&lt;T&gt;</code> is <code>Some(T)</code> or <code>None</code>: a value that might be missing. Rust has no null.</li>
+<li><code>Result&lt;T, E&gt;</code> is <code>Ok(T)</code> or <code>Err(E)</code>: an operation that can fail.</li>
+</ul>
+<h2>Enums vs structs, and designing with them</h2>
+<p>Use a struct when a value has <strong>all</strong> of several fields; use an enum when it&#39;s <strong>one of</strong> several shapes. A classic design mistake is a struct with flags and optional fields that only make sense in some combinations:</p>
+<pre><code class="language-rust">struct Order { shipped: bool, tracking: Option&lt;String&gt;, cancelled: bool, reason: Option&lt;String&gt; }
+</code></pre>
+<p>Nothing stops <code>shipped: true, cancelled: true</code>. An enum makes invalid states impossible to write:</p>
+<pre><code class="language-rust">enum OrderState { Pending, Shipped { tracking: String }, Cancelled { reason: String } }
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting the enum name:</strong> <code>Quit</code> alone is &quot;cannot find value <code>Quit</code>&quot;. Write <code>Command::Quit</code>, or <code>use Command::*;</code> inside a function for short names.</li>
+<li><strong>Comparing with <code>==</code>:</strong> <code>if light == Light::Red</code> is E0369, &quot;binary operation <code>==</code> cannot be applied to type <code>Light</code>&quot;, until you <code>#[derive(PartialEq)]</code>. Or use <code>matches!(light, Light::Red)</code>.</li>
+<li><strong>Using <code>_ =&gt;</code> too eagerly.</strong> A catch-all arm switches off the exhaustiveness check: new variants silently fall into it. List variants explicitly when it matters.</li>
+<li><strong>C-style enums:</strong> variants without data can be cast to integers (<code>Level::Warn as u8</code>), and you can set values (<code>Warn = 30</code>). Converting back from an integer needs a <code>match</code> or <code>TryFrom</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>#[derive(Debug, Clone, Copy, PartialEq)]
+enum Level {
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Debug)]
+enum OrderState {
+    Pending,
+    Shipped { tracking: String },
+    Cancelled { reason: String },
+}
+
+impl OrderState {
+    fn describe(&amp;self) -&gt; String {
+        match self {
+            OrderState::Pending =&gt; String::from(&quot;waiting to ship&quot;),
+            OrderState::Shipped { tracking } =&gt; format!(&quot;shipped, tracking {tracking}&quot;),
+            OrderState::Cancelled { reason } =&gt; format!(&quot;cancelled: {reason}&quot;),
+        }
+    }
+
+    fn is_open(&amp;self) -&gt; bool {
+        matches!(self, OrderState::Pending | OrderState::Shipped { .. })
+    }
+}
+
+fn main() {
+    let orders = vec![
+        OrderState::Pending,
+        OrderState::Shipped { tracking: String::from(&quot;RS-1042&quot;) },
+        OrderState::Cancelled { reason: String::from(&quot;out of stock&quot;) },
+    ];
+    for (i, o) in orders.iter().enumerate() {
+        println!(&quot;order {}: {} (open: {})&quot;, i + 1, o.describe(), o.is_open());
+    }
+    println!(&quot;{:?}&quot;, orders[1]);
+
+    let level = Level::Warn;
+    if level == Level::Warn {
+        println!(&quot;{level:?} has code {}&quot;, level as u8);
+    }
+    println!(&quot;{:?} {:?}&quot;, Level::Info, Level::Error);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>order 1: waiting to ship (open: true)
+order 2: shipped, tracking RS-1042 (open: true)
+order 3: cancelled: out of stock (open: false)
+Shipped { tracking: &quot;RS-1042&quot; }
+Warn has code 1
+Info Error
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/enums/enums-one-of-a-fixed-set-of-variants">Lesson: Enums and Option</a></li></ul></main></div>
+  </body>
+</html>

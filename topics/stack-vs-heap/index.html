@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Stack vs heap in Rust | RustArena</title>
+    <meta name="description" content="Where Rust stores your data: the stack for fixed-size values, the heap for String, Vec and Box, how ownership frees heap memory, and the costs." />
+    <link rel="canonical" href="https://rustarena.app/topics/stack-vs-heap/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Stack vs heap in Rust | RustArena" />
+    <meta property="og:description" content="Where Rust stores your data: the stack for fixed-size values, the heap for String, Vec and Box, how ownership frees heap memory, and the costs." />
+    <meta property="og:url" content="https://rustarena.app/topics/stack-vs-heap/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Stack vs heap in Rust","description":"Where Rust stores your data: the stack for fixed-size values, the heap for String, Vec and Box, how ownership frees heap memory, and the costs.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/stack-vs-heap/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Stack vs heap in Rust</h1>
+<p>Where Rust stores your data: the stack for fixed-size values, the heap for String, Vec and Box, how ownership frees heap memory, and the costs.</p>
+<p>A running program keeps data in two regions of memory, and knowing which one a value uses explains most of Rust&#39;s ownership rules.</p>
+<h2>The stack</h2>
+<p>Each function call gets a <strong>stack frame</strong> holding its local variables. When the function returns, the frame is discarded in one step. Allocation is just moving a pointer, so it&#39;s extremely fast, and the memory is right next to other recently used data (good for the CPU cache).</p>
+<p>The rule: every value on the stack must have a <strong>size known at compile time</strong>. <code>i32</code> (4 bytes), <code>f64</code> (8), <code>[u8; 100]</code> (100), a struct of those, a tuple of those.</p>
+<h2>The heap</h2>
+<p>Data whose size is only known at run time, or that grows, goes on the <strong>heap</strong>: a large pool where the program <strong>allocates</strong> blocks of any size while it runs. Allocating means asking the allocator for space (slower than the stack), and every block must later be <strong>freed</strong> exactly once.</p>
+<p>In Rust, heap data always has an owner on the stack:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>On the stack</th>
+<th>On the heap</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>i32</code>, <code>f64</code>, <code>bool</code>, <code>char</code></td>
+<td>the value</td>
+<td>nothing</td>
+</tr>
+<tr>
+<td><code>[i32; 4]</code>, tuples, plain structs</td>
+<td>all of it</td>
+<td>nothing</td>
+</tr>
+<tr>
+<td><code>String</code></td>
+<td>pointer, length, capacity (24 bytes)</td>
+<td>the text</td>
+</tr>
+<tr>
+<td><code>Vec&lt;T&gt;</code></td>
+<td>pointer, length, capacity (24 bytes)</td>
+<td>the elements</td>
+</tr>
+<tr>
+<td><code>Box&lt;T&gt;</code></td>
+<td>a pointer (8 bytes)</td>
+<td>the <code>T</code></td>
+</tr>
+<tr>
+<td><code>&amp;str</code>, <code>&amp;[T]</code></td>
+<td>pointer and length (16 bytes)</td>
+<td>nothing of its own: it borrows</td>
+</tr>
+</tbody></table>
+<p>(Sizes are for a 64-bit machine.) When the owner goes out of scope, Rust&#39;s generated <strong>drop</strong> code frees the heap block. That&#39;s ownership: the compiler knows statically where each heap block is freed, so there&#39;s no garbage collector and no manual <code>free</code>.</p>
+<h2>Why moves exist</h2>
+<p>Copying a <code>String</code> handle would leave two handles pointing at the same heap text, and both would free it. So assigning a <code>String</code> <strong>moves</strong> it (the old variable becomes unusable) instead of copying. Stack-only types like <code>i32</code> have nothing to double-free, so they are simply <strong>copied</strong>.</p>
+<h2>Box: putting a value on the heap on purpose</h2>
+<p><code>Box::new(value)</code> moves a value to the heap and keeps a pointer to it. You need it for <strong>recursive types</strong>, whose size would otherwise be infinite:</p>
+<pre><code class="language-rust-error">enum List {
+    Node(i32, List),
+    Empty,
+}
+
+fn main() {}
+</code></pre>
+<pre><code class="language-compiler">error[E0072]: recursive type `List` has infinite size
+</code></pre>
+<p><code>Node(i32, Box&lt;List&gt;)</code> fixes it: a <code>Box</code> is always one pointer wide. <code>Box</code> is also used for trait objects (<code>Box&lt;dyn Trait&gt;</code>) and to move very large values off the stack.</p>
+<h2>Performance notes</h2>
+<ul>
+<li>Allocation isn&#39;t free. In hot loops, reuse buffers (<code>buf.clear()</code> keeps the capacity) and pre-size collections with <code>Vec::with_capacity(n)</code> or <code>String::with_capacity(n)</code>.</li>
+<li>The stack is small: the main thread typically gets 8 MB on Linux (1 MB on Windows), and spawned threads get 2 MB by default. Huge local arrays or very deep recursion end with <code>thread &#39;main&#39; has overflowed its stack</code>. Use a <code>Vec</code> for big buffers.</li>
+<li>Moving a <code>String</code> or <code>Vec</code> copies only the 24-byte handle, never the heap data.</li>
+</ul>
+<h2>Common misconceptions</h2>
+<ul>
+<li><strong>&quot;Structs live on the heap.&quot;</strong> No: a struct lives wherever you put it. A local struct is on the stack; its <code>String</code> fields point to the heap.</li>
+<li><strong>&quot;String literals are on the heap.&quot;</strong> <code>&quot;hello&quot;</code> is stored in the program binary. <code>String::from(&quot;hello&quot;)</code> copies it into a new heap block.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::mem::size_of;
+
+fn main() {
+    println!(&quot;i64: {} bytes&quot;, size_of::&lt;i64&gt;());
+    println!(&quot;[u8; 100]: {} bytes&quot;, size_of::&lt;[u8; 100]&gt;());
+    println!(&quot;String: {} bytes&quot;, size_of::&lt;String&gt;());
+    println!(&quot;Vec&lt;u64&gt;: {} bytes&quot;, size_of::&lt;Vec&lt;u64&gt;&gt;());
+    println!(&quot;Box&lt;[u8; 100]&gt;: {} bytes&quot;, size_of::&lt;Box&lt;[u8; 100]&gt;&gt;());
+    println!(&quot;&amp;str: {} bytes&quot;, size_of::&lt;&amp;str&gt;());
+
+    let small = String::from(&quot;hi&quot;);
+    let large = &quot;x&quot;.repeat(10_000);
+    println!(&quot;handles: {} and {} bytes&quot;, size_of_val(&amp;small), size_of_val(&amp;large));
+    println!(&quot;heap text: {} and {} bytes&quot;, small.len(), large.len());
+
+    let mut readings = Vec::with_capacity(4);
+    for r in [3, 1, 4, 1] {
+        readings.push(r);
+    }
+    println!(&quot;{} readings, capacity {}&quot;, readings.len(), readings.capacity());
+
+    let boxed: Box&lt;i32&gt; = Box::new(41);
+    println!(&quot;boxed value + 1 = {}&quot;, *boxed + 1);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>i64: 8 bytes
+[u8; 100]: 100 bytes
+String: 24 bytes
+Vec&lt;u64&gt;: 24 bytes
+Box&lt;[u8; 100]&gt;: 8 bytes
+&amp;str: 16 bytes
+handles: 24 and 24 bytes
+heap text: 2 and 10000 bytes
+4 readings, capacity 4
+boxed value + 1 = 42
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/ownership/stack-and-heap-where-values-live">Lesson: Ownership</a></li><li><a href="/learn/smart-pointers/box-a-value-on-the-heap">Lesson: Smart Pointers</a></li></ul></main></div>
+  </body>
+</html>

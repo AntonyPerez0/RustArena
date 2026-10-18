@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Borrow, don't clone · Performance (Rust) | RustArena</title>
+    <meta name="description" content="Every .clone() of a String or Vec allocates new heap memory and copies every byte. One clone costs nanoseconds, but a clone inside a loop that runs a…" />
+    <link rel="canonical" href="https://rustarena.app/learn/performance/borrow-dont-clone/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Borrow, don't clone · Performance (Rust) | RustArena" />
+    <meta property="og:description" content="Every .clone() of a String or Vec allocates new heap memory and copies every byte. One clone costs nanoseconds, but a clone inside a loop that runs a…" />
+    <meta property="og:url" content="https://rustarena.app/learn/performance/borrow-dont-clone/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Borrow, don't clone","description":"Every .clone() of a String or Vec allocates new heap memory and copies every byte. One clone costs nanoseconds, but a clone inside a loop that runs a…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/performance/borrow-dont-clone/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Performance</nav>
+<p>Step 2 of 6</p>
+<h1>Borrow, don't clone</h1>
+<p>Every <code>.clone()</code> of a <code>String</code> or <code>Vec</code> allocates new heap memory and copies every byte. One clone costs nanoseconds, but a clone inside a loop that runs a million times is a million allocations. Needless clones and <code>.to_string()</code> calls are the first thing reviewers look for in Rust performance work, and usually the easiest to remove.</p>
+<h2>Take <code>&amp;str</code> and <code>&amp;[T]</code> when you only read</h2>
+<p>A parameter of type <code>String</code> or <code>Vec&lt;T&gt;</code> takes ownership, so a caller who wants to keep their value has to clone it first. If the function only reads, borrow: <code>&amp;str</code> accepts string literals, <code>&amp;String</code> and slices of either; <code>&amp;[T]</code> accepts arrays, <code>&amp;Vec&lt;T&gt;</code> and slices.</p>
+<pre><code class="language-rust">#[derive(Debug)]
+struct User {
+    name: String,
+    country: String,
+}
+
+// Borrows everything: no allocation at all.
+fn find_user&lt;&#39;a&gt;(users: &amp;&#39;a [User], name: &amp;str) -&gt; Option&lt;&amp;&#39;a User&gt; {
+    users.iter().find(|u| u.name == name)
+}
+
+// Only the results are cloned, not every user.
+fn names_in(users: &amp;[User], country: &amp;str) -&gt; Vec&lt;String&gt; {
+    users.iter().filter(|u| u.country == country).map(|u| u.name.clone()).collect()
+}
+
+fn main() {
+    let users = vec![
+        User { name: &quot;ana&quot;.to_string(), country: &quot;PT&quot;.to_string() },
+        User { name: &quot;bo&quot;.to_string(), country: &quot;SE&quot;.to_string() },
+        User { name: &quot;cy&quot;.to_string(), country: &quot;PT&quot;.to_string() },
+    ];
+    println!(&quot;{:?}&quot;, find_user(&amp;users, &quot;bo&quot;).map(|u| &amp;u.country));
+    println!(&quot;{:?}&quot;, names_in(&amp;users, &quot;PT&quot;));
+}
+</code></pre>
+<pre><code class="language-text">Some(&quot;SE&quot;)
+[&quot;ana&quot;, &quot;cy&quot;]
+</code></pre>
+<ul>
+<li><code>find_user</code> returns <code>Option&lt;&amp;&#39;a User&gt;</code>: a reference <strong>into</strong> the caller&#39;s slice. Nothing is copied. The lifetime <code>&#39;a</code> says the result borrows from <code>users</code>, not from <code>name</code>.</li>
+<li><code>names_in</code> has to return owned names (the caller keeps them), but it clones only the matches, after filtering.</li>
+<li><code>u.name == name</code> compares a <code>String</code> with a <code>&amp;str</code> directly; no conversion needed.</li>
+</ul>
+<h2>When owning is right</h2>
+<p>If the function <strong>stores</strong> the value (in a struct field, a map, a channel), take it by value: <code>fn add_tag(&amp;mut self, tag: String)</code>. Then the caller decides: move a <code>String</code> they no longer need (free), or clone one they still need. Cloning inside the function would force a copy even when the caller didn&#39;t need one.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>for x in list.clone()</code></strong> just to loop: write <code>for x in &amp;list</code>.</li>
+<li><strong>Converting to compare</strong>: <code>if word.to_lowercase() == &quot;error&quot;</code> allocates a new <code>String</code> for every word. <code>word.eq_ignore_ascii_case(&quot;error&quot;)</code> allocates nothing.</li>
+<li><strong><code>.iter().cloned().filter(...)</code></strong>: clones everything, then throws most of it away. Filter first, clone the survivors.</li>
+<li><strong>Over-correcting</strong>: a clone of a short string at startup costs nothing that matters. Keep clones out of hot loops; elsewhere, readability wins. Cloning an <code>Rc</code> or <code>Arc</code> is cheap (it just bumps a counter).</li>
+</ul>
+<p>clippy helps: <code>unnecessary_to_owned</code> (on by default), <code>needless_pass_by_value</code> (in the opt-in <code>clippy::pedantic</code> group) and <code>redundant_clone</code> (in the opt-in <code>clippy::nursery</code> group) flag many of these.</p>
+
+<h2>Your task</h2>
+<p><code>orders_for</code> takes ownership of everything and clones on every step. Change it to <code>fn orders_for&lt;&#39;a&gt;(orders: &amp;&#39;a [Order], customer: &amp;str) -&gt; Vec&lt;&amp;&#39;a Order&gt;</code>: borrow the orders, borrow the name, and return references to the matching orders, with no clones or string conversions at all.</p>
+
+<h3>Challenge 2</h3>
+<p><code>longest_word</code> takes a <code>String</code> and returns a new <code>String</code>, cloning along the way. Change it to <code>fn longest_word(text: &amp;str) -&gt; &amp;str</code>, returning a slice of the input. If several words tie for longest, return the first. For text with no words, return <code>&quot;&quot;</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>count_errors</code>, which counts the log lines that start with <code>error</code> in any ASCII case (<code>ERROR disk full</code>, <code>Error: timeout</code>, <code>error</code>) <strong>without allocating</strong>: no <code>to_lowercase</code>, no new <code>String</code>s. Take the first 5 bytes with <code>line.get(..5)</code> (it returns <code>None</code> if the line is shorter or byte 5 isn&#39;t a character boundary) and compare with <code>eq_ignore_ascii_case</code>. <code>Option::is_some_and(|x| ...)</code> is a handy way to test the value inside an <code>Option</code> in one call.</p>
+
+<p><a href="/learn/performance/measure-first-and-fix-the-algorithm-first">Previous: Measure first, and fix the algorithm first</a> <a href="/learn/performance/allocate-less">Next: Allocate less</a></p></main></div>
+  </body>
+</html>

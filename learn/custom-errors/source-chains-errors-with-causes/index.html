@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Source chains: errors with causes · Custom Error Types (Rust) | RustArena</title>
+    <meta name="description" content="When an error wraps another one, there are two messages: the high-level one (&quot;could not read the port setting&quot;) and the low-level cause (&quot;invalid digit…" />
+    <link rel="canonical" href="https://rustarena.app/learn/custom-errors/source-chains-errors-with-causes/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Source chains: errors with causes · Custom Error Types (Rust) | RustArena" />
+    <meta property="og:description" content="When an error wraps another one, there are two messages: the high-level one (&quot;could not read the port setting&quot;) and the low-level cause (&quot;invalid digit…" />
+    <meta property="og:url" content="https://rustarena.app/learn/custom-errors/source-chains-errors-with-causes/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Source chains: errors with causes","description":"When an error wraps another one, there are two messages: the high-level one (\"could not read the port setting\") and the low-level cause (\"invalid digit…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/custom-errors/source-chains-errors-with-causes/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Custom Error Types</nav>
+<p>Step 5 of 7</p>
+<h1>Source chains: errors with causes</h1>
+<p>When an error wraps another one, there are two messages: the high-level one (&quot;could not read the port setting&quot;) and the low-level cause (&quot;invalid digit found in string&quot;). Users need the first, and whoever fixes the problem often needs both. The <code>Error</code> trait has a method for this, <code>source()</code>, which returns the error that caused this one, if any.</p>
+<pre><code class="language-rust">use std::error::Error;
+use std::fmt;
+use std::num::ParseIntError;
+
+#[derive(Debug)]
+enum ConfigError {
+    MissingKey(String),
+    BadNumber { key: String, source: ParseIntError },
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        match self {
+            ConfigError::MissingKey(key) =&gt; write!(f, &quot;missing key {key}&quot;),
+            ConfigError::BadNumber { key, .. } =&gt; write!(f, &quot;invalid value for {key}&quot;),
+        }
+    }
+}
+
+impl Error for ConfigError {
+    fn source(&amp;self) -&gt; Option&lt;&amp;(dyn Error + &#39;static)&gt; {
+        match self {
+            ConfigError::MissingKey(_) =&gt; None,
+            ConfigError::BadNumber { source, .. } =&gt; Some(source),
+        }
+    }
+}
+
+fn read_port(text: &amp;str) -&gt; Result&lt;u16, ConfigError&gt; {
+    let value = text
+        .strip_prefix(&quot;port=&quot;)
+        .ok_or_else(|| ConfigError::MissingKey(String::from(&quot;port&quot;)))?;
+    value.parse().map_err(|e| ConfigError::BadNumber { key: String::from(&quot;port&quot;), source: e })
+}
+
+fn report(err: &amp;dyn Error) {
+    println!(&quot;error: {err}&quot;);
+    let mut cause = err.source();
+    while let Some(c) = cause {
+        println!(&quot;  caused by: {c}&quot;);
+        cause = c.source();
+    }
+}
+
+fn main() {
+    if let Err(e) = read_port(&quot;port=80a&quot;) {
+        report(&amp;e);
+    }
+    if let Err(e) = read_port(&quot;host=example.com&quot;) {
+        report(&amp;e);
+    }
+}
+</code></pre>
+<pre><code class="language-text">error: invalid value for port
+  caused by: invalid digit found in string
+error: missing key port
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>fn source(&amp;self) -&gt; Option&lt;&amp;(dyn Error + &#39;static)&gt;</code> overrides the default <code>source</code> (which returns <code>None</code>). Copy the signature as it is: <code>&amp;(dyn Error + &#39;static)</code> means &quot;a reference to some error&quot;; the <code>&#39;static</code> is a lifetime saying the error doesn&#39;t borrow short-lived data (module 24).</li>
+<li><code>Some(source)</code> hands out a reference to the wrapped <code>ParseIntError</code>. Rust turns <code>&amp;ParseIntError</code> into <code>&amp;dyn Error</code> automatically.</li>
+<li><code>report</code> takes <code>&amp;dyn Error</code>, so it works with <em>any</em> error. It prints the error, then follows <code>source()</code> link by link with <code>while let</code> until there&#39;s no further cause. This list is the <strong>error chain</strong>.</li>
+<li>The variant names its field <code>source</code>, which is a common convention (and what thiserror, step 7, looks for).</li>
+</ul>
+<h2>Display or source, not both</h2>
+<p>If <code>BadNumber</code> displayed as <code>invalid value for port: invalid digit found in string</code> <em>and</em> returned the parse error from <code>source()</code>, every report would print the cause twice. The guideline: an error either includes the inner message in its Display, or returns it from <code>source()</code>. When you wrap an error and keep it, prefer <code>source()</code>. Tools like <code>anyhow</code> print the whole chain for you, joined by <code>: </code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Forgetting <code>source()</code> when wrapping.</strong> The default returns <code>None</code>, so the chain stops at your error and the real cause is invisible in reports.</li>
+<li><strong>Writing the signature differently.</strong> <code>fn source(&amp;self) -&gt; Option&lt;&amp;dyn Error&gt;</code> without <code>+ &#39;static</code> doesn&#39;t match the trait and won&#39;t compile. Copy it exactly.</li>
+<li><strong>Calling <code>.source()</code> without the trait in scope.</strong> It&#39;s a method of the <code>Error</code> trait, so you need <code>use std::error::Error;</code>, like you need <code>use std::fmt;</code> for Display.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>The starter&#39;s <code>LoadError</code> has Display and an empty-ish <code>Error</code> implementation. Write its <code>source</code> method: <code>MissingKey</code> has no cause, and <code>BadPort</code> returns its <code>source</code> field.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>fn error_chain(err: &amp;dyn Error) -&gt; String</code> that joins the messages of an error and all its sources with <code>&quot;: &quot;</code>, outermost first. For a <code>BadPort</code> error that&#39;s <code>port is not a valid number: invalid digit found in string</code>. This is exactly what <code>anyhow</code> prints with <code>{:#}</code>.</p>
+<p>The starter has two complete error types to test with: <code>LoadError</code> and <code>StartupError</code> (which wraps a <code>LoadError</code>).</p>
+
+<h3>Challenge 3</h3>
+<p>Build a two-layer error yourself. The starter has <code>LoadError</code> and <code>fn load_port(text: &amp;str) -&gt; Result&lt;u16, LoadError&gt;</code>. Write:</p>
+<ul>
+<li><code>AppError</code> (derive <code>Debug</code>) with one variant, <code>Config(LoadError)</code></li>
+<li>Display for <code>AppError</code>: <code>could not start the server</code></li>
+<li><code>Error</code> for <code>AppError</code>, with <code>source()</code> returning the inner <code>LoadError</code></li>
+<li><code>From&lt;LoadError&gt; for AppError</code></li>
+<li><code>fn start(port_text: &amp;str) -&gt; Result&lt;u16, AppError&gt;</code> that calls <code>load_port(port_text)?</code> and returns the port</li>
+</ul>
+<p>The tests print the whole chain with the starter&#39;s <code>error_chain</code>.</p>
+
+<p><a href="/learn/custom-errors/from-teaching-to-convert-errors">Previous: From: teaching ? to convert errors</a> <a href="/learn/custom-errors/panic-or-result-the-guidelines">Next: panic or Result? The guidelines</a></p></main></div>
+  </body>
+</html>

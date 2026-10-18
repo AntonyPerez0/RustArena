@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Scoped threads: borrowing local data · Threads (Rust) | RustArena</title>
+    <meta name="description" content="Copying chunks with tovec() just to satisfy 'static is wasteful. Borrowing would be safe if you could promise that every thread ends before the borrowed…" />
+    <link rel="canonical" href="https://rustarena.app/learn/threads/scoped-threads-borrowing-local-data/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Scoped threads: borrowing local data · Threads (Rust) | RustArena" />
+    <meta property="og:description" content="Copying chunks with tovec() just to satisfy 'static is wasteful. Borrowing would be safe if you could promise that every thread ends before the borrowed…" />
+    <meta property="og:url" content="https://rustarena.app/learn/threads/scoped-threads-borrowing-local-data/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Scoped threads: borrowing local data","description":"Copying chunks with tovec() just to satisfy 'static is wasteful. Borrowing would be safe if you could promise that every thread ends before the borrowed…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/threads/scoped-threads-borrowing-local-data/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Threads</nav>
+<p>Step 4 of 7</p>
+<h1>Scoped threads: borrowing local data</h1>
+<p>Copying chunks with <code>to_vec()</code> just to satisfy <code>&#39;static</code> is wasteful. Borrowing would be safe if you could <strong>promise</strong> that every thread ends before the borrowed data is dropped. <code>thread::scope</code> turns that promise into something the compiler can check:</p>
+<pre><code class="language-rust">use std::thread;
+
+fn main() {
+    let readings: Vec&lt;u32&gt; = (1..=12).collect();
+    let total = thread::scope(|s| {
+        let mut handles = Vec::new();
+        for chunk in readings.chunks(4) {
+            handles.push(s.spawn(|| chunk.iter().sum::&lt;u32&gt;()));
+        }
+        handles.into_iter().map(|h| h.join().unwrap()).sum::&lt;u32&gt;()
+    });
+    println!(&quot;total: {total}&quot;);
+    println!(&quot;main still owns all {} readings&quot;, readings.len());
+}
+</code></pre>
+<pre><code class="language-text">total: 78
+main still owns all 12 readings
+</code></pre>
+<p>How it works:</p>
+<ul>
+<li><code>thread::scope(|s| { ... })</code> calls your closure with a <strong>scope</strong> <code>s</code>. Threads started with <code>s.spawn(...)</code> are <strong>scoped threads</strong>.</li>
+<li>Before <code>thread::scope</code> returns, it joins every thread spawned in the scope that you didn&#39;t join yourself. So no scoped thread can outlive the scope, and the compiler lets them borrow anything that lives longer than the scope, like <code>readings</code>.</li>
+<li><code>s.spawn</code> returns a <code>ScopedJoinHandle</code>, which you <code>join</code> exactly like a normal handle.</li>
+<li>Whatever the closure returns, <code>thread::scope</code> returns: here the total.</li>
+</ul>
+<p>No <code>to_vec()</code>, no <code>move</code>, no copies: each thread reads its chunk straight out of <code>readings</code>.</p>
+<h2>Mutable borrows work too</h2>
+<p>The borrowing rules still apply across threads: one <code>&amp;mut</code> at a time per piece of data. <code>chunks_mut</code> cuts a slice into pieces that don&#39;t overlap, so each thread can get its own <code>&amp;mut</code> piece:</p>
+<pre><code class="language-rust">use std::thread;
+
+fn main() {
+    let mut prices = vec![100, 250, 80, 40, 60, 500];
+    thread::scope(|s| {
+        for chunk in prices.chunks_mut(2) {
+            s.spawn(|| {
+                for p in chunk {
+                    *p = *p * 90 / 100;
+                }
+            });
+        }
+    });
+    println!(&quot;{prices:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">[90, 225, 72, 36, 54, 450]
+</code></pre>
+<p>This time we don&#39;t keep the handles: the scope joins all the threads for us before <code>println!</code> runs.</p>
+<h2>Lazy iterators and joining</h2>
+<p>A tempting one-liner is <code>data.chunks(n).map(|c| s.spawn(...)).map(|h| h.join().unwrap()).sum()</code>. Iterators are lazy (module 27): each item goes through <em>both</em> <code>map</code>s before the next chunk is touched, so every thread is joined right after it starts, and they run one at a time. <strong>Collect the handles into a <code>Vec</code> first</strong>, then join.</p>
+<h2>scope or spawn?</h2>
+<ul>
+<li><strong><code>thread::scope</code></strong>: the threads do a piece of work inside one function and are done before it returns. Most &quot;split this job over the cores&quot; code looks like this.</li>
+<li><strong><code>thread::spawn</code> with <code>move</code></strong>: the thread must outlive the function that started it, like a background worker that runs for the whole program.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>chunks(0)</code> panics.</strong> A chunk size from <code>data.len() / workers</code> is 0 when there are fewer items than workers. <code>div_ceil</code> divides and rounds <strong>up</strong> (<code>10_usize.div_ceil(4)</code> is <code>3</code>), and <code>.max(1)</code> keeps the size at least 1.</li>
+<li><strong>Loop variables still need <code>move</code>.</strong> <code>for i in 0..4 { s.spawn(|| i * 2); }</code> borrows <code>i</code>, which dies at the end of each turn of the loop: <code>E0373</code>. Write <code>s.spawn(move || i * 2)</code>. If the closure also uses a <code>Vec</code>, <code>move</code> would move the whole <code>Vec</code> into the first thread; make a reference first (<code>let data = &amp;data;</code>) and move that: copying a reference is free.</li>
+<li><strong>Two threads writing the same variable</strong>: <code>E0499</code>, explained in the next step.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>fn parallel_sum(data: &amp;[u64], workers: usize) -&gt; u64</code>. Split <code>data</code> into chunks of <code>data.len().div_ceil(workers).max(1)</code> items, sum each chunk in its own <strong>scoped</strong> thread, and return the total. Borrow the data; don&#39;t copy it. You can assume <code>workers</code> is at least 1.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>fn apply_discount(prices: &amp;mut [u32], percent: u32, workers: usize)</code>. It lowers every price by <code>percent</code> percent, rounding down (<code>price * (100 - percent) / 100</code>), working on the slice in place with one scoped thread per chunk. Use <code>chunks_mut</code> with a chunk size of <code>prices.len().div_ceil(workers).max(1)</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>In one <code>thread::scope</code>, run <strong>two</strong> threads over the same borrowed <code>temps</code> vector at the same time: one finds the lowest reading, the other the highest. Then print them, and show that <code>main</code> still owns the vector:</p>
+<pre><code>min: -4
+max: 31
+readings: 7
+</code></pre>
+
+<p><a href="/learn/threads/many-threads-results-in-order">Previous: Many threads, results in order</a> <a href="/learn/threads/send-and-sync-what-may-cross-threads">Next: Send and Sync: what may cross threads</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>The runtime, and sleeping without blocking · Async Rust with Tokio (Rust) | RustArena</title>
+    <meta name="description" content="#[tokio::main] hides a few lines. Written out by hand, it's this: Runtime::new() starts Tokio: a pool of worker threads (one per CPU core by default)…" />
+    <link rel="canonical" href="https://rustarena.app/learn/async/the-runtime-and-sleeping-without-blocking/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="The runtime, and sleeping without blocking · Async Rust with Tokio (Rust) | RustArena" />
+    <meta property="og:description" content="#[tokio::main] hides a few lines. Written out by hand, it's this: Runtime::new() starts Tokio: a pool of worker threads (one per CPU core by default)…" />
+    <meta property="og:url" content="https://rustarena.app/learn/async/the-runtime-and-sleeping-without-blocking/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"The runtime, and sleeping without blocking","description":"#[tokio::main] hides a few lines. Written out by hand, it's this: Runtime::new() starts Tokio: a pool of worker threads (one per CPU core by default)…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/async/the-runtime-and-sleeping-without-blocking/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Async Rust with Tokio</nav>
+<p>Step 2 of 7</p>
+<h1>The runtime, and sleeping without blocking</h1>
+<p><code>#[tokio::main]</code> hides a few lines. Written out by hand, it&#39;s this:</p>
+<pre><code class="language-rust">use std::time::Duration;
+
+async fn boil_water() -&gt; &amp;&#39;static str {
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    &quot;water boiled&quot;
+}
+
+fn main() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let result = runtime.block_on(boil_water());
+    println!(&quot;{result}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">water boiled
+</code></pre>
+<ul>
+<li><code>Runtime::new()</code> starts Tokio: a pool of <strong>worker threads</strong> (one per CPU core by default) plus a timer and an I/O driver.</li>
+<li><code>block_on(future)</code> runs a future to completion and blocks the current (normal, non-async) thread until it&#39;s done. It&#39;s the bridge from ordinary code into async code. You&#39;ll use it in tests, and in small tools that call one async library.</li>
+<li>Inside the runtime, work is organized in <strong>tasks</strong>: lightweight jobs that the runtime switches between whenever one of them is waiting at an <code>.await</code>. <code>main</code>&#39;s future is the first task.</li>
+<li><code>#[tokio::main(flavor = &quot;current_thread&quot;)]</code> runs everything on one thread, handy for small tools and tests.</li>
+</ul>
+<h2>tokio::time::sleep, not std::thread::sleep</h2>
+<p><code>tokio::time::sleep(duration).await</code> pauses the current <strong>task</strong>. The worker thread is free to run other tasks in the meantime, and the timer wakes the task up later.</p>
+<p><code>std::thread::sleep</code> pauses the whole <strong>thread</strong>. In async code, that freezes every task scheduled on that worker. The program still produces the right output, which is what makes it dangerous: it&#39;s just slow, and under load everything stalls. The golden rule of async code: <strong>never block</strong>. No <code>std::thread::sleep</code>, no long CPU loops, no blocking file or network calls inside async functions. Use the async versions (<code>tokio::time::sleep</code>, <code>tokio::fs</code>, <code>tokio::net</code>), or move the blocking work elsewhere (step 7).</p>
+<h2>Awaits run one after another</h2>
+<p>Each <code>.await</code> waits for its future to finish before the next line runs:</p>
+<pre><code class="language-rust">use std::time::Duration;
+use tokio::time::sleep;
+
+async fn fetch_user(id: u32) -&gt; String {
+    sleep(Duration::from_millis(20)).await; // pretend this is a network call
+    format!(&quot;user{id}&quot;)
+}
+
+#[tokio::main]
+async fn main() {
+    let a = fetch_user(1).await;
+    let b = fetch_user(2).await;
+    println!(&quot;{a} and {b}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">user1 and user2
+</code></pre>
+<p>This takes about 40 ms: the second call doesn&#39;t start until the first is done. That&#39;s right when the second call needs the first one&#39;s result. When they&#39;re independent, you can run them at the same time: next step.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong><code>std::thread::sleep</code> in async code</strong>: correct output, frozen worker thread. Use <code>tokio::time::sleep(...).await</code>.</li>
+<li><strong>Forgetting <code>.await</code> on <code>sleep</code></strong>: <code>tokio::time::sleep(d);</code> creates a timer future and drops it, so nothing waits (and rustc warns: <code>unused `Sleep` that must be used</code>).</li>
+<li><strong>Calling <code>block_on</code> inside async code</strong>: Tokio panics with &quot;Cannot start a runtime from within a runtime&quot;. <code>block_on</code> is only for the boundary from normal code; inside async code, just <code>.await</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Services fail sometimes, and real clients <strong>retry with backoff</strong>: wait a little longer after each failure. Write <code>async fn ping_with_retry(service: &amp;mut FlakyService, max_tries: u32) -&gt; Result&lt;String, String&gt;</code>. Try <code>service.ping().await</code> up to <code>max_tries</code> times (assume at least 1):</p>
+<ul>
+<li>on success at attempt <code>n</code> (counting from 1), return <code>Ok(format!(&quot;{reply} (attempt {n})&quot;))</code>;</li>
+<li>after a failure, if there are tries left, wait <code>2^n</code> milliseconds with <strong>Tokio&#39;s</strong> sleep (<code>Duration::from_millis(2u64.pow(n))</code>) before trying again;</li>
+<li>if every try fails, return <code>Err(format!(&quot;gave up after {max_tries} attempts: {last_error}&quot;))</code> with the last error message.</li>
+</ul>
+
+<h3>Challenge 2</h3>
+<p>Call async code from a normal <code>fn main</code>, without <code>#[tokio::main]</code>: fill in the function that creates the runtime and the method that runs a future to completion. The program should print <code>cache ready with 128 entries</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>This kitchen timer prints the right lines, but <code>std::thread::sleep</code> blocks the runtime&#39;s worker thread while it waits. Switch <code>timer</code> to Tokio&#39;s non-blocking sleep (and await it). The output stays the same:</p>
+<pre><code>eggs: done after 3 ms
+toast: done after 2 ms
+tea: done after 4 ms
+</code></pre>
+
+<p><a href="/learn/async/futures-async-fn-and-await">Previous: Futures, async fn and .await</a> <a href="/learn/async/running-futures-at-the-same-time-join-and-try-join">Next: Running futures at the same time: join! and try_join!</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>UTF-8: bytes, chars and why s[0] fails · Strings in depth (Rust) | RustArena</title>
+    <meta name="description" content="In module 7 you met String (owned, growable text) and &amp;str (a borrowed view of text). Both store text as UTF-8, the encoding used by the web, by files…" />
+    <link rel="canonical" href="https://rustarena.app/learn/strings/utf-8-bytes-chars-and-why-s-0-fails/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="UTF-8: bytes, chars and why s[0] fails · Strings in depth (Rust) | RustArena" />
+    <meta property="og:description" content="In module 7 you met String (owned, growable text) and &amp;str (a borrowed view of text). Both store text as UTF-8, the encoding used by the web, by files…" />
+    <meta property="og:url" content="https://rustarena.app/learn/strings/utf-8-bytes-chars-and-why-s-0-fails/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"UTF-8: bytes, chars and why s[0] fails","description":"In module 7 you met String (owned, growable text) and &str (a borrowed view of text). Both store text as UTF-8, the encoding used by the web, by files…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/strings/utf-8-bytes-chars-and-why-s-0-fails/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Structuring data › Strings in depth</nav>
+<p>Step 1 of 7</p>
+<h1>UTF-8: bytes, chars and why s[0] fails</h1>
+<p>In module 7 you met <code>String</code> (owned, growable text) and <code>&amp;str</code> (a borrowed view of text). Both store text as <strong>UTF-8</strong>, the encoding used by the web, by files and by almost every system today. In UTF-8 one character takes <strong>1 to 4 bytes</strong>: plain English letters and digits take 1, accented Latin letters (and Greek, Cyrillic, Arabic, Hebrew) 2, Chinese, Japanese, Korean and symbols like <code>€</code> 3, and emoji 4.</p>
+<pre><code class="language-rust">fn main() {
+    for word in [&quot;crab&quot;, &quot;café&quot;, &quot;€5&quot;, &quot;🦀&quot;] {
+        println!(&quot;{word}: bytes={} chars={}&quot;, word.len(), word.chars().count());
+    }
+
+    let s = &quot;née&quot;;
+    for b in s.bytes() {
+        print!(&quot;{b} &quot;);
+    }
+    println!();
+    for c in s.chars() {
+        print!(&quot;{c:?} &quot;);
+    }
+    println!();
+    println!(&quot;{:?} {:?}&quot;, s.chars().next(), s.chars().nth(1));
+}
+</code></pre>
+<pre><code class="language-text">crab: bytes=4 chars=4
+café: bytes=5 chars=4
+€5: bytes=4 chars=2
+🦀: bytes=4 chars=1
+110 195 169 101
+&#39;n&#39; &#39;é&#39; &#39;e&#39;
+Some(&#39;n&#39;) Some(&#39;é&#39;)
+</code></pre>
+<ul>
+<li><code>.len()</code> counts <strong>bytes</strong>, not characters. That&#39;s what it costs in memory, and it&#39;s instant because the String stores it.</li>
+<li><code>.chars()</code> decodes the bytes into <code>char</code>s, one at a time. <code>.chars().count()</code> is the number of characters; it has to walk the whole string.</li>
+<li><code>.bytes()</code> gives the raw bytes: <code>é</code> is the two bytes 195 169.</li>
+<li><code>.chars().next()</code> is the first character and <code>.chars().nth(i)</code> the character at position <code>i</code>. Both return an <code>Option&lt;char&gt;</code>, since the string might be too short.</li>
+</ul>
+<h2>Why <code>s[0]</code> doesn&#39;t compile</h2>
+<pre><code class="language-rust-error">fn main() {
+    let s = String::from(&quot;hello&quot;);
+    let c = s[0];
+    println!(&quot;{c}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: the type `str` cannot be indexed by `{integer}`
+</code></pre>
+<p>Two reasons. First, a position in bytes isn&#39;t a character: in <code>&quot;née&quot;</code>, byte 1 is the first half of <code>é</code>, and returning it as if it were a letter would be wrong. Second, <code>[]</code> is expected to be instant, but finding the <em>n</em>th character means decoding everything before it. Rather than hide that cost or return half-characters, Rust makes you say what you mean:</p>
+<table>
+<thead>
+<tr>
+<th>You want</th>
+<th>Write</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>the first character</td>
+<td><code>s.chars().next()</code></td>
+</tr>
+<tr>
+<td>the character at position <code>n</code></td>
+<td><code>s.chars().nth(n)</code> (walks from the start)</td>
+</tr>
+<tr>
+<td>the last character</td>
+<td><code>s.chars().last()</code></td>
+</tr>
+<tr>
+<td>the first byte (for ASCII protocols)</td>
+<td><code>s.as_bytes()[0]</code></td>
+</tr>
+<tr>
+<td>the number of characters</td>
+<td><code>s.chars().count()</code></td>
+</tr>
+</tbody></table>
+<p><code>char</code> has handy methods for classifying: <code>is_alphabetic()</code>, <code>is_numeric()</code>, <code>is_ascii_digit()</code>, <code>is_whitespace()</code>, <code>is_uppercase()</code>, <code>is_alphanumeric()</code>.</p>
+<h2>A workplace note on &quot;characters&quot;</h2>
+<p>A Rust <code>char</code> is a Unicode <strong>scalar value</strong>, which isn&#39;t always one symbol on screen. <code>é</code> can also be written as <code>e</code> followed by a combining accent (two chars), and an emoji like 👩‍💻 is three chars glued together. When you must count what a person <em>sees</em> (for example, limiting a display name), teams use the <code>unicode-segmentation</code> crate. For parsing logs, CSV, numbers and commands, <code>chars</code> and bytes are what you want.</p>
+
+<h2>Your task</h2>
+<p>Write <code>fn initials(full_name: &amp;str) -&gt; String</code> that returns the first character of each word, in uppercase: <code>&quot;ada lovelace&quot;</code> gives <code>&quot;AL&quot;</code>. Words are separated by any amount of whitespace, and names can contain accents (<code>&quot;émile zola&quot;</code> gives <code>&quot;ÉZ&quot;</code>).</p>
+
+<h3>Challenge 2</h3>
+<p>Fill in the blanks: the method that counts bytes, the method that iterates characters, and the method that takes the first character.</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>fn is_palindrome(s: &amp;str) -&gt; bool</code> that ignores case and everything that isn&#39;t a letter or digit: <code>&quot;A man, a plan, a canal: Panama&quot;</code> is a palindrome. Lowercase the text first, keep only the <code>is_alphanumeric()</code> chars in a <code>Vec&lt;char&gt;</code>, then compare it from both ends.</p>
+
+<p> <a href="/learn/strings/slicing-safely-at-char-boundaries">Next: Slicing safely at char boundaries</a></p></main></div>
+  </body>
+</html>

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Why you can't index a String in Rust (UTF-8, chars and bytes) | RustArena</title>
+    <meta name="description" content="Why s[0] doesn't compile for a Rust String, how UTF-8 works, and how to get characters with chars(), char_indices() and safe slicing." />
+    <link rel="canonical" href="https://rustarena.app/topics/string-indexing-and-utf8/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Why you can't index a String in Rust (UTF-8, chars and bytes) | RustArena" />
+    <meta property="og:description" content="Why s[0] doesn't compile for a Rust String, how UTF-8 works, and how to get characters with chars(), char_indices() and safe slicing." />
+    <meta property="og:url" content="https://rustarena.app/topics/string-indexing-and-utf8/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Why you can't index a String in Rust (UTF-8, chars and bytes)","description":"Why s[0] doesn't compile for a Rust String, how UTF-8 works, and how to get characters with chars(), char_indices() and safe slicing.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/string-indexing-and-utf8/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Why you can't index a String in Rust (UTF-8, chars and bytes)</h1>
+<p>Why s[0] doesn't compile for a Rust String, how UTF-8 works, and how to get characters with chars(), char_indices() and safe slicing.</p>
+<p>Coming from Python or JavaScript, the first surprise is that this doesn&#39;t compile:</p>
+<pre><code class="language-rust-error">fn main() {
+    let s = String::from(&quot;hello&quot;);
+    let c = s[0];
+    println!(&quot;{c}&quot;);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0277]: the type `str` cannot be indexed by `{integer}`
+</code></pre>
+<h2>Why: strings are UTF-8 bytes</h2>
+<p>A Rust <code>String</code> (and <code>&amp;str</code>) stores text as <strong>UTF-8</strong>, where one character takes between 1 and 4 bytes. ASCII letters take 1 byte, <code>é</code> takes 2, <code>€</code> takes 3, and an emoji like 🦀 takes 4.</p>
+<pre><code class="language-rust">fn main() {
+    for word in [&quot;crab&quot;, &quot;café&quot;, &quot;🦀&quot;] {
+        println!(&quot;{word}: {} bytes, {} chars&quot;, word.len(), word.chars().count());
+    }
+}
+</code></pre>
+<pre><code class="language-text">crab: 4 bytes, 4 chars
+café: 5 bytes, 4 chars
+🦀: 4 bytes, 1 chars
+</code></pre>
+<p>So <code>s[0]</code> would be ambiguous (the first byte? the first character?), and finding the n-th character requires scanning from the start, which isn&#39;t the O(1) that indexing promises. Rust makes you say what you mean.</p>
+<h2>What to use instead</h2>
+<table>
+<thead>
+<tr>
+<th>You want</th>
+<th>Write</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>the first character</td>
+<td><code>s.chars().next()</code> (an <code>Option&lt;char&gt;</code>)</td>
+</tr>
+<tr>
+<td>the n-th character</td>
+<td><code>s.chars().nth(n)</code> (O(n))</td>
+</tr>
+<tr>
+<td>number of characters</td>
+<td><code>s.chars().count()</code></td>
+</tr>
+<tr>
+<td>number of bytes</td>
+<td><code>s.len()</code></td>
+</tr>
+<tr>
+<td>characters with byte positions</td>
+<td><code>s.char_indices()</code></td>
+</tr>
+<tr>
+<td>the raw bytes</td>
+<td><code>s.bytes()</code> or <code>s.as_bytes()</code></td>
+</tr>
+<tr>
+<td>a substring by byte range</td>
+<td><code>&amp;s[start..end]</code>, at character boundaries</td>
+</tr>
+<tr>
+<td>reverse</td>
+<td><code>s.chars().rev().collect::&lt;String&gt;()</code></td>
+</tr>
+</tbody></table>
+<p>If you do many position-based operations, convert once: <code>let chars: Vec&lt;char&gt; = s.chars().collect();</code> and then index <code>chars[i]</code> freely.</p>
+<h2>Slicing is by bytes, and must hit boundaries</h2>
+<p><code>&amp;s[0..3]</code> takes <strong>bytes</strong> 0 to 2. If the range ends in the middle of a character, the program <strong>panics</strong>:</p>
+<pre><code class="language-rust">fn main() {
+    let s = String::from(&quot;héllo&quot;);
+    println!(&quot;{}&quot;, &amp;s[0..1]);
+    println!(&quot;{}&quot;, &amp;s[0..2]);
+}
+</code></pre>
+<pre><code class="language-text">h
+</code></pre>
+<p>The panic message is <code>end byte index 2 is not a char boundary; it is inside &#39;é&#39; (bytes 1..3 of string)</code>. Get safe positions from <code>find</code>, <code>char_indices</code>, or <code>s.is_char_boundary(i)</code>, or use <code>s.get(0..2)</code>, which returns <code>None</code> instead of panicking.</p>
+<h2>ASCII-only data</h2>
+<p>For data you know is ASCII (hex strings, simple identifiers, DNA sequences), working with bytes is fast and simple: <code>s.as_bytes()[0]</code> is a <code>u8</code>, and <code>b&#39;a&#39;</code> is a byte literal. Methods like <code>is_ascii_digit</code>, <code>to_ascii_uppercase</code> and <code>eq_ignore_ascii_case</code> exist for both <code>char</code> and <code>u8</code>.</p>
+<h2>Characters vs what users see</h2>
+<p>A <code>char</code> is a Unicode <strong>scalar value</strong>, not always what a reader would call one character. &quot;é&quot; can be written as one <code>char</code> or as <code>e</code> plus a combining accent (two <code>char</code>s), and many emoji are several <code>char</code>s joined together. For user-facing text operations such as truncating names for display, use the <code>unicode-segmentation</code> crate&#39;s grapheme clusters.</p>
+
+<h2>Example</h2>
+<pre><code>fn initials(name: &amp;str) -&gt; String {
+    name.split_whitespace().filter_map(|w| w.chars().next()).collect()
+}
+
+fn truncate_chars(s: &amp;str, max: usize) -&gt; &amp;str {
+    match s.char_indices().nth(max) {
+        Some((byte_pos, _)) =&gt; &amp;s[..byte_pos],
+        None =&gt; s,
+    }
+}
+
+fn main() {
+    let city = String::from(&quot;Zürich&quot;);
+    println!(&quot;{city}: {} bytes, {} chars&quot;, city.len(), city.chars().count());
+    println!(&quot;first char {:?}, third {:?}&quot;, city.chars().next(), city.chars().nth(2));
+
+    for (pos, c) in city.char_indices().take(3) {
+        println!(&quot;byte {pos}: {c}&quot;);
+    }
+
+    println!(&quot;{:?} {:?}&quot;, city.get(0..2), city.get(0..3));
+    println!(&quot;reversed {}&quot;, city.chars().rev().collect::&lt;String&gt;());
+    println!(&quot;initials {}&quot;, initials(&quot;Grace Brewster Hopper&quot;));
+    println!(&quot;truncated {}&quot;, truncate_chars(&quot;crème brûlée&quot;, 7));
+
+    let code = &quot;a7f3&quot;;
+    println!(&quot;first byte {} ({})&quot;, code.as_bytes()[0], code.as_bytes()[0] as char);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>Zürich: 7 bytes, 6 chars
+first char Some('Z'), third Some('r')
+byte 0: Z
+byte 1: ü
+byte 3: r
+None Some(&quot;Zü&quot;)
+reversed hcirüZ
+initials GBH
+truncated crème b
+first byte 97 (a)
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/strings/utf-8-bytes-chars-and-why-s-0-fails">Lesson: Strings in depth</a></li></ul></main></div>
+  </body>
+</html>

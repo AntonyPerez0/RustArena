@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Trait bounds: what T is allowed to do · Generics (Rust) | RustArena</title>
+    <meta name="description" content="Now a function that finds the largest element: Inside a generic function, the compiler only allows what works for every possible T, and not every type…" />
+    <link rel="canonical" href="https://rustarena.app/learn/generics/trait-bounds-what-t-is-allowed-to-do/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Trait bounds: what T is allowed to do · Generics (Rust) | RustArena" />
+    <meta property="og:description" content="Now a function that finds the largest element: Inside a generic function, the compiler only allows what works for every possible T, and not every type…" />
+    <meta property="og:url" content="https://rustarena.app/learn/generics/trait-bounds-what-t-is-allowed-to-do/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Trait bounds: what T is allowed to do","description":"Now a function that finds the largest element: Inside a generic function, the compiler only allows what works for every possible T, and not every type…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/generics/trait-bounds-what-t-is-allowed-to-do/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Errors and abstraction › Generics</nav>
+<p>Step 2 of 6</p>
+<h1>Trait bounds: what T is allowed to do</h1>
+<p>Now a function that finds the largest element:</p>
+<pre><code class="language-rust-error">fn largest&lt;T&gt;(items: &amp;[T]) -&gt; T {
+    let mut best = items[0];
+    for &amp;item in items {
+        if item &gt; best {
+            best = item;
+        }
+    }
+    best
+}
+
+fn main() {
+    println!(&quot;{}&quot;, largest(&amp;[1, 5, 2]));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0369]: binary operation `&gt;` cannot be applied to type `T`
+  help: consider restricting type parameter `T` with trait `PartialOrd`
+</code></pre>
+<p>Inside a generic function, the compiler only allows what works for <strong>every</strong> possible <code>T</code>, and not every type can be compared with <code>&gt;</code>. (How would you order two bank accounts, or two colors?) So you must say what <code>T</code> needs to be able to do.</p>
+<p>Each capability is a <strong>trait</strong>: a named set of operations a type can support. Module 22 shows how to write your own; for now you only need to <em>use</em> a few from the standard library. A <strong>trait bound</strong> like <code>T: PartialOrd</code> restricts <code>T</code> to types that have that capability:</p>
+<table>
+<thead>
+<tr>
+<th>Bound</th>
+<th>Lets you</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>PartialEq</code></td>
+<td>compare with <code>==</code> and <code>!=</code></td>
+</tr>
+<tr>
+<td><code>PartialOrd</code></td>
+<td>compare with <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code></td>
+</tr>
+<tr>
+<td><code>Copy</code></td>
+<td>copy values (<code>let x = items[0];</code>) instead of moving them: numbers, <code>char</code>, <code>bool</code></td>
+</tr>
+<tr>
+<td><code>Clone</code></td>
+<td>call <code>.clone()</code></td>
+</tr>
+<tr>
+<td><code>Display</code></td>
+<td>print with <code>{}</code> (it&#39;s <code>std::fmt::Display</code>)</td>
+</tr>
+<tr>
+<td><code>Debug</code></td>
+<td>print with <code>{:?}</code> (it&#39;s <code>std::fmt::Debug</code>)</td>
+</tr>
+</tbody></table>
+<p>Several bounds are joined with <code>+</code>:</p>
+<pre><code class="language-rust">fn largest&lt;T: PartialOrd + Copy&gt;(items: &amp;[T]) -&gt; T {
+    let mut best = items[0];
+    for &amp;item in items {
+        if item &gt; best {
+            best = item;
+        }
+    }
+    best
+}
+
+fn largest_ref&lt;T: PartialOrd&gt;(items: &amp;[T]) -&gt; &amp;T {
+    let mut best = &amp;items[0];
+    for item in items {
+        if item &gt; best {
+            best = item;
+        }
+    }
+    best
+}
+
+fn main() {
+    println!(&quot;{}&quot;, largest(&amp;[34, 50, 25, 100, 65]));
+    println!(&quot;{}&quot;, largest(&amp;[1.5, -2.0, 0.25]));
+    println!(&quot;{}&quot;, largest(&amp;[&#39;r&#39;, &#39;u&#39;, &#39;s&#39;, &#39;t&#39;]));
+    let names = vec![String::from(&quot;ana&quot;), String::from(&quot;zoe&quot;), String::from(&quot;bo&quot;)];
+    println!(&quot;{}&quot;, largest_ref(&amp;names));
+}
+</code></pre>
+<pre><code class="language-text">100
+1.5
+u
+zoe
+</code></pre>
+<ul>
+<li><code>T: PartialOrd</code> makes <code>item &gt; best</code> legal.</li>
+<li><code>T: Copy</code> makes <code>let mut best = items[0];</code> and <code>for &amp;item in items</code> legal: both <em>copy</em> an element out of the slice. A <code>String</code> can&#39;t be copied, only moved, and you can&#39;t move out of a borrowed slice.</li>
+<li><code>largest_ref</code> avoids needing <code>Copy</code> by returning a <em>reference</em> to the largest element. That&#39;s why it works for <code>String</code>s too. Fewer bounds means more types can use your function.</li>
+<li>Every type in the calls satisfies the bounds: integers, floats and <code>char</code>s can all be compared and copied.</li>
+</ul>
+<p>(Both versions panic on an empty slice, at <code>items[0]</code>. A more careful version returns an <code>Option</code>: that&#39;s one of the exercises.)</p>
+<h2>Display and Debug bounds</h2>
+<p>To print a <code>T</code>, require the matching trait:</p>
+<pre><code class="language-rust">use std::fmt::{Debug, Display};
+
+fn announce&lt;T: Display&gt;(label: &amp;str, value: T) {
+    println!(&quot;{label}: {value}&quot;);
+}
+
+fn log_all&lt;T: Debug&gt;(items: &amp;[T]) {
+    for item in items {
+        println!(&quot;[log] {item:?}&quot;);
+    }
+}
+
+fn main() {
+    announce(&quot;winner&quot;, &quot;Ferris&quot;);
+    announce(&quot;score&quot;, 9001);
+    announce(&quot;ratio&quot;, 0.75);
+    log_all(&amp;[Some(1), None]);
+}
+</code></pre>
+<pre><code class="language-text">winner: Ferris
+score: 9001
+ratio: 0.75
+[log] Some(1)
+[log] None
+</code></pre>
+<p>When bounds get long, Rust also lets you list them after the signature in a <code>where</code> clause (<code>fn largest&lt;T&gt;(items: &amp;[T]) -&gt; T where T: PartialOrd + Copy</code>). Module 22 covers <code>where</code>, writing your own traits, and more.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>A missing <code>Copy</code> bound.</strong> With only <code>T: PartialOrd</code>, the first version fails at <code>items[0]</code>:</li>
+</ul>
+<pre><code class="language-rust-error">fn largest&lt;T: PartialOrd&gt;(items: &amp;[T]) -&gt; T {
+    let mut best = items[0];
+    for &amp;item in items {
+        if item &gt; best {
+            best = item;
+        }
+    }
+    best
+}
+
+fn main() {
+    println!(&quot;{}&quot;, largest(&amp;[1, 5, 2]));
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0508]: cannot move out of type `[T]`, a non-copy slice
+</code></pre>
+<ul>
+<li><strong>Calling with a type that doesn&#39;t meet the bound.</strong> <code>largest(&amp;names)</code> with <code>String</code>s gives <code>the trait bound `String: Copy` is not satisfied</code>. The function&#39;s bounds are a promise the caller has to keep. Use <code>largest_ref</code> instead.</li>
+<li><strong>Printing a <code>T</code> without a bound.</strong> <code>println!(&quot;{x}&quot;)</code> with an unbounded <code>T</code> gives <code>`T` doesn&#39;t implement `std::fmt::Display`</code>. Add <code>T: Display</code> (and <code>use std::fmt::Display;</code>).</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>clamp</code>, which keeps a value between a lower and an upper limit: below <code>low</code> it returns <code>low</code>, above <code>high</code> it returns <code>high</code>, otherwise the value itself. Add the trait bound <code>T</code> needs. It should work for numbers, <code>char</code>s and <code>&amp;str</code>s.</p>
+
+<h3>Challenge 2</h3>
+<p>Write <code>fn smallest&lt;T: PartialOrd + Copy&gt;(items: &amp;[T]) -&gt; Option&lt;T&gt;</code>: the smallest element, or <code>None</code> for an empty slice (no panic).</p>
+
+<h3>Challenge 3</h3>
+<p>Write <code>join_all</code>, which turns a slice of anything printable into one <code>String</code>, with <code>separator</code> between the items: <code>join_all(&amp;[1, 2, 3], &quot;, &quot;)</code> is <code>&quot;1, 2, 3&quot;</code>. Add the bound it needs (and the <code>use</code> line for it). An empty slice gives <code>&quot;&quot;</code>.</p>
+
+<p><a href="/learn/generics/generic-functions">Previous: Generic functions</a> <a href="/learn/generics/generic-structs-and-enums">Next: Generic structs and enums</a></p></main></div>
+  </body>
+</html>

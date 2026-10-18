@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Iterators in Rust: map, filter, collect and other adapters | RustArena</title>
+    <meta name="description" content="How Rust iterators work: the Iterator trait, lazy adapters like map, filter and enumerate, consumers like collect, sum and fold, and writing your own." />
+    <link rel="canonical" href="https://rustarena.app/topics/iterators/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Iterators in Rust: map, filter, collect and other adapters | RustArena" />
+    <meta property="og:description" content="How Rust iterators work: the Iterator trait, lazy adapters like map, filter and enumerate, consumers like collect, sum and fold, and writing your own." />
+    <meta property="og:url" content="https://rustarena.app/topics/iterators/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Iterators in Rust: map, filter, collect and other adapters","description":"How Rust iterators work: the Iterator trait, lazy adapters like map, filter and enumerate, consumers like collect, sum and fold, and writing your own.","proficiencyLevel":"Beginner","programmingLanguage":"Rust","inLanguage":"en","isAccessibleForFree":true,"url":"https://rustarena.app/topics/iterators/","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"}}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/topics">Topics</a> › Rust</nav>
+<h1>Iterators in Rust: map, filter, collect and other adapters</h1>
+<p>How Rust iterators work: the Iterator trait, lazy adapters like map, filter and enumerate, consumers like collect, sum and fold, and writing your own.</p>
+<p>An <strong>iterator</strong> produces a sequence of values, one at a time. Anything implementing the <code>Iterator</code> trait has a <code>next</code> method that returns <code>Some(item)</code> until it&#39;s done, then <code>None</code>. <code>for</code> loops call <code>next</code> for you.</p>
+<pre><code class="language-rust">fn main() {
+    let orders = vec![120, 45, 300, 80, 15];
+    let big_total: i32 = orders
+        .iter()
+        .filter(|&amp;&amp;amount| amount &gt;= 50)
+        .map(|amount| amount * 2)
+        .sum();
+    println!(&quot;{big_total}&quot;);
+
+    let labels: Vec&lt;String&gt; = orders.iter().enumerate().map(|(i, a)| format!(&quot;#{}={a}&quot;, i + 1)).collect();
+    println!(&quot;{labels:?}&quot;);
+}
+</code></pre>
+<pre><code class="language-text">1000
+[&quot;#1=120&quot;, &quot;#2=45&quot;, &quot;#3=300&quot;, &quot;#4=80&quot;, &quot;#5=15&quot;]
+</code></pre>
+<h2>Three ways to start</h2>
+<ul>
+<li><code>v.iter()</code> yields <code>&amp;T</code> (borrows), <code>v.iter_mut()</code> yields <code>&amp;mut T</code>, <code>v.into_iter()</code> yields <code>T</code> (consumes <code>v</code>).</li>
+<li>Ranges are iterators: <code>(1..=10)</code>, <code>(0..n).rev()</code>, <code>(0..100).step_by(5)</code>.</li>
+<li>Many methods return one: <code>s.chars()</code>, <code>s.lines()</code>, <code>s.split(&#39;,&#39;)</code>, <code>map.keys()</code>, <code>slice.windows(2)</code>.</li>
+</ul>
+<h2>Adapters (lazy) and consumers (do the work)</h2>
+<p><strong>Adapters</strong> take an iterator and return a new one. They&#39;re <strong>lazy</strong>: nothing runs until a <strong>consumer</strong> pulls values through. Calling <code>v.iter().map(|x| x * 2);</code> on its own does nothing, and rustc warns: &quot;unused <code>Map</code> that must be used... iterators are lazy and do nothing unless consumed&quot;.</p>
+<table>
+<thead>
+<tr>
+<th>Adapters</th>
+<th>Consumers</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>map</code>, <code>filter</code>, <code>filter_map</code></td>
+<td><code>collect</code>, <code>sum</code>, <code>product</code>, <code>count</code></td>
+</tr>
+<tr>
+<td><code>enumerate</code>, <code>zip</code>, <code>chain</code></td>
+<td><code>min</code>, <code>max</code>, <code>min_by_key</code>, <code>max_by</code></td>
+</tr>
+<tr>
+<td><code>take</code>, <code>skip</code>, <code>take_while</code>, <code>skip_while</code></td>
+<td><code>fold</code>, <code>reduce</code></td>
+</tr>
+<tr>
+<td><code>rev</code>, <code>step_by</code>, <code>peekable</code></td>
+<td><code>any</code>, <code>all</code>, <code>find</code>, <code>position</code></td>
+</tr>
+<tr>
+<td><code>flat_map</code>, <code>flatten</code>, <code>inspect</code></td>
+<td><code>last</code>, <code>nth</code>, <code>for_each</code>, <code>partition</code></td>
+</tr>
+<tr>
+<td><code>cloned</code>, <code>copied</code>, <code>windows</code>/<code>chunks</code> (on slices)</td>
+<td><code>join</code> (on <code>Vec&lt;String&gt;</code> after collect)</td>
+</tr>
+</tbody></table>
+<h2>collect needs a target type</h2>
+<p><code>collect</code> can build a <code>Vec</code>, <code>String</code>, <code>HashMap</code>, <code>HashSet</code>, <code>BTreeMap</code> and more, so tell it which: <code>let v: Vec&lt;_&gt; = ...collect();</code> or <code>.collect::&lt;Vec&lt;_&gt;&gt;()</code>. Without that you get E0283 or E0282, &quot;type annotations needed&quot;. Two handy tricks:</p>
+<ul>
+<li>Collecting <code>(key, value)</code> pairs builds a map: <code>.collect::&lt;HashMap&lt;_, _&gt;&gt;()</code>.</li>
+<li>Collecting <code>Result</code>s into <code>Result&lt;Vec&lt;T&gt;, E&gt;</code> stops at the first error: <code>lines.map(|l| l.parse::&lt;i32&gt;()).collect::&lt;Result&lt;Vec&lt;_&gt;, _&gt;&gt;()?</code>.</li>
+</ul>
+<h2>Zero-cost</h2>
+<p>Iterator chains compile down to the same machine code as a hand-written loop, often better, since bounds checks can be removed. Prefer them for clarity; there&#39;s no speed penalty in release builds.</p>
+<h2>Writing your own</h2>
+<p>Implement <code>next</code>, and every adapter above comes for free:</p>
+<pre><code class="language-rust">impl Iterator for Countdown {
+    type Item = u32;
+    fn next(&amp;mut self) -&gt; Option&lt;u32&gt; { ... }
+}
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Collecting references when you wanted values:</strong> &quot;a value of type <code>Vec&lt;i32&gt;</code> cannot be built from an iterator over elements of type <code>&amp;i32</code>&quot; (E0277). Add <code>.copied()</code> or <code>.cloned()</code>.</li>
+<li><strong><code>filter</code> closures get a reference to the item</strong>, so with <code>iter()</code> you see <code>&amp;&amp;i32</code>. Write <code>|&amp;&amp;x| x &gt; 5</code> or <code>|x| **x &gt; 5</code>, or use <code>.copied()</code> first.</li>
+<li><strong>Collecting just to iterate again.</strong> <code>v.iter().map(...).collect::&lt;Vec&lt;_&gt;&gt;().iter().sum()</code> allocates for nothing; chain directly.</li>
+<li><strong><code>sum()</code> without a type:</strong> write <code>let total: i32 = ...sum();</code> or <code>.sum::&lt;i32&gt;()</code>.</li>
+</ul>
+
+<h2>Example</h2>
+<pre><code>use std::collections::HashMap;
+
+struct Countdown {
+    n: u32,
+}
+
+impl Iterator for Countdown {
+    type Item = u32;
+    fn next(&amp;mut self) -&gt; Option&lt;u32&gt; {
+        if self.n == 0 {
+            return None;
+        }
+        self.n -= 1;
+        Some(self.n + 1)
+    }
+}
+
+fn main() {
+    let log = &quot;INFO start\nWARN disk 91%\nERROR db down\nINFO retry\nERROR db down&quot;;
+
+    let errors: Vec&lt;&amp;str&gt; = log.lines().filter(|l| l.starts_with(&quot;ERROR&quot;)).collect();
+    println!(&quot;{} errors, first: {:?}&quot;, errors.len(), errors.first());
+
+    let counts: HashMap&lt;&amp;str, usize&gt; = log.lines().filter_map(|l| l.split_whitespace().next()).fold(HashMap::new(), |mut m, level| {
+        *m.entry(level).or_insert(0) += 1;
+        m
+    });
+    let mut levels: Vec&lt;_&gt; = counts.into_iter().collect();
+    levels.sort();
+    println!(&quot;{levels:?}&quot;);
+
+    let parsed: Result&lt;Vec&lt;i32&gt;, _&gt; = &quot;4 8 15 16&quot;.split(' ').map(|s| s.parse::&lt;i32&gt;()).collect();
+    let broken: Result&lt;Vec&lt;i32&gt;, _&gt; = &quot;4 x 15&quot;.split(' ').map(|s| s.parse::&lt;i32&gt;()).collect();
+    println!(&quot;{parsed:?} / {}&quot;, broken.is_err());
+
+    let squares: Vec&lt;u64&gt; = (1..=5).map(|n: u64| n * n).collect();
+    let (even, odd): (Vec&lt;u64&gt;, Vec&lt;u64&gt;) = squares.iter().partition(|&amp;&amp;n| n % 2 == 0);
+    println!(&quot;{squares:?} even {even:?} odd {odd:?}&quot;);
+
+    let launch: Vec&lt;String&gt; = Countdown { n: 3 }.map(|n| n.to_string()).chain([&quot;liftoff&quot;.to_string()]).collect();
+    println!(&quot;{}&quot;, launch.join(&quot; &quot;));
+
+    let best = [&quot;Ferris:31&quot;, &quot;Corro:12&quot;, &quot;Gopher:25&quot;]
+        .iter()
+        .filter_map(|s| s.split_once(':'))
+        .max_by_key(|(_, score)| score.parse::&lt;u32&gt;().unwrap_or(0));
+    println!(&quot;{best:?}&quot;);
+}
+</code></pre>
+<p>Output:</p>
+<pre><code>2 errors, first: Some(&quot;ERROR db down&quot;)
+[(&quot;ERROR&quot;, 2), (&quot;INFO&quot;, 2), (&quot;WARN&quot;, 1)]
+Ok([4, 8, 15, 16]) / true
+[1, 4, 9, 16, 25] even [4, 16] odd [1, 9, 25]
+3 2 1 liftoff
+Some((&quot;Ferris&quot;, &quot;31&quot;))
+</code></pre>
+<h2>Practice it</h2><ul><li><a href="/learn/iterators/what-an-iterator-is">Lesson: Iterators</a></li></ul></main></div>
+  </body>
+</html>

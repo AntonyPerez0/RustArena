@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Calling C with FFI · Unsafe Rust (Rust) | RustArena</title>
+    <meta name="description" content="A foreign function interface (FFI) lets Rust call functions written in other languages, almost always through the C calling convention (the C ABI). It's…" />
+    <link rel="canonical" href="https://rustarena.app/learn/unsafe/calling-c-with-ffi/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Calling C with FFI · Unsafe Rust (Rust) | RustArena" />
+    <meta property="og:description" content="A foreign function interface (FFI) lets Rust call functions written in other languages, almost always through the C calling convention (the C ABI). It's…" />
+    <meta property="og:url" content="https://rustarena.app/learn/unsafe/calling-c-with-ffi/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Calling C with FFI","description":"A foreign function interface (FFI) lets Rust call functions written in other languages, almost always through the C calling convention (the C ABI). It's…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/unsafe/calling-c-with-ffi/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Advanced Rust › Unsafe Rust</nav>
+<p>Step 3 of 6</p>
+<h1>Calling C with FFI</h1>
+<p>A <strong>foreign function interface</strong> (FFI) lets Rust call functions written in other languages, almost always through the C calling convention (the <strong>C ABI</strong>). It&#39;s how Rust uses C libraries like SQLite, OpenSSL or zlib, calls operating system APIs, and how Python or C programs call into Rust.</p>
+<p>On Linux, the C standard library is always linked into Rust programs, so its functions are ready to declare and call:</p>
+<pre><code class="language-rust">use std::ffi::{c_char, c_int, CStr, CString};
+
+unsafe extern &quot;C&quot; {
+    fn abs(x: c_int) -&gt; c_int;
+    fn strlen(s: *const c_char) -&gt; usize;
+}
+
+fn main() {
+    // SAFETY: C&#39;s abs is defined for every int except INT_MIN; -42 is fine.
+    let a = unsafe { abs(-42) };
+    println!(&quot;abs(-42) = {a}&quot;);
+
+    let name = CString::new(&quot;Ferris&quot;).expect(&quot;no NUL bytes inside&quot;);
+    // SAFETY: name.as_ptr() is a NUL-terminated string that lives until the
+    // end of main, and strlen only reads it.
+    let n = unsafe { strlen(name.as_ptr()) };
+    println!(&quot;strlen = {n}&quot;);
+
+    // From C to Rust: view NUL-terminated bytes as a CStr, then as a &amp;str.
+    let c = CStr::from_bytes_with_nul(b&quot;crab\0&quot;).expect(&quot;exactly one NUL, at the end&quot;);
+    println!(&quot;{:?} -&gt; {}&quot;, c, c.to_str().unwrap());
+}
+</code></pre>
+<pre><code class="language-text">abs(-42) = 42
+strlen = 6
+&quot;crab&quot; -&gt; crab
+</code></pre>
+<p>Piece by piece:</p>
+<ul>
+<li><code>unsafe extern &quot;C&quot; { ... }</code> declares functions that exist somewhere else and use the C ABI. The compiler can&#39;t check these signatures against the C code, so the block itself is <code>unsafe</code>: by writing it, <strong>you</strong> vouch that they&#39;re right. (Since edition 2024 the <code>unsafe</code> is required; plain <code>extern &quot;C&quot; {</code> fails with <code>extern blocks must be unsafe</code>.)</li>
+<li>Calling a foreign function is unsafe too: the compiler can&#39;t know what the C code does with your arguments.</li>
+<li>C types have Rust names in <code>std::ffi</code>: <code>c_int</code>, <code>c_char</code>, <code>c_double</code>, and so on. C&#39;s <code>size_t</code> is <code>usize</code>.</li>
+<li>C strings are a pointer to bytes ending in a NUL (<code>\0</code>) byte. Rust strings store their length instead and have no NUL. <strong><code>CString</code></strong> makes an owned, NUL-terminated copy of a Rust string (<code>CString::new</code> fails if the text contains a <code>\0</code>), and <code>.as_ptr()</code> gives C the <code>*const c_char</code> it wants. <strong><code>CStr</code></strong> is the borrowed view in the other direction, for strings C gives you.</li>
+<li><code>b&quot;crab\0&quot;</code> is a <strong>byte string literal</strong>: a <code>&amp;[u8; 5]</code> holding the bytes of the text, here with a NUL byte written as <code>\0</code> at the end.</li>
+</ul>
+<p>If a foreign function really is safe for <strong>every</strong> possible argument, you can declare it <code>safe fn</code> inside the block and call it without <code>unsafe</code>. <code>abs</code> doesn&#39;t qualify: in C, <code>abs(INT_MIN)</code> is undefined behavior, because the positive value doesn&#39;t fit in an <code>int</code>.</p>
+<h2>Common mistakes</h2>
+<p><strong>Letting the CString die too early.</strong> <code>.as_ptr()</code> borrows from the <code>CString</code>, but raw pointers don&#39;t keep anything alive:</p>
+<pre><code class="language-rust">let p = CString::new(&quot;hi&quot;).unwrap().as_ptr(); // the CString is dropped right here
+let n = unsafe { strlen(p) };                  // reads freed memory: UB
+</code></pre>
+<p>The compiler catches this common case with a warning: <code>this creates a dangling pointer because temporary `CString` is dropped at end of statement</code>. Bind the <code>CString</code> to a variable first.</p>
+<p><strong>Passing a Rust string straight to C.</strong> <code>&quot;hello&quot;.as_ptr()</code> points to bytes with no NUL at the end, so <code>strlen</code> keeps reading past the string into whatever memory follows. Always go through <code>CString</code>.</p>
+<p><strong>Getting the signature wrong.</strong> Declaring <code>fn abs(x: i64) -&gt; i64</code> for C&#39;s <code>int abs(int)</code> compiles fine and then passes the wrong number of bytes. Nothing checks it for you.</p>
+<h2>FFI at work</h2>
+<ul>
+<li>The <strong><code>libc</code></strong> crate already declares the whole C library for every platform; use it instead of writing declarations by hand.</li>
+<li><strong><code>bindgen</code></strong> generates the <code>extern</code> declarations from a C header file, and the <strong><code>cc</code></strong> crate compiles C code from a <code>build.rs</code> script. <code>#[link(name = &quot;z&quot;)]</code> on an extern block links a system library.</li>
+<li>Going the other way, <code>#[unsafe(no_mangle)] pub extern &quot;C&quot; fn add(a: i32, b: i32) -&gt; i32</code> exports a Rust function C can call. <strong><code>cbindgen</code></strong> writes the C header for it, and <strong>PyO3</strong> exposes Rust functions to Python.</li>
+<li>The usual shape is a small <code>-sys</code> crate with the raw declarations, plus a safe wrapper crate on top: exactly the safe-abstraction pattern from the last step.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>c_len</code>, which measures a Rust string with C&#39;s <code>strlen</code> (declared for you). Convert it with <code>CString::new</code>; if the text contains a NUL byte, return <code>None</code>. Don&#39;t use Rust&#39;s <code>.len()</code>.</p>
+
+<h3>Challenge 2</h3>
+<p>Write a <strong>sound</strong> safe wrapper around C&#39;s <code>abs</code>. As you read above, <code>abs(INT_MIN)</code> is undefined behavior in C, so the wrapper must never pass <code>i32::MIN</code> to it: return <code>None</code> for that input, and <code>Some(abs(x))</code> otherwise. Call the C function (no Rust <code>.abs()</code> methods).</p>
+
+<h3>Challenge 3</h3>
+<p>Write the FFI declaration yourself this time. Declare C&#39;s <code>int strcmp(const char *a, const char *b)</code> in an <code>unsafe extern &quot;C&quot;</code> block, then write <code>c_compare(a, b)</code>, which compares two Rust strings with it and returns an <code>Ordering</code> (<code>strcmp</code> returns a negative number, zero or a positive number). Return <code>None</code> if either string contains a NUL byte.</p>
+
+<p><a href="/learn/unsafe/unsafe-functions-and-safe-abstractions">Previous: Unsafe functions and safe abstractions</a> <a href="/learn/unsafe/global-state-without-static-mut">Next: Global state without static mut</a></p></main></div>
+  </body>
+</html>

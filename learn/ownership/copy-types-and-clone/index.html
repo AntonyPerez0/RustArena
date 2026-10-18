@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Copy types and clone · Ownership (Rust) | RustArena</title>
+    <meta name="description" content="Why did let b = a; leave a usable when a was an integer? Because i32 is a Copy type. Its value lives entirely on the stack and copying it is as cheap as…" />
+    <link rel="canonical" href="https://rustarena.app/learn/ownership/copy-types-and-clone/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Copy types and clone · Ownership (Rust) | RustArena" />
+    <meta property="og:description" content="Why did let b = a; leave a usable when a was an integer? Because i32 is a Copy type. Its value lives entirely on the stack and copying it is as cheap as…" />
+    <meta property="og:url" content="https://rustarena.app/learn/ownership/copy-types-and-clone/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Copy types and clone","description":"Why did let b = a; leave a usable when a was an integer? Because i32 is a Copy type. Its value lives entirely on the stack and copying it is as cheap as…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/ownership/copy-types-and-clone/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Ownership › Ownership</nav>
+<p>Step 4 of 6</p>
+<h1>Copy types and clone</h1>
+<p>Why did <code>let b = a;</code> leave <code>a</code> usable when <code>a</code> was an integer? Because <code>i32</code> is a <strong><code>Copy</code> type</strong>. Its value lives entirely on the stack and copying it is as cheap as moving it, so Rust just copies it and both variables stay valid. There&#39;s no heap block that could be freed twice. (A <strong>trait</strong> is a capability a type can have; you&#39;ll write your own in the traits module. <code>Copy</code> is the capability &quot;can be duplicated by copying its bytes&quot;.)</p>
+<p>These types are <code>Copy</code>:</p>
+<ul>
+<li>all integers (<code>i32</code>, <code>u8</code>, <code>usize</code>, ...) and floats (<code>f64</code>, <code>f32</code>)</li>
+<li><code>bool</code> and <code>char</code></li>
+<li>tuples and arrays made only of <code>Copy</code> types: <code>(i32, bool)</code>, <code>[f64; 3]</code></li>
+<li>string literals (<code>&amp;str</code>): copying one copies a pointer to text stored in the program, never the text itself</li>
+</ul>
+<p>These are <strong>not</strong> <code>Copy</code>: <code>String</code>, <code>Vec&lt;T&gt;</code>, and anything that contains one, like <code>(String, i32)</code> or <code>[String; 2]</code>. The rule of thumb: <strong>if a type owns heap memory, it isn&#39;t <code>Copy</code></strong>, because copying its handle would create two owners.</p>
+<pre><code class="language-rust">fn main() {
+    let score = 1200;          // i32 is Copy
+    let pos = (3, 4);          // a tuple of Copy types is Copy
+    let best = score;
+    let start = pos;
+    println!(&quot;{} {}&quot;, score, best);
+    println!(&quot;{:?} {:?}&quot;, pos, start);
+}
+</code></pre>
+<pre><code class="language-text">1200 1200
+(3, 4) (3, 4)
+</code></pre>
+<p>One <code>String</code> inside a tuple is enough to make the whole tuple move:</p>
+<pre><code class="language-rust-error">fn main() {
+    let player = (String::from(&quot;Ferris&quot;), 100);
+    let backup = player;
+    println!(&quot;{:?} {:?}&quot;, player, backup);
+}
+</code></pre>
+<pre><code class="language-compiler">error[E0382]: borrow of moved value: `player`
+  |
+2 |     let player = (String::from(&quot;Ferris&quot;), 100);
+  |         ------ move occurs because `player` has type `(String, i32)`, which does not implement the `Copy` trait
+</code></pre>
+<h2>clone: an explicit deep copy</h2>
+<p>When you really need two independent <code>String</code>s or <code>Vec</code>s, ask for one with <code>.clone()</code>. It allocates a <strong>new</strong> heap block and copies every byte into it:</p>
+<pre><code class="language-text">let a = String::from(&quot;hi&quot;);
+let b = a.clone();
+
+     a                              b
+    ┌────────────┐                 ┌────────────┐
+    │ ptr ───────┼──┐              │ ptr ───────┼──┐
+    │ len 2      │  │              │ len 2      │  │
+    │ cap 2      │  │              │ cap 2      │  │
+    └────────────┘  ▼              └────────────┘  ▼
+                  ┌───┬───┐                      ┌───┬───┐
+            HEAP  │ h │ i │                      │ h │ i │
+                  └───┴───┘                      └───┴───┘
+</code></pre>
+<p>Two owners, two heap blocks: each is freed once, by its own owner. Changing one doesn&#39;t affect the other:</p>
+<pre><code class="language-rust">fn main() {
+    let defaults = vec![String::from(&quot;sound: on&quot;), String::from(&quot;music: on&quot;)];
+    let mut custom = defaults.clone();
+    custom.push(String::from(&quot;subtitles: on&quot;));
+    println!(&quot;defaults: {:?}&quot;, defaults);
+    println!(&quot;custom: {:?}&quot;, custom);
+}
+</code></pre>
+<pre><code class="language-text">defaults: [&quot;sound: on&quot;, &quot;music: on&quot;]
+custom: [&quot;sound: on&quot;, &quot;music: on&quot;, &quot;subtitles: on&quot;]
+</code></pre>
+<h2>What clone costs</h2>
+<p>Cloning a <code>String</code> means one allocation plus copying all of its bytes. Cloning a <code>Vec&lt;String&gt;</code> clones the vector <strong>and every string in it</strong>: here, three allocations. For a few short strings, nobody will notice. Inside a loop that runs a million times, or on the contents of a 50 MB file, you will. A move, by contrast, always copies just the 24-byte handle.</p>
+<p><strong>Workplace note:</strong> <code>.clone()</code> is the quickest way to make an ownership error go away, which is why reviewers ask &quot;do we really need a copy here?&quot; when they see one. Often the better answer is borrowing (next module). Clone when you truly need two independent values, for example when you&#39;ll change one and must keep the other as it was. Cloning a small string once is fine; don&#39;t feel bad about it. And <code>cargo clippy</code> warns about <code>.clone()</code> on a <code>Copy</code> type (the <code>clone_on_copy</code> lint): just write <code>x</code>.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Cloning to silence every error.</strong> It compiles, but it hides a design question and costs memory and time.</li>
+<li><strong>Expecting a tuple or array with a <code>String</code> inside to be <code>Copy</code>.</strong> It&#39;s only <code>Copy</code> if every part is.</li>
+<li><strong>Calling <code>.clone()</code> on an <code>i32</code> or <code>bool</code>.</strong> It works, but it&#39;s noise: <code>Copy</code> types copy themselves.</li>
+</ul>
+
+<h2>Your task</h2>
+<p><code>template</code> must stay unchanged while <code>letter</code> gets extra text. Right now <code>template</code> moves into <code>letter</code>, so it can&#39;t be printed afterwards. Add <strong>one</strong> <code>.clone()</code> in the right place so the program prints:</p>
+<pre><code>Dear customer,
+Dear customer, your order has shipped.
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>The program saves the old high score, champion and lineup, then changes the current ones. It doesn&#39;t compile: two of the three &quot;saves&quot; are moves. Add <code>.clone()</code> <strong>only where it&#39;s needed</strong>: <code>high_score</code> is an <code>i32</code>, which is <code>Copy</code>, so it must not be cloned. The program should print:</p>
+<pre><code>was: 9500 by Ferris (2 players)
+now: 9800 by Ferris II (3 players)
+</code></pre>
+
+<h3>Challenge 3</h3>
+<p>The program reads player names, one per line. Each <code>name</code> should be <strong>moved</strong> into <code>players</code>, and a <strong>copy</strong> should be kept in <code>longest</code> whenever the name is longer than the longest so far (the first one wins a tie). Fill in the loop body. For the input:</p>
+<pre><code>Ana
+Bartholomew
+Cy
+</code></pre>
+<p>it prints:</p>
+<pre><code>3 players
+longest name: Bartholomew
+</code></pre>
+<p>(<code>Vec::new()</code> creates an empty vector, and the annotation <code>Vec&lt;String&gt;</code> says what it will hold. <code>std::io::stdin().lines()</code> gives you each input line as an owned <code>String</code>, wrapped in a <code>Result</code>, which is why each line needs <code>.expect(...)</code>.)</p>
+
+<p><a href="/learn/ownership/moves-one-owner-at-a-time">Previous: Moves: one owner at a time</a> <a href="/learn/ownership/ownership-and-functions">Next: Ownership and functions</a></p></main></div>
+  </body>
+</html>

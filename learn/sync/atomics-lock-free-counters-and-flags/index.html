@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Atomics: lock-free counters and flags · Sharing data between threads (Rust) | RustArena</title>
+    <meta name="description" content="For a single number or flag, a Mutex is heavier than it needs to be. Atomic types from std::sync::atomic (AtomicUsize, AtomicU64, AtomicI32, AtomicBool,…" />
+    <link rel="canonical" href="https://rustarena.app/learn/sync/atomics-lock-free-counters-and-flags/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Atomics: lock-free counters and flags · Sharing data between threads (Rust) | RustArena" />
+    <meta property="og:description" content="For a single number or flag, a Mutex is heavier than it needs to be. Atomic types from std::sync::atomic (AtomicUsize, AtomicU64, AtomicI32, AtomicBool,…" />
+    <meta property="og:url" content="https://rustarena.app/learn/sync/atomics-lock-free-counters-and-flags/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Atomics: lock-free counters and flags","description":"For a single number or flag, a Mutex is heavier than it needs to be. Atomic types from std::sync::atomic (AtomicUsize, AtomicU64, AtomicI32, AtomicBool,…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/sync/atomics-lock-free-counters-and-flags/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Concurrency and async › Sharing data between threads</nav>
+<p>Step 6 of 7</p>
+<h1>Atomics: lock-free counters and flags</h1>
+<p>For a single number or flag, a <code>Mutex</code> is heavier than it needs to be. <strong>Atomic types</strong> from <code>std::sync::atomic</code> (<code>AtomicUsize</code>, <code>AtomicU64</code>, <code>AtomicI32</code>, <code>AtomicBool</code>, ...) are plain integers and booleans whose operations are single, indivisible CPU instructions: no thread ever sees a half-done update, and there&#39;s no lock to wait for. Their methods take <code>&amp;self</code>, so a shared reference (or an <code>Arc</code>) is all a thread needs.</p>
+<pre><code class="language-rust">use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
+
+fn main() {
+    let requests = vec![&quot;GET /&quot;, &quot;POST /login&quot;, &quot;GET /shop&quot;, &quot;GET /&quot;, &quot;DELETE /cart&quot;, &quot;GET /about&quot;];
+    let gets = AtomicUsize::new(0);
+    thread::scope(|s| {
+        for chunk in requests.chunks(2) {
+            s.spawn(|| {
+                for line in chunk.iter() {
+                    if line.starts_with(&quot;GET&quot;) {
+                        gets.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            });
+        }
+    });
+    println!(&quot;GET requests: {}&quot;, gets.load(Ordering::Relaxed));
+}
+</code></pre>
+<pre><code class="language-text">GET requests: 4
+</code></pre>
+<p>Every thread borrows the one <code>gets</code> counter; <code>fetch_add</code> adds 1 in a single step that no other thread can interrupt. Notice <code>chunk.iter()</code> rather than <code>for line in chunk</code>: a closure that uses the loop variable <code>chunk</code> directly borrows that <em>variable</em>, which disappears at the end of each turn of the loop (<code>E0373</code>). Calling a method on it borrows only the data it points to, which lives as long as <code>requests</code>.</p>
+<p>The operations you&#39;ll use most:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>load(ord)</code> / <code>store(v, ord)</code></td>
+<td>read / write the value</td>
+</tr>
+<tr>
+<td><code>fetch_add(n, ord)</code>, <code>fetch_sub(n, ord)</code></td>
+<td>add / subtract in one step, returning the <strong>previous</strong> value</td>
+</tr>
+<tr>
+<td><code>fetch_max(v, ord)</code>, <code>fetch_min(v, ord)</code></td>
+<td>keep the larger / smaller value</td>
+</tr>
+<tr>
+<td><code>swap(v, ord)</code></td>
+<td>write a new value and return the old one</td>
+</tr>
+<tr>
+<td><code>compare_exchange(expected, new, ...)</code></td>
+<td>write <code>new</code> only if the value is still <code>expected</code></td>
+</tr>
+</tbody></table>
+<h2>Ordering, briefly</h2>
+<p>Every operation takes an <strong><code>Ordering</code></strong>. It tells the compiler and the CPU how much they may reorder <em>other</em> memory accesses around this one (both reorder freely to go faster):</p>
+<ul>
+<li><strong><code>Relaxed</code></strong>: only this one variable is atomic; no promises about other data. Right for counters and statistics that you read after <code>join</code> (joining already synchronizes).</li>
+<li><strong><code>Release</code></strong> (on a store) with <strong><code>Acquire</code></strong> (on a load): for publishing. Write your data, then <code>store(true, Release)</code> a flag; a thread that sees the flag with <code>load(Acquire)</code> is guaranteed to see the data too.</li>
+<li><strong><code>SeqCst</code></strong>: the strictest; all threads agree on one order of all <code>SeqCst</code> operations. The safe choice when you&#39;re unsure, and the cost is small on most hardware.</li>
+</ul>
+<p>Memory ordering is a deep topic; Mara Bos&#39;s free book <em>Rust Atomics and Locks</em> covers it properly. For everyday code: counters use <code>Relaxed</code>, flags that hand over data use <code>Release</code>/<code>Acquire</code>.</p>
+<h2>A stop flag</h2>
+<p><code>AtomicBool</code> is the standard way to tell a background thread to stop:</p>
+<pre><code class="language-rust">use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
+
+fn main() {
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&amp;stop);
+    let worker = thread::spawn(move || {
+        while !flag.load(Ordering::Acquire) {
+            thread::sleep(Duration::from_millis(1));
+        }
+        &quot;worker stopped cleanly&quot;
+    });
+    thread::sleep(Duration::from_millis(5));
+    stop.store(true, Ordering::Release);
+    println!(&quot;{}&quot;, worker.join().unwrap());
+}
+</code></pre>
+<pre><code class="language-text">worker stopped cleanly
+</code></pre>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Load, then store</strong>: <code>let n = c.load(Relaxed); c.store(n + 1, Relaxed);</code> is two operations, and another thread can sneak in between them: lost updates. Use <code>fetch_add</code> (or <code>compare_exchange</code>) for read-modify-write.</li>
+<li><strong>Several related values in separate atomics</strong> (a balance <em>and</em> a transaction count). Each is atomic on its own, but they can&#39;t change <em>together</em>. Use a <code>Mutex</code> around a struct.</li>
+<li><strong>Agonizing over <code>Ordering</code> for a counter.</strong> <code>Relaxed</code> is correct there.</li>
+<li><strong><code>move</code> on a scoped thread that uses the counter</strong>: <code>move</code> would move the counter itself into the first thread. If you need <code>move</code> (for a loop variable), make a reference first, <code>let hits = &amp;hits;</code>, and move that.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Write <code>fn count_matching(lines: &amp;[&amp;str], needle: &amp;str, workers: usize) -&gt; usize</code>. Split <code>lines</code> into chunks of <code>lines.len().div_ceil(workers).max(1)</code>, scan each chunk in its own scoped thread, and count the lines containing <code>needle</code> with <strong>one shared <code>AtomicUsize</code></strong> (<code>fetch_add</code>). Return the final count.</p>
+
+<h3>Challenge 2</h3>
+<p>Fill in the atomic operation that adds 1 and can&#39;t lose updates. The program should print <code>dropped packets: 300</code>.</p>
+
+<h3>Challenge 3</h3>
+<p>Three arena servers report their match scores. In one <code>thread::scope</code>, give each server&#39;s list its own thread. Track the <strong>highest</strong> score with a shared <code>AtomicU32</code> and <code>fetch_max</code>, and the number of games with a shared <code>AtomicUsize</code>. Print:</p>
+<pre><code>best score: 97
+games: 9
+</code></pre>
+
+<p><a href="/learn/sync/rwlock-and-how-deadlocks-happen">Previous: RwLock, and how deadlocks happen</a> <a href="/learn/sync/global-state-oncelock-and-lazylock">Next: Global state: OnceLock and LazyLock</a></p></main></div>
+  </body>
+</html>

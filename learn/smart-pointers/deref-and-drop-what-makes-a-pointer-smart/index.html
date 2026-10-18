@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f0b09" />
+    <script>
+      // Apply the saved theme and text size before anything paints.
+      (function () {
+        var t = "system", z = 1;
+        try {
+          var s = JSON.parse(localStorage.getItem("rustarena-v1") || "{}").settings || {};
+          t = s.theme || "system";
+          z = s.textScale || 1;
+        } catch (e) {}
+        if (t === "system") t = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var r = document.documentElement;
+        r.setAttribute("data-theme", t);
+        r.style.setProperty("--scale", String(z));
+      })();
+    </script>
+    
+    
+    <script type="module" crossorigin src="/assets/index-Ca9ISGjs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-szc-TAah.css">
+    <link rel="preload" as="font" type="font/woff2" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" crossorigin="">
+    <title>Deref and Drop: what makes a pointer smart · Smart Pointers (Rust) | RustArena</title>
+    <meta name="description" content="Two traits give smart pointers their behavior. Deref makes a type usable like a reference to what it holds. Drop runs cleanup code when a value goes…" />
+    <link rel="canonical" href="https://rustarena.app/learn/smart-pointers/deref-and-drop-what-makes-a-pointer-smart/" />
+    <meta property="og:site_name" content="RustArena" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Deref and Drop: what makes a pointer smart · Smart Pointers (Rust) | RustArena" />
+    <meta property="og:description" content="Two traits give smart pointers their behavior. Deref makes a type usable like a reference to what it holds. Drop runs cleanup code when a value goes…" />
+    <meta property="og:url" content="https://rustarena.app/learn/smart-pointers/deref-and-drop-what-makes-a-pointer-smart/" />
+    <meta property="og:image" content="https://rustarena.app/og-image.png" />
+    <meta property="og:image:alt" content="RustArena: learn Rust by writing real code" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"LearningResource","name":"Deref and Drop: what makes a pointer smart","description":"Two traits give smart pointers their behavior. Deref makes a type usable like a reference to what it holds. Drop runs cleanup code when a value goes…","learningResourceType":"Exercise","interactivityType":"active","isAccessibleForFree":true,"inLanguage":"en","programmingLanguage":"Rust","isPartOf":{"@type":"Course","name":"Learn Rust: from zero to job-ready","url":"https://rustarena.app/"},"url":"https://rustarena.app/learn/smart-pointers/deref-and-drop-what-makes-a-pointer-smart/"}</script>
+  </head>
+  <body>
+    <div id="root"><header class="topbar"><a class="brand" href="/" aria-label="RustArena home"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F98A1F"/><stop offset="0.5" stop-color="#E5531A"/><stop offset="1" stop-color="#B7410E"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#bm)"/><rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" stroke-opacity="0.22"/><path d="M5.2 15.4c-1.7-1.3-1.9-4-.4-5.6 1-1 2.4-1.2 3.6-.7l-1.3 2.3 2.4.4c.3 1.6-.4 3.2-1.8 3.9-.8.4-1.7.3-2.5-.3z" fill="#fff"/><path d="M26.8 15.4c1.7-1.3 1.9-4 .4-5.6-1-1-2.4-1.2-3.6-.7l1.3 2.3-2.4.4c-.3 1.6.4 3.2 1.8 3.9.8.4 1.7.3 2.5-.3z" fill="#fff"/><path d="M8.6 15.2l2.4 2.2M23.4 15.2l-2.4 2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 22.2l-2 2.6M12.6 23.2l-1.2 2.8M21.8 22.2l2 2.6M19.4 23.2l1.2 2.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M8.6 20.4c0-3.9 3.3-7 7.4-7s7.4 3.1 7.4 7c0 1.9-3.3 3.3-7.4 3.3s-7.4-1.4-7.4-3.3zM9.6 16.6l.4-2.2 1.6 1M11.4 14.6l.9-2.1 1.3 1.4M14 13.4l1-1.9 1 1.9M17 13.4l1.3-1.4.9 2.1M19.4 14.6l1.6-1 .4 2.2" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/><circle cx="13.3" cy="18.6" r="1.35" fill="#2b1206"/><circle cx="18.7" cy="18.6" r="1.35" fill="#2b1206"/></svg><span class="brand-name">Rust<b>Arena</b></span></a><nav class="nav" aria-label="Main"><a href="/roadmap">Roadmap</a><a href="/learn">Learn</a><a href="/deathmatch">Deathmatch</a><a href="/daily">Daily</a><a href="/projects">Projects</a><a href="/playground">Playground</a><a href="/pro">Pro</a><a href="/profile">Profile</a></nav></header><main id="main" class="main prerendered md"><nav aria-label="Breadcrumb"><a href="/learn">Learn</a> › Idiomatic Rust › Smart Pointers</nav>
+<p>Step 3 of 7</p>
+<h1>Deref and Drop: what makes a pointer smart</h1>
+<p>Two traits give smart pointers their behavior. <strong><code>Deref</code></strong> makes a type usable like a reference to what it holds. <strong><code>Drop</code></strong> runs cleanup code when a value goes away. You met both briefly in the std traits module; here&#39;s how they work together.</p>
+<h2>Deref and deref coercion</h2>
+<p><code>impl Deref for MyType { type Target = T; fn deref(&amp;self) -&gt; &amp;T }</code> says &quot;a <code>&amp;MyType</code> can be used as a <code>&amp;T</code>&quot;. Then two things happen automatically:</p>
+<ul>
+<li><code>*value</code> works, and <strong>method calls</strong> look through the pointer: <code>boxed_string.len()</code> finds <code>String::len</code>.</li>
+<li><strong>Deref coercion</strong>: when you pass <code>&amp;MyType</code> where a <code>&amp;T</code> is expected, Rust inserts the <code>deref</code> calls for you, as many steps as needed.</li>
+</ul>
+<pre><code class="language-rust">use std::ops::Deref;
+
+struct Username(String);
+
+impl Deref for Username {
+    type Target = String;
+
+    fn deref(&amp;self) -&gt; &amp;String {
+        &amp;self.0
+    }
+}
+
+fn greet(name: &amp;str) {
+    println!(&quot;Welcome, {name}!&quot;);
+}
+
+fn main() {
+    let user = Username(String::from(&quot;ferris&quot;));
+    println!(&quot;{} letters&quot;, user.len()); // String::len, through Deref
+    greet(&amp;user); // &amp;Username -&gt; &amp;String -&gt; &amp;str
+
+    let boxed = Box::new(String::from(&quot;corro&quot;));
+    greet(&amp;boxed); // &amp;Box&lt;String&gt; -&gt; &amp;String -&gt; &amp;str
+}
+</code></pre>
+<pre><code class="language-text">6 letters
+Welcome, ferris!
+Welcome, corro!
+</code></pre>
+<p><code>Box&lt;T&gt;</code> implements <code>Deref&lt;Target = T&gt;</code>, <code>String</code> implements <code>Deref&lt;Target = str&gt;</code>, and <code>Vec&lt;T&gt;</code> implements <code>Deref&lt;Target = [T]&gt;</code>. That&#39;s why a <code>&amp;String</code> works where a <code>&amp;str</code> is wanted and a <code>&amp;Vec&lt;T&gt;</code> where a <code>&amp;[T]</code> is. Implement <code>Deref</code> for wrapper types that <em>are</em> a kind of pointer or container; the Rust API guidelines warn against using it to fake inheritance between unrelated structs.</p>
+<h2>Drop: cleanup at the end of a scope</h2>
+<p>When a value goes out of scope, Rust calls its <code>drop</code> method (if it has one), then drops its fields. That&#39;s how a Box frees its heap memory, a <code>File</code> closes, and a lock is released. This pattern of &quot;cleanup tied to a value&#39;s lifetime&quot; is called <strong>RAII</strong>. The order is fixed, so you can rely on it:</p>
+<pre><code class="language-rust">struct Noisy(&amp;&#39;static str);
+
+impl Drop for Noisy {
+    fn drop(&amp;mut self) {
+        println!(&quot;drop {}&quot;, self.0);
+    }
+}
+
+fn main() {
+    let _a = Noisy(&quot;a&quot;);
+    let b = Noisy(&quot;b&quot;);
+    {
+        let _inner = Noisy(&quot;inner&quot;);
+        println!(&quot;leaving inner scope&quot;);
+    }
+    drop(b); // drop right now
+    let _c = Noisy(&quot;c&quot;);
+    println!(&quot;end of main&quot;);
+}
+</code></pre>
+<pre><code class="language-text">leaving inner scope
+drop inner
+drop b
+end of main
+drop c
+drop a
+</code></pre>
+<ul>
+<li>Values are dropped at the end of their scope, in <strong>reverse order of declaration</strong>: <code>_c</code> (declared last) goes before <code>_a</code>. Later values may depend on earlier ones, so they go first.</li>
+<li><code>drop(b)</code> drops a value early. It&#39;s an ordinary function from the prelude (<code>std::mem::drop</code>) that takes ownership and does nothing, so the value is dropped when the function ends.</li>
+<li>The fields of a struct are dropped after the struct&#39;s own <code>drop</code>, in the order they&#39;re declared. Elements of a <code>Vec</code> are dropped first to last.</li>
+</ul>
+<h2>Common mistakes</h2>
+<ul>
+<li><strong>Calling <code>.drop()</code> yourself</strong>: <code>b.drop()</code> is <code>error[E0040]: explicit use of destructor method</code>. Use <code>drop(b)</code>; Rust must be sure it never runs twice.</li>
+<li><strong><code>let _ = Noisy(&quot;x&quot;);</code> drops the new value immediately.</strong> The pattern <code>_</code> doesn&#39;t bind anything, so a guard created that way is gone on the same line. Write <code>let _guard = ...</code> to keep it alive until the end of the scope.</li>
+<li><strong>Using a value after <code>drop(x)</code></strong>: <code>drop</code> took ownership, so it&#39;s <code>error[E0382]: borrow of moved value</code>.</li>
+</ul>
+
+<h2>Your task</h2>
+<p>Implement <code>Drop</code> for <code>Connection</code> so dropping one prints <code>closing &lt;name&gt;</code>. Then finish <code>main</code>: it opens <code>db</code>, then <code>cache</code>, closes <code>db</code> early with <code>drop</code>, prints <code>working</code>, and lets <code>cache</code> close at the end. The output must be exactly:</p>
+<pre><code>opened db
+opened cache
+closing db
+working
+closing cache
+</code></pre>
+
+<h3>Challenge 2</h3>
+<p>A <code>SortedScores</code> always keeps its scores sorted, so it must never hand out a <code>&amp;mut</code> to its inner <code>Vec</code>. Implement:</p>
+<ul>
+<li><code>SortedScores::new(scores: Vec&lt;u32&gt;) -&gt; SortedScores</code>: sorts the scores and wraps them.</li>
+<li><code>Deref</code> for <code>SortedScores</code> with <code>Target = [u32]</code>, so callers can use every read-only slice method (<code>len</code>, <code>first</code>, <code>last</code>, <code>iter</code>, indexing) without you writing them.</li>
+</ul>
+<p>Don&#39;t implement <code>DerefMut</code>: that&#39;s what keeps the scores sorted.</p>
+
+<h3>Challenge 3</h3>
+<p>Write a tracing helper. A <code>Span</code> prints <code>enter &lt;name&gt;</code> when it&#39;s created with <code>Span::new(name)</code> and <code>exit &lt;name&gt;</code> when it&#39;s dropped. Then write <code>main</code> so the program prints exactly:</p>
+<pre><code>enter request
+enter parse
+exit parse
+enter save
+exit save
+exit request
+</code></pre>
+<p>Create each span once and let scopes (or <code>drop</code>) end them. Don&#39;t print the lines with <code>println!</code> in <code>main</code>.</p>
+
+<p><a href="/learn/smart-pointers/trees-with-box">Previous: Trees with Box</a> <a href="/learn/smart-pointers/rc-t-shared-ownership">Next: Rc&lt;T&gt;: shared ownership</a></p></main></div>
+  </body>
+</html>
