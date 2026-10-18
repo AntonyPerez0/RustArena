@@ -63,7 +63,7 @@ export default function About() {
           Built with React, React Router, CodeMirror, Vite, marked, Lucide icons, and the Inter and JetBrains Mono fonts.
         </li>
         <li>
-          RustArena is a sister site of <A href="https://cpparena.com">C/C++ Arena</A> and <A href="https://github.com/AntonyPerez0/Java-Arena">Java Arena</A>, and shares their design.
+          RustArena is a sister site of <A href="https://cpparena.com">C/C++ Arena</A>, <A href="https://javaarena.com">Java Arena</A> and <A href="https://pythonarena.org">Python Arena</A>, and shares their design.
         </li>
       </ul>
 
