@@ -17,7 +17,25 @@ const SOURCES = [
   { file: "index.html" },
 ];
 // Identifiers rather than pages, and addresses built at run time.
-const IGNORE = [/\$\{/, /^https?:\/\/(localhost|127\.|example\.(com|org))/, /^https:\/\/api\.github\.com/, /^http:\/\/www\.sitemaps\.org\/schemas\//];
+const IGNORE = [/\$\{/, /^https?:\/\/(localhost|127\.)/, /^https:\/\/api\.github\.com/, /^http:\/\/www\.sitemaps\.org\/schemas\//];
+// Made-up domains that lesson code and tests use as sample data.
+const SAMPLE_HOSTS = ["arena.dev", "crab.rs"];
+
+/** Sample data rather than a link: unparsable or dotless hosts, reserved names, sample domains. */
+export function isSample(url) {
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return true;
+  }
+  const under = (d) => host === d || host.endsWith("." + d);
+  return (
+    !host.includes(".") ||
+    /\.(example|test|invalid|localhost)$/.test(host) ||
+    ["example.com", "example.org", "example.net", ...SAMPLE_HOSTS].some(under)
+  );
+}
 
 /** Every outside URL in the sources, with the files that use it. */
 export function collect(root = ROOT) {
@@ -38,7 +56,7 @@ export function collect(root = ROOT) {
   for (const f of files) {
     for (const m of fs.readFileSync(f, "utf8").matchAll(/https?:\/\/[^\s)"'<>`\]]+/g)) {
       const url = m[0].replace(/[.,;:!?]+$/, "");
-      if (IGNORE.some((re) => re.test(url))) continue;
+      if (IGNORE.some((re) => re.test(url)) || isSample(url)) continue;
       if (!urls.has(url)) urls.set(url, new Set());
       urls.get(url).add(path.relative(root, f));
     }
